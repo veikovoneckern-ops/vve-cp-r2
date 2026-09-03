@@ -1,0 +1,17 @@
+{
+  "hinweis": "Eine Datei fuer Anzeige und Arbeiter. Iteration 1: Neo arbeitet, die anderen sind sichtbar.",
+  "lokal": [
+    {"id": "pmo", "name": "Jason", "titel": "Head of PMO", "modell": "deepseek-r1:32b", "aktiv": false},
+    {"id": "cockpit", "name": "Neo", "titel": "Cockpit Engineer", "modell": "qwen3.6:27b", "aktiv": true},
+    {"id": "stratege", "name": "Clayton", "titel": "Strategy Lead", "modell": "deepseek-r1:32b", "aktiv": false},
+    {"id": "buch", "name": "Neal", "titel": "Publishing Lead", "modell": "qwen3.6:27b", "aktiv": false},
+    {"id": "kritiker", "name": "Daniel", "titel": "Red Team", "modell": "deepseek-r1:32b", "aktiv": false},
+    {"id": "designer", "name": "Annie", "titel": "Creative Director", "modell": "qwen3.6:27b", "aktiv": false},
+    {"id": "video", "name": "Ridley", "titel": "Video Producer", "modell": "qwen3.6:27b", "aktiv": false}
+  ],
+  "extern": [
+    {"id": "dario", "name": "Dario", "anbieter": "Claude"},
+    {"id": "elon", "name": "Elon", "anbieter": "Grok"},
+    {"id": "demmis", "name": "Demmis", "anbieter": "Gemini"}
+  ]
+}
