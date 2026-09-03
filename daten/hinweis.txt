@@ -1,0 +1,3 @@
+Lokaler Datenordner von Release 2.
+Spaeter auf dem Server: /var/lib/vvec-stab/
+Keine Werte aus cockpit-state.json hierher kopieren.
