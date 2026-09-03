@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+daten/einstellungen.json
+daten/journal.json
+daten/letzter-besuch.json
