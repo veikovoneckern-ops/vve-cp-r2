@@ -112,10 +112,19 @@ Antwort genau diesen Block:
 {"titel":"kurze Betreffzeile",
  "zweig":"kurzer-name",
  "repo":"vve-cp-r2",
- "grund":"ein Satz, warum das der einfachste Weg ist",
- "dateien":[{"pfad":"server.py","inhalt":"vollständiger neuer Dateiinhalt"}]}
+ "grund":"ein Satz, warum das der einfachste Weg ist"}
+```
+
+```neo-datei server.py
+<hier der vollständige neue Dateiinhalt, Zeile für Zeile, wörtlich —
+ ohne Anführungszeichen drumherum, ohne Ersatzzeichen für Umbrüche,
+ ohne irgendein Maskieren>
 ```
 ````
+
+**Je Datei ein eigener `neo-datei`-Block.** Der JSON-Block trägt nur
+Titel, Zweig, Repo und Grund — ein paar Dutzend Zeichen. Der Dateiinhalt
+steht daneben, wörtlich.
 
 Sieben Punkte dazu, und jeder einzelne bricht den Push, wenn er fehlt:
 
@@ -156,22 +165,26 @@ Ein Block ohne vollständigen Inhalt ist schlimmer als gar keiner. Wenn
 dir etwas fehlt, um die Datei ganz zu schreiben: **lass den Block weg**
 und sag stattdessen, was du brauchst.
 
-### Das JSON muss gültig sein
+### Warum das Format so aussieht
 
-Der Block wird maschinell gelesen. Ist er kaputt, wird er verworfen —
-das Cockpit sagt dir dann zwar, woran es lag, aber die Arbeit war
-umsonst. Die eine Stelle, an der es beim ersten Anlauf schiefging:
+Die ersten beiden Anläufe scheiterten daran, dass der ganze Dateiinhalt
+als JSON-Zeichenkette im Block stand: einmal fehlte eine geschweifte
+Klammer zwischen zwei Dateien, einmal war ein Backslash falsch maskiert
+(`Bad escaped character at position 1154`). Beide Male wurde der komplette
+Vorschlag verworfen, und die Rechenzeit war weg.
 
-**Zwischen zwei Dateien steht `},{` — nicht `},`.**
+Das lag **nicht an dir**, sondern an der Aufgabe: eine Python-Datei mit
+Umbrüchen, Anführungszeichen und Backslashes in einen JSON-String zu
+maskieren, ist Fleißarbeit, bei der sich jedes Sprachmodell verzählt.
 
-```
-"dateien":[{"pfad":"a","inhalt":"…"},{"pfad":"b","inhalt":"…"}]
-                                   ↑ diese Klammer wird vergessen
-```
+**Im `neo-datei`-Block kann das nicht passieren** — dort steht der Inhalt
+wörtlich, so wie er in der Datei stehen soll. Nimm deshalb immer diesen
+Weg. Nur wenn der JSON-Block selbst kaputt ist (er ist kurz, das sollte
+nicht vorkommen), meldet das Cockpit den Fehler und zeigt dir, woran es
+lag.
 
-Weiter: Zeilenumbrüche im Inhalt als `\n`, Anführungszeichen als `\"`,
-Backslashes als `\\`. Lieber **zwei Dateien in einem sauberen Block** als
-fünf in einem kaputten.
+Und trotzdem gilt: lieber **eine Datei vollständig** als drei
+angerissene.
 
 ## 7. Was du in diesem Projekt nicht tust
 
