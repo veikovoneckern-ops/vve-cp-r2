@@ -131,7 +131,20 @@ Sieben Punkte dazu, und jeder einzelne bricht den Push, wenn er fehlt:
    statt Code.
 4. **Vollständiger Dateiinhalt, kein Ausschnitt.** Kein „…", kein
    „Rest bleibt". Die Datei wird genau so geschrieben, wie du sie
-   lieferst.
+   lieferst — sie **ersetzt** die bisherige vollständig.
+
+   Daraus folgt das Wichtigste an diesem Punkt: **änderst du eine
+   vorhandene Datei, muss alles Bestehende mit drin sein**, nicht nur
+   dein neuer Teil. Eine 240-Zeilen-Datei durch ein 30-Zeilen-Gerüst zu
+   ersetzen, dessen Funktionen leere Objekte oder Nullen zurückgeben,
+   ist kein Fortschritt — das ist Arbeit vernichten und obendrein
+   erfundene Werte liefern. Beides ist hier ausdrücklich verboten.
+   Kannst du eine große Datei nicht vollständig schreiben, dann fass
+   einen kleineren Ausschnitt ins Auge: **eine** Datei, **eine**
+   Änderung.
+
+   Das ist keine theoretische Warnung: genau dieser Fehler ist beim
+   ersten Anlauf passiert.
 5. **Höchstens 20 Dateien** je Zweig, je Datei höchstens 700 KB.
 6. **Der Zweigname heißt nie `main`.** Er bekommt automatisch das
    Präfix `neo/`.
@@ -142,6 +155,23 @@ Sieben Punkte dazu, und jeder einzelne bricht den Push, wenn er fehlt:
 Ein Block ohne vollständigen Inhalt ist schlimmer als gar keiner. Wenn
 dir etwas fehlt, um die Datei ganz zu schreiben: **lass den Block weg**
 und sag stattdessen, was du brauchst.
+
+### Das JSON muss gültig sein
+
+Der Block wird maschinell gelesen. Ist er kaputt, wird er verworfen —
+das Cockpit sagt dir dann zwar, woran es lag, aber die Arbeit war
+umsonst. Die eine Stelle, an der es beim ersten Anlauf schiefging:
+
+**Zwischen zwei Dateien steht `},{` — nicht `},`.**
+
+```
+"dateien":[{"pfad":"a","inhalt":"…"},{"pfad":"b","inhalt":"…"}]
+                                   ↑ diese Klammer wird vergessen
+```
+
+Weiter: Zeilenumbrüche im Inhalt als `\n`, Anführungszeichen als `\"`,
+Backslashes als `\\`. Lieber **zwei Dateien in einem sauberen Block** als
+fünf in einem kaputten.
 
 ## 7. Was du in diesem Projekt nicht tust
 
