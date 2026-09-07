@@ -74,8 +74,12 @@
       karte("Bewegte Projekte", leerListe(lage.projekte, "Noch kein bewegtes Projekt in diesem Release.")) +
       karte("Gerade in Arbeit", leerListe(lage.in_arbeit, "Nichts in Arbeit. Hoechstens drei gleichzeitig."));
     const blasen = S.verlauf.map(function (eintrag) {
+      const schritte = (eintrag.schritte && eintrag.schritte.length)
+        ? '<details class="schritte"><summary>' + eintrag.schritte.length + ' Arbeitsschritt(e)</summary>' +
+          eintrag.schritte.map(function (s) { return '<div>' + esc(s) + '</div>'; }).join('') + '</details>'
+        : '';
       return '<div class="blase' + (eintrag.wer === "veiko" ? " ich" : "") + '">' +
-        '<div class="wer">' + esc(eintrag.wer) + "</div><div>" + esc(eintrag.text) + "</div></div>";
+        '<div class="wer">' + esc(eintrag.wer) + "</div><div>" + esc(eintrag.text) + "</div>" + schritte + "</div>";
     }).join("");
     let vorschlag = "";
     if (S.vorschlag && S.vorschlag.length) {
@@ -197,7 +201,7 @@
       });
       const paket = await antwort.json();
       if (!antwort.ok) throw new Error(paket.detail || "Neo-Fehler");
-      S.verlauf.push({ wer: paket.wer || "neo", text: paket.text || "" });
+      S.verlauf.push({ wer: paket.wer || "neo", text: paket.text || "", schritte: paket.schritte || [] });
       S.vorschlag = paket.dateien || [];
       S.lauf = paket.lauf || "fertig";
     } catch (err) {
@@ -225,7 +229,9 @@
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dateien: S.vorschlag })
       });
-      S.lauf = "eingespielt: " + (paket.geschrieben || []).join(", ");
+      const abgelehnt = paket.abgelehnt || [];
+      S.lauf = "eingespielt: " + (paket.geschrieben || []).join(", ") +
+        (abgelehnt.length ? " — abgelehnt: " + abgelehnt.map(function (a) { return a.pfad + " (" + a.grund + ")"; }).join(", ") : "");
       S.vorschlag = null;
       S.verlauf.push({ wer: "cockpit", text: S.lauf });
     } catch (err) {

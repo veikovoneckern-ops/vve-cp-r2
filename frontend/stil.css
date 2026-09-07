@@ -162,6 +162,9 @@ h2 { font-size: 1.05em; font-weight: 600; margin: 0 0 8px; }
 }
 .blase.ich { align-self: flex-end; background: var(--bg-3); }
 .blase .wer { color: var(--stumm); font-size: var(--neben-px); margin-bottom: 4px; }
+.schritte { margin-top: 8px; color: var(--stumm); font-size: var(--neben-px); }
+.schritte summary { cursor: pointer; }
+.schritte div { padding: 2px 0 2px 14px; font-family: "Cascadia Mono", Consolas, monospace; }
 
 .eingabe-box textarea {
   width: 100%;

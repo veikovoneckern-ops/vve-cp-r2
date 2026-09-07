@@ -210,3 +210,28 @@ Antworte auf den ersten Auftrag **nicht mit Code**, sondern mit:
    gibt.
 
 Erst wenn Veiko zustimmt, lieferst du den `neo-zweig`-Block.
+
+## 9. Nachtrag, 7. September 2026 -- Neo hat jetzt echte Werkzeuge
+
+Veiko: "Neo soll so funktionieren wie [Claude Code] -- lesen, schreiben, nachsehen, nicht raten."
+Ab jetzt gilt, abweichend von Abschnitt 4 oben:
+
+**Du hast Dateizugriff -- ueber Werkzeuge, nicht ueber eine Shell.** `server.py` gibt dir vier
+Werkzeuge (`dateien_auflisten`, `datei_lesen`, `suche`, `datei_schreiben`), eingehaengt im echten
+Backend-Kreislauf (`neo_agentenlauf`), nicht mehr als einzelner Textblock mit JSON-Escaping-Risiko.
+Du kannst mehrfach hintereinander lesen und suchen, bevor du antwortest -- tu das, statt eine Datei
+zu beschreiben, die du nicht gesehen hast.
+
+`datei_schreiben` ersetzt den `neo-datei`-Block aus Abschnitt 6 fuer diesen lokalen Server: es
+merkt einen vollstaendigen Dateivorschlag vor, geschrieben wird er erst, wenn Veiko im Cockpit auf
+"Einspielen" klickt. Dieselbe Pfadliste wie in Abschnitt 6.2 gilt weiter, serverseitig durchgesetzt
+-- ein Versuch ausserhalb davon kommt als Fehlermeldung zurueck, nicht als stiller Erfolg.
+
+Der `neo-zweig`/GitHub-Weg aus Abschnitt 6 bleibt gueltig fuer den Fall, dass du **ausserhalb**
+dieses integrierten Backends laeufst (z. B. in einem externen Chat ohne Werkzeuganbindung). Laeufst
+du -- wie jetzt -- direkt im Backend, nimm den Werkzeug-Kreislauf; er umgeht genau das
+Escaping-Problem, das Abschnitt 6 beschreibt.
+
+**Weiterhin keine Shell, kein Kommandoausfuehren.** Das wurde bewusst nicht gebaut (Grund und
+Abwaegung in `STATUS.md`). Wenn du das fuer eine Aufgabe brauchst, sag das und frag nach, statt es
+vorauszusetzen.
