@@ -208,6 +208,35 @@ button.gefahr { background: transparent; color: var(--gefahr); border: 1px solid
 .form-reihe { margin: 0 0 16px; }
 .form-reihe label { display: block; margin-bottom: 6px; }
 .form-reihe input[type="range"] { width: min(320px, 100%); }
+.form-reihe input[type="text"], .form-reihe input[type="password"], .form-reihe input[type="email"] {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--linie);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: var(--eingabe-px);
+}
+
+.auth-rahmen {
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.auth-karte {
+  width: min(420px, 100%);
+  background: var(--bg-2);
+  border: 1px solid var(--linie);
+  border-radius: var(--radius);
+  padding: 28px 26px;
+}
+.auth-karte .marke { padding: 0 0 18px; }
+.fehler { color: var(--gefahr); font-size: var(--neben-px); margin: 0 0 12px; }
 
 .server {
   display: grid;

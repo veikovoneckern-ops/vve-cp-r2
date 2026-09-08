@@ -7,13 +7,16 @@
     { id: "eingang", name: "Eingang" },
     { id: "reports", name: "Reports" },
     { id: "server", name: "Server" },
-    { id: "einstellungen", name: "Einstellungen" }
+    { id: "einstellungen", name: "Einstellungen" },
+    { id: "konto", name: "Nutzerverwaltung" }
   ];
   const S = {
     ort: "start",
     einstellungen: { thema: "dunkel", schrift_fluss: 18, schrift_neben: 16, schrift_nav: 15, schrift_eingabe: 18 },
     lage: null, rollen: null, server: null, lauf: "kein Lauf", logoLaeuft: false,
-    verlauf: [], vorschlag: null, eingabe: "", fehler: ""
+    verlauf: [], vorschlag: null, eingabe: "", fehler: "",
+    auth: { geladen: false, eingerichtet: false, angemeldet: false, benutzername: null, email: null },
+    authAnsicht: "login", authFehler: "", authHinweis: "", resetToken: null
   };
   function $(sel, wurzel) { return (wurzel || document).querySelector(sel); }
   function esc(text) {
@@ -25,6 +28,10 @@
     let paket = null;
     try { paket = roh ? JSON.parse(roh) : null; } catch (e) { paket = { detail: roh }; }
     if (!antwort.ok) {
+      if (antwort.status === 401 && pfad.indexOf("/api/konto/") !== 0) {
+        S.auth.angemeldet = false;
+        zeichnen();
+      }
       const detail = paket && paket.detail ? paket.detail : antwort.statusText;
       throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
     }
@@ -39,8 +46,182 @@
     w.style.setProperty("--eingabe-px", S.einstellungen.schrift_eingabe + "px");
   }
   function schildText() { return S.fehler || S.lauf; }
+
+  // --- Anmeldung / Einrichtung / Reset -------------------------------------
+  function feldZeile(id, label, typ) {
+    return '<div class="form-reihe"><label for="' + id + '">' + esc(label) + "</label>" +
+      '<input id="' + id + '" type="' + typ + '"></div>';
+  }
+  function authFehlerHtml() {
+    return (S.authFehler ? '<p class="fehler">' + esc(S.authFehler) + "</p>" : "") +
+      (S.authHinweis ? '<p class="leise">' + esc(S.authHinweis) + "</p>" : "");
+  }
+  function einrichtenHtml() {
+    return "<h1>Konto einrichten</h1>" +
+      '<p class="leise">Einmalig: Benutzername, E-Mail (fuer Passwort-Reset) und Passwort festlegen.</p>' +
+      authFehlerHtml() +
+      feldZeile("auth-benutzername", "Benutzername", "text") +
+      feldZeile("auth-email", "E-Mail", "email") +
+      feldZeile("auth-passwort", "Passwort (mind. 8 Zeichen)", "password") +
+      feldZeile("auth-passwort2", "Passwort wiederholen", "password") +
+      '<div class="zeile" style="margin-top:8px">' +
+      '<button type="button" class="primaer" id="btn-einrichten">Konto anlegen</button></div>';
+  }
+  function loginHtml() {
+    if (S.authAnsicht === "vergessen") {
+      return "<h1>Passwort vergessen</h1>" +
+        '<p class="leise">Ein Link geht an die beim Konto hinterlegte E-Mail-Adresse.</p>' +
+        authFehlerHtml() +
+        feldZeile("auth-email", "E-Mail", "email") +
+        '<div class="zeile" style="margin-top:8px">' +
+        '<button type="button" class="primaer" id="btn-vergessen-senden">Link schicken</button>' +
+        '<button type="button" class="neben" id="btn-vergessen-zurueck">Zurueck</button></div>';
+    }
+    return "<h1>Anmelden</h1><p class=\"leise\">VVE Cockpit Release 2</p>" +
+      authFehlerHtml() +
+      feldZeile("auth-benutzername", "Benutzername", "text") +
+      feldZeile("auth-passwort", "Passwort", "password") +
+      '<div class="zeile" style="margin-top:8px">' +
+      '<button type="button" class="primaer" id="btn-anmelden">Anmelden</button></div>' +
+      '<p class="leise" style="margin-top:10px"><a href="#" id="link-vergessen">Passwort vergessen?</a></p>';
+  }
+  function resetHtml() {
+    return "<h1>Neues Passwort setzen</h1>" + authFehlerHtml() +
+      feldZeile("auth-neu1", "Neues Passwort (mind. 8 Zeichen)", "password") +
+      feldZeile("auth-neu2", "Wiederholen", "password") +
+      '<div class="zeile" style="margin-top:8px">' +
+      '<button type="button" class="primaer" id="btn-reset-setzen">Passwort setzen</button></div>';
+  }
+  function authRahmen(innerHtml) {
+    document.getElementById("app").innerHTML =
+      '<div class="auth-rahmen"><div class="auth-karte"><div class="marke">' +
+      '<div class="logo" aria-hidden="true"></div><div><strong>VVE Cockpit</strong><span>Release 2</span></div>' +
+      "</div>" + innerHtml + "</div></div>";
+    anhaengenAuth();
+  }
+  function anhaengenAuth() {
+    const btnEinrichten = $("#btn-einrichten");
+    if (btnEinrichten) btnEinrichten.addEventListener("click", kontoEinrichten);
+    const btnAnmelden = $("#btn-anmelden");
+    if (btnAnmelden) btnAnmelden.addEventListener("click", anmelden);
+    const linkVergessen = $("#link-vergessen");
+    if (linkVergessen) linkVergessen.addEventListener("click", function (ev) {
+      ev.preventDefault(); S.authAnsicht = "vergessen"; S.authFehler = ""; S.authHinweis = ""; zeichnen();
+    });
+    const btnVergessenSenden = $("#btn-vergessen-senden");
+    if (btnVergessenSenden) btnVergessenSenden.addEventListener("click", passwortVergessenSenden);
+    const btnVergessenZurueck = $("#btn-vergessen-zurueck");
+    if (btnVergessenZurueck) btnVergessenZurueck.addEventListener("click", function () {
+      S.authAnsicht = "login"; S.authFehler = ""; S.authHinweis = ""; zeichnen();
+    });
+    const btnResetSetzen = $("#btn-reset-setzen");
+    if (btnResetSetzen) btnResetSetzen.addEventListener("click", passwortZuruecksetzenSenden);
+  }
+  async function kontoEinrichten() {
+    const benutzername = $("#auth-benutzername").value.trim();
+    const email = $("#auth-email").value.trim();
+    const passwort = $("#auth-passwort").value;
+    const passwort2 = $("#auth-passwort2").value;
+    if (!benutzername || !email || !passwort) { S.authFehler = "Alle Felder ausfuellen."; zeichnen(); return; }
+    if (passwort !== passwort2) { S.authFehler = "Passwoerter stimmen nicht ueberein."; zeichnen(); return; }
+    try {
+      const paket = await api("/api/konto/einrichten", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ benutzername: benutzername, email: email, passwort: passwort })
+      });
+      S.authFehler = "";
+      S.auth = { geladen: true, eingerichtet: true, angemeldet: true, benutzername: paket.benutzername, email: email };
+      await start();
+    } catch (err) { S.authFehler = String(err.message || err); zeichnen(); }
+  }
+  async function anmelden() {
+    const benutzername = $("#auth-benutzername").value.trim();
+    const passwort = $("#auth-passwort").value;
+    try {
+      const paket = await api("/api/konto/anmelden", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ benutzername: benutzername, passwort: passwort })
+      });
+      S.authFehler = "";
+      S.auth.angemeldet = true; S.auth.benutzername = paket.benutzername;
+      await start();
+    } catch (err) { S.authFehler = String(err.message || err); zeichnen(); }
+  }
+  async function passwortVergessenSenden() {
+    const email = $("#auth-email").value.trim();
+    try {
+      const paket = await api("/api/konto/passwort-vergessen", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email })
+      });
+      S.authFehler = ""; S.authHinweis = paket.hinweis || "Wenn die Adresse passt, kommt eine E-Mail.";
+      zeichnen();
+    } catch (err) { S.authFehler = String(err.message || err); zeichnen(); }
+  }
+  async function passwortZuruecksetzenSenden() {
+    const neu1 = $("#auth-neu1").value;
+    const neu2 = $("#auth-neu2").value;
+    if (neu1 !== neu2) { S.authFehler = "Passwoerter stimmen nicht ueberein."; zeichnen(); return; }
+    try {
+      await api("/api/konto/passwort-zuruecksetzen", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: S.resetToken, neues_passwort: neu1 })
+      });
+      S.resetToken = null;
+      history.replaceState(null, "", window.location.pathname);
+      S.authAnsicht = "login"; S.authFehler = ""; S.authHinweis = "Passwort gesetzt. Bitte anmelden.";
+      zeichnen();
+    } catch (err) { S.authFehler = String(err.message || err); zeichnen(); }
+  }
+  async function abmelden() {
+    try { await api("/api/konto/abmelden", { method: "POST" }); } catch (e) {}
+    S.auth = { geladen: true, eingerichtet: true, angemeldet: false, benutzername: null, email: null };
+    S.authAnsicht = "login"; S.authFehler = ""; S.authHinweis = "";
+    zeichnen();
+  }
+  async function passwortAendern() {
+    const aktuell = $("#konto-aktuell").value;
+    const neu1 = $("#konto-neu1").value;
+    const neu2 = $("#konto-neu2").value;
+    if (neu1 !== neu2) { S.authFehler = "Neue Passwoerter stimmen nicht ueberein."; zeichnen(); return; }
+    try {
+      await api("/api/konto/passwort-aendern", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ aktuelles_passwort: aktuell, neues_passwort: neu1 })
+      });
+      S.authFehler = ""; S.authHinweis = "Passwort geaendert.";
+      zeichnen();
+    } catch (err) { S.authFehler = String(err.message || err); zeichnen(); }
+  }
+  function kontoVerwaltenHtml() {
+    return "<h1>Nutzerverwaltung</h1>" +
+      '<p class="leise">Angemeldet als <strong>' + esc(S.auth.benutzername) + "</strong>" +
+      (S.auth.email ? " (" + esc(S.auth.email) + ")" : "") + "</p>" +
+      authFehlerHtml() +
+      '<h2 style="margin-top:18px">Passwort aendern</h2>' +
+      feldZeile("konto-aktuell", "Aktuelles Passwort", "password") +
+      feldZeile("konto-neu1", "Neues Passwort (mind. 8 Zeichen)", "password") +
+      feldZeile("konto-neu2", "Wiederholen", "password") +
+      '<div class="zeile" style="margin-top:8px">' +
+      '<button type="button" class="primaer" id="btn-passwort-aendern">Passwort aendern</button></div>' +
+      '<h2 style="margin-top:24px">Abmelden</h2>' +
+      '<button type="button" class="gefahr" id="btn-abmelden">Abmelden</button>';
+  }
+
+  // --- Das eigentliche Cockpit ----------------------------------------------
   function zeichnen() {
     schriftAnwenden();
+    if (!S.auth.geladen) {
+      document.getElementById("app").innerHTML =
+        '<div class="auth-rahmen"><div class="auth-karte"><p class="leise">Laedt …</p></div></div>';
+      return;
+    }
+    if (!S.auth.eingerichtet) { authRahmen(einrichtenHtml()); return; }
+    if (S.resetToken) { authRahmen(resetHtml()); return; }
+    if (!S.auth.angemeldet) { authRahmen(loginHtml()); return; }
+    zeichnenApp();
+  }
+  function zeichnenApp() {
     const app = document.getElementById("app");
     const voll = S.ort === "server";
     app.innerHTML = leisteHtml() +
@@ -57,6 +238,7 @@
     else if (S.ort === "stab") view.innerHTML = stabHtml();
     else if (S.ort === "server") view.innerHTML = serverHtml();
     else if (S.ort === "einstellungen") view.innerHTML = einstellungenHtml();
+    else if (S.ort === "konto") view.innerHTML = kontoVerwaltenHtml();
     else view.innerHTML = leerHtml();
     anhaengen();
   }
@@ -75,9 +257,9 @@
       karte("Gerade in Arbeit", leerListe(lage.in_arbeit, "Nichts in Arbeit. Hoechstens drei gleichzeitig."));
     const blasen = S.verlauf.map(function (eintrag) {
       const schritte = (eintrag.schritte && eintrag.schritte.length)
-        ? '<details class="schritte"><summary>' + eintrag.schritte.length + ' Arbeitsschritt(e)</summary>' +
-          eintrag.schritte.map(function (s) { return '<div>' + esc(s) + '</div>'; }).join('') + '</details>'
-        : '';
+        ? '<details class="schritte"><summary>' + eintrag.schritte.length + " Arbeitsschritt(e)</summary>" +
+          eintrag.schritte.map(function (s) { return "<div>" + esc(s) + "</div>"; }).join("") + "</details>"
+        : "";
       return '<div class="blase' + (eintrag.wer === "veiko" ? " ich" : "") + '">' +
         '<div class="wer">' + esc(eintrag.wer) + "</div><div>" + esc(eintrag.text) + "</div>" + schritte + "</div>";
     }).join("");
@@ -169,6 +351,10 @@
     if (ein) ein.addEventListener("click", einspielen);
     const weg = $("#btn-verwerfen");
     if (weg) weg.addEventListener("click", function () { S.vorschlag = null; zeichnen(); });
+    const btnPasswortAendern = $("#btn-passwort-aendern");
+    if (btnPasswortAendern) btnPasswortAendern.addEventListener("click", passwortAendern);
+    const btnAbmelden = $("#btn-abmelden");
+    if (btnAbmelden) btnAbmelden.addEventListener("click", abmelden);
     document.querySelectorAll("[data-thema]").forEach(function (knopf) {
       knopf.addEventListener("click", function () {
         S.einstellungen.thema = knopf.getAttribute("data-thema");
@@ -262,9 +448,21 @@
     zeichnen();
   }
   async function start() {
-    try { S.einstellungen = await api("/api/einstellungen"); } catch (e) {}
-    try { S.lage = await api("/api/lage"); } catch (e) {}
-    try { S.rollen = await api("/api/rollen"); } catch (e) {}
+    const url = new URL(window.location.href);
+    const resetToken = url.searchParams.get("reset");
+    if (resetToken) S.resetToken = resetToken;
+    try {
+      const ich = await api("/api/konto/ich");
+      S.auth = { geladen: true, eingerichtet: ich.eingerichtet, angemeldet: ich.angemeldet,
+                 benutzername: ich.benutzername, email: ich.email };
+    } catch (e) {
+      S.auth = { geladen: true, eingerichtet: false, angemeldet: false, benutzername: null, email: null };
+    }
+    if (S.auth.angemeldet) {
+      try { S.einstellungen = await api("/api/einstellungen"); } catch (e) {}
+      try { S.lage = await api("/api/lage"); } catch (e) {}
+      try { S.rollen = await api("/api/rollen"); } catch (e) {}
+    }
     zeichnen();
   }
   start();

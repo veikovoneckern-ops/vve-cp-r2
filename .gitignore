@@ -4,5 +4,6 @@ __pycache__/
 daten/einstellungen.json
 daten/journal.json
 daten/letzter-besuch.json
+daten/benutzer.json
 
 .claude/settings.local.json

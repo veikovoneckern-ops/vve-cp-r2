@@ -55,6 +55,28 @@ export VVEC_NEO_CLAUDE_MODELL=claude-sonnet-5   # genaue Modell-ID eintragen
 
 Fehlt einer der beiden letzten Werte, meldet Neo das im Gespraech klar statt zu raten.
 
+### Anmeldung
+
+Beim ersten Aufruf zeigt das Cockpit "Konto einrichten" -- Benutzername, E-Mail (fuer
+Passwort-Reset) und Passwort. Danach ist jeder API-Aufruf ausser `/`, `/status`, `/static/*`
+und `/api/konto/*` nur mit gueltiger Sitzung erreichbar (Middleware in `server.py`).
+
+Fuer "Passwort vergessen" per E-Mail-Link:
+
+```bash
+export VVEC_SMTP_HOST=smtp.beispiel.de
+export VVEC_SMTP_PORT=587
+export VVEC_SMTP_USER=...
+export VVEC_SMTP_PASSWORT=...
+export VVEC_SMTP_ABSENDER=cockpit@beispiel.de   # optional, sonst VVEC_SMTP_USER
+export VVEC_OEFFENTLICHE_URL=http://100.65.221.106:8780   # ohne das kein funktionierender Link in der Mail
+```
+
+Ohne `VVEC_SMTP_HOST` meldet "Passwort vergessen" ehrlich einen Fehler statt eine Mail
+vorzutaeuschen, die nie ankommt. `VVEC_COOKIE_SICHER=true` setzt das Sitzungs-Cookie erst,
+sobald wirklich HTTPS davor steht (Caddy/Cloudflare) -- vorher wuerde der Browser das
+Cookie sonst gar nicht erst senden.
+
 ## Was Iteration 2 kann
 
 - Leiste: Start, Themen, Stab, Eingang, Reports, Server, Einstellungen

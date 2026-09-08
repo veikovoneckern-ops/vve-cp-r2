@@ -3,11 +3,12 @@
 (auflisten, lesen, durchsuchen, Aenderung vorschlagen) statt eines einzelnen Textblocks --
 dieselbe Arbeitsweise wie ein Werkzeug-Agent, nur serverseitig und an dieses Projekt gebunden."""
 from __future__ import annotations
-import json, os, time
+import hashlib, json, os, secrets, smtplib, time
+from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -18,6 +19,7 @@ DATEN = WURZEL / "daten"
 EINSTELLUNG_DATEI = DATEN / "einstellungen.json"
 JOURNAL_DATEI = DATEN / "journal.json"
 BESUCH_DATEI = DATEN / "letzter-besuch.json"
+BENUTZER_DATEI = DATEN / "benutzer.json"
 OLLAMA = os.environ.get("VVEC_OLLAMA", "http://127.0.0.1:11434").rstrip("/")
 NEO_MODELL = os.environ.get("VVEC_NEO_MODELL", "qwen3.6:27b")
 STATUS_URL = os.environ.get("VVEC_STATUS_URL", "").rstrip("/")
@@ -31,6 +33,22 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
 CLAUDE_MODELL = os.environ.get("VVEC_NEO_CLAUDE_MODELL", "").strip()
 AKTIVES_MODELL_LABEL = f"claude:{CLAUDE_MODELL}" if NEO_ANBIETER == "claude" else NEO_MODELL
 MAX_SCHRITTE = int(os.environ.get("VVEC_NEO_MAX_SCHRITTE", "8"))
+
+# Anmeldung. Ein Konto (dieses Cockpit ist fuer einen Nutzer gebaut, siehe UEBERGABE.md
+# von Release 1) -- Einrichten, Anmelden, Abmelden, Passwort aendern, Passwort per
+# E-Mail zuruecksetzen. Sitzungen leben nur im Speicher: ein Neustart meldet ab, das ist
+# fuer ein persoenliches Cockpit kein Problem und einfacher als ein Sitzungsspeicher.
+SMTP_HOST = os.environ.get("VVEC_SMTP_HOST", "").strip()
+SMTP_PORT = int(os.environ.get("VVEC_SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("VVEC_SMTP_USER", "").strip()
+SMTP_PASSWORT = os.environ.get("VVEC_SMTP_PASSWORT", "")
+SMTP_ABSENDER = os.environ.get("VVEC_SMTP_ABSENDER", "").strip() or SMTP_USER
+OEFFENTLICHE_URL = os.environ.get("VVEC_OEFFENTLICHE_URL", "").rstrip("/")
+COOKIE_SICHER = os.environ.get("VVEC_COOKIE_SICHER", "false").strip().lower() == "true"
+SITZUNG_COOKIE = "vvec_sitzung"
+SITZUNG_DAUER_SEK = 14 * 24 * 3600
+RESET_DAUER_SEK = 3600
+SITZUNGEN: dict[str, dict[str, Any]] = {}
 
 ERLAUBTE_ENDUNGEN = {".py", ".js", ".css", ".html", ".md", ".json", ".txt"}
 VERBOTENE_TEILE = {".venv", "__pycache__", ".git", "node_modules"}
@@ -121,6 +139,78 @@ async def status_lesen() -> dict[str, Any]:
     except httpx.HTTPError:
         return lage
     return lage
+
+# ---------------------------------------------------------------------------
+# Benutzerverwaltung
+# ---------------------------------------------------------------------------
+
+def _passwort_hash(passwort: str, salt: bytes) -> str:
+    return hashlib.pbkdf2_hmac("sha256", passwort.encode("utf-8"), salt, 200_000).hex()
+
+def passwort_setzen(passwort: str) -> dict[str, str]:
+    salt = secrets.token_bytes(16)
+    return {"salt": salt.hex(), "hash": _passwort_hash(passwort, salt)}
+
+def passwort_pruefen(passwort: str, salt_hex: str, hash_hex: str) -> bool:
+    try:
+        salt = bytes.fromhex(salt_hex)
+    except ValueError:
+        return False
+    return secrets.compare_digest(_passwort_hash(passwort, salt), hash_hex)
+
+def benutzer_lesen() -> dict[str, Any] | None:
+    stand = json_lesen(BENUTZER_DATEI, None)
+    return stand if isinstance(stand, dict) and stand.get("benutzername") else None
+
+def benutzer_schreiben(stand: dict[str, Any]) -> None:
+    json_schreiben(BENUTZER_DATEI, stand)
+
+def sitzung_anlegen(benutzername: str) -> str:
+    token = secrets.token_urlsafe(32)
+    SITZUNGEN[token] = {"benutzername": benutzername, "erstellt": time.time()}
+    return token
+
+def sitzung_pruefen(token: str | None) -> str | None:
+    if not token:
+        return None
+    eintrag = SITZUNGEN.get(token)
+    if not eintrag:
+        return None
+    if time.time() - eintrag["erstellt"] > SITZUNG_DAUER_SEK:
+        SITZUNGEN.pop(token, None)
+        return None
+    return eintrag["benutzername"]
+
+def email_senden(empfaenger: str, betreff: str, text: str) -> None:
+    if not SMTP_HOST:
+        raise HTTPException(503, "Kein SMTP eingerichtet (VVEC_SMTP_HOST fehlt serverseitig).")
+    nachricht = EmailMessage()
+    nachricht["Subject"] = betreff
+    nachricht["From"] = SMTP_ABSENDER
+    nachricht["To"] = empfaenger
+    nachricht.set_content(text)
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as verbindung:
+            verbindung.starttls()
+            if SMTP_USER:
+                verbindung.login(SMTP_USER, SMTP_PASSWORT)
+            verbindung.send_message(nachricht)
+    except (smtplib.SMTPException, OSError) as fehler:
+        raise HTTPException(503, f"E-Mail-Versand fehlgeschlagen: {fehler.__class__.__name__}") from fehler
+
+OEFFENTLICHE_PFADE = {"/", "/status"}
+OEFFENTLICHE_VORSAETZE = ("/static/", "/api/konto/")
+
+@app.middleware("http")
+async def anmeldung_pruefen(request: Request, call_next):
+    pfad = request.url.path
+    if pfad in OEFFENTLICHE_PFADE or any(pfad.startswith(p) for p in OEFFENTLICHE_VORSAETZE):
+        return await call_next(request)
+    benutzername = sitzung_pruefen(request.cookies.get(SITZUNG_COOKIE))
+    if not benutzername:
+        return JSONResponse({"detail": "Nicht angemeldet"}, status_code=401)
+    request.state.benutzername = benutzername
+    return await call_next(request)
 
 # ---------------------------------------------------------------------------
 # Neos Werkzeuge -- eine Wahrheit fuer beide Motoren (Claude-Format als
@@ -362,6 +452,26 @@ async def neo_agentenlauf(system: str, erste_anfrage: str) -> tuple[str, list[di
     )
     return letzter_text, vorschlaege, schritte
 
+class EinrichtenKoerper(BaseModel):
+    benutzername: str = Field(min_length=2, max_length=60)
+    email: str = Field(min_length=3, max_length=200)
+    passwort: str = Field(min_length=8, max_length=200)
+
+class AnmeldenKoerper(BaseModel):
+    benutzername: str
+    passwort: str
+
+class PasswortAendernKoerper(BaseModel):
+    aktuelles_passwort: str
+    neues_passwort: str = Field(min_length=8, max_length=200)
+
+class PasswortVergessenKoerper(BaseModel):
+    email: str
+
+class PasswortZuruecksetzenKoerper(BaseModel):
+    token: str
+    neues_passwort: str = Field(min_length=8, max_length=200)
+
 class GespraechKoerper(BaseModel):
     text: str = Field(min_length=1, max_length=20000)
     an: str = "neo"
@@ -375,6 +485,99 @@ async def status():
     return {"dienst": "vve-cp-r2", "ok": True, "seit_sekunden": int(time.time() - START),
             "ollama": OLLAMA, "neo_modell": NEO_MODELL,
             "neo_anbieter": NEO_ANBIETER, "neo_aktives_modell": AKTIVES_MODELL_LABEL}
+
+@app.get("/api/konto/ich")
+async def konto_ich(request: Request):
+    benutzer = benutzer_lesen()
+    benutzername = sitzung_pruefen(request.cookies.get(SITZUNG_COOKIE))
+    return {"eingerichtet": benutzer is not None, "angemeldet": benutzername is not None,
+            "benutzername": benutzername, "email": benutzer.get("email") if (benutzer and benutzername) else None}
+
+@app.post("/api/konto/einrichten")
+async def konto_einrichten(koerper: EinrichtenKoerper, response: Response):
+    if benutzer_lesen() is not None:
+        raise HTTPException(409, "Es gibt schon ein Konto. Einrichten geht nur einmal.")
+    stand = {"benutzername": koerper.benutzername, "email": koerper.email,
+              **passwort_setzen(koerper.passwort), "reset_hash": None, "reset_ablauf": None}
+    benutzer_schreiben(stand)
+    token = sitzung_anlegen(koerper.benutzername)
+    response.set_cookie(SITZUNG_COOKIE, token, httponly=True, samesite="lax",
+                         secure=COOKIE_SICHER, max_age=SITZUNG_DAUER_SEK)
+    journal_anhaengen({"wer": "veiko", "was": "konto-eingerichtet"})
+    return {"benutzername": koerper.benutzername}
+
+@app.post("/api/konto/anmelden")
+async def konto_anmelden(koerper: AnmeldenKoerper, response: Response):
+    benutzer = benutzer_lesen()
+    if not benutzer or not passwort_pruefen(koerper.passwort, benutzer["salt"], benutzer["hash"]) \
+            or koerper.benutzername != benutzer["benutzername"]:
+        raise HTTPException(401, "Benutzername oder Passwort falsch.")
+    token = sitzung_anlegen(benutzer["benutzername"])
+    response.set_cookie(SITZUNG_COOKIE, token, httponly=True, samesite="lax",
+                         secure=COOKIE_SICHER, max_age=SITZUNG_DAUER_SEK)
+    return {"benutzername": benutzer["benutzername"]}
+
+@app.post("/api/konto/abmelden")
+async def konto_abmelden(request: Request, response: Response):
+    token = request.cookies.get(SITZUNG_COOKIE)
+    if token:
+        SITZUNGEN.pop(token, None)
+    response.delete_cookie(SITZUNG_COOKIE)
+    return {"ok": True}
+
+@app.post("/api/konto/passwort-aendern")
+async def konto_passwort_aendern(koerper: PasswortAendernKoerper, request: Request):
+    benutzername = sitzung_pruefen(request.cookies.get(SITZUNG_COOKIE))
+    if not benutzername:
+        raise HTTPException(401, "Nicht angemeldet.")
+    benutzer = benutzer_lesen()
+    if not benutzer or not passwort_pruefen(koerper.aktuelles_passwort, benutzer["salt"], benutzer["hash"]):
+        raise HTTPException(401, "Aktuelles Passwort falsch.")
+    benutzer.update(passwort_setzen(koerper.neues_passwort))
+    benutzer_schreiben(benutzer)
+    journal_anhaengen({"wer": "veiko", "was": "passwort-geaendert"})
+    return {"ok": True}
+
+@app.post("/api/konto/passwort-vergessen")
+async def konto_passwort_vergessen(koerper: PasswortVergessenKoerper):
+    # Immer dieselbe Antwort, ob die E-Mail passt oder nicht -- sonst liesse sich
+    # ausprobieren, welche Adresse das eine Konto hat.
+    antwort = {"ok": True, "hinweis": "Wenn die Adresse zum Konto passt, ist eine E-Mail unterwegs."}
+    benutzer = benutzer_lesen()
+    if not benutzer or benutzer.get("email", "").strip().lower() != koerper.email.strip().lower():
+        return antwort
+    if not OEFFENTLICHE_URL:
+        raise HTTPException(503, "VVEC_OEFFENTLICHE_URL ist nicht gesetzt -- der Reset-Link im Cockpit "
+                                   "haette kein Ziel. Trag die Adresse ein, unter der das Cockpit von "
+                                   "aussen erreichbar ist.")
+    roh_token = secrets.token_urlsafe(32)
+    benutzer["reset_hash"] = hashlib.sha256(roh_token.encode("utf-8")).hexdigest()
+    benutzer["reset_ablauf"] = time.time() + RESET_DAUER_SEK
+    benutzer_schreiben(benutzer)
+    link = f"{OEFFENTLICHE_URL}/?reset={roh_token}"
+    email_senden(benutzer["email"],
+                 "VVE Cockpit -- Passwort zuruecksetzen",
+                 f"Neues Passwort setzen (eine Stunde gueltig): {link}\n\n"
+                 "Wenn das nicht du warst: nichts tun, der Link verfaellt von selbst.")
+    journal_anhaengen({"wer": "cockpit", "was": "reset-mail-verschickt"})
+    return antwort
+
+@app.post("/api/konto/passwort-zuruecksetzen")
+async def konto_passwort_zuruecksetzen(koerper: PasswortZuruecksetzenKoerper):
+    benutzer = benutzer_lesen()
+    if not benutzer or not benutzer.get("reset_hash"):
+        raise HTTPException(400, "Kein Reset angefordert oder Konto fehlt.")
+    if time.time() > float(benutzer.get("reset_ablauf") or 0):
+        raise HTTPException(400, "Der Link ist abgelaufen. Neu anfordern.")
+    pruef_hash = hashlib.sha256(koerper.token.encode("utf-8")).hexdigest()
+    if not secrets.compare_digest(pruef_hash, benutzer["reset_hash"]):
+        raise HTTPException(400, "Der Link ist ungueltig.")
+    benutzer.update(passwort_setzen(koerper.neues_passwort))
+    benutzer["reset_hash"] = None
+    benutzer["reset_ablauf"] = None
+    benutzer_schreiben(benutzer)
+    journal_anhaengen({"wer": "veiko", "was": "passwort-zurueckgesetzt"})
+    return {"ok": True}
 
 @app.get("/api/einstellungen")
 async def einstellungen_lesen():
