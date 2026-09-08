@@ -22,6 +22,26 @@ Auf dem Server erreichbar machen, ohne Caddy anzufassen: `VVEC_HOST` auf die Tai
 setzen (z. B. `export VVEC_HOST=100.65.221.106`) statt der Vorgabe `127.0.0.1` -- dann laeuft das
 Cockpit unter `http://<Tailscale-Adresse>:8780`, erreichbar fuer jedes Geraet im Tailnet.
 
+## Als Dienst auf dem Server (uebersteht Neustart)
+
+`vveadmin` hat keine root-Rechte fuer `/etc/systemd/system/` -- die Unit laeuft deshalb als
+**User-Dienst** (`systemctl --user`), das braucht kein sudo:
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp systemd/vve-cp-r2.service ~/.config/systemd/user/
+cat > ~/.config/vve-cp-r2.env << 'EOF'
+VVEC_OLLAMA=http://127.0.0.1:11434
+VVEC_NEO_MODELL=qwen3.6:27b
+VVEC_HOST=100.65.221.106
+EOF
+loginctl enable-linger $USER   # damit der Dienst auch ohne Anmeldung laeuft
+systemctl --user daemon-reload
+systemctl --user enable --now vve-cp-r2.service
+```
+
+Status pruefen: `systemctl --user status vve-cp-r2.service`. Logs: `journalctl --user -u vve-cp-r2.service -f`.
+
 ### Neo wahlweise ueber Claude statt lokal
 
 Vorgabe bleibt der lokale Ollama (digitale Souveraenitaet, kein Token-Preis). Wer Neo stattdessen

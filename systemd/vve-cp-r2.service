@@ -1,0 +1,14 @@
+[Unit]
+Description=VVE Cockpit Release 2 -- Neo mit echten Werkzeugen
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/vve-cp-r2
+EnvironmentFile=%h/.config/vve-cp-r2.env
+ExecStart=%h/vve-cp-r2/.venv/bin/python server.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
