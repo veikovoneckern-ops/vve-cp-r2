@@ -423,17 +423,62 @@
     S.eingabe = ""; S.fehler = ""; S.geaendert = null;
     S.logoLaeuft = true; S.lauf = "Neo arbeitet …"; zeichnen();
     steuer = new AbortController();
+    // Platzhalter sofort im Verlauf, wird waehrend des Streams live mit Arbeitsschritten
+    // gefuellt und am Ende mit dem endgueltigen Text ueberschrieben -- so bleibt sichtbar,
+    // dass (und was) Neo arbeitet, auch wenn ein Auftrag mehrere Minuten braucht.
+    const platzhalter = { wer: "neo", text: "", schritte: [] };
+    S.verlauf.push(platzhalter);
     try {
       const antwort = await fetch("/api/gespraech", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: text, an: "neo" }), signal: steuer.signal
       });
-      const paket = await antwort.json();
-      if (!antwort.ok) throw new Error(paket.detail || "Neo-Fehler");
-      S.verlauf.push({ wer: paket.wer || "neo", text: paket.text || "", schritte: paket.schritte || [] });
-      S.geaendert = paket.dateien || [];
-      S.lauf = paket.lauf || "fertig";
+      if (!antwort.ok || !antwort.body) {
+        const roh = await antwort.text();
+        let detail = antwort.statusText;
+        try { const paket = roh ? JSON.parse(roh) : null; if (paket && paket.detail) detail = paket.detail; } catch (e) {}
+        throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+      }
+      // NDJSON: server.py streamt ein Ereignis pro Zeile ("puls"/"schritt" waehrend des
+      // Laufs, "fertig"/"fehler" am Ende) statt einer einzigen grossen Antwort -- dahinter
+      // (Cloudflare) wird eine Antwort ohne jedes Byte nach ~100s sonst mit einer HTML-Seite
+      // abgebrochen, die hier nicht als JSON lesbar waere.
+      const leser = antwort.body.getReader();
+      const dekoder = new TextDecoder();
+      let puffer = "";
+      let fertigDaten = null;
+      while (true) {
+        const { value, done } = await leser.read();
+        if (done) break;
+        puffer += dekoder.decode(value, { stream: true });
+        let zeilenEnde;
+        while ((zeilenEnde = puffer.indexOf("\n")) !== -1) {
+          const zeile = puffer.slice(0, zeilenEnde).trim();
+          puffer = puffer.slice(zeilenEnde + 1);
+          if (!zeile) continue;
+          const ereignis = JSON.parse(zeile);
+          if (ereignis.typ === "puls") {
+            // Nur ein Lebenszeichen der Verbindung, nichts anzuzeigen.
+          } else if (ereignis.typ === "schritt") {
+            platzhalter.schritte.push(ereignis.schritt);
+            S.lauf = "Neo arbeitet … (" + platzhalter.schritte.length + " Schritt(e): " + ereignis.schritt + ")";
+            zeichnen();
+          } else if (ereignis.typ === "fehler") {
+            throw new Error(ereignis.text || "Neo-Fehler");
+          } else if (ereignis.typ === "fertig") {
+            fertigDaten = ereignis;
+          }
+        }
+      }
+      if (!fertigDaten) throw new Error("Neo hat den Lauf ohne Abschluss beendet.");
+      platzhalter.wer = fertigDaten.wer || "neo";
+      platzhalter.text = fertigDaten.text || "";
+      platzhalter.schritte = fertigDaten.schritte || platzhalter.schritte;
+      S.geaendert = fertigDaten.dateien || [];
+      S.lauf = fertigDaten.lauf || "fertig";
     } catch (err) {
+      const index = S.verlauf.indexOf(platzhalter);
+      if (index !== -1) S.verlauf.splice(index, 1);
       if (err.name === "AbortError") {
         S.lauf = "unterbrochen";
         S.verlauf.push({ wer: "cockpit", text: "Lauf unterbrochen." });

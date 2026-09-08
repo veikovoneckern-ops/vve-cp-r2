@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -579,7 +579,7 @@ async def neo_motor_schritt(system: str, verlauf: list[dict[str, Any]]) -> list[
         return await _claude_schritt(system, verlauf)
     return await _ollama_schritt(system, verlauf)
 
-async def neo_agentenlauf(system: str, erste_anfrage: str) -> tuple[str, list[dict[str, Any]], list[str]]:
+async def _neo_agentenlauf_kern(system: str, erste_anfrage: str, warteschlange: asyncio.Queue) -> None:
     verlauf: list[dict[str, Any]] = [{"role": "user", "content": [{"type": "text", "text": erste_anfrage}]}]
     geaendert: list[dict[str, Any]] = []
     schritte: list[str] = []
@@ -587,15 +587,19 @@ async def neo_agentenlauf(system: str, erste_anfrage: str) -> tuple[str, list[di
     for _ in range(MAX_SCHRITTE):
         try:
             bloecke = await neo_motor_schritt(system, verlauf)
-        except NeoSchrittLeer:
-            # Auch im zweiten Versuch nichts geliefert. Nicht den ganzen Lauf mit einem nackten
-            # 503 wegwerfen -- was Neo bis hierhin schon getan (und geschrieben!) hat, bleibt
-            # sichtbar, mit einer ehrlichen Notiz statt einer erfundenen Antwort.
-            hinweis = "Ollama hat auf diesen Schritt weder Text noch Werkzeugaufruf geliefert (auch im zweiten Versuch nicht)."
+        except (NeoSchrittLeer, HTTPException) as fehler:
+            # Nicht den ganzen Lauf mit einem nackten Fehler wegwerfen -- was Neo bis hierhin
+            # schon getan (und geschrieben!) hat, bleibt sichtbar, mit einer ehrlichen Notiz
+            # statt einer erfundenen Antwort. Nur wenn noch gar nichts geschah, ist es ein
+            # echter Fehlschlag ohne etwas zu zeigen.
+            hinweis = ("Ollama hat auf diesen Schritt weder Text noch Werkzeugaufruf geliefert "
+                       "(auch im zweiten Versuch nicht).") if isinstance(fehler, NeoSchrittLeer) else str(fehler.detail)
             if not schritte:
-                raise HTTPException(503, hinweis)
+                await warteschlange.put({"typ": "fehler", "text": hinweis})
+                return
             letzter_text = (letzter_text + "\n\n" if letzter_text else "") + hinweis
-            return letzter_text, geaendert, schritte
+            await warteschlange.put({"typ": "fertig", "text": letzter_text, "dateien": geaendert, "schritte": schritte})
+            return
         verlauf.append({"role": "assistant", "content": bloecke})
         werkzeug_aufrufe = [b for b in bloecke if b.get("type") == "tool_use"]
         text_teile = [b.get("text", "") for b in bloecke if b.get("type") == "text"]
@@ -603,20 +607,59 @@ async def neo_agentenlauf(system: str, erste_anfrage: str) -> tuple[str, list[di
         if neuer_text:
             letzter_text = neuer_text
         if not werkzeug_aufrufe:
-            return letzter_text, geaendert, schritte
+            await warteschlange.put({"typ": "fertig", "text": letzter_text, "dateien": geaendert, "schritte": schritte})
+            return
         ergebnisse: list[dict[str, Any]] = []
         for aufruf in werkzeug_aufrufe:
             name = aufruf.get("name") or ""
             eingabe = aufruf.get("input") or {}
             ergebnis = await werkzeug_ausfuehren(name, eingabe, geaendert)
-            schritte.append(f"{name}({_kurzfassung(eingabe)})")
+            schritt = f"{name}({_kurzfassung(eingabe)})"
+            schritte.append(schritt)
+            await warteschlange.put({"typ": "schritt", "schritt": schritt})
             ergebnisse.append({"type": "tool_result", "tool_use_id": aufruf.get("id", ""), "content": ergebnis})
         verlauf.append({"role": "user", "content": ergebnisse})
     letzter_text = (letzter_text + "\n\n" if letzter_text else "") + (
         f"Neo hat das Limit von {MAX_SCHRITTE} Arbeitsschritten erreicht, ohne fertig zu werden. "
         "Frag genauer oder in kleineren Schritten."
     )
-    return letzter_text, geaendert, schritte
+    await warteschlange.put({"typ": "fertig", "text": letzter_text, "dateien": geaendert, "schritte": schritte})
+
+_PULS_SEK = 20.0
+
+async def neo_agentenlauf(system: str, erste_anfrage: str):
+    """Async-Generator statt einer einzelnen Antwort am Ende: ein Auftrag mit vielen
+    Werkzeugaufrufen (bis zu VVEC_NEO_MAX_SCHRITTE) und einem denkenden Modell kann mehrere
+    Minuten dauern. Cloudflare (Edge-Proxy vor cockpit-v1-r2.vveorgxais.org) bricht eine HTTP-
+    Antwort, die laenger als rund 100s KEIN Byte sendet, mit einer HTML-Fehlerseite ab -- das
+    Frontend bekam dann statt JSON ein '<html>...' und `response.json()` scheiterte mit
+    'Unexpected token <'. Deshalb laeuft die eigentliche Arbeit in einem Hintergrund-Task, der
+    Ereignisse in eine Queue schreibt; hier kommt spaetestens alle _PULS_SEK Sekunden ein
+    Lebenszeichen heraus, auch wenn ein einzelner Schritt (grosses Denken, langsamer Befehl)
+    laenger braucht."""
+    warteschlange: asyncio.Queue = asyncio.Queue()
+    SENTINEL = object()
+
+    async def _lauf():
+        try:
+            await _neo_agentenlauf_kern(system, erste_anfrage, warteschlange)
+        finally:
+            await warteschlange.put(SENTINEL)
+
+    aufgabe = asyncio.create_task(_lauf())
+    try:
+        while True:
+            try:
+                ereignis = await asyncio.wait_for(warteschlange.get(), timeout=_PULS_SEK)
+            except asyncio.TimeoutError:
+                yield {"typ": "puls"}
+                continue
+            if ereignis is SENTINEL:
+                break
+            yield ereignis
+    finally:
+        if not aufgabe.done():
+            aufgabe.cancel()
 
 class EinrichtenKoerper(BaseModel):
     benutzername: str = Field(min_length=2, max_length=60)
@@ -835,30 +878,54 @@ async def datei_lesen(pfad: str):
         text = text[:120000] + "\n... [gekuerzt]"
     return {"pfad": pfad, "inhalt": text}
 
+def _ndjson(ereignis: dict[str, Any]) -> str:
+    return json.dumps(ereignis, ensure_ascii=False) + "\n"
+
 @app.post("/api/gespraech")
 async def gespraech(koerper: GespraechKoerper):
     an = koerper.an.strip().lower() or "neo"
     if an != "neo":
         journal_anhaengen({"wer": "cockpit", "was": "abgewiesen", "an": an})
-        return {"wer": "cockpit", "lauf": "Cockpit nimmt keine Fachrolle ausser Neo in Iteration 1.",
+        async def abgewiesen():
+            yield _ndjson({"typ": "fertig", "wer": "cockpit",
+                "lauf": "Cockpit nimmt keine Fachrolle ausser Neo in Iteration 1.",
                 "text": f"{an.capitalize()} arbeitet in dieser Iteration noch nicht. Schreib an Neo, wenn die Loesung selbst geaendert werden soll.",
-                "dateien": [], "schritte": []}
+                "dateien": [], "schritte": []})
+        return StreamingResponse(abgewiesen(), media_type="application/x-ndjson")
     anfrage = koerper.text
     if koerper.datei:
         ziel = pfad_pruefen(koerper.datei)
         if ziel.exists():
             anfrage += f"\n\n## Angehaengte Datei {koerper.datei}\n" + ziel.read_text(encoding="utf-8")[:8000]
     journal_anhaengen({"wer": "veiko", "was": "auftrag", "text": koerper.text[:500]})
-    text, geaenderte_dateien, schritte = await neo_agentenlauf(neo_system(), anfrage)
-    journal_anhaengen({"wer": "neo", "was": "antwort",
-                        "dateien": [d["pfad"] for d in geaenderte_dateien], "schritte": schritte})
-    if schritte:
-        lauf = f"Neo hat {len(schritte)} Arbeitsschritt(e) gemacht"
-        lauf += f" und {len(geaenderte_dateien)} Datei(en) geaendert." if geaenderte_dateien else "."
-    else:
-        lauf = f"Neo hat mit {AKTIVES_MODELL_LABEL} geantwortet, ohne nachzusehen."
-    return {"wer": "neo", "lauf": lauf, "text": text or "Neo hat nichts geantwortet.",
-            "dateien": geaenderte_dateien, "schritte": schritte, "modell": AKTIVES_MODELL_LABEL}
+
+    async def strom():
+        # NDJSON: ein Ereignis pro Zeile. "puls" haelt die Verbindung durch Cloudflare am Leben
+        # (siehe neo_agentenlauf), "schritt" zeigt live einen Werkzeugaufruf, "fertig"/"fehler"
+        # schliesst den Lauf ab -- siehe app.js fuer die Gegenseite.
+        text, geaenderte_dateien, schritte = "", [], []
+        async for ereignis in neo_agentenlauf(neo_system(), anfrage):
+            typ = ereignis["typ"]
+            if typ == "puls" or typ == "schritt":
+                yield _ndjson(ereignis)
+                continue
+            text = ereignis.get("text", "")
+            geaenderte_dateien = ereignis.get("dateien", [])
+            schritte = ereignis.get("schritte", [])
+            if typ == "fehler":
+                journal_anhaengen({"wer": "neo", "was": "fehler", "text": text[:500]})
+                yield _ndjson({"typ": "fehler", "text": text})
+                return
+        journal_anhaengen({"wer": "neo", "was": "antwort",
+                            "dateien": [d["pfad"] for d in geaenderte_dateien], "schritte": schritte})
+        if schritte:
+            lauf = f"Neo hat {len(schritte)} Arbeitsschritt(e) gemacht"
+            lauf += f" und {len(geaenderte_dateien)} Datei(en) geaendert." if geaenderte_dateien else "."
+        else:
+            lauf = f"Neo hat mit {AKTIVES_MODELL_LABEL} geantwortet, ohne nachzusehen."
+        yield _ndjson({"typ": "fertig", "wer": "neo", "lauf": lauf, "text": text or "Neo hat nichts geantwortet.",
+                       "dateien": geaenderte_dateien, "schritte": schritte, "modell": AKTIVES_MODELL_LABEL})
+    return StreamingResponse(strom(), media_type="application/x-ndjson")
 
 @app.post("/api/sicherung")
 async def sicherung_skizze():
