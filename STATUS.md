@@ -1,3 +1,50 @@
+# Stand: Cloudflare-Timeout-Bug behoben (8. September 2026, noch spaeter)
+
+Direkt im Anschluss an den Kontextfenster-Fix (naechster Abschnitt unten) meldete Veiko einen
+NEUEN Fehler: "Unexpected token '<', \"\"" im Cockpit.
+
+## Ursache gefunden und bestaetigt
+
+`cockpit-v1-r2.vveorgxais.org` laeuft hinter Cloudflare (per `CF-RAY`-Header am `/status`-Aufruf
+bestaetigt, nicht nur vermutet). Cloudflares Edge bricht eine HTTP-Antwort, die laenger als rund
+100 Sekunden KEIN Byte sendet, mit einer HTML-Fehlerseite ("524") ab. `/api/gespraech` wartete
+bisher (`stream: false`) auf den KOMPLETTEN Werkzeug-Kreislauf, bevor irgendetwas zurueckging --
+bei einem groesseren Auftrag (viele Schritte, ein denkendes Modell) laengst ueber 100s. Das
+Frontend bekam die Cloudflare-HTML-Seite statt JSON, `response.json()` scheiterte mit "Unexpected
+token '<'" -- exakt Veikos Meldung.
+
+## Fix
+
+- `server.py`: `neo_agentenlauf` ist jetzt ein Async-Generator. Die eigentliche Arbeit laeuft in
+  einem Hintergrund-Task, der Ereignisse in eine Queue schreibt; der Generator liefert daraus
+  mindestens alle 20 Sekunden etwas -- ein `"puls"` beim Warten auf einen langsamen Schritt, sonst
+  `"schritt"` nach jedem Werkzeugaufruf, zuletzt `"fertig"` oder `"fehler"`.
+- `/api/gespraech` streamt das jetzt als NDJSON (`StreamingResponse`, eine JSON-Zeile pro
+  Ereignis) statt einer einzigen Antwort am Ende.
+- `frontend/app.js`: `senden()` liest den Stream zeilenweise und zeigt Arbeitsschritte jetzt LIVE
+  an, waehrend Neo noch arbeitet -- vorher erst nach komplettem Abschluss. Kein Funktionsverlust,
+  eher ein sichtbarer Fortschritt mehr.
+
+## Getestet
+
+- Der urspruengliche Reproduktionsweg (direkter Aufruf von `neo_agentenlauf` als Generator, ohne
+  HTTP): Puls-Ereignisse liefen exakt bei 20s/40s/60s, "fertig" bei 73.6s -- Verhalten wie
+  entworfen.
+- Danach echte Ende-zu-Ende-Probe ueber echtes TCP/uvicorn (nicht nur In-Process-ASGI, das puffert
+  anders und haette den Fehler verschleiert): eine isolierte Testinstanz auf Port 8781, eigenes
+  Wegwerf-Konto, echter `POST /api/gespraech` -- dieselben Werte (20s/40s/60s Puls, 73.6s fertig),
+  Content-Type `application/x-ndjson`. Testinstanz danach entfernt, keine Produktionsdaten
+  beruehrt.
+- `python -m py_compile server.py` und `node --check frontend/app.js` fehlerfrei.
+- Live-Dienst neu gestartet, `/status` antwortet, Git-Stand auf dem Server geprueft (`git log`
+  zeigt den Fix-Commit, `git status` sauber bis auf ein altes `nohup.out`, das nicht von dieser
+  Aenderung stammt).
+
+Noch nicht getestet: Veikos konkreter Auftrag (Cockpit-Nachbau) im Cockpit selbst -- das ist jetzt
+der naechste sinnvolle Schritt.
+
+---
+
 # Stand: Ollama-Kontextfenster-Bug behoben (8. September 2026, spaeter)
 
 Veiko meldete: "Ollama lieferte weder Text noch Werkzeugaufruf" -- Neo brach bei einem groesseren
