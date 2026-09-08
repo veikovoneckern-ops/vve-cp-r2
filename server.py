@@ -3,7 +3,7 @@
 (auflisten, lesen, durchsuchen, Aenderung vorschlagen) statt eines einzelnen Textblocks --
 dieselbe Arbeitsweise wie ein Werkzeug-Agent, nur serverseitig und an dieses Projekt gebunden."""
 from __future__ import annotations
-import hashlib, json, os, secrets, smtplib, time
+import asyncio, hashlib, json, os, re, secrets, smtplib, time
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
@@ -32,7 +32,8 @@ NEO_ANBIETER = os.environ.get("VVEC_NEO_ANBIETER", "lokal").strip().lower()
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
 CLAUDE_MODELL = os.environ.get("VVEC_NEO_CLAUDE_MODELL", "").strip()
 AKTIVES_MODELL_LABEL = f"claude:{CLAUDE_MODELL}" if NEO_ANBIETER == "claude" else NEO_MODELL
-MAX_SCHRITTE = int(os.environ.get("VVEC_NEO_MAX_SCHRITTE", "8"))
+MAX_SCHRITTE = int(os.environ.get("VVEC_NEO_MAX_SCHRITTE", "40"))
+BEFEHL_TIMEOUT_SEK = int(os.environ.get("VVEC_NEO_BEFEHL_TIMEOUT", "120"))
 
 # Anmeldung. Ein Konto (dieses Cockpit ist fuer einen Nutzer gebaut, siehe UEBERGABE.md
 # von Release 1) -- Einrichten, Anmelden, Abmelden, Passwort aendern, Passwort per
@@ -52,12 +53,44 @@ SITZUNGEN: dict[str, dict[str, Any]] = {}
 
 ERLAUBTE_ENDUNGEN = {".py", ".js", ".css", ".html", ".md", ".json", ".txt"}
 VERBOTENE_TEILE = {".venv", "__pycache__", ".git", "node_modules"}
-# Wohin Neo tatsaechlich schreiben darf -- dieselbe Liste wie in anforderungen/AUFTRAG-NEO.md
-# Abschnitt 6.2. daten/ traegt Laufzeitbestand (Einstellungen, Journal) und ist bewusst nicht
-# dabei: wer dort schreibt, ueberschreibt Zustand statt Code.
-SCHREIB_ERLAUBT = ("server.py", "frontend/", "anforderungen/", "doku/", "tests/", "werkzeug/",
-                    "systemd/", "rollen.json", "requirements.txt", "README.md", "STATUS.md",
-                    ".gitignore")
+
+# Volle Serverreichweite (Veikos ausdruecklicher Wunsch, 9. September 2026): Neo arbeitet
+# nicht mehr nur im eigenen Projektordner, sondern mit denselben Rechten wie der Nutzer
+# vveadmin auf dem ganzen Server -- liest, schreibt und fuehrt Befehle sofort aus, ohne
+# Rueckfrage. Eine kleine, harte Grenze bleibt trotzdem, dieselbe die auch fuer mich (Claude)
+# gilt: keine Systemverzeichnisse, keine Zugangsdaten. Dazu, projektspezifisch: die
+# AUSGELIEFERTEN Release-1-Dateien (/opt/vvec, /srv/www) sind vom Schreiben ausgenommen, weil
+# Release 1 eine eigene geprüfte Auslieferung mit Pruefsummen und automatischem Zurueckrollen
+# hat (vvec-update.sh) -- direktes Ueberschreiben ginge daran vorbei. Lesen bleibt ueberall
+# erlaubt, auch dort.
+GESPERRTE_SCHREIBPFADE = tuple(
+    str(Path(p).expanduser()) for p in (
+        "/etc", "/boot", "/sys", "/proc", "/root", "~/.ssh",
+        "/etc/sudoers", "/etc/sudoers.d", "/opt/vvec", "/srv/www",
+    )
+)
+
+def pfad_gesperrt(ziel: Path) -> bool:
+    ziel_s = str(ziel)
+    return any(ziel_s == g or ziel_s.startswith(g.rstrip("/") + "/") for g in GESPERRTE_SCHREIBPFADE)
+
+def pfad_aufloesen(pfad: str) -> Path:
+    p = Path(pfad.strip()).expanduser()
+    if not p.is_absolute():
+        p = WURZEL / p
+    return p.resolve()
+
+# Ein kleiner, harter Riegel gegen die wenigen Befehle, die den Server selbst lahmlegen oder
+# Daten unwiederbringlich vernichten wuerden -- alles andere laeuft ungefragt, wie vereinbart.
+BEFEHL_GESPERRT_MUSTER = [
+    r"\brm\s+-[a-z]*r[a-z]*f[a-z]*\s+/(\s|$)",   # rm -rf / (und Varianten der Flag-Reihenfolge)
+    r"\brm\s+-[a-z]*r[a-z]*f[a-z]*\s+/home\b",
+    r"\bmkfs(\.\w+)?\b",
+    r"\bdd\s+.*of=/dev/",
+    r"\b(shutdown|poweroff|halt)\b",
+    r"\breboot\b",
+]
+BEFEHL_GESPERRT_REGEX = re.compile("|".join(BEFEHL_GESPERRT_MUSTER), re.IGNORECASE)
 
 app = FastAPI(title="vve-cp-r2")
 START = time.time()
@@ -277,9 +310,11 @@ WERKZEUGE: list[dict[str, Any]] = [
     {
         "name": "datei_schreiben",
         "description": (
-            "Schlaegt die vollstaendige neue Fassung einer Datei vor. Schreibt NICHT sofort -- "
-            "Veiko sieht den Vorschlag im Cockpit und entscheidet mit dem Knopf 'Einspielen'. "
-            "'inhalt' muss die komplette Zieldatei sein, kein Ausschnitt und kein '...'."
+            "Schreibt sofort die vollstaendige neue Fassung einer Datei -- irgendwo auf dem "
+            "Server, nicht nur im r2-Projekt (absoluter Pfad, oder relativ zum r2-Ordner). "
+            "Keine Rueckfrage, keine Bestaetigung. 'inhalt' muss die komplette Zieldatei sein, "
+            "kein Ausschnitt und kein '...'. Eine kleine Sperrliste bleibt: Systemverzeichnisse "
+            "und die ausgelieferten Release-1-Dateien unter /opt/vvec und /srv/www."
         ),
         "input_schema": {
             "type": "object",
@@ -289,6 +324,23 @@ WERKZEUGE: list[dict[str, Any]] = [
                 "begruendung": {"type": "string"},
             },
             "required": ["pfad", "inhalt"],
+        },
+    },
+    {
+        "name": "befehl_ausfuehren",
+        "description": (
+            "Fuehrt einen Shell-Befehl auf dem Server aus, mit denselben Rechten wie der Nutzer "
+            "vveadmin (kein sudo-Passwort verfuegbar). Laeuft sofort, ohne Rueckfrage. "
+            "Zeitlimit 120 Sekunden. Arbeitsverzeichnis per 'arbeitsverzeichnis' waehlbar, sonst "
+            "der r2-Projektordner. Fuer git, Tests, Pakete, Dienste neu starten, Server-Erkundung."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "befehl": {"type": "string"},
+                "arbeitsverzeichnis": {"type": "string"},
+            },
+            "required": ["befehl"],
         },
     },
 ]
@@ -307,22 +359,27 @@ def _kurzfassung(eingabe: dict[str, Any]) -> str:
         teile.append(f"{schluessel}={text}")
     return ", ".join(teile)
 
-def werkzeug_ausfuehren(name: str, eingabe: dict[str, Any], vorschlaege: list[dict[str, Any]]) -> str:
+async def werkzeug_ausfuehren(name: str, eingabe: dict[str, Any], geaendert: list[dict[str, Any]]) -> str:
     if name == "dateien_auflisten":
         anfang = str(eingabe.get("anfang") or "").replace("\\", "/").lstrip("/")
         treffer = [p for p in dateibaum() if p.startswith(anfang)] if anfang else dateibaum()
         return "\n".join(treffer) if treffer else "Keine Dateien gefunden."
     if name == "datei_lesen":
         pfad = str(eingabe.get("pfad") or "")
+        if not pfad:
+            return "Fehler: 'pfad' fehlt."
         try:
-            ziel = pfad_pruefen(pfad)
-        except HTTPException as fehler:
-            return f"Fehler: {fehler.detail}"
+            ziel = pfad_aufloesen(pfad)
+        except OSError as fehler:
+            return f"Fehler: {fehler}"
         if not ziel.exists() or not ziel.is_file():
-            return f"Datei '{pfad}' existiert nicht."
-        text = ziel.read_text(encoding="utf-8", errors="replace")
-        if len(text) > 8000:
-            text = text[:8000] + "\n... [gekuerzt, Datei ist laenger -- gezielt in Abschnitten lesen]"
+            return f"Datei '{ziel}' existiert nicht."
+        try:
+            text = ziel.read_text(encoding="utf-8", errors="replace")
+        except OSError as fehler:
+            return f"Fehler beim Lesen von '{ziel}': {fehler}"
+        if len(text) > 12000:
+            text = text[:12000] + "\n... [gekuerzt, Datei ist laenger -- gezielt in Abschnitten lesen]"
         return text
     if name == "suche":
         begriff = str(eingabe.get("text") or "").strip().lower()
@@ -344,26 +401,59 @@ def werkzeug_ausfuehren(name: str, eingabe: dict[str, Any], vorschlaege: list[di
                         break
             if len(treffer) >= 50:
                 break
-        return "\n".join(treffer) if treffer else "Keine Treffer."
+        return "\n".join(treffer) if treffer else "Keine Treffer. (Nur der r2-Projektordner -- fuer den Rest des Servers befehl_ausfuehren mit grep/find nutzen.)"
     if name == "datei_schreiben":
-        pfad = str(eingabe.get("pfad") or "").replace("\\", "/").lstrip("/")
+        pfad = str(eingabe.get("pfad") or "")
         inhalt = eingabe.get("inhalt")
         begruendung = str(eingabe.get("begruendung") or "")
         if not pfad:
             return "Fehler: 'pfad' fehlt."
         if inhalt is None:
             return "Fehler: 'inhalt' fehlt. Schick die vollstaendige Zieldatei."
-        if not schreiben_erlaubt(pfad):
-            return f"Fehler: '{pfad}' liegt ausserhalb der erlaubten Pfade. Erlaubt: " + ", ".join(SCHREIB_ERLAUBT)
-        vorhanden = next((v for v in vorschlaege if v["pfad"] == pfad), None)
-        if vorhanden:
-            vorhanden["inhalt"] = str(inhalt)
-            vorhanden["begruendung"] = begruendung
-        else:
-            if len(vorschlaege) >= 20:
-                return "Fehler: Limit von 20 vorgeschlagenen Dateien je Lauf erreicht."
-            vorschlaege.append({"pfad": pfad, "inhalt": str(inhalt), "begruendung": begruendung})
-        return f"Vorschlag fuer '{pfad}' gemerkt ({len(str(inhalt))} Zeichen). Wird erst nach Klick auf 'Einspielen' geschrieben."
+        try:
+            ziel = pfad_aufloesen(pfad)
+        except OSError as fehler:
+            return f"Fehler: {fehler}"
+        if pfad_gesperrt(ziel):
+            return (f"Fehler: '{ziel}' ist gesperrt (Systempfad oder ausgelieferte Release-1-Dateien -- "
+                     "dort direkt zu schreiben wuerde an der geprueften Auslieferung vorbei gehen).")
+        try:
+            ziel.parent.mkdir(parents=True, exist_ok=True)
+            ziel.write_text(str(inhalt), encoding="utf-8")
+        except OSError as fehler:
+            return f"Fehler beim Schreiben von '{ziel}': {fehler}"
+        geaendert.append({"pfad": str(ziel), "begruendung": begruendung})
+        return f"Geschrieben: '{ziel}' ({len(str(inhalt))} Zeichen)."
+    if name == "befehl_ausfuehren":
+        befehl = str(eingabe.get("befehl") or "").strip()
+        if not befehl:
+            return "Fehler: 'befehl' fehlt."
+        if BEFEHL_GESPERRT_REGEX.search(befehl):
+            return ("Fehler: dieser Befehl ist gesperrt (Server-Neustart/-Abschaltung, Formatieren, "
+                     "rekursives Loeschen auf Systemebene).")
+        arbeitsverzeichnis = str(eingabe.get("arbeitsverzeichnis") or "").strip()
+        try:
+            cwd = pfad_aufloesen(arbeitsverzeichnis) if arbeitsverzeichnis else WURZEL
+        except OSError as fehler:
+            return f"Fehler: {fehler}"
+        if not cwd.exists() or not cwd.is_dir():
+            return f"Fehler: Arbeitsverzeichnis '{cwd}' existiert nicht."
+        try:
+            prozess = await asyncio.create_subprocess_shell(
+                befehl, cwd=str(cwd),
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            )
+        except OSError as fehler:
+            return f"Fehler beim Starten: {fehler}"
+        try:
+            ausgabe_bytes, _ = await asyncio.wait_for(prozess.communicate(), timeout=BEFEHL_TIMEOUT_SEK)
+        except asyncio.TimeoutError:
+            prozess.kill()
+            return f"Fehler: Befehl lief laenger als {BEFEHL_TIMEOUT_SEK}s und wurde abgebrochen."
+        ausgabe = ausgabe_bytes.decode("utf-8", errors="replace")
+        if len(ausgabe) > 6000:
+            ausgabe = ausgabe[:6000] + "\n... [gekuerzt]"
+        return f"Exit-Code {prozess.returncode}\n{ausgabe}".strip()
     return f"Fehler: unbekanntes Werkzeug '{name}'."
 
 def neo_system() -> str:
@@ -371,15 +461,20 @@ def neo_system() -> str:
     baum = "\n".join(dateibaum())
     return (
         kontext
-        + "\n\n## Dateibaum jetzt\n" + baum
+        + "\n\n## Dateibaum des r2-Projekts jetzt\n" + baum
         + "\n\n## Wie du arbeitest\n"
-        "Du hast Werkzeuge: dateien_auflisten, datei_lesen, suche, datei_schreiben. Sieh nach, "
-        "was du brauchst, bevor du etwas ueber eine Datei behauptest oder aenderst -- nicht raten. "
-        "datei_schreiben legt nur einen Vorschlag an; geschrieben wird erst, wenn Veiko im Cockpit "
-        "auf 'Einspielen' klickt. Ruf datei_schreiben erst auf, nachdem du die Datei (falls vorhanden) "
-        "wirklich gelesen hast -- sonst ersetzt du unbekannten Bestand durch ein Geruest. Wenn du "
-        "fertig bist, schreib eine klare Antwort an Veiko in normalem Text, keine Code-Bloecke fuer "
-        "Dateien mehr -- dafuer gibt es jetzt das Werkzeug."
+        "Du hast Werkzeuge: dateien_auflisten, datei_lesen, suche (alle drei fuer das r2-Projekt), "
+        "datei_schreiben und befehl_ausfuehren (beide fuer den GANZEN Server, mit denselben Rechten "
+        "wie der Nutzer vveadmin). Sieh nach, was du brauchst, bevor du etwas ueber eine Datei oder "
+        "den Server behauptest -- nicht raten. datei_schreiben und befehl_ausfuehren wirken SOFORT, "
+        "ohne Rueckfrage -- das ist Absicht, arbeite entsprechend sorgfaeltig: lies eine Datei, "
+        "bevor du sie ersetzt, sonst wirfst du weg, was schon funktioniert. Eine kleine Sperrliste "
+        "bleibt: Systemverzeichnisse, Zugangsdaten, und die AUSGELIEFERTEN Release-1-Dateien unter "
+        "/opt/vvec und /srv/www (lesen ja, schreiben nein -- Release 1 hat eine eigene geprüfte "
+        "Auslieferung mit Ruecksprung bei Fehlern; wer daran etwas aendern will, aendert die Quelle "
+        "im Repo, nicht die laufende Auslieferung). Du hast kein sudo-Passwort. Bis zu " + str(MAX_SCHRITTE) +
+        " Werkzeugaufrufe je Antwort. Wenn du fertig bist, schreib eine klare Antwort an Veiko in "
+        "normalem Text, die sagt, was du tatsaechlich getan hast."
     )
 
 # ---------------------------------------------------------------------------
@@ -465,7 +560,7 @@ async def neo_motor_schritt(system: str, verlauf: list[dict[str, Any]]) -> list[
 
 async def neo_agentenlauf(system: str, erste_anfrage: str) -> tuple[str, list[dict[str, Any]], list[str]]:
     verlauf: list[dict[str, Any]] = [{"role": "user", "content": [{"type": "text", "text": erste_anfrage}]}]
-    vorschlaege: list[dict[str, Any]] = []
+    geaendert: list[dict[str, Any]] = []
     schritte: list[str] = []
     letzter_text = ""
     for _ in range(MAX_SCHRITTE):
@@ -477,12 +572,12 @@ async def neo_agentenlauf(system: str, erste_anfrage: str) -> tuple[str, list[di
         if neuer_text:
             letzter_text = neuer_text
         if not werkzeug_aufrufe:
-            return letzter_text, vorschlaege, schritte
+            return letzter_text, geaendert, schritte
         ergebnisse: list[dict[str, Any]] = []
         for aufruf in werkzeug_aufrufe:
             name = aufruf.get("name") or ""
             eingabe = aufruf.get("input") or {}
-            ergebnis = werkzeug_ausfuehren(name, eingabe, vorschlaege)
+            ergebnis = await werkzeug_ausfuehren(name, eingabe, geaendert)
             schritte.append(f"{name}({_kurzfassung(eingabe)})")
             ergebnisse.append({"type": "tool_result", "tool_use_id": aufruf.get("id", ""), "content": ergebnis})
         verlauf.append({"role": "user", "content": ergebnisse})
@@ -490,7 +585,7 @@ async def neo_agentenlauf(system: str, erste_anfrage: str) -> tuple[str, list[di
         f"Neo hat das Limit von {MAX_SCHRITTE} Arbeitsschritten erreicht, ohne fertig zu werden. "
         "Frag genauer oder in kleineren Schritten."
     )
-    return letzter_text, vorschlaege, schritte
+    return letzter_text, geaendert, schritte
 
 class EinrichtenKoerper(BaseModel):
     benutzername: str = Field(min_length=2, max_length=60)
@@ -524,9 +619,6 @@ class GespraechKoerper(BaseModel):
     text: str = Field(min_length=1, max_length=20000)
     an: str = "neo"
     datei: str | None = None
-
-class EinspielKoerper(BaseModel):
-    dateien: list[dict[str, Any]]
 
 @app.get("/status")
 async def status():
@@ -726,40 +818,16 @@ async def gespraech(koerper: GespraechKoerper):
         if ziel.exists():
             anfrage += f"\n\n## Angehaengte Datei {koerper.datei}\n" + ziel.read_text(encoding="utf-8")[:8000]
     journal_anhaengen({"wer": "veiko", "was": "auftrag", "text": koerper.text[:500]})
-    text, dateien_vorschlag, schritte = await neo_agentenlauf(neo_system(), anfrage)
+    text, geaenderte_dateien, schritte = await neo_agentenlauf(neo_system(), anfrage)
     journal_anhaengen({"wer": "neo", "was": "antwort",
-                        "dateien": [d["pfad"] for d in dateien_vorschlag], "schritte": schritte})
+                        "dateien": [d["pfad"] for d in geaenderte_dateien], "schritte": schritte})
     if schritte:
         lauf = f"Neo hat {len(schritte)} Arbeitsschritt(e) gemacht"
-        lauf += f" und schlaegt {len(dateien_vorschlag)} Datei(en) vor." if dateien_vorschlag else "."
+        lauf += f" und {len(geaenderte_dateien)} Datei(en) geaendert." if geaenderte_dateien else "."
     else:
         lauf = f"Neo hat mit {AKTIVES_MODELL_LABEL} geantwortet, ohne nachzusehen."
     return {"wer": "neo", "lauf": lauf, "text": text or "Neo hat nichts geantwortet.",
-            "dateien": dateien_vorschlag, "schritte": schritte, "modell": AKTIVES_MODELL_LABEL}
-
-@app.post("/api/neo/einspielen")
-async def neo_einspielen(koerper: EinspielKoerper):
-    geschrieben = []
-    abgelehnt = []
-    for eintrag in koerper.dateien:
-        pfad = str(eintrag.get("pfad") or "").replace("\\", "/").lstrip("/")
-        inhalt = eintrag.get("inhalt")
-        if inhalt is None:
-            abgelehnt.append({"pfad": pfad, "grund": "kein Inhalt"})
-            continue
-        if not schreiben_erlaubt(pfad):
-            abgelehnt.append({"pfad": pfad, "grund": "Pfad nicht in der erlaubten Liste"})
-            continue
-        try:
-            ziel = pfad_pruefen(pfad)
-        except HTTPException as fehler:
-            abgelehnt.append({"pfad": pfad, "grund": str(fehler.detail)})
-            continue
-        ziel.parent.mkdir(parents=True, exist_ok=True)
-        ziel.write_text(str(inhalt), encoding="utf-8")
-        geschrieben.append(pfad)
-    journal_anhaengen({"wer": "veiko", "was": "eingespielt", "dateien": geschrieben, "abgelehnt": abgelehnt})
-    return {"geschrieben": geschrieben, "abgelehnt": abgelehnt}
+            "dateien": geaenderte_dateien, "schritte": schritte, "modell": AKTIVES_MODELL_LABEL}
 
 @app.post("/api/sicherung")
 async def sicherung_skizze():

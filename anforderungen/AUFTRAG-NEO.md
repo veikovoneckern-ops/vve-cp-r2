@@ -235,3 +235,26 @@ Escaping-Problem, das Abschnitt 6 beschreibt.
 **Weiterhin keine Shell, kein Kommandoausfuehren.** Das wurde bewusst nicht gebaut (Grund und
 Abwaegung in `STATUS.md`). Wenn du das fuer eine Aufgabe brauchst, sag das und frag nach, statt es
 vorauszusetzen.
+
+## 10. Nachtrag, 9. September 2026 -- volle Serverreichweite, Abschnitt 7 teilweise ueberholt
+
+Veiko wollte ausdruecklich, dass du so arbeitest wie Claude Code: sofort, ohne Rueckfrage, mit
+Zugriff auf den ganzen Server. Das aendert einiges an Abschnitt 7 oben:
+
+- **"Keine Shell" (Nachtrag 9. September) gilt nicht mehr.** Du hast jetzt `befehl_ausfuehren` --
+  sofortige Ausfuehrung, dieselben Rechte wie `vveadmin`, kein sudo-Passwort.
+- **"Etwas auf den laufenden Server einspielen" ist jetzt woertlich das, was du tust.** `datei_schreiben`
+  schreibt sofort, nicht mehr als Vorschlag zum Einspielen -- diese Iteration LAEUFT auf dem Server,
+  du schreibst direkt dort.
+- **"Release 1 anfassen" ist jetzt technisch differenziert statt pauschal verboten:** Lesen ist
+  erlaubt (die AUSGELIEFERTEN Dateien unter `/opt/vvec` und `/srv/www`), Schreiben dorthin ist
+  serverseitig gesperrt -- nicht weil es dir verboten waere, es zu wollen, sondern weil Release 1
+  eine eigene geprüfte Auslieferung mit Rueckroll-Schutz hat und direktes Ueberschreiben daran
+  vorbeiginge. Das Quell-Repo von Release 1 (`vve-cp`) liegt ausserhalb dessen, was du von hier aus
+  siehst.
+- **Caddy-Konfiguration und systemd-Units bleiben unangetastet** -- das steht in Abschnitt 7 nicht
+  wegen einer technischen Werkzeug-Grenze, sondern weil es Veikos Entscheidung ist, wann und wie
+  sich der Zugang zum Server aendert. Diese Zurueckhaltung gilt weiter, auch mit `befehl_ausfuehren`
+  in der Hand.
+- Alles andere aus Abschnitt 7 -- kein Cloud-Guthaben vorschlagen, nicht nach `C:\` schreiben -- gilt
+  unveraendert.

@@ -14,7 +14,7 @@
     ort: "start",
     einstellungen: { thema: "dunkel", schrift_fluss: 18, schrift_neben: 16, schrift_nav: 15, schrift_eingabe: 18 },
     lage: null, rollen: null, server: null, lauf: "kein Lauf", logoLaeuft: false,
-    verlauf: [], vorschlag: null, eingabe: "", fehler: "",
+    verlauf: [], geaendert: null, eingabe: "", fehler: "",
     auth: { geladen: false, eingerichtet: false, angemeldet: false, benutzername: null, email: null },
     authAnsicht: "login", authFehler: "", authHinweis: "", resetToken: null, nutzerliste: null
   };
@@ -308,20 +308,17 @@
       return '<div class="blase' + (eintrag.wer === "veiko" ? " ich" : "") + '">' +
         '<div class="wer">' + esc(eintrag.wer) + "</div><div>" + esc(eintrag.text) + "</div>" + schritte + "</div>";
     }).join("");
-    let vorschlag = "";
-    if (S.vorschlag && S.vorschlag.length) {
-      const zeilen = S.vorschlag.map(function (d) {
+    let geaendert = "";
+    if (S.geaendert && S.geaendert.length) {
+      const zeilen = S.geaendert.map(function (d) {
         return "<div><code>" + esc(d.pfad) + "</code> — " + esc(d.begruendung || "Aenderung") + "</div>";
       }).join("");
-      vorschlag = '<div class="vorschlag"><h2>Neo schlaegt Dateien vor</h2>' + zeilen +
-        '<div class="zeile" style="margin-top:10px">' +
-        '<button type="button" class="primaer" id="btn-einspielen">Einspielen</button>' +
-        '<button type="button" class="gefahr" id="btn-verwerfen">Verwerfen</button></div></div>';
+      geaendert = '<div class="vorschlag"><h2>Neo hat geaendert</h2>' + zeilen + "</div>";
     }
     return "<h1>Lage</h1><p class=\"leise\">Gespraech mit Neo. Andere Rollen kommen in der naechsten Stufe.</p>" +
       '<div class="karten">' + karten + '</div><div class="gespraech">' +
       '<div class="verlauf">' + (blasen || '<p class="leise">Noch kein Gespraech in dieser Sitzung.</p>') + "</div>" +
-      vorschlag + '<div class="eingabe-box"><textarea id="feld" placeholder="Was soll Neo an der Loesung aendern oder erklaeren?">' +
+      geaendert + '<div class="eingabe-box"><textarea id="feld" placeholder="Was soll Neo an der Loesung aendern oder erklaeren?">' +
       esc(S.eingabe) + '</textarea><div class="zeile" style="margin-top:8px">' +
       '<button type="button" class="primaer" id="btn-senden">An Neo</button>' +
       '<button type="button" class="neben" id="btn-abbruch">Unterbrechen</button></div></div></div>';
@@ -392,10 +389,6 @@
     if (sendenBtn) sendenBtn.addEventListener("click", senden);
     const abbruch = $("#btn-abbruch");
     if (abbruch) abbruch.addEventListener("click", unterbrechen);
-    const ein = $("#btn-einspielen");
-    if (ein) ein.addEventListener("click", einspielen);
-    const weg = $("#btn-verwerfen");
-    if (weg) weg.addEventListener("click", function () { S.vorschlag = null; zeichnen(); });
     const btnPasswortAendern = $("#btn-passwort-aendern");
     if (btnPasswortAendern) btnPasswortAendern.addEventListener("click", passwortAendern);
     const btnAbmelden = $("#btn-abmelden");
@@ -427,8 +420,8 @@
     const text = (S.eingabe || "").trim();
     if (!text || S.logoLaeuft) return;
     S.verlauf.push({ wer: "veiko", text: text });
-    S.eingabe = ""; S.fehler = ""; S.vorschlag = null;
-    S.logoLaeuft = true; S.lauf = "Neo liest den Auftrag …"; zeichnen();
+    S.eingabe = ""; S.fehler = ""; S.geaendert = null;
+    S.logoLaeuft = true; S.lauf = "Neo arbeitet …"; zeichnen();
     steuer = new AbortController();
     try {
       const antwort = await fetch("/api/gespraech", {
@@ -438,7 +431,7 @@
       const paket = await antwort.json();
       if (!antwort.ok) throw new Error(paket.detail || "Neo-Fehler");
       S.verlauf.push({ wer: paket.wer || "neo", text: paket.text || "", schritte: paket.schritte || [] });
-      S.vorschlag = paket.dateien || [];
+      S.geaendert = paket.dateien || [];
       S.lauf = paket.lauf || "fertig";
     } catch (err) {
       if (err.name === "AbortError") {
@@ -456,26 +449,6 @@
   function unterbrechen() {
     if (steuer) steuer.abort();
     S.logoLaeuft = false; S.lauf = "unterbrochen"; zeichnen();
-  }
-  async function einspielen() {
-    if (!S.vorschlag || !S.vorschlag.length) return;
-    S.lauf = "Veiko spielt ein …"; S.logoLaeuft = true; zeichnen();
-    try {
-      const paket = await api("/api/neo/einspielen", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dateien: S.vorschlag })
-      });
-      const abgelehnt = paket.abgelehnt || [];
-      S.lauf = "eingespielt: " + (paket.geschrieben || []).join(", ") +
-        (abgelehnt.length ? " — abgelehnt: " + abgelehnt.map(function (a) { return a.pfad + " (" + a.grund + ")"; }).join(", ") : "");
-      S.vorschlag = null;
-      S.verlauf.push({ wer: "cockpit", text: S.lauf });
-    } catch (err) {
-      S.fehler = String(err.message || err);
-      S.lauf = "Einspielen fehlgeschlagen";
-    } finally {
-      S.logoLaeuft = false; zeichnen();
-    }
   }
   async function speichernEinstellungen() {
     schriftAnwenden();

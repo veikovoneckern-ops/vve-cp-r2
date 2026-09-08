@@ -77,25 +77,30 @@ vorzutaeuschen, die nie ankommt. `VVEC_COOKIE_SICHER=true` setzt das Sitzungs-Co
 sobald wirklich HTTPS davor steht (Caddy/Cloudflare) -- vorher wuerde der Browser das
 Cookie sonst gar nicht erst senden.
 
-## Was Iteration 2 kann
+## Was Iteration 3 kann
 
-- Leiste: Start, Themen, Stab, Eingang, Reports, Server, Einstellungen
+- Leiste: Start, Themen, Stab, Eingang, Reports, Server, Einstellungen, Nutzerverwaltung
 - Arbeitsschild oben bei jedem Ortswechsel
 - Schrift und Hell/Dunkel in Einstellungen (gespeichert unter `daten/einstellungen.json`)
+- Anmeldung mit mehreren Konten (siehe oben)
 - Gespraech auf der Startseite, standardmaessig mit **Neo**
-- **Neo arbeitet jetzt mit echten Werkzeugen**, nicht mehr mit einem einzelnen Textblock: er kann
-  den Dateibaum auflisten, einzelne Dateien lesen, das Projekt durchsuchen und -- erst danach --
-  eine vollstaendige neue Fassung einer Datei vorschlagen. Mehrere Werkzeugaufrufe hintereinander
-  sind moeglich (bis zu `VVEC_NEO_MAX_SCHRITTE`, Vorgabe 8), bevor er antwortet. Jede Antwort zeigt
-  aufklappbar, welche Schritte er dafuer gemacht hat.
-- Geschrieben wird weiterhin **nichts von allein** -- ein Vorschlag landet erst nach Klick auf
-  "Einspielen" auf der Platte, und nur innerhalb der erlaubten Pfade (`server.py`, `frontend/`,
-  `anforderungen/`, `doku/`, `tests/`, `werkzeug/`, `systemd/`, `rollen.json`, `requirements.txt`,
-  `README.md`, `STATUS.md`, `.gitignore`). `daten/` ist gesperrt, das ist Laufzeitbestand.
+- **Neo arbeitet mit voller Serverreichweite, sofort und ohne Rueckfrage** -- so wie Claude Code:
+  `dateien_auflisten`, `datei_lesen`, `suche` fuer das r2-Projekt; `datei_lesen` und `datei_schreiben`
+  ausserdem fuer jeden Pfad auf dem Server; `befehl_ausfuehren` fuer Shell-Befehle mit denselben
+  Rechten wie der Nutzer `vveadmin` (kein sudo-Passwort). Bis zu `VVEC_NEO_MAX_SCHRITTE`
+  (Vorgabe 40) Werkzeugaufrufe je Antwort, jede Antwort zeigt aufklappbar, welche Schritte das waren.
+  `VVEC_NEO_BEFEHL_TIMEOUT` (Vorgabe 120s) begrenzt einen einzelnen Befehl.
+- **Eine kleine, harte Grenze bleibt**: Systemverzeichnisse (`/etc`, `/boot`, `/root`, `~/.ssh`,
+  Sudoers) und die **ausgelieferten** Release-1-Dateien (`/opt/vvec`, `/srv/www`) sind vom Schreiben
+  ausgenommen -- Release 1 hat eine eigene geprüfte Auslieferung mit Rueckroll-Schutz
+  (`vvec-update.sh`), direktes Ueberschreiben ginge daran vorbei. Lesen bleibt ueberall erlaubt.
+  Dazu ein paar gesperrte Einzelbefehle (Server-Neustart/-Abschaltung, Formatieren, `rm -rf /`
+  oder `/home`).
 
 ## Was bewusst fehlt
 
-Jason-Autonomie, Whisper/Piper, Comfy-Erzeugen, Org-Chart-Ziehen, Plaud-Abzug, Caddy, Graph-Sicherung
-verdrahtet, ein eigenes Shell-Werkzeug fuer Neo (bewusst nicht gebaut, siehe STATUS.md).
+Jason-Autonomie, Whisper/Piper, Comfy-Erzeugen, Org-Chart-Ziehen, Plaud-Abzug, Caddy-Konfiguration
+und systemd-Units des Servers bleiben Veikos Entscheidung (Neo fasst sie nicht an), Graph-Sicherung
+verdrahtet.
 
 Sicherung soll spaeter in die OneDrive-**Cloud** (Graph), nie nach `C:\`.

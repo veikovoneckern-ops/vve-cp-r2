@@ -1,3 +1,56 @@
+# Stand Iteration 3 (9. September 2026)
+
+Veiko: "stell sicher das ich mit neo genau so arbeiten kann wie mit dir, neo soll alle
+notwendigen rechte, werkzeuge und tools haben." Nachgefragt (Ausfuehrung sofort oder erst
+vorschlagen; nur r2-Projekt oder ganzer Server) -- Antwort: sofort, ganzer Server, wie bei mir.
+
+## Was sich geaendert hat
+
+- **`datei_schreiben` wirkt jetzt sofort**, nicht mehr als Vorschlag mit "Einspielen"-Knopf.
+  `/api/neo/einspielen` und der ganze Vorschlags-Zustand im Frontend sind entfernt.
+- **`datei_lesen`/`datei_schreiben` funktionieren jetzt mit jedem Pfad auf dem Server**, nicht nur
+  im r2-Projektordner (absolut oder mit `~`). `dateien_auflisten`/`suche` bleiben auf das
+  r2-Projekt beschraenkt (schneller Standardfall; fuer den Rest gibt es `befehl_ausfuehren`).
+- **Neues Werkzeug `befehl_ausfuehren`**: Shell-Befehl, sofort, Rechte von `vveadmin`, 120s
+  Zeitlimit (`VVEC_NEO_BEFEHL_TIMEOUT`), Arbeitsverzeichnis waehlbar.
+- **`VVEC_NEO_MAX_SCHRITTE` Vorgabe von 8 auf 40 angehoben.**
+- **Sicherheitsfloor statt Positivliste**: Die alte Pfad-Erlaubnisliste (`SCHREIB_ERLAUBT`, nur
+  bestimmte r2-Dateien) ist ersetzt durch eine kleine harte Sperrliste (`GESPERRTE_SCHREIBPFADE`):
+  Systemverzeichnisse, Zugangsdaten, und die AUSGELIEFERTEN Release-1-Pfade `/opt/vvec` und
+  `/srv/www` (lesen ja, schreiben nein -- Release 1 hat eine eigene geprüfte Auslieferung mit
+  Rueckroll-Schutz). Dazu ein Muster-Riegel gegen einzelne katastrophale Befehle (Neustart/
+  Abschalten, Formatieren, `rm -rf /` oder `/home`).
+- `anforderungen/NEO-KONTEXT.md` (Neos Systemprompt-Basis) und `anforderungen/AUFTRAG-NEO.md`
+  (Nachtrag Abschnitt 10) an die neue Reichweite angepasst -- vorher stand dort woertlich
+  "Release 1 nicht anfassen" und "keine Shell", beides jetzt ueberholt bzw. differenziert.
+
+## Was das konkret bedeutet -- offen gesagt
+
+- `daten/benutzer.json` (Passwort-Hashes) ist **nicht** gegen Neos eigene Werkzeuge geschuetzt --
+  dieselbe volle Reichweite, die Veiko wollte, deckt auch die eigenen Laufzeitdaten ab. Ein Fehler
+  oder eine missverstandene Anweisung koennte das Konto beschaedigen; wiederherstellbar per SSH
+  (README, Abschnitt Anmeldung -- Konto notfalls per Hand in der JSON-Datei oder durch Loeschen
+  und Neueinrichten reparieren).
+- Ein Shell-Werkzeug laesst sich technisch nicht auf einen Ordner einsperren (anders als die
+  Datei-Werkzeuge). Die Sperrliste schuetzt nur die eindeutig katastrophalen Faelle, nicht
+  "alles ausserhalb von r2". Das ist Absicht, keine Luecke -- siehe Veikos Entscheidung oben.
+- Dieses Cockpit ist jetzt oeffentlich erreichbar (`https://cockpit-v1-r2.vveorgxais.org`),
+  geschuetzt nur durch Benutzername/Passwort (kein MFA). Wer sich anmeldet -- ob Veiko oder
+  jemand mit erratenen/geleakten Zugangsdaten -- hat damit effektiv Shell-Zugriff auf den Server.
+
+## Getestet
+
+Lokal mit einem Test-Ersatz fuer Ollama, der `dateien_auflisten` → `befehl_ausfuehren` (echo) →
+`datei_schreiben` → einen absichtlich gesperrten Befehl (`rm -rf /`) durchspielt: alle vier Schritte
+liefen wie erwartet, die Datei stand sofort auf der Platte (kein Einspielen noetig), der gesperrte
+Befehl wurde mit einer Fehlermeldung abgewiesen statt ausgefuehrt. Die Sperrliste fuer Schreibpfade
+zusaetzlich direkt auf dem echten Linux-Server geprueft (`/etc/passwd`, `/opt/vvec/*`, `/srv/www/*`,
+`~/.ssh/authorized_keys` → gesperrt; eigene Projekt- und Home-Dateien → erlaubt) -- ein erster
+Test auf dem Windows-Rechner hatte durch Windows-Pfadkonventionen falsch negative Ergebnisse
+gezeigt und war deshalb nicht aussagekraeftig; der Server-Test ist es.
+
+---
+
 # Stand Iteration 2
 
 ## Nachtrag: Mehrbenutzer und ein schwerer Bug behoben (8. September, spaeter)
