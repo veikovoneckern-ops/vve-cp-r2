@@ -1,3 +1,39 @@
+# Stand: "Cannot set properties of null" behoben (8. September 2026, noch spaeter)
+
+Direkt danach wieder ein Abbruch, diesmal ein Frontend-Fehler: "Cannot set properties of null
+(setting 'innerHTML')". Veiko zu Recht ungeduldig ("bring das jetzt endlich in Ordnung").
+
+## Ursache (plausibel gemacht, nicht 1:1 mit Veikos Browser nachgestellt)
+
+Der vorherige Live-Fix rief bei JEDEM einzelnen Werkzeugschritt `zeichnen()` auf -- das baut die
+GESAMTE Seite neu auf (Leiste, Schild, Eingabefeld samt Tippinhalt, alle Knoepfe), nicht nur die
+Schritte-Anzeige. Bei 34 Schritten also 34 volle Neuaufbauten, moeglicherweise waehrend Veiko noch
+im Eingabefeld tippte oder navigierte -- ein voller DOM-Neuaufbau mitten in einer laufenden
+Browser-Interaktion ist ein plausibler Ausloeser fuer einen Zugriff auf ein gerade ersetztes
+Element.
+
+## Fix
+
+- Waehrend eines Laufs bekommt der Platzhalter-Eintrag ein `live=true`-Flag; `startHtml()` rendert
+  dafuer feste IDs. Zwei neue Funktionen (`liveSchrittAnhaengen`, `schildLaufSetzen`)
+  aktualisieren nur noch diese Textinhalte gezielt -- kein Neuaufbau von App/Leiste/Eingabefeld
+  mehr pro Schritt. Erst am Ende (fertig/fehler/abgebrochen) EIN voller `zeichnen()`-Aufruf.
+- Zusaetzliche Absicherung: alle `document.getElementById("app"/"view")`-Zugriffe jetzt
+  null-geprueft -- degradiert im Rest-Fall still statt abzustuerzen.
+
+## Getestet
+
+Ein Wegwerf-Mock-Backend (echtes NDJSON-Timing, 34 synthetische Schritte, kein echtes Ollama)
+diente dazu, den echten Cockpit-Frontend-Code im echten Browser durchzuklicken -- gezielt der
+plausibelste Ausloeser nachgestellt: durchgehend im Eingabefeld TIPPEN, waehrend der Lauf im
+Hintergrund voranschreitet, sowie waehrenddessen zu einem anderen Ort navigieren und zurueck.
+Mit dem alten Code war das nicht gegengeprueft worden (Luecke, die zu diesem Fehler gefuehrt
+haben duerfte); mit dem neuen Code: keine Konsolenfehler, alle 34 Schritte kamen sauber live an,
+Eingabefeld blieb unangetastet. Nicht 1:1 Veikos echten Browser/Auftrag -- falls es nochmal
+auftritt, brauche ich Browser + Konsolenausgabe fuer eine harte Reproduktion.
+
+---
+
 # Stand: ReadTimeout bei langen Auftraegen behoben, Markdown-Rendering (8. September 2026, noch spaeter)
 
 Veiko schickte einen echten, grossen Auftrag (Release 1 mit Release 2 vergleichen). Neo machte
