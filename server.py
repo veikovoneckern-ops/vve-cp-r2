@@ -41,6 +41,10 @@ BEFEHL_TIMEOUT_SEK = int(os.environ.get("VVEC_NEO_BEFEHL_TIMEOUT", "120"))
 # Werkzeugaufruf entsteht -- das war der 503 "Ollama lieferte weder Text noch Werkzeugaufruf".
 # 65536 wurde auf dem Server geprueft (laedt auf den zwei 3090en, je ~12GB frei danach).
 NEO_NUM_CTX = int(os.environ.get("VVEC_NEO_NUM_CTX", "65536"))
+# 180s war zu knapp fuer einen weit fortgeschrittenen Lauf (grosser Kontext -> langsameres
+# Prefill). Der Stream haelt die Verbindung selbst am Leben (siehe neo_agentenlauf), ein hohes
+# Zeitlimit hier kostet also nichts mehr -- nur die tatsaechliche Antwortzeit von Ollama zaehlt.
+OLLAMA_TIMEOUT_SEK = float(os.environ.get("VVEC_NEO_OLLAMA_TIMEOUT", "600"))
 
 # Anmeldung. Ein Konto (dieses Cockpit ist fuer einen Nutzer gebaut, siehe UEBERGABE.md
 # von Release 1) -- Einrichten, Anmelden, Abmelden, Passwort aendern, Passwort per
@@ -481,13 +485,55 @@ def neo_system() -> str:
         "Auslieferung mit Ruecksprung bei Fehlern; wer daran etwas aendern will, aendert die Quelle "
         "im Repo, nicht die laufende Auslieferung). Du hast kein sudo-Passwort. Bis zu " + str(MAX_SCHRITTE) +
         " Werkzeugaufrufe je Antwort. Wenn du fertig bist, schreib eine klare Antwort an Veiko in "
-        "normalem Text, die sagt, was du tatsaechlich getan hast."
+        "normalem Text, die sagt, was du tatsaechlich getan hast.\n\n"
+        "## Effizient arbeiten\n"
+        "Jeder Werkzeugaufruf verlaengert den Kontext, den du bei jedem weiteren Schritt komplett "
+        "erneut liest -- viele kleine Schritte machen dich langsamer, nicht gruendlicher. "
+        "befehl_ausfuehren fuehrt einen kompletten Shell-Befehl aus: verkette mit && oder | statt "
+        "vieler einzelner Aufrufe (z. B. eine Kette aus mehreren grep/find/sed in einem Aufruf statt "
+        "sechs einzelnen). Lies eine Datei einmal ganz (datei_lesen, notfalls mehrfach fuer sehr "
+        "grosse Dateien) statt sie in vielen kleinen sed-Ausschnitten abzutasten. Merk dir, was du "
+        "in diesem Lauf schon gesehen hast -- nicht zweimal dasselbe pruefen. Wenn eine Aenderung "
+        "verlangt ist: nach dem noetigsten Verstehen zuegig zu datei_schreiben/befehl_ausfuehren "
+        "uebergehen, nicht endlos weiter erkunden. Nur die letzten " + str(VOLLE_SCHRITTE) + " Werkzeug-"
+        "ergebnisse bleiben dir in voller Laenge sichtbar, aeltere werden gekuerzt zusammengefasst."
     )
 
 # ---------------------------------------------------------------------------
 # Die beiden Motoren. Intern wird immer im Claude-Format gedacht (Liste aus
 # {role, content:[Bloecke]}); jeder Motor uebersetzt nur beim Senden/Empfangen.
 # ---------------------------------------------------------------------------
+
+VOLLE_SCHRITTE = int(os.environ.get("VVEC_NEO_VOLLE_SCHRITTE", "10"))
+
+def _verlauf_gekuerzt(verlauf: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Werkzeugergebnisse aus AELTEREN Schritten werden gekuerzt, nicht geloescht -- sonst wird
+    der Kontext bei einem langen Auftrag (viele Schritte, grosse Shell-/Datei-Ausgaben) trotz
+    NEO_NUM_CTX irgendwann wieder voll, UND jede Anfrage braucht laenger, weil das Prefill mit der
+    Kontextgroesse waechst -- am Ende ein ReadTimeout, wie am 8. September nach 34 Schritten
+    passiert. Die letzten VOLLE_SCHRITTE Werkzeugrunden bleiben unangetastet, alles Aeltere wird
+    auf eine kurze Zusammenfassung eingedampft (bei Bedarf liest/durchsucht Neo einfach erneut)."""
+    tool_runden = [i for i, e in enumerate(verlauf)
+                   if e.get("role") == "user" and any(b.get("type") == "tool_result" for b in (e.get("content") or []))]
+    alte_runden = set(tool_runden[:-VOLLE_SCHRITTE]) if len(tool_runden) > VOLLE_SCHRITTE else set()
+    if not alte_runden:
+        return verlauf
+    ausgabe: list[dict[str, Any]] = []
+    for i, eintrag in enumerate(verlauf):
+        if i not in alte_runden:
+            ausgabe.append(eintrag)
+            continue
+        neue_bloecke = []
+        for block in eintrag.get("content") or []:
+            if block.get("type") != "tool_result":
+                neue_bloecke.append(block)
+                continue
+            inhalt = str(block.get("content", ""))
+            if len(inhalt) > 500:
+                inhalt = inhalt[:500] + f"\n... [gekuerzt, {len(inhalt) - 500} weitere Zeichen aus einem aelteren Schritt -- bei Bedarf erneut abrufen]"
+            neue_bloecke.append({**block, "content": inhalt})
+        ausgabe.append({**eintrag, "content": neue_bloecke})
+    return ausgabe
 
 def _verlauf_zu_ollama(verlauf: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ausgabe: list[dict[str, Any]] = []
@@ -514,11 +560,16 @@ class NeoSchrittLeer(Exception):
     """Ollama hat weder Text noch Werkzeugaufruf geliefert, auch nicht im zweiten Versuch."""
 
 async def _ollama_anfrage(system: str, verlauf: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    nachrichten = [{"role": "system", "content": system}] + _verlauf_zu_ollama(verlauf)
+    nachrichten = [{"role": "system", "content": system}] + _verlauf_zu_ollama(_verlauf_gekuerzt(verlauf))
     body = {"model": NEO_MODELL, "stream": False, "options": {"num_ctx": NEO_NUM_CTX},
             "tools": _ollama_werkzeuge(), "messages": nachrichten}
     try:
-        async with httpx.AsyncClient(timeout=180.0) as client:
+        # 180s war bei einem grossen, weit fortgeschrittenen Kontext (Prefill skaliert mit der
+        # Kontextgroesse) zu knapp und lief in ein ReadTimeout, nachdem Neo schon 34 echte
+        # Schritte gemacht hatte -- die Arbeit war also nicht das Problem, nur das Zeitlimit
+        # dafuer. Kein Cloudflare-Risiko mehr dadurch: der Stream haelt sich per eigenem
+        # Pulsschlag (neo_agentenlauf) unabhaengig davon am Leben.
+        async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT_SEK) as client:
             antwort = await client.post(f"{OLLAMA}/api/chat", json=body)
     except httpx.HTTPError as fehler:
         raise HTTPException(503, f"Ollama nicht erreichbar unter {OLLAMA}: {fehler.__class__.__name__}") from fehler

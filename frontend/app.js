@@ -22,6 +22,58 @@
   function esc(text) {
     return String(text == null ? "" : text).replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">");
   }
+  // Kleiner, abhaengigkeitsfreier Markdown-Renderer fuer Neos Antworten (Ueberschriften, Listen,
+  // Code, fett/kursiv) -- vorher stand z. B. "## Ueberblick" woertlich mit den Rauten in der
+  // Blase, weil dort nur esc() lief. Deckt das ab, was Neo tatsaechlich schreibt, kein voller
+  // CommonMark-Umfang.
+  function mdRender(text) {
+    const zeilen = String(text == null ? "" : text).split(/\r?\n/);
+    let html = "", inCode = false, codeZeilen = [], listTyp = null, absatz = [];
+    function inline(z) {
+      let t = esc(z);
+      t = t.replace(/`([^`]+)`/g, "<code>$1</code>");
+      t = t.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+      t = t.replace(/(^|[^*])\*([^*\s][^*]*)\*(?!\*)/g, "$1<em>$2</em>");
+      return t;
+    }
+    function absatzZu() {
+      if (absatz.length) { html += "<p>" + absatz.map(inline).join("<br>") + "</p>"; absatz = []; }
+    }
+    function listeZu() {
+      if (listTyp) { html += "</" + listTyp + ">"; listTyp = null; }
+    }
+    zeilen.forEach(function (zeile) {
+      const zaun = zeile.match(/^```(\w*)\s*$/);
+      if (zaun) {
+        if (!inCode) { absatzZu(); listeZu(); inCode = true; codeZeilen = []; }
+        else { html += "<pre><code>" + esc(codeZeilen.join("\n")) + "</code></pre>"; inCode = false; }
+        return;
+      }
+      if (inCode) { codeZeilen.push(zeile); return; }
+      const ueberschrift = zeile.match(/^(#{1,4})\s+(.*)$/);
+      if (ueberschrift) {
+        absatzZu(); listeZu();
+        const stufe = ueberschrift[1].length;
+        html += "<h" + stufe + ">" + inline(ueberschrift[2]) + "</h" + stufe + ">";
+        return;
+      }
+      const listPunkt = zeile.match(/^\s*[-*]\s+(.*)$/);
+      const listNr = zeile.match(/^\s*\d+\.\s+(.*)$/);
+      if (listPunkt || listNr) {
+        absatzZu();
+        const zielTyp = listPunkt ? "ul" : "ol";
+        if (listTyp !== zielTyp) { listeZu(); html += "<" + zielTyp + ">"; listTyp = zielTyp; }
+        html += "<li>" + inline((listPunkt || listNr)[1]) + "</li>";
+        return;
+      }
+      if (zeile.trim() === "") { absatzZu(); listeZu(); return; }
+      listeZu();
+      absatz.push(zeile);
+    });
+    if (inCode) html += "<pre><code>" + esc(codeZeilen.join("\n")) + "</code></pre>";
+    absatzZu(); listeZu();
+    return html || "<p></p>";
+  }
   async function api(pfad, opt) {
     const antwort = await fetch(pfad, opt);
     const roh = await antwort.text();
@@ -305,8 +357,10 @@
         ? '<details class="schritte"><summary>' + eintrag.schritte.length + " Arbeitsschritt(e)</summary>" +
           eintrag.schritte.map(function (s) { return "<div>" + esc(s) + "</div>"; }).join("") + "</details>"
         : "";
-      return '<div class="blase' + (eintrag.wer === "veiko" ? " ich" : "") + '">' +
-        '<div class="wer">' + esc(eintrag.wer) + "</div><div>" + esc(eintrag.text) + "</div>" + schritte + "</div>";
+      const roh = eintrag.wer === "veiko" || eintrag.wer === "cockpit";
+      return '<div class="blase' + (eintrag.wer === "veiko" ? " ich" : "") + (roh ? " roh" : "") + '">' +
+        '<div class="wer">' + esc(eintrag.wer) + "</div><div>" +
+        (roh ? esc(eintrag.text) : mdRender(eintrag.text)) + "</div>" + schritte + "</div>";
     }).join("");
     let geaendert = "";
     if (S.geaendert && S.geaendert.length) {

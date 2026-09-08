@@ -208,9 +208,19 @@ h3 { font-size: .95em; font-weight: 600; margin: 0 0 8px; }
   box-shadow: var(--sh-1);
   padding: 12px 14px;
   max-width: 76ch;
-  white-space: pre-wrap;
 }
 .blase.ich { align-self: flex-end; background: var(--bg-3); box-shadow: none; }
+.blase.roh { white-space: pre-wrap; }
+.blase h1, .blase h2, .blase h3, .blase h4 { margin: 14px 0 6px; }
+.blase h1:first-child, .blase h2:first-child, .blase h3:first-child, .blase h4:first-child, .blase p:first-child { margin-top: 0; }
+.blase p { margin: 0 0 10px; }
+.blase p:last-child { margin-bottom: 0; }
+.blase ul, .blase ol { margin: 0 0 10px 20px; padding: 0; }
+.blase li { margin: 2px 0; }
+.blase pre { background: var(--bg-3); border: 1px solid var(--linie); border-radius: 8px; padding: 10px 12px; overflow-x: auto; margin: 0 0 10px; }
+.blase pre:last-child, .blase ul:last-child, .blase ol:last-child { margin-bottom: 0; }
+.blase code { font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace; font-size: .92em; }
+.blase :not(pre) > code { background: var(--bg-3); padding: 1px 5px; border-radius: 4px; }
 .blase .wer {
   font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
   font-size: 10px;
