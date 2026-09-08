@@ -487,4 +487,8 @@ app.mount("/static", StaticFiles(directory=str(FRONTEND)), name="static")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("server:app", host="127.0.0.1", port=8780, reload=False)
+    # Vorgabe bleibt localhost. Auf dem Server ueber VVEC_HOST auf die Tailscale-Adresse
+    # gebunden -- nicht 0.0.0.0, damit nichts ausserhalb des Tailnets erreichbar wird,
+    # ohne dass dieses Repo die Caddy-Konfiguration anfassen muss.
+    HOST = os.environ.get("VVEC_HOST", "127.0.0.1")
+    uvicorn.run("server:app", host=HOST, port=8780, reload=False)

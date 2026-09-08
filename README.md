@@ -18,6 +18,10 @@ Dann im Browser: `http://127.0.0.1:8780`
 
 Ohne Ollama startet die Huelle trotzdem. Neo sagt dann ehrlich, dass das Modell nicht erreichbar ist.
 
+Auf dem Server erreichbar machen, ohne Caddy anzufassen: `VVEC_HOST` auf die Tailscale-Adresse
+setzen (z. B. `export VVEC_HOST=100.65.221.106`) statt der Vorgabe `127.0.0.1` -- dann laeuft das
+Cockpit unter `http://<Tailscale-Adresse>:8780`, erreichbar fuer jedes Geraet im Tailnet.
+
 ### Neo wahlweise ueber Claude statt lokal
 
 Vorgabe bleibt der lokale Ollama (digitale Souveraenitaet, kein Token-Preis). Wer Neo stattdessen
