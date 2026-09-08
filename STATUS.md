@@ -1,3 +1,58 @@
+# Stand: ReadTimeout bei langen Auftraegen behoben, Markdown-Rendering (8. September 2026, noch spaeter)
+
+Veiko schickte einen echten, grossen Auftrag (Release 1 mit Release 2 vergleichen). Neo machte
+34 echte Arbeitsschritte -- dann "Ollama nicht erreichbar unter http://127.0.0.1:11434:
+ReadTimeout". Dank des Fixes eine Ebene hoeher (siehe oben) ging das nicht verloren: die 34
+Schritte und ein ehrlicher Hinweis kamen im Cockpit an, statt eines nackten Absturzes. Veiko war
+trotzdem zu Recht unzufrieden: Neo sollte moeglichst so arbeiten wie Claude Code.
+
+## Ursache
+
+Jede Ollama-Anfrage schickt den KOMPLETTEN bisherigen Verlauf erneut (kein Zwischenspeichern beim
+Modell). Bei 34 Schritten mit echten Shell-/Datei-Ausgaben war das trotz num_ctx=65536 laengst ein
+riesiger Prompt -- das Prefill allein kann dann laenger dauern als jedes sinnvolle Zeitlimit.
+Bestaetigt: ein Testlauf mit synthetisch grossen Werkzeugergebnissen wuchs ungebremst von 5176 auf
+65176 Zeichen ueber 10 Runden.
+
+## Fix
+
+- **Aeltere Werkzeugergebnisse kuerzen**: nur die letzten `VVEC_NEO_VOLLE_SCHRITTE` (Vorgabe 10)
+  Werkzeugrunden bleiben beim Senden an Ollama in voller Laenge, alles Aeltere wird auf eine kurze
+  Zusammenfassung eingedampft. Nachgewiesen im selben Testaufbau: nach Runde 10 wächst der Prompt
+  nur noch um ~600 statt ~6000 Zeichen pro Runde -- praktisch flach.
+- Zeitlimit pro Ollama-Anfrage von 180s auf 600s angehoben (`VVEC_NEO_OLLAMA_TIMEOUT`) -- jetzt
+  unkritisch fuer Cloudflare, weil der Stream sich selbst per Puls am Leben haelt.
+- **Systemprompt um Effizienz ergaenzt**: Shell-Befehle verketten statt einzeln aufrufen, Dateien
+  einmal ganz lesen statt in vielen sed-Ausschnitten, nichts doppelt pruefen -- die 34 Schritte
+  bei Veikos Auftrag waren zu einem guten Teil genau solche vermeidbare Kleinarbeit.
+- **Markdown-Rendering im Cockpit**: Neos Antworten kamen bisher als roher Text mit woertlichen
+  "##"/"**" an -- sah nicht nach einer "richtigen" Antwort aus. Jetzt ein kleiner
+  abhaengigkeitsfreier Renderer in app.js (Ueberschriften, Listen, Code, fett/kursiv), mit
+  `<script>`-Payload auf saubere Escapierung getestet. Veikos eigene Nachrichten und
+  Cockpit-Fehlermeldungen bleiben unveraendert roher Text.
+
+## Ehrlich: was das NICHT loest
+
+Neo laeuft lokal auf `qwen3.6:27b` -- ein deutlich kleineres Modell als das, mit dem Veiko gerade
+arbeitet. Effizienteres Werkzeug-Verhalten und Markdown machen Neos Antworten NAEHER an der
+Arbeitsweise von Claude Code, aber die zugrundeliegende Denkleistung bleibt die eines anderen,
+kleineren Modells -- das aendert kein Prompt. Der Code unterstuetzt seit Iteration 2 einen echten
+Wechsel auf Claude selbst (`VVEC_NEO_ANBIETER=claude` + `ANTHROPIC_API_KEY`), bisher ungetestet
+mangels Schluessel. Das waere der einzige Weg zu tatsaechlich gleicher Denkleistung -- Veiko
+gefragt, ob das gewuenscht ist (Kosten pro Anfrage, API-Schluessel noetig).
+
+## Getestet
+
+- Kuerzungslogik direkt gegen den echten Ollama-Dienst geprueft (16 synthetische Runden, s.o.).
+- `python -m py_compile server.py`, `node --check frontend/app.js` fehlerfrei.
+- Markdown-Renderer mit einer Probe (Ueberschriften/Listen/Code/fett/kursiv/HTML-Injection)
+  gegengeprueft -- rendert korrekt, `<script>` kommt escaped als Text an.
+- Live-Dienst neu gestartet, `/status` antwortet, Git-Stand auf dem Server aktuell.
+
+Noch nicht getestet: Veikos Vergleichsauftrag (Release 1 vs. Release 2) im Cockpit erneut gestellt.
+
+---
+
 # Stand: Cloudflare-Timeout-Bug behoben (8. September 2026, noch spaeter)
 
 Direkt im Anschluss an den Kontextfenster-Fix (naechster Abschnitt unten) meldete Veiko einen
