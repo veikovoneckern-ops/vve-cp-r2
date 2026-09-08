@@ -145,7 +145,9 @@
       '<button type="button" class="primaer" id="btn-reset-setzen">Passwort setzen</button></div>';
   }
   function authRahmen(innerHtml) {
-    document.getElementById("app").innerHTML =
+    const app = document.getElementById("app");
+    if (!app) return;
+    app.innerHTML =
       '<div class="auth-rahmen"><div class="auth-karte"><div class="marke">' +
       '<div class="logo" aria-hidden="true"></div><div><strong>VVE Cockpit</strong><span>Release 2</span></div>' +
       "</div>" + innerHtml + "</div></div>";
@@ -309,8 +311,8 @@
   function zeichnen() {
     schriftAnwenden();
     if (!S.auth.geladen) {
-      document.getElementById("app").innerHTML =
-        '<div class="auth-rahmen"><div class="auth-karte"><p class="leise">Laedt …</p></div></div>';
+      const app = document.getElementById("app");
+      if (app) app.innerHTML = '<div class="auth-rahmen"><div class="auth-karte"><p class="leise">Laedt …</p></div></div>';
       return;
     }
     if (!S.auth.eingerichtet) { authRahmen(einrichtenHtml()); return; }
@@ -320,10 +322,12 @@
   }
   function zeichnenApp() {
     const app = document.getElementById("app");
+    if (!app) return; // #app fehlt eigentlich nie (index.html) -- Absicherung statt Absturz
     const voll = S.ort === "server";
+    const aktuellerOrt = ORTE.find(function (o) { return o.id === S.ort; }) || ORTE[0];
     app.innerHTML = leisteHtml() +
       '<section class="schild"><div class="lauf">' + esc(schildText()) +
-      '</div><div class="ort">' + esc(ORTE.find(function (o) { return o.id === S.ort; }).name) +
+      '</div><div class="ort">' + esc(aktuellerOrt.name) +
       '</div></section><main class="inhalt' + (voll ? " voll" : "") + '" id="view"></main>';
     const logo = $("#logo");
     if (logo) logo.classList.toggle("laeuft", S.logoLaeuft);
@@ -331,6 +335,7 @@
       knopf.addEventListener("click", function () { ortWechseln(knopf.getAttribute("data-ort")); });
     });
     const view = document.getElementById("view");
+    if (!view) return;
     if (S.ort === "start") view.innerHTML = startHtml();
     else if (S.ort === "stab") view.innerHTML = stabHtml();
     else if (S.ort === "server") view.innerHTML = serverHtml();
@@ -353,10 +358,22 @@
       karte("Bewegte Projekte", leerListe(lage.projekte, "Noch kein bewegtes Projekt in diesem Release.")) +
       karte("Gerade in Arbeit", leerListe(lage.in_arbeit, "Nichts in Arbeit. Hoechstens drei gleichzeitig."));
     const blasen = S.verlauf.map(function (eintrag) {
-      const schritte = (eintrag.schritte && eintrag.schritte.length)
-        ? '<details class="schritte"><summary>' + eintrag.schritte.length + " Arbeitsschritt(e)</summary>" +
-          eintrag.schritte.map(function (s) { return "<div>" + esc(s) + "</div>"; }).join("") + "</details>"
-        : "";
+      let schritte;
+      if (eintrag.live) {
+        // Feste IDs: waehrend des Streams werden nur diese gezielt aktualisiert (liveSchrittAnhaengen),
+        // statt bei jedem einzelnen Werkzeugaufruf die ganze Seite neu aufzubauen -- vorher konnte ein
+        // voller Neuaufbau mitten in einer Nutzer-Interaktion (Tippen, Klick) auf einen Element-Verweis
+        // treffen, der gerade durch den Neuaufbau ersetzt wurde ("Cannot set properties of null").
+        schritte = '<details class="schritte" open><summary id="live-schritte-zahl">' +
+          eintrag.schritte.length + " Arbeitsschritt(e) …</summary>" +
+          '<div id="live-schritte-liste">' + eintrag.schritte.map(function (s) { return "<div>" + esc(s) + "</div>"; }).join("") +
+          "</div></details>";
+      } else {
+        schritte = (eintrag.schritte && eintrag.schritte.length)
+          ? '<details class="schritte"><summary>' + eintrag.schritte.length + " Arbeitsschritt(e)</summary>" +
+            eintrag.schritte.map(function (s) { return "<div>" + esc(s) + "</div>"; }).join("") + "</details>"
+          : "";
+      }
       const roh = eintrag.wer === "veiko" || eintrag.wer === "cockpit";
       return '<div class="blase' + (eintrag.wer === "veiko" ? " ich" : "") + (roh ? " roh" : "") + '">' +
         '<div class="wer">' + esc(eintrag.wer) + "</div><div>" +
@@ -469,19 +486,43 @@
       });
     });
   }
+  // Gezielte Updates waehrend des Streams -- statt bei jedem einzelnen Werkzeugaufruf per
+  // zeichnen() die komplette Seite (Leiste, Eingabefeld, alles) neu aufzubauen. Ein voller
+  // Neuaufbau mitten in einer laufenden Nutzer-Interaktion (Tippen im Feld, ein Klick, ein
+  // vom Browser selbst ausgeloester DOM-Vorgang beim Entfernen des alten Knotens) konnte auf
+  // einen Element-Verweis treffen, der genau in dem Moment ersetzt wurde -- "Cannot set
+  // properties of null (setting 'innerHTML')". Nur Text-Inhalte aktualisieren ist ungefaehrlich.
+  function schildLaufSetzen(text) {
+    S.lauf = text;
+    const el = $(".schild .lauf");
+    if (el) el.textContent = text;
+  }
+  function liveSchrittAnhaengen(schritt, gesamtzahl) {
+    const liste = document.getElementById("live-schritte-liste");
+    const zahl = document.getElementById("live-schritte-zahl");
+    if (!liste || !zahl) return false;
+    const zeile = document.createElement("div");
+    zeile.textContent = schritt;
+    liste.appendChild(zeile);
+    zahl.textContent = gesamtzahl + " Arbeitsschritt(e) …";
+    return true;
+  }
   let steuer = null;
   async function senden() {
     const text = (S.eingabe || "").trim();
     if (!text || S.logoLaeuft) return;
     S.verlauf.push({ wer: "veiko", text: text });
     S.eingabe = ""; S.fehler = ""; S.geaendert = null;
-    S.logoLaeuft = true; S.lauf = "Neo arbeitet …"; zeichnen();
+    S.logoLaeuft = true; S.lauf = "Neo arbeitet …";
     steuer = new AbortController();
     // Platzhalter sofort im Verlauf, wird waehrend des Streams live mit Arbeitsschritten
-    // gefuellt und am Ende mit dem endgueltigen Text ueberschrieben -- so bleibt sichtbar,
-    // dass (und was) Neo arbeitet, auch wenn ein Auftrag mehrere Minuten braucht.
-    const platzhalter = { wer: "neo", text: "", schritte: [] };
+    // gefuellt (per liveSchrittAnhaengen, ohne vollen Neuaufbau) und am Ende mit dem
+    // endgueltigen Text ueberschrieben -- so bleibt sichtbar, dass (und was) Neo arbeitet,
+    // auch wenn ein Auftrag mehrere Minuten braucht. eintrag.live=true steuert in startHtml()
+    // die festen IDs fuer die gezielten Updates; wird am Ende wieder entfernt.
+    const platzhalter = { wer: "neo", text: "", schritte: [], live: true };
     S.verlauf.push(platzhalter);
+    zeichnen();
     try {
       const antwort = await fetch("/api/gespraech", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -515,8 +556,9 @@
             // Nur ein Lebenszeichen der Verbindung, nichts anzuzeigen.
           } else if (ereignis.typ === "schritt") {
             platzhalter.schritte.push(ereignis.schritt);
-            S.lauf = "Neo arbeitet … (" + platzhalter.schritte.length + " Schritt(e): " + ereignis.schritt + ")";
-            zeichnen();
+            const angehaengt = liveSchrittAnhaengen(ereignis.schritt, platzhalter.schritte.length);
+            schildLaufSetzen("Neo arbeitet … (" + platzhalter.schritte.length + " Schritt(e): " + ereignis.schritt + ")");
+            if (!angehaengt) zeichnen(); // z. B. Nutzer war zwischenzeitlich auf einem anderen Ort
           } else if (ereignis.typ === "fehler") {
             throw new Error(ereignis.text || "Neo-Fehler");
           } else if (ereignis.typ === "fertig") {
@@ -528,6 +570,7 @@
       platzhalter.wer = fertigDaten.wer || "neo";
       platzhalter.text = fertigDaten.text || "";
       platzhalter.schritte = fertigDaten.schritte || platzhalter.schritte;
+      delete platzhalter.live;
       S.geaendert = fertigDaten.dateien || [];
       S.lauf = fertigDaten.lauf || "fertig";
     } catch (err) {
