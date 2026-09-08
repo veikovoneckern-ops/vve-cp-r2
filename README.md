@@ -55,6 +55,14 @@ export VVEC_NEO_CLAUDE_MODELL=claude-sonnet-5   # genaue Modell-ID eintragen
 
 Fehlt einer der beiden letzten Werte, meldet Neo das im Gespraech klar statt zu raten.
 
+### Kontextfenster
+
+`VVEC_NEO_NUM_CTX` (Vorgabe `65536`) -- wie viele Token Ollama pro Anfrage im Kopf behaelt. Der
+Werkzeug-Kreislauf schickt bei jedem Schritt den kompletten bisherigen Verlauf neu mit; bei einem
+laengeren Auftrag mit mehreren gelesenen Dateien ist ein zu kleines Fenster schnell voll, Ollama
+kappt dann still von vorne und Neo kann eine leere Antwort liefern (behoben, siehe STATUS.md). Hoeher
+setzen, wenn die Auftraege noch groesser werden -- Grenze ist das VRAM der GPUs.
+
 ### Anmeldung
 
 Beim ersten Aufruf zeigt das Cockpit "Konto einrichten" -- Benutzername, E-Mail (fuer

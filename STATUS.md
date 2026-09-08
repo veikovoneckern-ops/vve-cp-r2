@@ -1,3 +1,49 @@
+# Stand: Ollama-Kontextfenster-Bug behoben (8. September 2026, spaeter)
+
+Veiko meldete: "Ollama lieferte weder Text noch Werkzeugaufruf" -- Neo brach bei einem groesseren
+Auftrag (Cockpit im Look&Feel von Release 1 nachbauen, "Neo"-Knopf ergaenzen) mit einem nackten
+503 ab. Server-Log zeigte den 503 um 12:48 Uhr nach mehreren Minuten Laufzeit.
+
+## Ursache gefunden und reproduziert
+
+`num_ctx` stand fest auf 16384. Der Werkzeug-Kreislauf schickt bei jedem der bis zu 40 Schritte
+den **kompletten bisherigen Verlauf** neu mit -- bei echten Dateiinhalten (`datei_lesen` liefert
+bis zu 12000 Zeichen) war das Fenster schon nach 1-2 gelesenen Dateien voll. Ollama kappt dann
+still von vorne, und `qwen3.6:27b` (ein denkendes Modell) kann dabei mitten im Denken abgeschnitten
+werden, bevor Text oder ein Werkzeugaufruf entsteht -- daher die leere Antwort.
+
+Reproduziert direkt auf dem Server (nicht nur vermutet): ein Testlauf mit synthetisch grossen
+Werkzeugergebnissen erreichte nach 2 Schritten 14059 von 16384 Token. Mit dem echten Nutzerauftrag
+sind reale Dateiinhalte pro Schritt oft groesser als mein Testtext, das Fenster war also im echten
+Fall sicher schon frueher voll.
+
+## Fix
+
+- `num_ctx` auf 65536 angehoben (`VVEC_NEO_NUM_CTX`, konfigurierbar). Auf dem Server geprueft:
+  Modell laedt problemlos ueber beide 3090en verteilt, je ~12GB frei danach -- reichlich Reserve.
+  Nachtest mit demselben synthetischen Aufbau: 44446 von 65536 Token nach 3 Schritten, weiterhin
+  eine echte Antwort statt einer leeren.
+- Ein leerer Ruecklauf bekommt jetzt einen zweiten Versuch, bevor aufgegeben wird (haeufig ein
+  einmaliger Ausrutscher).
+- Scheitert auch der zweite Versuch mitten in einem laufenden Auftrag: der Lauf gibt zurueck, was
+  bis dahin geschehen ist (Schritte, bereits geschriebene Dateien), mit einer ehrlichen Notiz --
+  statt alles mit einem nackten 503 wegzuwerfen. Nur wenn schon der allererste Schritt leer bleibt,
+  bleibt es beim 503 (dann ist wirklich nichts passiert).
+
+## Getestet
+
+`python -m py_compile server.py` fehlerfrei (lokal und auf dem Server). Fix per `git pull` auf dem
+Server eingespielt, Dienst neu gestartet (`systemctl --user restart vve-cp-r2.service`), `/status`
+antwortet wieder. Der urspruengliche Reproduktionsfall (wachsender Verlauf mit grossen
+Werkzeugergebnissen) laeuft mit dem neuen Fenster durch, wo er vorher leer zurueckkam -- geprueft
+direkt gegen den echten, laufenden Ollama-Dienst auf dem Server, nicht nur lokal simuliert.
+
+Noch nicht getestet: der urspruengliche, sehr grosse Auftrag von Veiko selbst (Cockpit-Nachbau) im
+Cockpit erneut gestellt -- das ist der naechste sinnvolle Schritt, um auch das konkrete Szenario
+end-to-end zu bestaetigen.
+
+---
+
 # Stand Iteration 3 (9. September 2026)
 
 Veiko: "stell sicher das ich mit neo genau so arbeiten kann wie mit dir, neo soll alle
