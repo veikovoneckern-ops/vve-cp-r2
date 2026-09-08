@@ -1,47 +1,73 @@
+/* Farben, Radien, Schriften uebernommen aus vve-cp (Release 1),
+   cockpit/cockpit-app.basis.html -- damit R2 dasselbe Look & Feel traegt,
+   nicht nur ein aehnliches. Klassenstruktur bleibt R2-eigen (app.js
+   unveraendert), nur die Werte darunter sind jetzt dieselben wie in R1. */
 :root {
-  --bg: #14161c;
-  --bg-2: #1c1f28;
-  --bg-3: #252833;
-  --linie: #343845;
-  --text: #eef0f5;
-  --neben: #c3c8d4;
-  --stumm: #9aa1b0;
-  --akzent: #6b9dff;
-  --akzent-2: #8eb4ff;
-  --gefahr: #d46a64;
-  --gefahr-rand: #d46a64;
-  --ok: #7dcaa0;
-  --logo: #9aa3b5;
+  --bg: #eef1f5;
+  --bg-2: #ffffff;
+  --bg-3: #f5f7fa;
+  --linie: #e1e6ee;
+  --text: #0b1826;
+  --neben: #32465c;
+  --stumm: #647388;
+  --akzent: #2f62d6;
+  --akzent-2: #2c6bb3;
+  --gefahr: #e0392b;
+  --gefahr-rand: #e0392b;
+  --ok: #0e9377;
+  --chrome: #ffffff;
+  --chrome-2: #f7f9fb;
+  --chrome-linie: #e4e8ef;
+  --chrome-text: #12233b;
+  --chrome-neben: #4b5d75;
+  --chrome-hover: rgba(11, 24, 40, .05);
+  --chrome-aktiv: rgba(44, 107, 179, .10);
+  --logo: #8595a9;
+  --sh-1: 0 1px 2px rgba(12, 26, 46, .05), 0 1px 3px rgba(12, 26, 46, .04);
+  --sh-2: 0 4px 14px rgba(12, 26, 46, .09), 0 2px 5px rgba(12, 26, 46, .05);
   --fluss: 18px;
   --neben-px: 16px;
   --nav-px: 15px;
   --eingabe-px: 18px;
-  --radius: 14px;
-  --leiste: 232px;
+  --radius: 8px;
+  --leiste: 236px;
 }
 
-[data-thema="hell"] {
-  --bg: #eef0f4;
-  --bg-2: #ffffff;
-  --bg-3: #e6e8ee;
-  --linie: #d3d6de;
-  --text: #1b1e26;
-  --neben: #3d4250;
-  --stumm: #5c6372;
-  --akzent: #2f62d6;
-  --akzent-2: #1e4bb8;
-  --gefahr: #b42318;
-  --gefahr-rand: #b42318;
-  --ok: #1f7a4d;
-  --logo: #4a5160;
+/* :root oben ist die Vorgabe (hell). Dunkel wird ausdruecklich angefordert
+   (data-thema="dunkel", Vorgabe in den Einstellungen) -- Werte identisch zu
+   R1s html[data-theme="dark"], nur unter R2s eigenem Attributnamen. */
+html[data-thema="dunkel"] {
+  --bg: #191917;
+  --bg-2: #1f1f1e;
+  --bg-3: #262624;
+  --linie: #4c4b45;
+  --text: #faf9f6;
+  --neben: #e4e2dc;
+  --stumm: #c3c1b7;
+  --akzent: #8bb4e6;
+  --akzent-2: #faf9f6;
+  --gefahr: #f0664f;
+  --gefahr-rand: #f0664f;
+  --ok: #54c8a6;
+  --chrome: #121211;
+  --chrome-2: #151413;
+  --chrome-linie: #383632;
+  --chrome-text: #faf9f6;
+  --chrome-neben: #d2d0c7;
+  --chrome-hover: rgba(255, 255, 255, .07);
+  --chrome-aktiv: rgba(255, 255, 255, .11);
+  --logo: #a6a399;
+  --sh-1: 0 1px 2px rgba(0, 0, 0, .35);
+  --sh-2: 0 6px 18px rgba(0, 0, 0, .45);
 }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
 body {
-  background: var(--bg);
+  background: var(--chrome);
   color: var(--text);
-  font: var(--fluss)/1.45 "Segoe UI", "Helvetica Neue", sans-serif;
+  font: var(--fluss)/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 #app {
@@ -53,24 +79,24 @@ body {
 
 .leiste {
   grid-row: 1 / span 2;
-  background: var(--bg-2);
-  border-right: 1px solid var(--linie);
-  padding: 18px 12px;
+  background: linear-gradient(180deg, var(--chrome-2), var(--chrome));
+  border-right: 1px solid var(--chrome-linie);
+  padding: 16px 12px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
 }
 
 .marke {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 10px 18px;
+  padding: 8px 4px 16px;
 }
 
 .logo {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   border: 3px solid var(--logo);
   border-top-color: transparent;
@@ -80,29 +106,42 @@ body {
 .logo.laeuft { animation-play-state: running; }
 @keyframes dreh { to { transform: rotate(360deg); } }
 
-.marke strong { font-size: var(--nav-px); letter-spacing: 0.02em; }
+.marke strong { font-size: var(--nav-px); font-weight: 700; letter-spacing: .02em; color: var(--chrome-text); }
 .marke span { display: block; color: var(--stumm); font-size: var(--neben-px); }
 
 .leiste button {
   appearance: none;
   background: transparent;
-  color: var(--text);
+  color: var(--chrome-neben);
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--radius);
   text-align: left;
-  padding: 10px 12px;
+  padding: 9px 11px;
   font: inherit;
   font-size: var(--nav-px);
+  font-weight: 500;
   cursor: pointer;
+  position: relative;
+  transition: .13s;
 }
-.leiste button:hover { background: var(--bg-3); }
-.leiste button.aktiv { background: var(--bg-3); color: var(--akzent-2); }
+.leiste button:hover { background: var(--chrome-hover); color: var(--chrome-text); }
+.leiste button.aktiv { background: var(--chrome-aktiv); color: var(--akzent-2); }
+.leiste button.aktiv::before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--akzent-2);
+}
 
 .schild {
   grid-column: 2;
   background: var(--bg-2);
   border-bottom: 1px solid var(--linie);
-  padding: 12px 22px;
+  padding: 11px 22px;
   min-height: 58px;
   display: flex;
   align-items: center;
@@ -111,19 +150,27 @@ body {
 }
 
 .schild .lauf { color: var(--neben); font-size: var(--neben-px); }
-.schild .ort { color: var(--stumm); font-size: var(--neben-px); }
+.schild .ort {
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--stumm);
+}
 
 .inhalt {
   grid-column: 2;
+  background: var(--bg);
   overflow: auto;
   padding: 22px 26px 32px;
 }
 
 .inhalt.voll { padding: 0; }
 
-h1 { font-size: 1.35em; font-weight: 650; margin: 0 0 8px; }
+h1 { font-size: 1.5em; font-weight: 650; letter-spacing: -.02em; margin: 0 0 8px; }
 h2 { font-size: 1.05em; font-weight: 600; margin: 0 0 8px; }
-.leise { color: var(--neben); font-size: var(--neben-px); margin: 0 0 16px; }
+h3 { font-size: .95em; font-weight: 600; margin: 0 0 8px; }
+.leise { color: var(--stumm); font-size: var(--neben-px); margin: 0 0 16px; }
 
 .karten {
   display: grid;
@@ -135,9 +182,11 @@ h2 { font-size: 1.05em; font-weight: 600; margin: 0 0 8px; }
   background: var(--bg-2);
   border: 1px solid var(--linie);
   border-radius: var(--radius);
+  box-shadow: var(--sh-1);
   padding: 14px 16px;
   min-width: 0;
 }
+.karte h2 { color: var(--text); }
 .karte p { margin: 0; color: var(--neben); font-size: var(--neben-px); }
 
 .gespraech {
@@ -156,15 +205,23 @@ h2 { font-size: 1.05em; font-weight: 600; margin: 0 0 8px; }
   background: var(--bg-2);
   border: 1px solid var(--linie);
   border-radius: var(--radius);
+  box-shadow: var(--sh-1);
   padding: 12px 14px;
   max-width: 76ch;
   white-space: pre-wrap;
 }
-.blase.ich { align-self: flex-end; background: var(--bg-3); }
-.blase .wer { color: var(--stumm); font-size: var(--neben-px); margin-bottom: 4px; }
+.blase.ich { align-self: flex-end; background: var(--bg-3); box-shadow: none; }
+.blase .wer {
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--stumm);
+  margin-bottom: 6px;
+}
 .schritte { margin-top: 8px; color: var(--stumm); font-size: var(--neben-px); }
 .schritte summary { cursor: pointer; }
-.schritte div { padding: 2px 0 2px 14px; font-family: "Cascadia Mono", Consolas, monospace; }
+.schritte div { padding: 2px 0 2px 14px; font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace; }
 
 .eingabe-box textarea {
   width: 100%;
@@ -177,8 +234,9 @@ h2 { font-size: 1.05em; font-weight: 600; margin: 0 0 8px; }
   padding: 14px 16px;
   font: inherit;
   font-size: var(--eingabe-px);
-  line-height: 1.45;
+  line-height: 1.5;
 }
+.eingabe-box textarea:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
 .zeile {
   display: flex;
   gap: 8px;
@@ -187,15 +245,22 @@ h2 { font-size: 1.05em; font-weight: 600; margin: 0 0 8px; }
 }
 button.primaer, button.neben, button.gefahr {
   appearance: none;
-  border-radius: 10px;
-  padding: 8px 14px;
+  border-radius: var(--radius);
+  padding: 8px 15px;
   font: inherit;
-  font-size: var(--nav-px);
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
+  transition: .14s;
+  box-shadow: var(--sh-1);
 }
 button.primaer { background: var(--akzent); color: #fff; border: 0; }
-button.neben { background: transparent; color: var(--text); border: 1px solid var(--linie); }
-button.gefahr { background: transparent; color: var(--gefahr); border: 1px solid var(--gefahr-rand); }
+button.primaer:hover { filter: brightness(1.08); }
+button.neben { background: var(--bg-2); color: var(--text); border: 1px solid var(--linie); box-shadow: none; }
+button.neben:hover { border-color: var(--stumm); background: var(--bg-3); }
+button.gefahr { background: transparent; color: var(--gefahr); border: 1px solid var(--gefahr-rand); box-shadow: none; }
+button.gefahr:hover { background: color-mix(in srgb, var(--gefahr) 8%, transparent); }
+button:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
 
 .vorschlag {
   border: 1px dashed var(--akzent);
@@ -206,23 +271,26 @@ button.gefahr { background: transparent; color: var(--gefahr); border: 1px solid
 .vorschlag code { font-size: var(--neben-px); }
 
 .form-reihe { margin: 0 0 16px; }
-.form-reihe label { display: block; margin-bottom: 6px; }
+.form-reihe label { display: block; margin-bottom: 6px; color: var(--neben); font-size: var(--neben-px); }
 .form-reihe input[type="range"] { width: min(320px, 100%); }
 .form-reihe input[type="text"], .form-reihe input[type="password"], .form-reihe input[type="email"] {
   width: 100%;
-  background: var(--bg);
+  background: var(--bg-2);
   color: var(--text);
   border: 1px solid var(--linie);
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 10px 12px;
   font: inherit;
   font-size: var(--eingabe-px);
 }
+.form-reihe input[type="text"]:focus-visible, .form-reihe input[type="password"]:focus-visible,
+.form-reihe input[type="email"]:focus-visible { outline: 2px solid var(--akzent); outline-offset: 1px; }
 
 .auth-rahmen {
   grid-column: 1 / -1;
   grid-row: 1 / -1;
   min-height: 100%;
+  background: var(--bg);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -233,9 +301,11 @@ button.gefahr { background: transparent; color: var(--gefahr); border: 1px solid
   background: var(--bg-2);
   border: 1px solid var(--linie);
   border-radius: var(--radius);
+  box-shadow: var(--sh-2);
   padding: 28px 26px;
 }
 .auth-karte .marke { padding: 0 0 18px; }
+.auth-karte .marke strong { color: var(--text); }
 .fehler { color: var(--gefahr); font-size: var(--neben-px); margin: 0 0 12px; }
 
 .server {
@@ -257,19 +327,38 @@ button.gefahr { background: transparent; color: var(--gefahr); border: 1px solid
 .wert {
   background: var(--bg);
   border: 1px solid var(--linie);
-  border-radius: 12px;
+  border-radius: var(--radius);
   padding: 12px;
 }
-.wert small { display: block; color: var(--stumm); font-size: var(--neben-px); }
+.wert small {
+  display: block;
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  font-size: 9.5px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--stumm);
+  margin-bottom: 4px;
+}
 
 .team {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 10px;
 }
-.mitglied { padding: 12px; border: 1px solid var(--linie); border-radius: 12px; background: var(--bg-2); }
+.mitglied {
+  padding: 12px;
+  border: 1px solid var(--linie);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  box-shadow: var(--sh-1);
+}
 .mitglied .amt { color: var(--stumm); font-size: var(--neben-px); }
 .mitglied.aktiv { border-color: var(--akzent); }
+
+::selection { background: color-mix(in srgb, var(--akzent) 28%, transparent); }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--stumm) 45%, transparent); border-radius: 20px; border: 3px solid transparent; background-clip: padding-box; }
+*::-webkit-scrollbar-track { background: transparent; }
 
 @media (max-width: 720px) {
   #app { grid-template-columns: 1fr; grid-template-rows: auto auto 1fr; }
