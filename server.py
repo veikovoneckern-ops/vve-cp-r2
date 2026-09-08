@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -240,7 +240,12 @@ OEFFENTLICHE_VORSAETZE = ("/static/", "/api/konto/")
 async def anmeldung_pruefen(request: Request, call_next):
     pfad = request.url.path
     if pfad in OEFFENTLICHE_PFADE or any(pfad.startswith(p) for p in OEFFENTLICHE_VORSAETZE):
-        return await call_next(request)
+        antwort = await call_next(request)
+        # Kein Zwischenspeichern -- weder im Browser noch bei Cloudflare. Sonst bekommt
+        # jemand nach einem Update noch tagelang die alte app.js/stil.css ausgeliefert,
+        # ohne dass ein Fehler zu sehen waere -- genau das ist einmal passiert.
+        antwort.headers["Cache-Control"] = "no-store"
+        return antwort
     benutzername = sitzung_pruefen(request.cookies.get(SITZUNG_COOKIE))
     if not benutzername:
         return JSONResponse({"detail": "Nicht angemeldet"}, status_code=401)
@@ -763,7 +768,14 @@ async def sicherung_skizze():
 
 @app.get("/")
 async def index():
-    return FileResponse(FRONTEND / "index.html")
+    # Versionsstempel aus der Aenderungszeit von app.js: erzwingt bei jedem Deploy eine
+    # neue URL fuer die Datei, damit ein zwischengespeicherter alter Stand (Cloudflare-Rand,
+    # Browser) nicht stillschweigend weiterhin ausgeliefert wird.
+    stempel = str(int((FRONTEND / "app.js").stat().st_mtime))
+    inhalt = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    inhalt = inhalt.replace("/static/app.js", f"/static/app.js?v={stempel}")
+    inhalt = inhalt.replace("/static/stil.css", f"/static/stil.css?v={stempel}")
+    return HTMLResponse(inhalt)
 
 app.mount("/static", StaticFiles(directory=str(FRONTEND)), name="static")
 
