@@ -34,6 +34,13 @@ CLAUDE_MODELL = os.environ.get("VVEC_NEO_CLAUDE_MODELL", "").strip()
 AKTIVES_MODELL_LABEL = f"claude:{CLAUDE_MODELL}" if NEO_ANBIETER == "claude" else NEO_MODELL
 MAX_SCHRITTE = int(os.environ.get("VVEC_NEO_MAX_SCHRITTE", "40"))
 BEFEHL_TIMEOUT_SEK = int(os.environ.get("VVEC_NEO_BEFEHL_TIMEOUT", "120"))
+# 16384 war zu knapp fuer einen Werkzeug-Kreislauf mit echten Dateiinhalten und bis zu 40
+# Schritten -- der Verlauf waechst mit jedem Schritt und wird komplett neu mitgeschickt, war
+# also schon nach 1-2 Dateien voll. Ollama kappt dann still von vorne, und ein denkendes Modell
+# (qwen3.6 mit "thinking") kann dabei mitten im Denken abgeschnitten werden, bevor Text oder ein
+# Werkzeugaufruf entsteht -- das war der 503 "Ollama lieferte weder Text noch Werkzeugaufruf".
+# 65536 wurde auf dem Server geprueft (laedt auf den zwei 3090en, je ~12GB frei danach).
+NEO_NUM_CTX = int(os.environ.get("VVEC_NEO_NUM_CTX", "65536"))
 
 # Anmeldung. Ein Konto (dieses Cockpit ist fuer einen Nutzer gebaut, siehe UEBERGABE.md
 # von Release 1) -- Einrichten, Anmelden, Abmelden, Passwort aendern, Passwort per
@@ -503,9 +510,12 @@ def _verlauf_zu_ollama(verlauf: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     ausgabe.append({"role": "user", "content": block.get("text", "")})
     return ausgabe
 
-async def _ollama_schritt(system: str, verlauf: list[dict[str, Any]]) -> list[dict[str, Any]]:
+class NeoSchrittLeer(Exception):
+    """Ollama hat weder Text noch Werkzeugaufruf geliefert, auch nicht im zweiten Versuch."""
+
+async def _ollama_anfrage(system: str, verlauf: list[dict[str, Any]]) -> list[dict[str, Any]]:
     nachrichten = [{"role": "system", "content": system}] + _verlauf_zu_ollama(verlauf)
-    body = {"model": NEO_MODELL, "stream": False, "options": {"num_ctx": 16384},
+    body = {"model": NEO_MODELL, "stream": False, "options": {"num_ctx": NEO_NUM_CTX},
             "tools": _ollama_werkzeuge(), "messages": nachrichten}
     try:
         async with httpx.AsyncClient(timeout=180.0) as client:
@@ -530,8 +540,19 @@ async def _ollama_schritt(system: str, verlauf: list[dict[str, Any]]) -> list[di
         if not isinstance(eingabe, dict):
             eingabe = {}
         bloecke.append({"type": "tool_use", "id": f"lok_{i}", "name": fn.get("name", ""), "input": eingabe})
+    return bloecke
+
+async def _ollama_schritt(system: str, verlauf: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    # Ein leerer Ruecklauf (weder Text noch Werkzeugaufruf) kommt vor allem vor, wenn das
+    # denkende Modell mitten im Denken abgeschnitten wird -- meist ein einmaliger Ausrutscher.
+    # Ein zweiter Versuch mit derselben Anfrage behebt das haeufig, ohne den ganzen Lauf
+    # (und schon geschriebene Dateien darin) wegzuwerfen.
+    bloecke = await _ollama_anfrage(system, verlauf)
+    if bloecke:
+        return bloecke
+    bloecke = await _ollama_anfrage(system, verlauf)
     if not bloecke:
-        raise HTTPException(503, "Ollama lieferte weder Text noch Werkzeugaufruf")
+        raise NeoSchrittLeer()
     return bloecke
 
 async def _claude_schritt(system: str, verlauf: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -564,7 +585,17 @@ async def neo_agentenlauf(system: str, erste_anfrage: str) -> tuple[str, list[di
     schritte: list[str] = []
     letzter_text = ""
     for _ in range(MAX_SCHRITTE):
-        bloecke = await neo_motor_schritt(system, verlauf)
+        try:
+            bloecke = await neo_motor_schritt(system, verlauf)
+        except NeoSchrittLeer:
+            # Auch im zweiten Versuch nichts geliefert. Nicht den ganzen Lauf mit einem nackten
+            # 503 wegwerfen -- was Neo bis hierhin schon getan (und geschrieben!) hat, bleibt
+            # sichtbar, mit einer ehrlichen Notiz statt einer erfundenen Antwort.
+            hinweis = "Ollama hat auf diesen Schritt weder Text noch Werkzeugaufruf geliefert (auch im zweiten Versuch nicht)."
+            if not schritte:
+                raise HTTPException(503, hinweis)
+            letzter_text = (letzter_text + "\n\n" if letzter_text else "") + hinweis
+            return letzter_text, geaendert, schritte
         verlauf.append({"role": "assistant", "content": bloecke})
         werkzeug_aufrufe = [b for b in bloecke if b.get("type") == "tool_use"]
         text_teile = [b.get("text", "") for b in bloecke if b.get("type") == "text"]
