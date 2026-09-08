@@ -16,7 +16,7 @@
     lage: null, rollen: null, server: null, lauf: "kein Lauf", logoLaeuft: false,
     verlauf: [], vorschlag: null, eingabe: "", fehler: "",
     auth: { geladen: false, eingerichtet: false, angemeldet: false, benutzername: null, email: null },
-    authAnsicht: "login", authFehler: "", authHinweis: "", resetToken: null
+    authAnsicht: "login", authFehler: "", authHinweis: "", resetToken: null, nutzerliste: null
   };
   function $(sel, wurzel) { return (wurzel || document).querySelector(sel); }
   function esc(text) {
@@ -193,7 +193,44 @@
       zeichnen();
     } catch (err) { S.authFehler = String(err.message || err); zeichnen(); }
   }
+  async function nutzerHinzufuegen() {
+    const benutzername = $("#nutzer-neu-benutzername").value.trim();
+    const email = $("#nutzer-neu-email").value.trim();
+    const passwort = $("#nutzer-neu-passwort").value;
+    if (!benutzername || !email || !passwort) { S.authFehler = "Alle Felder ausfuellen."; zeichnen(); return; }
+    try {
+      await api("/api/konto/nutzer-hinzufuegen", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ benutzername: benutzername, email: email, passwort: passwort })
+      });
+      S.authFehler = ""; S.authHinweis = "Nutzer '" + benutzername + "' angelegt.";
+      S.nutzerliste = (await api("/api/konto/nutzer")).nutzer || [];
+      zeichnen();
+    } catch (err) { S.authFehler = String(err.message || err); zeichnen(); }
+  }
+  async function nutzerEntfernen(benutzername) {
+    try {
+      await api("/api/konto/nutzer-entfernen", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ benutzername: benutzername })
+      });
+      S.authFehler = ""; S.authHinweis = "Nutzer '" + benutzername + "' entfernt.";
+      S.nutzerliste = (await api("/api/konto/nutzer")).nutzer || [];
+      zeichnen();
+    } catch (err) { S.authFehler = String(err.message || err); zeichnen(); }
+  }
   function kontoVerwaltenHtml() {
+    const nutzer = S.nutzerliste || [];
+    const zeilen = nutzer.map(function (n) {
+      const selbst = n.benutzername === S.auth.benutzername;
+      const entfernenKnopf = nutzer.length > 1
+        ? '<button type="button" class="gefahr" data-nutzer-entfernen="' + esc(n.benutzername) + '">Entfernen</button>'
+        : "";
+      return '<div class="mitglied"><strong>' + esc(n.benutzername) + (selbst ? " (du)" : "") + "</strong>" +
+        '<div class="amt">' + esc(n.email || "") + "</div>" +
+        (entfernenKnopf ? '<div class="zeile" style="margin-top:8px">' + entfernenKnopf + "</div>" : "") +
+        "</div>";
+    }).join("");
     return "<h1>Nutzerverwaltung</h1>" +
       '<p class="leise">Angemeldet als <strong>' + esc(S.auth.benutzername) + "</strong>" +
       (S.auth.email ? " (" + esc(S.auth.email) + ")" : "") + "</p>" +
@@ -204,6 +241,14 @@
       feldZeile("konto-neu2", "Wiederholen", "password") +
       '<div class="zeile" style="margin-top:8px">' +
       '<button type="button" class="primaer" id="btn-passwort-aendern">Passwort aendern</button></div>' +
+      '<h2 style="margin-top:24px">Konten</h2>' +
+      '<div class="team">' + (zeilen || '<p class="leise">Lade …</p>') + "</div>" +
+      '<h3 style="margin-top:18px">Nutzer hinzufuegen</h3>' +
+      feldZeile("nutzer-neu-benutzername", "Benutzername", "text") +
+      feldZeile("nutzer-neu-email", "E-Mail", "email") +
+      feldZeile("nutzer-neu-passwort", "Passwort (mind. 8 Zeichen)", "password") +
+      '<div class="zeile" style="margin-top:8px">' +
+      '<button type="button" class="primaer" id="btn-nutzer-hinzufuegen">Nutzer anlegen</button></div>' +
       '<h2 style="margin-top:24px">Abmelden</h2>' +
       '<button type="button" class="gefahr" id="btn-abmelden">Abmelden</button>';
   }
@@ -355,7 +400,12 @@
     if (btnPasswortAendern) btnPasswortAendern.addEventListener("click", passwortAendern);
     const btnAbmelden = $("#btn-abmelden");
     if (btnAbmelden) btnAbmelden.addEventListener("click", abmelden);
-    document.querySelectorAll("[data-thema]").forEach(function (knopf) {
+    const btnNutzerHinzufuegen = $("#btn-nutzer-hinzufuegen");
+    if (btnNutzerHinzufuegen) btnNutzerHinzufuegen.addEventListener("click", nutzerHinzufuegen);
+    document.querySelectorAll("[data-nutzer-entfernen]").forEach(function (knopf) {
+      knopf.addEventListener("click", function () { nutzerEntfernen(knopf.getAttribute("data-nutzer-entfernen")); });
+    });
+    document.querySelectorAll("button[data-thema]").forEach(function (knopf) {
       knopf.addEventListener("click", function () {
         S.einstellungen.thema = knopf.getAttribute("data-thema");
         speichernEinstellungen();
@@ -444,6 +494,9 @@
     }
     if (id === "stab" && !S.rollen) {
       try { S.rollen = await api("/api/rollen"); } catch (e) { S.rollen = { lokal: [], extern: [] }; }
+    }
+    if (id === "konto") {
+      try { S.nutzerliste = (await api("/api/konto/nutzer")).nutzer || []; } catch (e) { S.nutzerliste = []; }
     }
     zeichnen();
   }

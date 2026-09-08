@@ -158,12 +158,47 @@ def passwort_pruefen(passwort: str, salt_hex: str, hash_hex: str) -> bool:
         return False
     return secrets.compare_digest(_passwort_hash(passwort, salt), hash_hex)
 
-def benutzer_lesen() -> dict[str, Any] | None:
-    stand = json_lesen(BENUTZER_DATEI, None)
-    return stand if isinstance(stand, dict) and stand.get("benutzername") else None
+def benutzer_liste() -> list[dict[str, Any]]:
+    stand = json_lesen(BENUTZER_DATEI, {"benutzer": []})
+    if isinstance(stand, dict) and stand.get("benutzername"):
+        # Altes Format von vor der Mehrbenutzer-Unterstuetzung: ein einzelnes Konto
+        # als Wurzel-Objekt statt einer Liste. Wird beim naechsten Schreiben ins neue
+        # Format ueberfuehrt, der Bestand bleibt dabei unveraendert erhalten.
+        return [stand]
+    if not isinstance(stand, dict):
+        return []
+    liste = stand.get("benutzer")
+    return liste if isinstance(liste, list) else []
 
-def benutzer_schreiben(stand: dict[str, Any]) -> None:
-    json_schreiben(BENUTZER_DATEI, stand)
+def benutzer_liste_schreiben(liste: list[dict[str, Any]]) -> None:
+    json_schreiben(BENUTZER_DATEI, {"benutzer": liste})
+
+def benutzer_finden(benutzername: str) -> dict[str, Any] | None:
+    for b in benutzer_liste():
+        if b.get("benutzername") == benutzername:
+            return b
+    return None
+
+def benutzer_email_finden(email: str) -> dict[str, Any] | None:
+    email = email.strip().lower()
+    for b in benutzer_liste():
+        if str(b.get("email", "")).strip().lower() == email:
+            return b
+    return None
+
+def benutzer_reset_finden(token_hash: str) -> dict[str, Any] | None:
+    for b in benutzer_liste():
+        if b.get("reset_hash") and secrets.compare_digest(str(b["reset_hash"]), token_hash):
+            return b
+    return None
+
+def benutzer_aktualisieren(benutzername: str, aenderungen: dict[str, Any]) -> None:
+    liste = benutzer_liste()
+    for b in liste:
+        if b.get("benutzername") == benutzername:
+            b.update(aenderungen)
+            break
+    benutzer_liste_schreiben(liste)
 
 def sitzung_anlegen(benutzername: str) -> str:
     token = secrets.token_urlsafe(32)
@@ -472,6 +507,14 @@ class PasswortZuruecksetzenKoerper(BaseModel):
     token: str
     neues_passwort: str = Field(min_length=8, max_length=200)
 
+class NutzerHinzufuegenKoerper(BaseModel):
+    benutzername: str = Field(min_length=2, max_length=60)
+    email: str = Field(min_length=3, max_length=200)
+    passwort: str = Field(min_length=8, max_length=200)
+
+class NutzerEntfernenKoerper(BaseModel):
+    benutzername: str
+
 class GespraechKoerper(BaseModel):
     text: str = Field(min_length=1, max_length=20000)
     an: str = "neo"
@@ -488,18 +531,23 @@ async def status():
 
 @app.get("/api/konto/ich")
 async def konto_ich(request: Request):
-    benutzer = benutzer_lesen()
+    liste = benutzer_liste()
     benutzername = sitzung_pruefen(request.cookies.get(SITZUNG_COOKIE))
-    return {"eingerichtet": benutzer is not None, "angemeldet": benutzername is not None,
-            "benutzername": benutzername, "email": benutzer.get("email") if (benutzer and benutzername) else None}
+    benutzer = benutzer_finden(benutzername) if benutzername else None
+    return {"eingerichtet": len(liste) > 0, "angemeldet": benutzername is not None,
+            "benutzername": benutzername, "email": benutzer.get("email") if benutzer else None}
 
 @app.post("/api/konto/einrichten")
 async def konto_einrichten(koerper: EinrichtenKoerper, response: Response):
-    if benutzer_lesen() is not None:
-        raise HTTPException(409, "Es gibt schon ein Konto. Einrichten geht nur einmal.")
-    stand = {"benutzername": koerper.benutzername, "email": koerper.email,
-              **passwort_setzen(koerper.passwort), "reset_hash": None, "reset_ablauf": None}
-    benutzer_schreiben(stand)
+    # Nur erlaubt, solange noch gar kein Konto existiert -- das Anlegen weiterer
+    # Konten laeuft danach ausschliesslich ueber /api/konto/nutzer-hinzufuegen und
+    # verlangt eine Sitzung. Sonst koennte sich ueber das oeffentliche Internet
+    # jeder ein zweites Konto anlegen.
+    if benutzer_liste():
+        raise HTTPException(409, "Es gibt schon ein Konto. Weitere Konten legt ein angemeldeter Nutzer an.")
+    neu = {"benutzername": koerper.benutzername, "email": koerper.email,
+           **passwort_setzen(koerper.passwort), "reset_hash": None, "reset_ablauf": None}
+    benutzer_liste_schreiben([neu])
     token = sitzung_anlegen(koerper.benutzername)
     response.set_cookie(SITZUNG_COOKIE, token, httponly=True, samesite="lax",
                          secure=COOKIE_SICHER, max_age=SITZUNG_DAUER_SEK)
@@ -508,9 +556,8 @@ async def konto_einrichten(koerper: EinrichtenKoerper, response: Response):
 
 @app.post("/api/konto/anmelden")
 async def konto_anmelden(koerper: AnmeldenKoerper, response: Response):
-    benutzer = benutzer_lesen()
-    if not benutzer or not passwort_pruefen(koerper.passwort, benutzer["salt"], benutzer["hash"]) \
-            or koerper.benutzername != benutzer["benutzername"]:
+    benutzer = benutzer_finden(koerper.benutzername)
+    if not benutzer or not passwort_pruefen(koerper.passwort, benutzer["salt"], benutzer["hash"]):
         raise HTTPException(401, "Benutzername oder Passwort falsch.")
     token = sitzung_anlegen(benutzer["benutzername"])
     response.set_cookie(SITZUNG_COOKIE, token, httponly=True, samesite="lax",
@@ -530,30 +577,30 @@ async def konto_passwort_aendern(koerper: PasswortAendernKoerper, request: Reque
     benutzername = sitzung_pruefen(request.cookies.get(SITZUNG_COOKIE))
     if not benutzername:
         raise HTTPException(401, "Nicht angemeldet.")
-    benutzer = benutzer_lesen()
+    benutzer = benutzer_finden(benutzername)
     if not benutzer or not passwort_pruefen(koerper.aktuelles_passwort, benutzer["salt"], benutzer["hash"]):
         raise HTTPException(401, "Aktuelles Passwort falsch.")
-    benutzer.update(passwort_setzen(koerper.neues_passwort))
-    benutzer_schreiben(benutzer)
-    journal_anhaengen({"wer": "veiko", "was": "passwort-geaendert"})
+    benutzer_aktualisieren(benutzername, passwort_setzen(koerper.neues_passwort))
+    journal_anhaengen({"wer": benutzername, "was": "passwort-geaendert"})
     return {"ok": True}
 
 @app.post("/api/konto/passwort-vergessen")
 async def konto_passwort_vergessen(koerper: PasswortVergessenKoerper):
-    # Immer dieselbe Antwort, ob die E-Mail passt oder nicht -- sonst liesse sich
-    # ausprobieren, welche Adresse das eine Konto hat.
-    antwort = {"ok": True, "hinweis": "Wenn die Adresse zum Konto passt, ist eine E-Mail unterwegs."}
-    benutzer = benutzer_lesen()
-    if not benutzer or benutzer.get("email", "").strip().lower() != koerper.email.strip().lower():
+    # Immer dieselbe Antwort, ob die E-Mail zu einem Konto passt oder nicht -- sonst
+    # liesse sich ausprobieren, welche Adressen es als Konto gibt.
+    antwort = {"ok": True, "hinweis": "Wenn die Adresse zu einem Konto passt, ist eine E-Mail unterwegs."}
+    benutzer = benutzer_email_finden(koerper.email)
+    if not benutzer:
         return antwort
     if not OEFFENTLICHE_URL:
         raise HTTPException(503, "VVEC_OEFFENTLICHE_URL ist nicht gesetzt -- der Reset-Link im Cockpit "
                                    "haette kein Ziel. Trag die Adresse ein, unter der das Cockpit von "
                                    "aussen erreichbar ist.")
     roh_token = secrets.token_urlsafe(32)
-    benutzer["reset_hash"] = hashlib.sha256(roh_token.encode("utf-8")).hexdigest()
-    benutzer["reset_ablauf"] = time.time() + RESET_DAUER_SEK
-    benutzer_schreiben(benutzer)
+    benutzer_aktualisieren(benutzer["benutzername"], {
+        "reset_hash": hashlib.sha256(roh_token.encode("utf-8")).hexdigest(),
+        "reset_ablauf": time.time() + RESET_DAUER_SEK,
+    })
     link = f"{OEFFENTLICHE_URL}/?reset={roh_token}"
     email_senden(benutzer["email"],
                  "VVE Cockpit -- Passwort zuruecksetzen",
@@ -564,19 +611,51 @@ async def konto_passwort_vergessen(koerper: PasswortVergessenKoerper):
 
 @app.post("/api/konto/passwort-zuruecksetzen")
 async def konto_passwort_zuruecksetzen(koerper: PasswortZuruecksetzenKoerper):
-    benutzer = benutzer_lesen()
-    if not benutzer or not benutzer.get("reset_hash"):
-        raise HTTPException(400, "Kein Reset angefordert oder Konto fehlt.")
+    pruef_hash = hashlib.sha256(koerper.token.encode("utf-8")).hexdigest()
+    benutzer = benutzer_reset_finden(pruef_hash)
+    if not benutzer:
+        raise HTTPException(400, "Der Link ist ungueltig.")
     if time.time() > float(benutzer.get("reset_ablauf") or 0):
         raise HTTPException(400, "Der Link ist abgelaufen. Neu anfordern.")
-    pruef_hash = hashlib.sha256(koerper.token.encode("utf-8")).hexdigest()
-    if not secrets.compare_digest(pruef_hash, benutzer["reset_hash"]):
-        raise HTTPException(400, "Der Link ist ungueltig.")
-    benutzer.update(passwort_setzen(koerper.neues_passwort))
-    benutzer["reset_hash"] = None
-    benutzer["reset_ablauf"] = None
-    benutzer_schreiben(benutzer)
-    journal_anhaengen({"wer": "veiko", "was": "passwort-zurueckgesetzt"})
+    benutzer_aktualisieren(benutzer["benutzername"],
+                            {**passwort_setzen(koerper.neues_passwort), "reset_hash": None, "reset_ablauf": None})
+    journal_anhaengen({"wer": benutzer["benutzername"], "was": "passwort-zurueckgesetzt"})
+    return {"ok": True}
+
+@app.get("/api/konto/nutzer")
+async def konto_nutzer_liste(request: Request):
+    if not sitzung_pruefen(request.cookies.get(SITZUNG_COOKIE)):
+        raise HTTPException(401, "Nicht angemeldet.")
+    return {"nutzer": [{"benutzername": b["benutzername"], "email": b.get("email")} for b in benutzer_liste()]}
+
+@app.post("/api/konto/nutzer-hinzufuegen")
+async def konto_nutzer_hinzufuegen(koerper: NutzerHinzufuegenKoerper, request: Request):
+    if not sitzung_pruefen(request.cookies.get(SITZUNG_COOKIE)):
+        raise HTTPException(401, "Nicht angemeldet.")
+    if benutzer_finden(koerper.benutzername):
+        raise HTTPException(409, "Diesen Benutzernamen gibt es schon.")
+    liste = benutzer_liste()
+    liste.append({"benutzername": koerper.benutzername, "email": koerper.email,
+                  **passwort_setzen(koerper.passwort), "reset_hash": None, "reset_ablauf": None})
+    benutzer_liste_schreiben(liste)
+    journal_anhaengen({"wer": "veiko", "was": "nutzer-hinzugefuegt", "benutzername": koerper.benutzername})
+    return {"benutzername": koerper.benutzername}
+
+@app.post("/api/konto/nutzer-entfernen")
+async def konto_nutzer_entfernen(koerper: NutzerEntfernenKoerper, request: Request):
+    if not sitzung_pruefen(request.cookies.get(SITZUNG_COOKIE)):
+        raise HTTPException(401, "Nicht angemeldet.")
+    liste = benutzer_liste()
+    if len(liste) <= 1:
+        raise HTTPException(400, "Das letzte Konto kann nicht entfernt werden -- sonst kommt niemand mehr rein.")
+    neue_liste = [b for b in liste if b.get("benutzername") != koerper.benutzername]
+    if len(neue_liste) == len(liste):
+        raise HTTPException(404, "Diesen Benutzernamen gibt es nicht.")
+    benutzer_liste_schreiben(neue_liste)
+    for token, eintrag in list(SITZUNGEN.items()):
+        if eintrag.get("benutzername") == koerper.benutzername:
+            SITZUNGEN.pop(token, None)
+    journal_anhaengen({"wer": "veiko", "was": "nutzer-entfernt", "benutzername": koerper.benutzername})
     return {"ok": True}
 
 @app.get("/api/einstellungen")

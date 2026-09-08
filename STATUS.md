@@ -1,5 +1,26 @@
 # Stand Iteration 2
 
+## Nachtrag: Mehrbenutzer und ein schwerer Bug behoben (8. September, spaeter)
+
+- **Weitere Konten**: Nutzerverwaltung zeigt jetzt alle Konten, legt neue an
+  (nur angemeldet moeglich, nicht oeffentlich -- sonst koennte sich ueber die
+  jetzt oeffentliche Adresse jeder ein Konto anlegen), entfernt welche
+  (das letzte Konto ist geschuetzt, sonst kaeme niemand mehr rein).
+- **Schwerer Bug gefunden und behoben**: `document.querySelectorAll("[data-thema]")`
+  in `anhaengen()` traf ungewollt auch `<html>` selbst (weil `schriftAnwenden()`
+  dort ebenfalls `data-thema` setzt) und haengte bei jedem Neuzeichnen einen
+  weiteren Klick-Handler an -- die Zahl verdoppelte sich mit jedem Klick
+  irgendwo auf der Seite, bis Tippen in jedem Feld unmoeglich wurde (jeder
+  Tastendruck kollidierte mit hunderten synchronen Neuzeichnungen). Betraf die
+  ganze App nach Anmeldung, nicht nur die Nutzerverwaltung, und wurde mit
+  laengerer Nutzung schlimmer. Fix: Selektor auf `button[data-thema]`
+  verengt. Nachgewiesen per MutationObserver (vorher zigfache Verdopplung pro
+  Klick, danach 0) und mit echter simulierter Tastatureingabe im Browser.
+- Oeffentliche Adresse `https://cockpit-v1-r2.vveorgxais.org` eingerichtet
+  (Cloudflare-Tunnel-Eintrag zeigt direkt auf Port 8780, Caddy unveraendert).
+  Erste Kontoerstellung passierte VOR der oeffentlichen Freischaltung, um
+  keine Wettlaufsituation um das einzige Konto zu riskieren.
+
 Stand: 8. September 2026. Gebaut von Claude (dieser Session), auf Veikos Auftrag: Neo soll mit
 echten Werkzeugen arbeiten -- lesen, auflisten, durchsuchen, Aenderungen vorschlagen -- statt
 einer einzelnen Textantwort mit einem JSON-Block. Iteration 1 war von Grok.
