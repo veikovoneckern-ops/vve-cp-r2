@@ -25,6 +25,11 @@ export function Neo({ id }) {
   // deshalb immer zu, egal was am Rechner eingestellt ist.
   const [vorschauAn, setVorschauAn] = useState(() => innerWidth > 820 && lies("vvec_neo_vorschau", innerWidth > 1100));
   const [voll, setVoll] = useState(() => lies("vvec_neo_voll", false));
+  // Matrix (Veiko, 01.10.): die Vorschau zeigt nur den Regen -- auch waehrend
+  // Neo arbeitet. Erst wenn er in DIESEM Auftrag ein Ergebnis zeigt
+  // (vorschau-Ereignis), erscheint es von selbst. Ein frueheres Ergebnis des
+  // Gespraechs wird dann beim Oeffnen nicht mehr geladen.
+  const [matrix, setMatrix] = useState(() => lies("vvec_neo_matrix", false));
   const [url, setUrl] = useState(null);
   const [neuLaden, setNeuLaden] = useState(0);
   const [listeOffen, setListeOffen] = useState(false);
@@ -45,6 +50,7 @@ export function Neo({ id }) {
     return () => document.documentElement.classList.remove("neo-vollbild");
   }, [voll]);
   useEffect(() => bus.an("vollbild", (an) => setVoll(!!an)), []);
+  useEffect(() => { merk("vvec_neo_matrix", matrix); }, [matrix]);
   useEffect(() => { if (!job) return; const i = setInterval(() => setJetzt(Date.now()), 1000); return () => clearInterval(i); }, [!!job]);
 
   // Ohne Kennung: das juengste Gespraech oeffnen, sonst ein neues anlegen.
@@ -60,7 +66,7 @@ export function Neo({ id }) {
     api("/neo/gespraeche/" + id).then((d) => {
       setG(d);
       const letzteVorschau = [...d.nachrichten].reverse().find((m) => m.daten && m.daten.vorschau);
-      if (letzteVorschau) setUrl(letzteVorschau.daten.vorschau);
+      if (letzteVorschau && !lies("vvec_neo_matrix", false)) setUrl(letzteVorschau.daten.vorschau);
       if (d.job) folgen(d.job);
     }).catch((e) => { fehlerMelden(e); navigiere("/neo"); });
   }, [id]);
@@ -134,6 +140,19 @@ export function Neo({ id }) {
     try { await api("/neo/gespraeche/" + gid, { methode: "DELETE" }); toast("Gespräch archiviert."); const l = await listeLaden(); if (gid === id) navigiere(l && l.length ? "/neo/" + l[0].id : "/neo"); } catch (e) { fehlerMelden(e); }
   }
 
+  // Matrix an: Regen statt Ergebnis, Spalte auf. Noch einmal, waehrend der Regen
+  // laeuft: zurueck zum letzten Ergebnis dieses Gespraechs.
+  function matrixUmschalten() {
+    if (matrix && !url) {
+      setMatrix(false);
+      const letzte = g && [...g.nachrichten].reverse().find((m) => m.daten && m.daten.vorschau);
+      if (letzte) setUrl(letzte.daten.vorschau);
+      return;
+    }
+    setMatrix(true); setUrl(null); setVorschauAn(true);
+  }
+  const regenAn = vorschauAn && !url;
+
   const neoModell = team && (team.team.find((m) => m.id === "cockpit") || {}).modell;
   const nachrichten = g ? g.nachrichten : [];
   const zeigeVorschau = vorschauAn;
@@ -161,6 +180,8 @@ export function Neo({ id }) {
           <option value="">Vorgabe (qwen3-coder-neo)</option>
           ${team.modelle.filter((m) => !m.includes("embed")).map((m) => html`<option value=${m}>${m}</option>`)}</select>`}
         <button class=${"btn klein" + (zeigeVorschau ? " primaer" : "")} onClick=${() => setVorschauAn(!vorschauAn)} aria-pressed=${zeigeVorschau} title="Vorschau-Spalte"><${Icon} n="auge" g=${14} /><span class="txt">Vorschau</span></button>
+        <button class=${"btn klein matrix-knopf" + (matrix && regenAn ? " an" : "")} onClick=${matrixUmschalten} aria-pressed=${matrix && regenAn}
+          title=${matrix && regenAn ? "Zurück zum letzten Ergebnis" : "Nur Matrix-Regen in der Vorschau, bis Neo ein neues Ergebnis zeigt"}><span class="txt">Matrix</span></button>
         <button class="btn klein" onClick=${() => setVoll(!voll)} aria-pressed=${voll} title=${voll ? "Vollbild verlassen (Esc)" : "Vollbild"}><${Icon} n=${voll ? "klein" : "voll"} g=${14} /><span class="txt">${voll ? "Verlassen" : "Vollbild"}</span></button>
       </div>
       <div class="neo-verlauf" ref=${verlaufRef} onScroll=${(e) => { const v = e.target; amBoden.current = v.scrollHeight - v.scrollTop - v.clientHeight < 60; }}>

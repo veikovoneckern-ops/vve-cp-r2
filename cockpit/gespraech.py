@@ -35,7 +35,30 @@ AKTIONEN = {
     "notiz": ("text",),
     "projekt_neu": ("name",),
     "neo": ("auftrag",),
+    # BrainStrom und ExO (verfahren.py) -- Veiko, 01.10.: "wenn ich mit dem Cockpit
+    # spreche, muss das auch fuer diese Elemente funktionieren".
+    "brainstrom": ("thema",),
+    "brainstrom_antwort": ("text",),
+    "brainstrom_weg": ("nummer",),
+    "brainstrom_genug": (),
+    "brainstrom_uebernehmen": (),
+    "exo": (),
 }
+# Laufen sofort, ohne Knopf: sie aendern nur den Stand des Verfahrens, nicht den
+# Bestand (Projekte, Aufgaben). Uebernehmen in Projekte bleibt ein Vorschlag mit Ja.
+SOFORT_VERFAHREN = ("brainstrom", "brainstrom_antwort", "brainstrom_weg", "brainstrom_genug", "exo")
+
+# Ein kurzes Ja ohne Nein -- dieselbe Regel wie im Browser (talk.js istJa).
+_JA = re.compile(r"\b(ja|jawohl|jep|genau|klar|gerne|gern|ok|okay|einverstanden|passt|richtig|bitte|mach(e|t)? (das|es)|tu (das|es)|so machen|leg los|legt los|los geht)\b", re.I)
+_NEIN = re.compile(r"\b(nein|nee|nö|nicht|lieber nicht|ablehnen|falsch|stopp)\b", re.I)
+# Ein ausdruecklicher Auftrag ans Team oder an Neo ("lasst das Team ... erstellen").
+AUFTRAG_AN_TEAM = re.compile(r"\b(lass|lasst|lassen)\b.{0,60}\b(team|neo|jason|clayton|neal|annie|ridley|daniel)\b"
+                             r"|\b(team|neo|annie|clayton|neal|ridley)\b.{0,40}\b(soll|sollen|mach|macht|erstell|erstellt|bau|baut|schreib|schreibt|recherchier|arbeite|arbeitet)", re.I)
+
+
+def ist_ja(text: str) -> bool:
+    t = (text or "").strip()
+    return len(t.split()) <= 10 and bool(_JA.search(t)) and not _NEIN.search(t)
 
 SYSTEM = """Du bist das VvE Cockpit: die Stimme von Veikos persönlichem KI-Team. Veiko von Eckern ist Head of Corporate HR Transformation bei Krones. Sein Team: Jason (Head of PMO, ordnet ein), Neo (Cockpit Engineer), Clayton (Strategie), Neal (Texte, Bücher), Daniel (Red Team, prüft), Annie (Gestaltung), Ridley (Video).
 
@@ -62,22 +85,33 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"zeigen","ziel":"ueberblick|aufgaben|zeitplan|struktur|notizen|ergebnisse|verlauf|dateien","projekt_id":"p…"} -- öffnet eine Ansicht des Projekts sofort, ohne Rückfrage (ändert nichts)
 - {"aktion":"bild","prompt":"ausführliche Bildbeschreibung auf ENGLISCH (Motiv, Stil, Licht, Perspektive)","titel":"kurzer deutscher Titel","format":"quadrat|quer|hoch","vorlage":"z-image"} -- erzeugt ein Bild auf dem eigenen Server. Vorlage IMMER z-image (etwa 15 Sekunden), auch für fotorealistische Bilder; qwen nur, wenn lesbarer Text im Bild stehen soll; flux2 nur, wenn Veiko ausdrücklich höchste Qualität verlangt (dauert mehrere Minuten). Läuft sofort.
 - {"aktion":"visualisierung","beschreibung":"was dargestellt werden soll, mit allen Inhalten (Schritte, Begriffe, Zahlen) auf Deutsch","titel":"kurzer Titel"} -- zeichnet ein Schaubild (Ablauf, Mindmap, Diagramm, Vergleich). Läuft sofort.
-- {"aktion":"zeigen","ziel":"board|briefing|inbox|projects|team|neo|system"} -- öffnet einen Bereich des Cockpits sofort. Will Veiko „mit dem Advisory Board sprechen“: ziel board. Stellt er dabei schon eine Frage ans Board, gib sie als "frage" mit -- das Board antwortet dann selbst, du antwortest nicht an seiner Stelle.
+- {"aktion":"zeigen","ziel":"board|briefing|inbox|projects|team|neo|system|watchdog|brainstrom|exo"} -- öffnet einen Bereich des Cockpits sofort. Will Veiko „mit dem Advisory Board sprechen“: ziel board. Stellt er dabei schon eine Frage ans Board, gib sie als "frage" mit -- das Board antwortet dann selbst, du antwortest nicht an seiner Stelle.
 - {"aktion":"ausarbeiten","rolle":"stratege|buch|designer|video","form":"text|aufstellung|konzept|dokument|webseite|praesentation","auftrag":"…","recherche":"Suchanfrage oder null","vorgang_id":"v… oder null","projekt_id":"p… oder null"}
 - {"aktion":"merken","art":"person|organisation|begriff|hoerfehler","begriff":"…","bedeutung":"…"}
 - {"aktion":"notiz","text":"…","projekt_id":"p… oder null"}
 - {"aktion":"projekt_neu","name":"…"}
 - {"aktion":"neo","auftrag":"was Neo am Cockpit oder Server tun soll"}
+- {"aktion":"brainstrom","thema":"die Idee in ein, zwei Sätzen","projekt_id":"p… oder null"} -- startet BrainStrom (eine Idee Frage für Frage zuspitzen) und öffnet die Ansicht. Läuft sofort.
+- {"aktion":"brainstrom_antwort","text":"Veikos Antwort, ausformuliert"} -- beantwortet die AKTUELLE FRAGE in BrainStrom (siehe KONTEXT). „Die zweite“ oder „Option B“ heißt: der Text dieser Antwortmöglichkeit. Läuft sofort.
+- {"aktion":"brainstrom_genug"} -- genug gefragt, direkt zu den Wegen. Läuft sofort.
+- {"aktion":"brainstrom_weg","nummer":1} -- wählt einen der WEGE ZUR WAHL (Nummer ab 1); dann entsteht der Entwurf. Läuft sofort.
+- {"aktion":"brainstrom_uebernehmen"} -- macht aus dem fertigen Entwurf ein Projekt mit Aufgaben (braucht Veikos Ja).
+- {"aktion":"exo","umfang":"portfolio|projekt","projekt_id":"p… oder null"} -- startet die ExO-Bewertung (MTP, SCALE, IDEAS) und öffnet die Ansicht. Läuft sofort.
 Schlage nur vor, was Veiko erkennbar will. Ohne Handlungswunsch kein Block.
 WICHTIG: Du selbst führst NICHTS aus. Schreib nie „ich mache das“, „ich korrigiere“, „ich merke mir“ oder „erledigt“. Sag in einem Satz, was du vorschlägst, und schließ mit der Frage „Soll ich das so machen?“. Ausgeführt wird erst, wenn Veiko bestätigt; das Cockpit meldet es dann selbst.
+PFLICHT: Jede Antwort, die mit „Soll ich das so machen?“ endet, trägt den aktionen-Block in DERSELBEN Antwort. Ohne Block kann Veikos „Ja“ nichts ausführen, und er müsste ein zweites Mal bestätigen -- genau das soll nie passieren.
+AUSNAHME ausarbeiten und neo bei einem klaren Auftrag: Sagt Veiko ausdrücklich, dass das Team oder Neo etwas tun soll („Lass das Team eine Präsentation erstellen“, „Neo, bau …“), ist das schon die Bestätigung. Dann KEINE Frage, sondern ein kurzer Satz, wer sich woran macht -- und IMMER der aktionen-Block dazu. Ohne Block passiert nichts; ein solcher Satz ohne Block wäre gelogen.
+Sagt Veiko „ja“ auf deinen Vorschlag, gehört derselbe Vorschlag als aktionen-Block in deine Antwort.
 AUSNAHME bild und visualisierung: die laufen sofort los, das Ergebnis erscheint gleich im Gespräch zum Ansehen und Herunterladen. Sag nur kurz „Ich erstelle dir das Bild, es erscheint gleich hier.“ bzw. „… die Visualisierung …“ -- keine Frage. Beziehen sie sich auf das Gespräch oder KONTEXT, nimm dessen Inhalte in prompt bzw. beschreibung auf.
+AUSNAHME BrainStrom und ExO (brainstrom, brainstrom_antwort, brainstrom_genug, brainstrom_weg, exo): laufen sofort. Sag nur kurz, was passiert („Ich gebe deine Antwort an BrainStrom.“) -- KEINE Frage und nicht selbst die nächste BrainStrom-Frage erfinden; die stellt BrainStrom, das Cockpit liest sie vor. Ist Veiko in BrainStrom und antwortet auf die aktuelle Frage, ist das IMMER brainstrom_antwort.
+DIE NOTABSCHALTUNG (Kill Switch, Safety Shutdown) gibt es NIE über das Gespräch, auch nicht auf ausdrücklichen Wunsch: sag, dass sie nur über die Knöpfe im WatchDog geht, und biete an, den WatchDog zu öffnen.
 AUSNAHME zeigen: das öffnet nur eine Ansicht und passiert sofort. Dann KEINE Frage, sondern ein kurzer Satz wie „Ich öffne dir das Advisory Board.“ Reichst du eine Frage ans Board weiter, sag „Ich gebe deine Frage ans Advisory Board weiter.“ und antworte nicht selbst an seiner Stelle.
 Wenn Veiko eine offene Entscheidung bestätigt oder ablehnt, gehört genau EINE passende entscheiden-Aktion in den Block, nicht mehr.
 aufgabe_erledigt nur, wenn Veiko sagt, dass er etwas erledigt hat. Überfällig heißt nicht erledigt.
 Schaut Veiko auf ein PROJEKT (siehe KONTEXT), dann geht es um dieses Projekt, solange er nichts anderes sagt: neue Aufgaben, Notizen und Ausarbeitungen gehören dorthin. Will er etwas sehen („zeig mir die Aufgaben“), nimm zeigen.
 Wünscht Veiko ein Dokument, eine Präsentation, eine Recherche oder einen Entwurf: ausarbeiten (form dokument für Word, praesentation für Folien). Geht es um das Cockpit, den Server oder Software: neo.
 
-Arbeitsweisen auf Zuruf: "Brainstorming" = viele unterschiedliche Ideen, nummeriert, dann die drei stärksten mit Begründung. "ExO-Bewertung" = anhand des veröffentlichten ExO-Rahmens (MTP, SCALE, IDEAS) einschätzen, ehrlich mit Lücken."""
+Arbeitsweisen auf Zuruf: Will Veiko eine Idee zuspitzen, „brainstormen“ oder „BrainStrom“: aktion brainstrom. Will er eine „ExO-Bewertung“ oder „ExO-Analyse“: aktion exo. Ist nur ein kurzes Ideensammeln im Gespräch gemeint, antworte selbst mit nummerierten Ideen und den drei stärksten."""
 
 STIMME_ZUSATZ = ("- Die Antwort wird VORGELESEN: höchstens vier kurze Sätze, keine Tabellen, keine Aufzählungszeichen, keine Markdown-Zeichen.\n"
                  "- Daten im Text so, wie man sie sagt („Freitag, 9. Oktober“), nie als 2026-10-09. Im aktionen-Block bleibt JJJJ-MM-TT.\n"
@@ -141,6 +175,23 @@ def kontext_text(k: dict[str, Any] | None) -> str:
     if not k or not k.get("id"):
         return ""
     art, kid = k.get("art"), k.get("id")
+    if art in ("brainstrom", "exo"):
+        from . import verfahren
+        return verfahren.kontext_text(art)
+    if art == "watchdog":
+        from . import systeminfo
+        w = systeminfo.watchdog()
+        if not w.get("bekannt"):
+            return "VEIKO SCHAUT AUF DEN WATCHDOG. Der WatchDog-Dienst (vve-health) meldet gerade nichts."
+        nf = w.get("notfall") or {}
+        karten = ", ".join(f"Karte {g.get('index', 0) + 1} {g.get('temp_c')} °C" for g in w.get("gpu_temps") or []) or "keine gemeldet"
+        automatik = "ANGEHALTEN" if w.get("automatik_angehalten") else "an" if w.get("auto_an") else "aus"
+        notfall = f"{_zeit(nf.get('zeit'))}: {nf.get('grund')}" if nf else "keiner"
+        return ("VEIKO SCHAUT AUF DEN WATCHDOG (wacht über Temperaturen und Dienste, schaltet im Notfall ab).\n"
+                f"Grafikkarten: {karten}; Notfallschwelle {w.get('schwelle_c')} °C; Automatik {automatik}; "
+                f"letzte Messung vor {w.get('alter_sek')} s.\n"
+                f"Letzter Notfall: {notfall}.\n"
+                f"Selbst repariert: {', '.join(w.get('reparaturen') or []) or 'nichts'}.")
     if art == "vorgang":
         v = db.holen("vorgaenge", kid)
         if not v:
@@ -190,7 +241,7 @@ ZIELE = {"ueberblick": "Überblick", "aufgaben": "Aufgaben", "zeitplan": "Zeitpl
          "verlauf": "Verlauf", "dateien": "Dateien"}
 # Bereiche des Cockpits, die Talk ohne Projekt oeffnen kann.
 BEREICHE = {"board": "Advisory Board", "briefing": "Briefing", "inbox": "Inbox", "projects": "Projects", "team": "Team",
-            "neo": "Neo", "system": "System"}
+            "neo": "Neo", "system": "System", "watchdog": "WatchDog", "brainstrom": "BrainStrom", "exo": "ExO"}
 
 
 def beschriften(a: dict[str, Any]) -> str | None:
@@ -237,6 +288,22 @@ def beschriften(a: dict[str, Any]) -> str | None:
         return f"Projekt anlegen: {a['name'][:60]}"
     if art == "neo":
         return f"Neo beauftragen: {a['auftrag'][:90]}"
+    if art == "brainstrom":
+        return f"BrainStrom: {str(a['thema'])[:90]}"
+    if art == "brainstrom_antwort":
+        return f"Antwort an BrainStrom: {str(a['text'])[:90]}"
+    if art == "brainstrom_genug":
+        return "BrainStrom: direkt zu den Wegen"
+    if art == "brainstrom_weg":
+        try:
+            return f"BrainStrom: Weg {int(a['nummer'])} wählen"
+        except (TypeError, ValueError):
+            return None
+    if art == "brainstrom_uebernehmen":
+        return "Entwurf als Projekt mit Aufgaben übernehmen"
+    if art == "exo":
+        p = db.holen("projekte", a.get("projekt_id") or "") if a.get("projekt_id") else None
+        return "ExO-Analyse: " + (p["name"] if p and a.get("umfang") == "projekt" else "ganzes Portfolio")
     return None
 
 
@@ -294,6 +361,21 @@ async def ausfuehren(a: dict[str, Any]) -> dict[str, Any]:
                                 "start": time.strftime("%Y-%m-%d"), "fruehere_namen": [], "sortierung": 999,
                                 "erstellt": time.time(), "geaendert": time.time(), "quelle": "du"})
         return {"ok": True, "projekt_id": pid}
+    if art in SOFORT_VERFAHREN or art == "brainstrom_uebernehmen":
+        from . import verfahren
+        if art == "brainstrom":
+            verfahren.bs_starten(str(a["thema"]), a.get("projekt_id"))
+        elif art == "brainstrom_antwort":
+            verfahren.bs_antworten(str(a["text"]))
+        elif art == "brainstrom_genug":
+            verfahren.bs_genug()
+        elif art == "brainstrom_weg":
+            verfahren.bs_weg(int(a["nummer"]) - 1)
+        elif art == "exo":
+            verfahren.exo_starten(str(a.get("umfang") or "portfolio"), a.get("projekt_id"))
+        else:
+            return await verfahren.bs_uebernehmen()
+        return {"ok": True}
     if art == "neo":
         from . import neo
         gid = db.neue_id("g")
@@ -371,6 +453,81 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
              if v["aktion"] == "bild" else medien.visualisierung_starten(str(v["beschreibung"])[:4000], str(v.get("titel") or "")))
         medien_jobs.append({"id": j["id"], "art": j["art"], "titel": j["titel"]})
     vorschlaege = [v for v in vorschlaege if v["aktion"] not in ("bild", "visualisierung")]
+    # BrainStrom und ExO: sofort ausfuehren und die Ansicht oeffnen. Bei BrainStrom
+    # wartet das Gespraech auf die naechste Frage und haengt sie an -- so wird sie
+    # beim Freisprechen gleich vorgelesen, und man kann weiter antworten.
+    # Veiko hat schon bestaetigt -- dann nicht noch einmal fragen (Veiko, 01.10.: "ich
+    # moechte das ja nicht noch mal bestaetigen muessen, das Cockpit soll einfach
+    # losarbeiten"). Zwei Faelle:
+    #   1. Er sagt kurz "ja, macht das so" auf eine Frage, und das Modell haengt den
+    #      Vorschlag erst JETZT an (es hatte ihn bei der Frage vergessen).
+    #   2. Er erteilt ausdruecklich einen Auftrag ans Team oder an Neo. Das erzeugt
+    #      nur eine Ausarbeitung (Case in der Inbox), aendert keinen Bestand.
+    # Alles andere (Entscheidungen, Projekte, Aufgaben, Merken) bleibt beim Ja-Knopf.
+    vorher = db.eine("SELECT text, daten FROM nachrichten WHERE gespraech_id=? AND rolle='assistent' ORDER BY id DESC LIMIT 1", (gid,))
+    hatte_offen = bool(vorher and any(not v.get("erledigt") for v in ((vorher.get("daten") or {}).get("vorschlaege") or [])))
+    bestaetigt = bool(vorher and "?" in (vorher.get("text") or "") and not hatte_offen and ist_ja(text))
+    auftrag = bool(AUFTRAG_AN_TEAM.search(text))
+    if bestaetigt and not [v for v in vorschlaege if v["aktion"] not in SOFORT_VERFAHREN]:
+        # Ja gesagt, aber das Modell liefert wieder keinen Block (gemessen am 01.10.:
+        # es schrieb "Annie macht sich an die Praesentation" und loeste nichts aus).
+        # Einmal gezielt nachfordern -- nur den Block, nichts sonst.
+        try:
+            roh = await llm.chat(modell, system, verlauf + [{"role": "assistant", "content": gesamt}, {"role": "user", "content":
+                "Veiko hat deinen Vorschlag mit Ja bestätigt. Antworte jetzt NUR mit dem ```aktionen-Block für genau diesen Vorschlag, ohne weiteren Text."}],
+                temperatur=0.1, num_ctx=24576)
+            _, nach = vorschlaege_aus(roh if "```aktionen" in roh else "```aktionen\n" + roh + "\n```")
+            for v in nach:
+                if kontext and kontext.get("art") == "projekt" and v["aktion"] in ("aufgabe_neu", "notiz", "ausarbeiten") and not v.get("projekt_id"):
+                    v["projekt_id"] = kontext["id"]
+                    v["label"] = beschriften(v) or v["label"]
+            vorschlaege += [v for v in nach if v["aktion"] not in ("zeigen", "bild", "visualisierung")]
+        except llm.ModellFehler:
+            pass
+        if not vorschlaege:
+            sichtbar = re.sub(r"[^.!?\n]*(macht sich|arbeitet an|erscheint in der Inbox)[^.!?\n]*[.!?]?", "", sichtbar).strip()
+            sichtbar = (sichtbar + "\n\nIch konnte deinem Ja keinen Auftrag zuordnen, gestartet ist noch nichts. Sag mir bitte noch einmal, was das Team tun soll.").strip()
+    gleich = [v for v in vorschlaege if v["aktion"] not in SOFORT_VERFAHREN
+              and (bestaetigt or (auftrag and v["aktion"] in ("ausarbeiten", "neo")))]
+    ausgefuehrt = []
+    for v in gleich[:3]:
+        try:
+            r = await ausfuehren(v)
+        except Exception as f:  # noqa: BLE001
+            r = {"ok": False, "grund": str(f)}
+        v["erledigt"] = bool(r.get("ok"))
+        v["ergebnis"] = r
+        ausgefuehrt.append(r)
+    if ausgefuehrt:
+        if all(r.get("ok") for r in ausgefuehrt):
+            hinweis = ("Neo arbeitet daran." if any(r.get("neo_gespraech") for r in ausgefuehrt)
+                       else "Ist beim Team, das Ergebnis erscheint in der Inbox." if any(r.get("vorgang_id") for r in ausgefuehrt) else "Erledigt.")
+        else:
+            hinweis = "Nicht alles ging: " + "; ".join(str(r.get("grund")) for r in ausgefuehrt if not r.get("ok"))
+        sichtbar = re.sub(r"\s*Soll ich das so machen\?\s*$", "", sichtbar).strip()
+        schon_gesagt = all(r.get("ok") for r in ausgefuehrt) and re.search(r"Inbox|arbeite|macht sich|kümmer|erledigt", sichtbar, re.I)
+        if not schon_gesagt:
+            sichtbar = (sichtbar + "\n\n" + hinweis).strip()
+    sofort = [v for v in vorschlaege if v["aktion"] in SOFORT_VERFAHREN][:1]
+    vorschlaege = [v for v in vorschlaege if v["aktion"] not in SOFORT_VERFAHREN]
+    if sofort:
+        from . import verfahren
+        v = sofort[0]
+        ziel = "exo" if v["aktion"] == "exo" else "brainstrom"
+        if not any(z.get("ziel") == ziel for z in zeigen):
+            zeigen = [{"aktion": "zeigen", "ziel": ziel}]
+        try:
+            await ausfuehren(v)
+            if ziel == "brainstrom":
+                yield {"typ": "text", "t": "\n\n_BrainStrom denkt nach …_"}
+                await verfahren.warten("brainstrom", 150)
+                naechstes = verfahren.kurz_fuer_talk()
+                if naechstes:
+                    sichtbar = (sichtbar + "\n\n" + naechstes).strip()
+            else:
+                sichtbar = (sichtbar + "\n\nDie ExO-Analyse läuft, das dauert ein bis zwei Minuten. Das Ergebnis erscheint in der Ansicht.").strip()
+        except (ValueError, llm.ModellFehler) as f:
+            sichtbar = (sichtbar + f"\n\nDas ging nicht: {f}").strip()
     if llm.fremdschrift(sichtbar):
         sichtbar = llm.FREMDSCHRIFT.sub("", sichtbar)
     mid = db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",

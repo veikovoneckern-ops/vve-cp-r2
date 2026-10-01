@@ -58,6 +58,9 @@ const PFADE = {
   play: "M7 5v14l11-7z",
   liste: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
   download: "M12 4v11M7 10l5 5 5-5M5 20h14",
+  watchdog: "M12 3l7 3v5c0 4.5-3 8.4-7 10-4-1.6-7-5.5-7-10V6zM9 12l2 2 4-4",
+  brainstrom: "M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z",
+  exo: "M3 20h18M4 19c7 0 11-5 14-15M14 4h4v4",
 };
 export function Icon({ n, g = 18, w = 1.9 }) {
   return html`<svg class="ico" viewBox="0 0 24 24" width=${g} height=${g} fill="none" stroke="currentColor"

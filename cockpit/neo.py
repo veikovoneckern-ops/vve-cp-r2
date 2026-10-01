@@ -79,7 +79,9 @@ _VERWEIS = re.compile(r"""(?:src|href)\s*=\s*["']([^"'#?]+)|url\(\s*["']?([^"')#
 
 
 def _fehlende_verweise(seite: Path) -> list[str]:
-    """Relative Verweise einer HTML-Seite (Bilder, CSS, Skripte), die es neben ihr nicht gibt."""
+    """Verweise einer HTML-Seite (Bilder, CSS, Skripte), die in der Vorschau ins
+    Leere gehen: relative, die es neben ihr nicht gibt, und Pfade auf der
+    Platte des Servers (/home/..., file:...), die der Browser nie erreicht."""
     from urllib.parse import unquote
     try:
         html = seite.read_text(encoding="utf-8", errors="replace")
@@ -88,11 +90,83 @@ def _fehlende_verweise(seite: Path) -> list[str]:
     fehlt = []
     for m in _VERWEIS.finditer(html):
         ref = (m.group(1) or m.group(2) or "").strip()
-        if not ref or re.match(r"^(https?:|data:|mailto:|tel:|javascript:|/|//)", ref, re.I):
+        if not ref or ref in fehlt:
             continue
-        if not (seite.parent / unquote(ref)).exists() and ref not in fehlt:
+        if _platten_pfad(ref):
+            fehlt.append(ref)
+            continue
+        if re.match(r"^(https?:|data:|mailto:|tel:|javascript:|/|//)", ref, re.I):
+            continue
+        if not (seite.parent / unquote(ref)).exists():
             fehlt.append(ref)
     return fehlt[:8]
+
+
+def _platten_pfad(ref: str) -> bool:
+    return bool(re.match(r"^(file:|/home/|/tmp/|/var/|~/)", ref, re.I) or "daten/uploads/" in ref)
+
+
+def _sauber(name: str) -> str:
+    return re.sub(r"[^\w.-]+", "-", name).strip("-").lower()
+
+
+_ANHANG = re.compile(r"\[Angehängt: (.+?) -- liegt unter (.+?)\]")
+
+
+def anhaenge_im_gespraech(gid: str) -> list[dict[str, Any]]:
+    """Alle Dateien, die Veiko in diesem Gespraech angehaengt hat -- aus dem Text
+    der Nachrichten, damit auch alte Anhaenge zaehlen (die Kennzeichnung steht
+    dort seit dem ersten Tag). Lehre vom 01.10.2026: das Logo hing zehn
+    Nachrichten zurueck, Neo hatte es aus dem Blick verloren und zeichnete
+    zweimal einen Farbkreis mit "V" statt Veikos Logo."""
+    out: dict[str, dict[str, Any]] = {}
+    for m in db.alle("SELECT text FROM nachrichten WHERE gespraech_id=? AND rolle='du' ORDER BY id", (gid,)):
+        for name, pfad in _ANHANG.findall(m["text"] or ""):
+            pfad = pfad.strip()
+            if Path(pfad).is_file():
+                out.pop(pfad, None)  # juengste Erwaehnung zuletzt
+                out[pfad] = {"name": name.strip(), "pfad": pfad, "sauber": _sauber(name),
+                             "bild": bool(re.search(r"\.(png|jpe?g|gif|svg|webp|ico)$", name, re.I))}
+    return list(out.values())
+
+
+def _verweise_reparieren(seite: Path, anhaenge: list[dict[str, Any]]) -> list[str]:
+    """Zeigt die Seite auf einen Anhang, der nicht neben ihr liegt (Name aus dem
+    Upload, mit oder ohne Kennung davor, oder gleich der Upload-Pfad), dann legt
+    das Cockpit ihn selbst daneben. Das ist kein Raten: welche Datei gemeint
+    ist, steht eindeutig im Verweis. Ohne eindeutigen Treffer bleibt der
+    Verweis als Fehler stehen."""
+    from urllib.parse import unquote
+    import shutil
+    if not anhaenge:
+        return []
+    try:
+        html = seite.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    getan, neu = [], html
+    for ref in _fehlende_verweise(seite):
+        roh = unquote(ref)
+        basis = Path(roh.replace("file://", "")).name.lower()
+        treffer = None
+        for a in anhaenge:
+            auf_platte = Path(a["pfad"]).name.lower()
+            if basis in (auf_platte, a["name"].lower(), a["sauber"], auf_platte.split("_", 1)[-1]):
+                treffer = a
+                break
+        if not treffer:
+            continue
+        ziel_name = treffer["sauber"] if _platten_pfad(ref) else Path(roh).name
+        try:
+            shutil.copyfile(treffer["pfad"], seite.parent / ziel_name)
+        except OSError:
+            continue
+        if _platten_pfad(ref):
+            neu = neu.replace(ref, ziel_name)
+        getan.append(f"{treffer['name']} -> {seite.parent / ziel_name}")
+    if neu != html:
+        seite.write_text(neu, encoding="utf-8")
+    return getan
 
 
 def _kurz(eingabe: dict[str, Any]) -> str:
@@ -188,16 +262,19 @@ async def werkzeug(name: str, e: dict[str, Any], lauf: dict[str, Any]) -> str:
             z = ziel_dir / z.name
             rel = z.relative_to(VORSCHAU_DIR.resolve())
         url = "/api/neo/vorschau/" + str(rel).replace("\\", "/")
+        repariert = _verweise_reparieren(z, lauf.get("anhaenge") or [])
         lauf["vorschau"] = url
+        lauf["gezeigt"] = str(z)
         await lauf["schlange"].put({"typ": "vorschau", "url": url})
+        vorab = ("Das Cockpit hat fehlende Anhänge selbst neben die Seite gelegt: " + "; ".join(repariert) + "\n") if repariert else ""
         fehlt = _fehlende_verweise(z)
         if fehlt:
             # Lehre vom 01.10.2026: Neo trug den Namen eines angehaengten Logos ein,
             # ohne es in den Ordner zu kopieren -- die Seite zeigte ein leeres Bild,
             # und Neo meldete "erledigt". Jetzt bekommt er das als Fehler zurueck.
-            return (f"Vorschau gezeigt: {url}\nNICHT FERTIG: Die Seite verweist auf Dateien, die im Ordner {z.parent} fehlen: "
+            return (vorab + f"Vorschau gezeigt: {url}\nNICHT FERTIG: Die Seite verweist auf Dateien, die im Ordner {z.parent} fehlen: "
                     + ", ".join(fehlt) + ". Kopiere sie mit datei_kopieren dorthin (oder korrigiere den Verweis) und zeig die Seite erneut.")
-        return f"Vorschau gezeigt: {url}"
+        return vorab + f"Vorschau gezeigt: {url}"
     if name == "dokument_erstellen":
         from . import dokumente
         inhalt = str(e.get("inhalt") or "")
@@ -250,9 +327,16 @@ def _kontext_text() -> str:
         return "Du bist Neo, Cockpit Engineer in Veikos Stab."
 
 
-def system_text() -> str:
+def system_text(anhaenge: list[dict[str, Any]] | None = None) -> str:
     from .stab import gedaechtnis_text
-    return (_kontext_text() +
+    anh = ""
+    if anhaenge:
+        anh = ("\n\n## Dateien, die Veiko in diesem Gespräch angehängt hat\n" + "\n".join(
+            f"- {a['name']}: {a['pfad']}" + (f" (BILD -- für eine Seite mit datei_kopieren nach <Seitenordner>/{a['sauber']} legen, "
+                                            f"dann <img src=\"{a['sauber']}\">)" if a["bild"] else "") for a in anhaenge) +
+               "\nSpricht Veiko von „der angehängten Datei“, „meinem Logo“ oder „dem Bild“, ist eine dieser Dateien gemeint -- "
+               "die letzte in der Liste, wenn nichts anderes gesagt ist. Nie durch etwas Selbstgezeichnetes ersetzen.")
+    return (_kontext_text() + anh +
             f"\n\n## Was über Veiko bekannt ist\n{gedaechtnis_text()}\n\n"
             "## Wie du arbeitest\n"
             "Sieh nach, bevor du etwas behauptest -- nicht raten. datei_schreiben und befehl_ausfuehren wirken SOFORT. "
@@ -275,7 +359,12 @@ def system_text() -> str:
             "nicht, was du vorhattest (wer „dein Logo“ schreibt, muss die Datei kopiert haben).\n"
             "\nWenn du fertig bist, antworte Veiko auf Deutsch: zuerst in ein bis zwei Sätzen das Ergebnis, dann was du konkret "
             "getan hast (Dateien, Befehle), dann was er prüfen sollte. Kein Fachbegriff ohne kurze Erklärung. "
-            "Schick ihn nie zu Handarbeit, die du selbst erledigen kannst.")
+            "Schick ihn nie zu Handarbeit, die du selbst erledigen kannst.\n"
+            "\n## Wenn Veiko etwas noch einmal verlangt\n"
+            "„Bau das noch mal“, „das ist nicht mein Logo“, „das stimmt nicht“: dein letzter Versuch war falsch. Wiederhole ihn NICHT "
+            "und schreib deine alte Antwort nicht ab. Sieh zuerst nach, was schiefging (die Seite mit datei_lesen lesen, den Ordner "
+            "mit befehl_ausfuehren ls -la ansehen), behebe genau das und zeig das Ergebnis erneut. Nach deiner Antwort prüft das "
+            "Cockpit selbst, ob die Seite gezeigt wird und alle Bilder neben ihr liegen.")
 
 
 _XML_FN = re.compile(r"<function=([\w-]+)>(.*?)(?:</function>|(?=<function=)|\Z)", re.S)
@@ -303,6 +392,66 @@ def _xml_aufrufe(text: str) -> tuple[str, list[dict[str, Any]]]:
     return vorne, aufrufe
 
 
+def _klammer_ende(text: str, start: int) -> int:
+    """Index der schliessenden Klammer zu text[start] == '(' -- Zeichenketten beachtet."""
+    tiefe, i, quote = 0, start, None
+    while i < len(text):
+        ch = text[i]
+        if quote:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+        elif ch in "\"'":
+            quote = ch
+        elif ch == "(":
+            tiefe += 1
+        elif ch == ")":
+            tiefe -= 1
+            if tiefe == 0:
+                return i
+        i += 1
+    return -1
+
+
+def _text_aufrufe(text: str) -> list[dict[str, Any]]:
+    """Werkzeugaufrufe, die das Modell als TEXT schreibt: datei_schreiben(pfad="…", inhalt="…").
+
+    Gemessen am 01.10.2026 (Logo-Auftrag, zweiter Anlauf): qwen3-coder schrieb den
+    richtigen Plan -- Logo kopieren, Seite schreiben, zeigen -- vollstaendig als
+    solche Zeilen in seine Antwort, ohne einen einzigen echten Aufruf. Die Zeilen
+    sind gueltige Python-Aufrufe; ast liest sie ohne Raten. Nur bekannte Werkzeuge,
+    nur feste Werte (keine Ausdruecke) -- alles andere bleibt Text."""
+    import ast
+    bekannte = {w["name"]: w for w in WERKZEUGE}
+    aufrufe = []
+    for m in re.finditer(r"\b(" + "|".join(bekannte) + r")\(", text):
+        ende = _klammer_ende(text, m.end() - 1)
+        if ende < 0:
+            continue
+        try:
+            knoten = ast.parse(text[m.start():ende + 1], mode="eval").body
+        except SyntaxError:
+            continue
+        if not isinstance(knoten, ast.Call):
+            continue
+        args: dict[str, Any] = {}
+        pflicht = bekannte[m.group(1)]["parameters"].get("required", [])
+        try:
+            for i, a in enumerate(knoten.args):
+                if i < len(pflicht):
+                    args[pflicht[i]] = ast.literal_eval(a)
+            for k in knoten.keywords:
+                if k.arg:
+                    args[k.arg] = ast.literal_eval(k.value)
+        except ValueError:
+            continue
+        if all(p in args for p in pflicht):
+            aufrufe.append({"function": {"name": m.group(1), "arguments": args}})
+    return aufrufe[:8]
+
+
 def _gekuerzt(verlauf: list[dict[str, Any]]) -> list[dict[str, Any]]:
     tool_idx = [i for i, m in enumerate(verlauf) if m.get("role") == "tool"]
     alt = set(tool_idx[:-VOLLE_SCHRITTE]) if len(tool_idx) > VOLLE_SCHRITTE else set()
@@ -326,6 +475,13 @@ def _vorgeschichte(gid: str, grenze: int = 14) -> list[dict[str, Any]]:
             # erfundene "Arbeitsschritte" als Text, statt Werkzeuge aufzurufen
             # (gemessen am 01.10.2026: Antwort nach 3 s, kein einziger Schritt).
             text = re.sub(r"\[Deine Arbeitsschritte damals:.*?\]\s*$", "", m["text"] or "", flags=re.S).strip()
+            schritte = (m.get("daten") or {}).get("schritte") if isinstance(m.get("daten"), dict) else None
+            if not schritte and BEHAUPTUNG.search(text):
+                # Eine Erzaehlung von Arbeit, die nie stattfand, ist das schlechteste
+                # Vorbild im Verlauf: das Modell schrieb sie beim naechsten Mal fast
+                # wortgleich ab (Logo-Auftrag, 01.10.2026). Ehrlich vermerken statt zeigen.
+                text = ("[Frühere Antwort von dir, die Arbeit beschrieb, ohne ein einziges Werkzeug aufzurufen -- "
+                        "es ist also nichts davon passiert. Mach es diesmal mit echten Werkzeugaufrufen.]")
             out.append({"role": "assistant", "content": text[:6000]})
     return out
 
@@ -341,12 +497,68 @@ def laufender_job(gid: str) -> str | None:
     return None
 
 
+def _seiten_dieses_auftrags(lauf: dict[str, Any]) -> list[Path]:
+    basis = str(VORSCHAU_DIR.resolve())
+    seiten: list[Path] = []
+    for f in lauf["dateien"]:
+        p = Path(f.get("pfad") or "")
+        if p.suffix.lower() in (".html", ".htm") and str(p).startswith(basis) and p.is_file() and p not in seiten:
+            seiten.append(p)
+    return seiten
+
+
+async def _abschluss_pruefen(lauf: dict[str, Any], text: str) -> str | None:
+    """Was Neo am Ende meldet, wird gegen das gehalten, was wirklich da ist.
+
+    Anlass (01.10.2026, Logo-Auftrag): Neo schrieb eine Seite, rief
+    vorschau_zeigen NICHT auf, verwies auf ein Bild, das nicht neben der Seite
+    lag -- und meldete "in deiner Vorschau verfuegbar". Die Pruefung in
+    vorschau_zeigen griff nie, weil das Werkzeug gar nicht lief. Darum hier,
+    nach der letzten Antwort, unabhaengig davon, was Neo aufgerufen hat:
+      1. Eine geschriebene Seite, die nicht gezeigt wurde, zeigt das Cockpit selbst.
+      2. Fehlt ein Anhang neben der Seite, legt das Cockpit ihn dazu (eindeutiger Name).
+      3. Bleibt ein Verweis ins Leere, geht Neo zurueck an die Arbeit.
+      4. Behauptet er eine Vorschau, die es nicht gibt, ebenso.
+    Rueckgabe: ein Auftrag fuer die naechste Runde, oder None, wenn alles stimmt."""
+    seiten = _seiten_dieses_auftrags(lauf)
+    if seiten and not lauf.get("vorschau"):
+        ziel = seiten[-1]
+        ergebnis = await werkzeug("vorschau_zeigen", {"pfad": str(ziel)}, lauf)
+        schritt = {"name": "vorschau_zeigen", "kurz": f"pfad={ziel} (vom Cockpit nachgeholt)", "ergebnis": ergebnis[:2500], "zeit": time.time()}
+        lauf["schritte"].append(schritt)
+        await lauf["schlange"].put({"typ": "schritt", **schritt})
+    elif lauf.get("gezeigt"):
+        repariert = _verweise_reparieren(Path(lauf["gezeigt"]), lauf.get("anhaenge") or [])
+        if repariert:
+            schritt = {"name": "datei_kopieren", "kurz": "vom Cockpit nachgeholt", "ergebnis": "; ".join(repariert), "zeit": time.time()}
+            lauf["schritte"].append(schritt)
+            await lauf["schlange"].put({"typ": "schritt", **schritt})
+            await lauf["schlange"].put({"typ": "vorschau", "url": lauf["vorschau"]})
+    gezeigt = [Path(lauf["gezeigt"])] if lauf.get("gezeigt") else []
+    for s in dict.fromkeys(seiten + gezeigt):
+        fehlt = _fehlende_verweise(s)
+        if fehlt:
+            return (f"PRÜFUNG DES COCKPITS: NICHT FERTIG. Die Seite {s} verweist auf Dateien, die im Browser ins Leere gehen: "
+                    + ", ".join(fehlt) + ". Lege jede mit datei_kopieren in den Ordner " + str(s.parent)
+                    + " und binde sie relativ ein (nur der Dateiname, ohne Leerzeichen). Dann vorschau_zeigen. "
+                    "Antworte erst danach, und beschreib nur, was die Werkzeuge belegen.")
+    if (not lauf.get("vorschau") and re.search(r"vorschau", text, re.I)
+            and re.search(r"\b(verfügbar|gezeigt|angezeigt|zeige|sehen)\b", text, re.I)):
+        return ("PRÜFUNG DES COCKPITS: Du schreibst von der Vorschau, aber in diesem Auftrag wurde keine Seite gezeigt. "
+                f"Schreib die Seite nach {VORSCHAU_DIR}/<name>/index.html und ruf vorschau_zeigen auf -- oder sag ehrlich, warum nicht.")
+    return None
+
+
 async def _kern(gid: str, modell: str, lauf: dict[str, Any]) -> None:
     schlange: asyncio.Queue = lauf["schlange"]
     verlauf = _vorgeschichte(gid)
-    system = system_text()
+    lauf["anhaenge"] = anhaenge_im_gespraech(gid)
+    system = system_text(lauf["anhaenge"])
     letzter_text = ""
     nachgefragt = 0
+    geprueft = 0
+    frisch = False
+    verlauf_start = list(verlauf)
     try:
         for _ in range(MAX_SCHRITTE):
             antwort = await llm.chat_mit_werkzeugen(modell, system, _gekuerzt(verlauf),
@@ -365,6 +577,12 @@ async def _kern(gid: str, modell: str, lauf: dict[str, Any]) -> None:
                     break
             if not aufrufe and "<function=" in text:
                 text, aufrufe = _xml_aufrufe(text)
+            if not aufrufe:
+                aufrufe = _text_aufrufe(text)
+                if aufrufe:
+                    await schlange.put({"typ": "zwischen", "text": f"(Neo hat {len(aufrufe)} Arbeitsschritt(e) als Text geschrieben statt aufgerufen. Das Cockpit führt sie jetzt wirklich aus.)"})
+                    erster = re.search(r"\b" + re.escape(aufrufe[0]["function"]["name"]) + r"\(", text)
+                    text = text[:erster.start()].strip() if erster else ""
             verlauf.append({"role": "assistant", "content": text,
                             **({"tool_calls": aufrufe} if aufrufe else {})})
             if text:
@@ -374,6 +592,22 @@ async def _kern(gid: str, modell: str, lauf: dict[str, Any]) -> None:
             if not aufrufe:
                 # Behauptet, etwas getan zu haben, aber in DIESEM Auftrag kein
                 # Werkzeug benutzt? Dann einmal (hoechstens zweimal) zurueckschicken.
+                if not lauf["schritte"] and BEHAUPTUNG.search(text) and nachgefragt >= 2 and not frisch:
+                    # Zweimal zurueckgeschickt, immer noch nur erzaehlt: das Gespraech ist
+                    # "vergiftet" -- Neo schreibt seine eigenen frueheren Erzaehlungen ab
+                    # (gemessen am 01.10.2026: im alten Logo-Gespraech null Aufrufe, im
+                    # frischen Gespraech mit demselben Auftrag sofort alle vier). Also ein
+                    # frischer Anlauf: nur Veikos Nachrichten, ohne Neos alte Antworten.
+                    frisch = True
+                    await schlange.put({"typ": "zwischen", "text": "(Neo kam in diesem Gespräch nicht ins Arbeiten. Das Cockpit startet einen frischen Anlauf ohne seine alten Antworten.)"})
+                    seine = [m["content"] for m in verlauf_start if m.get("role") == "user"][-5:]
+                    verlauf = [{"role": "user", "content":
+                                "FRISCHER ANLAUF. Deine früheren Antworten in diesem Gespräch sind ausgeblendet: sie beschrieben Arbeit, "
+                                "die nie stattfand. Veikos Nachrichten bisher, die letzte ist der aktuelle Auftrag:\n\n"
+                                + "\n\n---\n\n".join(seine) +
+                                "\n\nErledige den Auftrag JETZT mit echten Werkzeugaufrufen (datei_kopieren, datei_schreiben, vorschau_zeigen …). "
+                                "Erst wenn die Werkzeuge ohne Fehler zurückkamen, antwortest du mit dem Ergebnis."}]
+                    continue
                 if not lauf["schritte"] and BEHAUPTUNG.search(text) and nachgefragt < 2:
                     nachgefragt += 1
                     await schlange.put({"typ": "zwischen", "text": "(Neo hat etwas behauptet, ohne es getan zu haben. Ich schicke ihn zurück an die Arbeit.)"})
@@ -383,6 +617,16 @@ async def _kern(gid: str, modell: str, lauf: dict[str, Any]) -> None:
                                     "(z. B. dokument_erstellen, datei_schreiben, vorschau_zeigen, befehl_ausfuehren). "
                                     "Wenn du es nicht kannst, sag ehrlich warum."})
                     continue
+                # Zum Schluss: stimmt, was er meldet? (siehe _abschluss_pruefen)
+                problem = await _abschluss_pruefen(lauf, text)
+                if problem and geprueft < 2:
+                    geprueft += 1
+                    await schlange.put({"typ": "zwischen", "text": "(Das Cockpit hat nachgeprüft: noch nicht fertig. Neo bessert nach.)"})
+                    verlauf.append({"role": "user", "content": problem})
+                    continue
+                if problem:
+                    letzter_text = ((letzter_text + "\n\n") if letzter_text else "") + \
+                        "**Hinweis des Cockpits:** " + problem.replace("PRÜFUNG DES COCKPITS: ", "")
                 break
             for a in aufrufe:
                 fn = a.get("function") or {}
@@ -417,6 +661,8 @@ def _abschliessen(gid: str, lauf: dict[str, Any], text: str, modell: str, abgebr
     if lauf.get("gespeichert"):
         return
     lauf["gespeichert"] = True
+    if llm.fremdschrift(text):
+        text = llm.FREMDSCHRIFT.sub("", text)
     # Dieselbe Datei zweimal geschrieben -> einmal nennen (der letzte Stand zaehlt).
     eindeutig: dict[str, Any] = {}
     for f in lauf["dateien"]:

@@ -1,5 +1,23 @@
 # Stand der neuen Fassung
 
+## 01.10.2026, nachts (5) — WatchDog, BrainStrom, ExO, Matrix, Neo nachgeprüft, ein Ja reicht
+
+| Gewünscht / gemeldet | Umgesetzt |
+|---|---|
+| WatchDog wie im alten Cockpit, mit Knopf links | Eigene Ansicht (`watchdog.js`): Zustand in einem Satz, Maschine (GPU-Temperatur im 8-s-Takt, Kill Switch, Safety Shutdown & Reboot, letzter Notfall, Selbstheilung), Sicherheit (ufw, fail2ban, SSH, Auto-Updates), darunter Aufbau und Wartung wie in der Server-Sektion (`useDetails`/`AufbauReihe` gemeinsam, kein zweiter Abruf). Die WatchDog-Gruppe der Server-Sektion ist dorthin umgezogen; im Software-Schaubild führt „Zum WatchDog“ hin |
+| BrainStrom und ExO 1:1 | `verfahren.py` + `verfahren.js`, Texte und Ablauf aus dem alten Cockpit. Neu: der Stand liegt auf dem Server; „Als Artefakt“ heißt „Als Ergebnis“ (ansehen, als Word laden); „Noch einmal versuchen“ nach einem Fehlschlag |
+| Mit dem Cockpit sprechen, auch dort | Talk kennt BrainStrom/ExO/WatchDog als Kontext. Aktionen `brainstrom`, `brainstrom_antwort` („die zweite Option“), `brainstrom_genug`, `brainstrom_weg`, `exo` laufen sofort; die nächste BrainStrom-Frage wird angehängt und beim Freisprechen vorgelesen; Freisprechen in BrainStrom liest die offene Frage gleich vor. Übernahme als Projekt nur mit Ja. Notabschaltung per Talk: verweigert, öffnet den WatchDog |
+| Aufbau: gerade Linien mit Winkel | Leitungen Mini-PC → Karten rechtwinklig |
+| Strom blau statt gelb | `--shelly` = #0000FF (die gemessene Farbe der Shelly-Ringe), im Dunkelmodus aufgehellt |
+| Neo: Knopf „Matrix“ | Vorschau zeigt nur den Regen, auch während Neo arbeitet; zeigt Neo ein Ergebnis, erscheint es von selbst. Zweiter Klick: zurück zum letzten Ergebnis |
+| Talk fragte nach dem Ja noch einmal (Bild vom 01.10.) | Ursache: „Soll ich das so machen?“ kam ohne Vorschlag; das Ja hatte nichts auszuführen, der Knopf kam erst danach. Jetzt: Pflicht zum Block in der Frage; nach einem Ja führt der Server aus (fehlt der Block, wird er einmal nachgefordert); ein ausdrücklicher Auftrag ans Team („Lasst das Team … erstellen“) startet sofort |
+| Neo baute das Logo wieder nicht | Befund siehe unten |
+
+**Neos Logo-Auftrag — woran es lag.** Drei Dinge zusammen: (1) Das Logo hing zehn Nachrichten zurück und wurde vor dem Bild-Hinweis vom 01.10. angehängt — Neo verlor es aus dem Blick und zeichnete einen Farbkreis mit „V“. (2) Neo schrieb eine Seite, rief `vorschau_zeigen` aber nicht auf und verwies auf ein Bild, das nicht neben der Seite lag; die Prüfung saß nur in `vorschau_zeigen` und lief deshalb nie. (3) Seine eigenen falschen Antworten („Was ich konkret getan habe: 1. Erstelle …“) standen im Verlauf, und er schrieb sie beim nächsten Mal fast wortgleich ab — zuletzt mit null Werkzeugaufrufen, die Aufrufe nur als Text.
+Behoben: Anhänge des ganzen Gesprächs stehen in Neos Auftrag; Abschlussprüfung nach jeder Antwort (ungezeigte Seite zeigt das Cockpit, fehlender Anhang wird daneben gelegt, Verweis ins Leere schickt Neo zurück, behauptete Vorschau ohne Vorschau ebenso); als Text geschriebene Aufrufe werden über `ast` echt ausgeführt; frühere Antworten ohne einen Aufruf gehen nur als Vermerk in den Verlauf; nach zweimaligem Zurückschicken ein frischer Anlauf nur mit Veikos Nachrichten.
+
+Geprüft (Testinstanz, Kopie der Daten, eigener WatchDog-Ordner — nichts erreichte den echten): WatchDog mit echten Werten; BrainStrom per Talk von der Antwort bis zum Entwurf (12 s je Frage); ExO für OTH MASTERCLASS mit ehrlicher Lücke; Kill Switch per Talk verweigert; Talk-Dialog aus dem Bild: Auftrag startet sofort, „Ja“ führt aus. Neo im alten Logo-Gespräch: „bau das noch mal“ → 6 echte Schritte, Logo neben der Seite, Vorschau sprang aus dem Matrix-Regen von selbst auf das Ergebnis; frisches Gespräch: auf Anhieb. 375 px ohne Überstand. Nicht ausgelöst: die echte Notabschaltung.
+
 ## 01.10.2026, nachts (4) — Aufbau im Einzelnen, Notabschaltung, Modelle aktuell halten, Bilder im Gespräch
 
 | Gewünscht | Umgesetzt |

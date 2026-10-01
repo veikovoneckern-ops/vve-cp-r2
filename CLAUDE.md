@@ -27,6 +27,9 @@ Veiko ist kein Entwickler von Beruf. Erklären ohne Jargon, eine Empfehlung stat
 - **Symmetrie (Veikos Vorgabe).** Kacheln nebeneinander sind gleich hoch und gleich breit: Raster mit `grid-auto-rows:1fr` (`.sv-raster`, `.raster-gleich`), kein Mehrspaltensatz. Langer Inhalt scrollt in seiner Kachel, statt die Reihe zu strecken. In der Kopfzeile sitzt alles auf einer Mittellinie (`--kasten`).
 - **Ein Ort je Sache.** Maschine und Server stehen nur in der Server-Sektion (klappt über die Kästchen im Kopf auf), nicht zusätzlich unter System. Wer etwas baut, das es woanders schon gibt, sagt das Veiko vorher.
 - **Ziehen über Pointer Events**, nie über natives HTML5-Drag (im alten Cockpit dreimal gescheitert).
+- **Ein Ja reicht (Talk).** Hat Veiko zugestimmt oder ausdrücklich einen Auftrag ans Team/Neo erteilt, führt `gespraech.senden` aus, statt noch einmal einen Knopf zu zeigen. Liefert das Modell nach einem Ja keinen Vorschlag, wird er einmal gezielt nachgefordert; sonst steht ehrlich da, dass nichts gestartet ist.
+- **Neue Ansichten können mit Talk sprechen.** Wer eine Ansicht baut, setzt `talk-kontext` und gibt `gespraech.kontext_text` den Stand dazu (Vorbild: BrainStrom, ExO, WatchDog in `verfahren.py`/`watchdog.js`). Die Notabschaltung gibt es nie über Talk.
+- **Neo wird nachgeprüft, nicht geglaubt** (`neo._abschluss_pruefen`): ungezeigte Seiten zeigt das Cockpit selbst, fehlende Anhänge legt es neben die Seite, als Text geschriebene Werkzeugaufrufe führt es aus, und in einem Gespräch voller falscher Erzählungen macht es einen frischen Anlauf ohne Neos alte Antworten.
 
 ## Prüfen
 

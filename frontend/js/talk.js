@@ -162,6 +162,10 @@ export function Talk({ zu, kontext, setKontext, start }) {
         if (z.ziel === "board" && z.frage) boardFrageMerken(z.frage);
         navigiere("/" + z.ziel);
       }
+      // BrainStrom/ExO haben ihren Stand auf dem Server geaendert: Ansicht sofort nachziehen.
+      bus.sende("verfahren-neu");
+      // Nach Veikos Ja hat der Server schon ausgefuehrt (gespraech.senden) -- Lage nachziehen.
+      if ((fertig.vorschlaege || []).some((v) => v.erledigt)) aktualisieren();
       return fertig;
     }
     return true;
@@ -240,9 +244,23 @@ export function Talk({ zu, kontext, setKontext, start }) {
     // Im Projekt (oder an einer Akte) ist der Rahmen sofort gesetzt -- und das
     // Cockpit sagt ihn an, damit klar ist, worueber gesprochen wird.
     const k = kontextRef.current;
-    if (k && k.titel) {
-      const was = { projekt: "das Projekt", vorgang: "den Vorgang", ergebnis: "das Ergebnis" }[k.art] || "";
-      await sprechen(`Wir sprechen über ${was} ${k.titel}. Was möchtest du wissen oder tun?`);
+    if (k && k.art === "brainstrom") {
+      // In BrainStrom gleich die offene Frage vorlesen -- dann kann Veiko einfach antworten.
+      let s = null;
+      try { s = await api("/brainstrom"); } catch (e) { /* ohne Stand weiter */ }
+      if (s && s.phase === "frage" && s.frage && !s.laeuft) {
+        const opt = (s.frage.optionen || []).map((o, i) => `${i + 1}. ${o}`).join("; ");
+        await sprechen(`Wir sind bei BrainStrom. Frage ${s.verlauf.length + 1}: ${s.frage.text}${opt ? " Zur Auswahl: " + opt + "." : ""}`);
+      } else if (s && s.phase === "wege" && s.wege) {
+        await sprechen("Wir sind bei BrainStrom. Zur Wahl stehen: " + s.wege.map((w, i) => `${i + 1}. ${w.name}`).join("; ") + ". Welchen Weg nehmen wir?");
+      } else if (s && s.phase === "start") {
+        await sprechen("Wir sind bei BrainStrom. Worum geht es? Ein, zwei Sätze reichen.");
+      } else {
+        await sprechen("Wir sind bei BrainStrom. Was möchtest du tun?");
+      }
+    } else if (k && k.titel) {
+      const was = { projekt: "das Projekt", vorgang: "den Vorgang", ergebnis: "das Ergebnis", exo: "", watchdog: "den" }[k.art] || "";
+      await sprechen(`Wir sprechen über ${was} ${k.titel}. Was möchtest du wissen oder tun?`.replace("über  ", "über "));
     }
     let leer = 0;
     while (freiAn.current) {

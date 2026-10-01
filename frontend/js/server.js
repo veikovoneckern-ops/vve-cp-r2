@@ -27,24 +27,24 @@ export function gpus(s) {
 }
 
 // ------------------------------------------------------------ Bausteine
-function Kachel({ titel, neben, children, klasse = "" }) {
+export function Kachel({ titel, neben, children, klasse = "" }) {
   return html`<section class=${"sv-kachel " + klasse}>
     <div class="sv-kachel-kopf"><h4>${titel}</h4>${neben && html`<span class="sv-neben">${neben}</span>`}</div>
     <div class="sv-kachel-leib">${children}</div>
   </section>`;
 }
-function Gruppe({ titel, unter, klasse = "", children }) {
+export function Gruppe({ titel, unter, klasse = "", children }) {
   return html`<div class="sv-gruppe"><b>${titel}</b>${unter && html`<em>${unter}</em>`}</div>
     <div class=${"sv-raster " + klasse}>${children}</div>`;
 }
-function Zeile({ name, wert, s }) {
+export function Zeile({ name, wert, s }) {
   return html`<div class="sv-zeile"><span>${name}</span><b class=${s || ""}>${wert ?? "nicht gemeldet"}</b></div>`;
 }
 function Balken({ p, warn = 80, krit = 92 }) {
   const w = Math.max(0, Math.min(100, p || 0));
   return html`<div class="sv-balken"><i class=${w >= krit ? "kritisch" : w >= warn ? "warnung" : ""} style=${`width:${w}%`}></i></div>`;
 }
-function BalkenZeile({ name, wert, p, warn, krit }) {
+export function BalkenZeile({ name, wert, p, warn, krit }) {
   return html`<div class="sv-bzeile"><div class="sv-zeile"><span>${name}</span><b>${wert}</b></div><${Balken} p=${p} warn=${warn} krit=${krit} /></div>`;
 }
 // Eine Zeile im Software-Schaubild: Punkt, Name, rechts eine Marke, darunter ein Satz.
@@ -88,7 +88,7 @@ function Aufbau({ s, beiKlick }) {
     ${g.slice(0, 2).map((k, i) => {
       const y = 20 + i * 124;
       return html`<g key=${i}>
-        <path d=${`M310 ${110 + i * 40} C 370 ${110 + i * 40}, 370 ${y + 55}, 430 ${y + 55}`} class="sb-leitung" />
+        <path d=${`M310 ${110 + i * 40} H370 V${y + 55} H430`} class="sb-leitung" />
         ${kasten(430, y, 300, 110)}
         ${zeile(446, y + 26, `RTX 3090 · Dock ${i + 1}`, "sb-titel")}
         <text x="446" y=${y + 50} class="sb-text"><tspan class="sb-wert" fill=${farbeTemp(k.temp, 80, 90)}>${k.temp} °C</tspan> · Last ${k.last} % · ${Math.round(k.watt)} W</text>
@@ -194,7 +194,7 @@ function SicherungenBlock({ sich }) {
   </div>`;
 }
 
-function Auftrag({ a }) {
+export function Auftrag({ a }) {
   if (!a || (!a.laeuft && !a.ende)) return null;
   const titel = { updates: "Updates einspielen", neustart: "Neustart", "ollama-neustart": "Ollama neu starten", "caddy-neustart": "Caddy neu starten" }[a.art] || "Auftrag";
   return html`<section class="sv-kachel sv-voll" style="margin-bottom:12px">
@@ -252,7 +252,8 @@ function Software({ s, sys, auftrag, starten }) {
       <${SwZ} st=${String(n.interface || "").startsWith("wl") ? "warnung" : "ok"} name="Netz" marke=${n.interface || "?"} satz=${`LAN ${n.lan_ip || "?"} · Tailnet ${n.tailscale_ip || "?"}`} />
       <${SwZ} st=${sich.ufw ? (sich.ufw.aktiv && !(sich.ufw.offene_regeln || []).length ? "ok" : "warnung") : "unbekannt"} name="Firewall" marke=${sich.ufw ? (sich.ufw.aktiv ? "aktiv" : "aus") : "?"} satz=${sich.ufw ? ((sich.ufw.offene_regeln || []).length ? (sich.ufw.offene_regeln.length + " Regeln für das ganze Internet offen") : "nur Tailnet offen") : "nicht lesbar"} />
       <${SwZ} st=${sich.fail2ban ? (sich.fail2ban.aktiv ? "ok" : "warnung") : "unbekannt"} name="fail2ban" marke=${sich.fail2ban ? (sich.fail2ban.gesperrt || []).length + " gesperrt" : "?"} satz=${`SSH-Fehlversuche 24 h: ${sich.ssh_fehlgeschlagen_24h ?? "?"}`} />
-      <${SwZ} st=${s.health ? (s.health.automatik_angehalten ? "warnung" : "ok") : "unbekannt"} name="WatchDog" marke=${s.health ? `Notfall ab ${s.health.schwelle_c} °C` : "?"} satz=${s.health ? (s.health.automatik_angehalten ? "angehalten: ein Mensch muss hinsehen" : "wacht über die Grafikkarten") : "nicht gemeldet"} />` ],
+      <${SwZ} st=${s.health ? (s.health.automatik_angehalten ? "warnung" : "ok") : "unbekannt"} name="WatchDog" marke=${s.health ? `Notfall ab ${s.health.schwelle_c} °C` : "?"} satz=${s.health ? (s.health.automatik_angehalten ? "angehalten: ein Mensch muss hinsehen" : "wacht über die Grafikkarten") : "nicht gemeldet"}
+        knopf=${html`<div class="sw-z-knopf"><a class="btn klein" href="#/watchdog">Zum WatchDog</a></div>`} />` ],
     [ "Diese Fassung", "", sys ? html`
       <${SwZ} st=${sys.stab.stab_aktiv ? "ok" : "warnung"} name="Team" marke=${sys.stab.stab_aktiv ? "an" : "aus"} satz=${sys.stab.letzter_lauf ? "letzter Durchgang " + zeitText(sys.stab.letzter_lauf) : "noch kein Durchgang"} />
       <${SwZ} st=${sys.stab.sync && Date.now() / 1000 - sys.stab.sync > 1800 ? "warnung" : "ok"} name="Plaud-Abruf" marke=${sys.stab.sync ? zeitText(sys.stab.sync) : "?"} satz=${sys.stab.letzte_datei ? "letzte Notiz " + zeitText(sys.stab.letzte_datei) : ""} />
@@ -404,7 +405,7 @@ function DetailStrom({ s, wd, notfall }) {
     <${WatchDogKnoepfe} wd=${wd} notfall=${notfall} />`;
 }
 
-function AufbauDetail({ teil, s, karten, wd, notfall, zu }) {
+export function AufbauDetail({ teil, s, karten, wd, notfall, zu }) {
   const i = teil.startsWith("gpu:") ? +teil.split(":")[1] : null;
   const titel = teil === "minipc" ? "Mini-PC · MINISFORUM AI X1 Pro" : teil === "strom" ? "Strom und Notabschaltung"
     : `Grafikkarte ${i + 1}${gpus(s)[i] ? " · " + gpus(s)[i].name.replace("NVIDIA GeForce ", "") : ""}`;
@@ -427,7 +428,7 @@ const NOTFALL = {
     ja: "Ja, Ablauf starten" },
 };
 
-function WatchDogKnoepfe({ wd, notfall }) {
+export function WatchDogKnoepfe({ wd, notfall }) {
   const [frage, setFrage] = useState(null);
   const offen = wd && wd.anfrage_offen;
   const seit = offen && wd.anfrage ? Math.round(Date.now() / 1000 - wd.anfrage.angefordert_um) : 0;
@@ -445,40 +446,18 @@ function WatchDogKnoepfe({ wd, notfall }) {
   </div>`;
 }
 
-function WatchDogGruppe({ wd, notfall, s }) {
-  if (!wd) return null;
-  const nf = wd.notfall;
-  return html`
-    <${Kachel} titel="Grafikkarten-Temperatur" neben=${wd.bekannt && wd.alter_sek != null ? `Messung vor ${wd.alter_sek} s` : ""}>
-      ${wd.bekannt ? (wd.gpu_temps || []).map((g) => html`<${BalkenZeile} name=${"Karte " + (g.index + 1)} wert=${g.temp_c + " °C"} p=${g.temp_c / (wd.schwelle_c || 90) * 100} warn=${85} krit=${95} />`)
-        : html`<div class="fehlerbox">Der WatchDog meldet nichts. Läuft vve-health?</div>`}
-      <p class="leise klein sv-fuss">Ab ${wd.schwelle_c || 90} °C greift der Notfallablauf von selbst.</p>
-    </${Kachel}>
-    <${Kachel} titel="Notabschaltung"><${WatchDogKnoepfe} wd=${wd} notfall=${notfall} /></${Kachel}>
-    <${Kachel} titel="Letzter Notfall">${nf ? html`
-        <${Zeile} name="Wann" wert=${zeitText(nf.zeit)} />
-        <${Zeile} name="Grund" wert=${nf.grund} />
-        <${Zeile} name="Aktion" wert=${{ "dock-strom-aus": "Dock-Strom aus", "dock-strom-an-server-steckdosenzyklus": "Dock aus/an, Server-Steckdosenzyklus", "kill-switch": "Kill Switch", "dock-strom-aus-automatik-gestoppt": "Dock aus, Automatik angehalten" }[nf.aktion] || nf.aktion} s=${nf.wiederholt ? "kritisch" : ""} />
-        ${(nf.temps || []).length > 0 && html`<${Zeile} name="Temperaturen damals" wert=${nf.temps.map((x) => x[1] + " °C").join(" · ")} />`}`
-      : html`<p class="leise klein">Noch keiner.</p>`}</${Kachel}>
-    <${Kachel} titel="Selbstheilung">${(wd.reparaturen || []).length ? wd.reparaturen.map((r) => html`<${Zeile} name=${r} wert="" />`)
-      : html`<p class="leise klein">Ollama, Caddy und ComfyUI antworten. Fällt einer aus, startet der WatchDog ihn von selbst neu.</p>`}</${Kachel}>`;
-}
-
-// ------------------------------------------------------------ Die Sektion
-export function ServerSektion({ zu, gesundheit }) {
+// ------------------------------------------------------------ Gemeinsamer Datenweg
+// Server-Sektion und WatchDog-Ansicht lesen denselben Stand mit denselben
+// Aktionen. Zwei eigene Abrufe waeren zwei Wahrheiten ueber dieselbe Maschine.
+export function useDetails({ mitSystem = true } = {}) {
   const [det, setDet] = useState(null);
   const [sys, setSys] = useState(null);
-  const [teil, setTeil] = useState(null);          // Detailfenster: minipc | gpu:0 | gpu:1 | strom
-  const k = useKopf();
   const detLaden = (frisch) => api("/system/details" + (frisch ? "?frisch=1" : "")).then(setDet).catch(fehlerMelden);
-  const sysLaden = () => api("/system").then(setSys).catch(() => {});
+  const sysLaden = () => (mitSystem ? api("/system").then(setSys).catch(() => {}) : null);
   useEffect(() => {
     detLaden(false); sysLaden();
     const i = setInterval(() => { if (!document.hidden) { detLaden(false); sysLaden(); } }, 20000);
-    const esc = (e) => { if (e.key === "Escape" && !document.querySelector(".modal-grund")) zu(); };
-    document.addEventListener("keydown", esc);
-    return () => { clearInterval(i); document.removeEventListener("keydown", esc); };
+    return () => clearInterval(i);
   }, []);
   useEffect(() => {
     if (!det || !det.auftrag || !det.auftrag.laeuft) return;
@@ -517,6 +496,41 @@ export function ServerSektion({ zu, gesundheit }) {
       "ollama-neustart": "Ollama startet neu.", "caddy-neustart": "Caddy startet neu." };
     try { await api("/system/auftrag", { methode: "POST", daten: { art } }); toast(MELDUNG[art] || "Gestartet."); detLaden(false); } catch (e) { fehlerMelden(e); }
   }
+  // Der WatchDog-Stand allein ist billig (eine Datei) -- fuer die WatchDog-Ansicht
+  // im kuerzeren Takt, damit eine Temperatur nicht 20 s alt ist.
+  const wdLaden = async () => { try { const w = await api("/system/watchdog"); setDet((x) => (x ? { ...x, watchdog: w } : x)); } catch (e) { /* weiter */ } };
+  return { det, sys, detLaden, starten, notfall, modellLaden, wdLaden };
+}
+
+// Aufbau links, Updates/Empfehlungen/Sicherungen rechts -- in der Server-Sektion
+// und (wie im alten Cockpit, auf Veikos Wunsch vom 11.09.2026) zusaetzlich im WatchDog.
+export function AufbauReihe({ d, beiKlick }) {
+  const { det, starten, detLaden, modellLaden } = d;
+  const s = det ? det.status : null;
+  return html`<div class="sv-reihe">
+    <${Kachel} titel="Aufbau" neben="Bauteil anklicken für Einzelheiten"><${Aufbau} s=${s} beiKlick=${beiKlick} /></${Kachel}>
+    <${Kachel} titel="Updates, Empfehlungen und Sicherungen">
+      <div class="sv-zwei"><${UpdatesBlock} u=${det && det.updates} s=${s} auftrag=${det && det.auftrag} starten=${starten} neuPruefen=${() => detLaden(true)} />
+        <${SicherungenBlock} sich=${det && det.sicherungen} /></div>
+      <h5 class="sv-empf-titel">Empfehlungen</h5>
+      ${!det ? html`<div class="leise klein">Prüfe …</div>` : det.empfehlungen.length
+        ? html`<div class="empf-raster">${det.empfehlungen.map((x, i) => html`<${Empfehlung} key=${i} e=${x} auftrag=${det.auftrag} starten=${starten} laden=${det.laden} modellLaden=${modellLaden} />`)}</div>`
+        : html`<div class="leise klein">Nichts zu tun: keine Updates offen, alle Dienste laufen, Sicherungen frisch.</div>`}
+    </${Kachel}>
+  </div>`;
+}
+
+// ------------------------------------------------------------ Die Sektion
+export function ServerSektion({ zu, gesundheit }) {
+  const d = useDetails();
+  const { det, sys, detLaden, starten, notfall } = d;
+  const [teil, setTeil] = useState(null);          // Detailfenster: minipc | gpu:0 | gpu:1 | strom
+  const k = useKopf();
+  useEffect(() => {
+    const esc = (e) => { if (e.key === "Escape" && !document.querySelector(".modal-grund")) zu(); };
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, []);
   const s = det ? det.status : null;
   const [st, satz] = ampel(k, gesundheit);
   return html`<div class="server-sektion" role="region" aria-label="Server">
@@ -528,17 +542,7 @@ export function ServerSektion({ zu, gesundheit }) {
         <button class="btn klein geist icon" onClick=${zu} aria-label="Server-Sektion zuklappen" title="Zuklappen (Esc)"><${Icon} n="x" g=${15} /></button>
       </div>
       <${Auftrag} a=${det && det.auftrag} />
-      <div class="sv-reihe">
-        <${Kachel} titel="Aufbau" neben="Bauteil anklicken für Einzelheiten"><${Aufbau} s=${s} beiKlick=${setTeil} /></${Kachel}>
-        <${Kachel} titel="Updates, Empfehlungen und Sicherungen">
-          <div class="sv-zwei"><${UpdatesBlock} u=${det && det.updates} s=${s} auftrag=${det && det.auftrag} starten=${starten} neuPruefen=${() => detLaden(true)} />
-            <${SicherungenBlock} sich=${det && det.sicherungen} /></div>
-          <h5 class="sv-empf-titel">Empfehlungen</h5>
-          ${!det ? html`<div class="leise klein">Prüfe …</div>` : det.empfehlungen.length
-            ? html`<div class="empf-raster">${det.empfehlungen.map((x, i) => html`<${Empfehlung} key=${i} e=${x} auftrag=${det.auftrag} starten=${starten} laden=${det.laden} modellLaden=${modellLaden} />`)}</div>`
-            : html`<div class="leise klein">Nichts zu tun: keine Updates offen, alle Dienste laufen, Sicherungen frisch.</div>`}
-        </${Kachel}>
-      </div>
+      <${AufbauReihe} d=${d} beiKlick=${setTeil} />
       <${Gruppe} titel="Software" unter="was darauf läuft und wie es zusammenhängt" klasse="sw"><${Software} s=${s} sys=${sys} auftrag=${det && det.auftrag} starten=${starten} /></${Gruppe}>
       <${Gruppe} titel="Womit Sie arbeiten" unter="Modelle, Bestand, Suche und Stimme">
         <${Kachel} titel="Modelle" neben=${det && det.modelle ? det.modelle.length + "" : ""}><${Modelle} liste=${det && det.modelle} neueste=${det && det.ollama_neueste} s=${s} /></${Kachel}>
@@ -549,8 +553,6 @@ export function ServerSektion({ zu, gesundheit }) {
           ${sys.stimme.whisper && html`<${Zeile} name="Modell" wert=${sys.stimme.modell + (sys.stimme.geladen.length ? " · " + sys.stimme.geladen.join(", ") : "")} />`}
           <${Zeile} name="Mikrofon im Browser" wert=${window.isSecureContext ? "möglich" : "nur über https"} s=${window.isSecureContext ? "" : "warnung"} />` : html`<div class="leise klein">…</div>`}</${Kachel}>
       </${Gruppe}>
-      ${det && det.watchdog && html`<${Gruppe} titel="WatchDog" unter="Wacht über Temperaturen und Dienste, schaltet im Notfall ab">
-        <${WatchDogGruppe} wd=${det.watchdog} notfall=${notfall} s=${s} /></${Gruppe}>`}
       <${Gruppe} titel="Was die Maschine meldet" unter="Messwerte, hier ist nichts zu tun, solange nichts rot ist">
         <${Kachel} titel="Temperaturen" neben=${s && s.temps_c && s.temps_c.cpu != null ? Math.round(s.temps_c.cpu) + " °C CPU" : ""}>${s ? html`<${Temperaturen} s=${s} />` : "…"}</${Kachel}>
         <${Kachel} titel="Auslastung" neben=${s && s.host && s.host.uptime ? "seit " + s.host.uptime.replace("up ", "") : ""}>${s ? html`<${Auslastung} s=${s} />` : "…"}</${Kachel}>

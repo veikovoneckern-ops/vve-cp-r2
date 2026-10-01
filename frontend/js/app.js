@@ -14,6 +14,8 @@ import { Talk } from "./talk.js";
 import { Board } from "./board.js";
 import { Logo, CockpitLeiste, ServerKaesten, SprechKnopf, kopfAbruf } from "./kopf.js";
 import { ServerSektion } from "./server.js";
+import { WatchDog } from "./watchdog.js";
+import { BrainStrom, ExO } from "./verfahren.js";
 
 const BEREICHE = [
   { id: "briefing", titel: "Briefing", icon: "briefing", unter: "Was jetzt zählt" },
@@ -22,6 +24,11 @@ const BEREICHE = [
   { id: "neo", titel: "Neo", icon: "neo", unter: "Cockpit Engineer", neo: true },
   { id: "team", titel: "Team", icon: "team", unter: "Dein KI-Team" },
   { id: "board", titel: "Advisory Board", kurz: "Board", icon: "board", unter: "Deine Advisors" },
+  // Aus dem alten Cockpit uebernommen (Veiko, 01.10.): zwei Verfahren auf dem
+  // eigenen Modell und der WatchDog -- je mit eigenem Knopf.
+  { id: "brainstrom", titel: "BrainStrom", icon: "brainstrom", unter: "Aus einer Idee ein Vorhaben" },
+  { id: "exo", titel: "ExO", icon: "exo", unter: "Exponential-Organizations-Analyse" },
+  { id: "watchdog", titel: "WatchDog", icon: "watchdog", unter: "Temperaturen, Sicherheit, Notabschaltung" },
   { id: "system", titel: "System", icon: "system", unter: "Team-Pipeline, Daten, Einstellungen" },
 ];
 
@@ -246,6 +253,9 @@ function App() {
         ${r.bereich === "system" && html`<${System} konto=${konto} thema=${thema} />`}
         ${r.bereich === "neo" && html`<${Neo} id=${r.id} />`}
         ${r.bereich === "board" && html`<${Board} id=${r.id} />`}
+        ${r.bereich === "brainstrom" && html`<${BrainStrom} />`}
+        ${r.bereich === "exo" && html`<${ExO} />`}
+        ${r.bereich === "watchdog" && html`<${WatchDog} />`}
       </main>
     </div>
     ${talk && html`<${Talk} zu=${() => setTalk(false)} kontext=${kontext} setKontext=${setKontext} start=${talkStart} />`}

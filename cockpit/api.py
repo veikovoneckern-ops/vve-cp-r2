@@ -721,6 +721,67 @@ async def talk_senden(request: Request):
                              headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
 
+# ================================================================ BrainStrom und ExO (verfahren.py)
+@router.get("/brainstrom")
+async def brainstrom_stand():
+    from . import verfahren
+    return verfahren.bs_stand()
+
+
+@router.post("/brainstrom/{aktion}")
+async def brainstrom_aktion(aktion: str, request: Request):
+    from . import verfahren
+    d = await _koerper(request)
+    try:
+        if aktion == "start":
+            return verfahren.bs_starten(str(d.get("thema") or ""), d.get("projekt_id"), d.get("anhaenge") or [])
+        if aktion == "antwort":
+            return verfahren.bs_antworten(str(d.get("text") or ""))
+        if aktion == "genug":
+            return verfahren.bs_genug()
+        if aktion == "weg":
+            return verfahren.bs_weg(int(d.get("nummer") if d.get("nummer") is not None else -1))
+        if aktion == "pruefen":
+            return verfahren.bs_pruefen()
+        if aktion == "projekt":
+            return verfahren.bs_projekt_setzen(d.get("projekt_id"))
+        if aktion == "neu":
+            return verfahren.bs_neu()
+        if aktion == "ergebnis":
+            return verfahren.bs_als_ergebnis()
+        if aktion == "uebernehmen":
+            return await verfahren.bs_uebernehmen()
+        if aktion == "nochmal":
+            return verfahren.bs_nochmal()
+    except (ValueError, llm.ModellFehler) as e:
+        raise HTTPException(409, str(e))
+    raise HTTPException(404, "Unbekannte Aktion")
+
+
+@router.get("/exo")
+async def exo_stand():
+    from . import verfahren
+    return verfahren.exo_stand()
+
+
+@router.post("/exo/{aktion}")
+async def exo_aktion(aktion: str, request: Request):
+    from . import verfahren
+    d = await _koerper(request)
+    try:
+        if aktion == "start":
+            return verfahren.exo_starten(str(d.get("umfang") or "portfolio"), d.get("projekt_id"))
+        if aktion == "neu":
+            return verfahren.exo_neu()
+        if aktion == "ergebnis":
+            return verfahren.exo_als_ergebnis()
+        if aktion == "aufgabe":
+            return verfahren.exo_aufgabe(str(d.get("text") or ""))
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    raise HTTPException(404, "Unbekannte Aktion")
+
+
 # ================================================================ Advisory Board
 @router.get("/board")
 async def board_uebersicht():
