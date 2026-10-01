@@ -831,6 +831,12 @@ async def system():
     return out
 
 
+@router.get("/kopf")
+async def kopf():
+    from . import systeminfo
+    return await systeminfo.kopf()
+
+
 @router.get("/system/details")
 async def system_details(frisch: int = 0):
     from . import systeminfo

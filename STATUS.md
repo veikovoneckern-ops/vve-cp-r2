@@ -1,5 +1,29 @@
 # Stand der neuen Fassung
 
+## 01.10.2026, abends — Logo, Kopfzeile, Sprechen, Knopffarben
+
+| Gewünscht | Umgesetzt |
+|---|---|
+| Logo oben links wieder, ohne Schriftzug „VvE Cockpit“ | Veikos Logo aus dem alten Cockpit, freigestellt (`frontend/bilder/logo-maske.png`) und als CSS-Maske gezeichnet: nimmt die Schriftfarbe an, sauber in hell und dunkel. Auch als Favicon und auf der Anmeldeseite. Auf dem Telefon steht es links in der Kopfzeile. |
+| Logo dreht sich, wenn die lokale KI arbeitet | `llm.AKTIV` zählt laufende Ollama-Aufrufe dieses Dienstes (Stab, Talk, Neo gehen alle durch `llm.py`); zusätzlich zählt die Kartenlast ≥ 20 % (altes Cockpit, ComfyUI). Während dessen dreht sich das Logo und wird grün. Beim Senden in Talk/Neo läuft es sofort an. |
+| Mehr Status in der Kopfzeile, kompakter | `GET /api/kopf` (`systeminfo.kopf()`): Ampel-Satz (das Dringendste zuerst), dahinter Netz, CPU, RAM, GPU-Temperaturen, VRAM, Strom, Updates, Backups — dieselbe Auswahl wie die Kästchen im alten Cockpit. Was nicht passt, fällt nach Wichtigkeit weg; die Ampel bleibt. Klick → Bereich System mit allen Einzelheiten. Die apt-Simulation wird dafür nie angestoßen, nur ihr letzter Stand gelesen. |
+| Ein zentraler Knopf fürs Gespräch | „Sprechen“ oben rechts: ein Klick öffnet Talk und hört sofort zu; der Knopf zeigt, was gerade passiert (höre zu / denke nach / spreche), ein zweiter Klick beendet. Der Freisprech-Knopf im Talk-Kopf ist entfallen (ein Weg, nicht zwei). Das Sprechblasen-Symbol daneben öffnet Talk zum Tippen. |
+| Ohne Klick beenden | „Dialog beenden“, „wir beenden das Gespräch“, „beende die Unterhaltung“, „Ende“, „Tschüss“ … beenden das Gespräch; über den Kopf begonnen, schließt sich Talk dann auch. Nur in kurzen Sätzen, damit „bereite das Gespräch mit Frau Schwarz vor“ nicht beendet. |
+| Mikro zu groß, Wellen strahlen über andere Dinge | Sprechleiste statt großem Kreis: 44 px Kreis in einem festen 64-px-Feld, die Wellen laufen darin aus (48 × 1,3 = 62 px). |
+| Knopffarben | Hauptknöpfe graphit (Farbe des Logos) mit weißer Schrift; im Dunkelmodus umgekehrt (helle Fläche, dunkle Schrift). Bestätigen grün getönt statt grün gefüllt, Rot nur für Eingriffe ins System, Violett nur als Akzent beim Sprechen. |
+
+Nebenbei behoben: Die Stille-Erkennung beim Freisprechen lief über `requestAnimationFrame` und stand still, sobald der Tab nicht sichtbar war — das Gespräch hing dann im „Ich höre zu“. Jetzt ein Zeitgeber.
+
+Geprüft in einer Testinstanz (Kopie der echten Daten, Stab aus, eigenes Testkonto, per SSH-Tunnel):
+- `/api/kopf` liefert die Live-Werte; während einer echten Talk-Anfrage `aufrufe: 1`, danach `0`.
+- Sprechen-Knopf → Talk öffnet und hört zu → Kopf zeigt „Ich höre zu“ → zweiter Klick beendet.
+- Ende per Stimme durchgehend: Piper sprach „Okay, Dialog beenden“ als künstliches Mikrofon, Whisper erkannte „Ok, Dialog beendet“, das Cockpit antwortete und schloss Talk (8 s).
+- 16 Sätze gegen die Ende-Erkennung: 10 beenden, 6 normale Sätze beenden nicht.
+- 375 px, hell und dunkel: nichts ragt über den Rand.
+
+Nicht geprüft: ein echtes Mikrofon (der eingebaute Browser sperrt es) — die Kette dahinter ist mit eingespeistem Ton geprüft.
+
+
 ## 01.10.2026, nachmittags — Rückmeldung von Veiko eingearbeitet
 
 | Gemeldet | Ursache | Behoben |

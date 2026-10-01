@@ -11,7 +11,7 @@
 // Gespraechskennung null (jeder Satz ein neues Gespraech) und keine offenen
 // Vorschlaege (ein "ja" fuehrte nie etwas aus). Kennung und Verlauf liegen
 // deshalb zusaetzlich in Refs, die die Schleife immer aktuell liest.
-import { html, useState, useEffect, useRef, Icon, Md, toast, fehlerMelden, aktualisieren, navigiere, rolleName } from "./ui.js";
+import { html, useState, useEffect, useRef, Icon, Md, toast, fehlerMelden, aktualisieren, navigiere, rolleName, bus } from "./ui.js";
 import { api, strom } from "./api.js";
 import { Composer } from "./composer.js";
 import { aufnehmen, erkennen, vorlesen, vorleseStopp, mikrofonGrund } from "./stimme.js";
@@ -20,6 +20,11 @@ const NEIN_WORT = /\b(nein|nee|nö|nicht|lieber nicht|ablehnen|falsch|stopp)\b/i
 const JA_WORT = /\b(ja|jawohl|jep|genau|klar|gerne|ok|okay|einverstanden|passt|richtig|bitte|mach(e)? (das|es)|tu (das|es)|(kannst|sollst|darfst) du (so )?(machen|tun)|so machen|so tun|anlegen|merken|ausführen)\b/i;
 const SPAETER = /^(später|spaeter|weiter|nächste|naechste|überspringen|ueberspringen|skip|egal)\b/i;
 const ENDE = /^(stopp|stop|ende|beenden|aufhören|aufhoeren|das wars|das war's|danke,? das (war|wars)|tschüss|tschuess|schluss)\b/i;
+// "Dialog beenden", "wir beenden das Gespräch", "beende die Unterhaltung" ...
+// -- irgendwo im Satz, aber nur in kurzen Saetzen: ein langer Satz, der das
+// Wort Gespraech enthaelt, ist eine Frage und kein Abschied.
+const ENDE_SATZ = /\b(dialog|gespräch|gespraech|unterhaltung|freisprechen|talk)\b.{0,20}\b(beenden|beende|beendet|ende|schließen|schliessen|aus|vorbei)\b|\b(beende|beenden|schließ|schliess|schließe)\w*\b.{0,20}\b(dialog|gespräch|gespraech|unterhaltung)\b/i;
+const istEnde = (t) => ENDE.test(t) || (t.split(/\s+/).length <= 10 && ENDE_SATZ.test(t));
 const reinigen = (t) => String(t || "").trim().replace(/[.!?,]+$/, "").trim();
 // Ein kurzes Ja ohne Nein -- laengere Saetze sind eine neue Frage, kein Ja.
 const istJa = (t) => t.split(/\s+/).length <= 10 && JA_WORT.test(t) && !NEIN_WORT.test(t);
@@ -27,15 +32,18 @@ const istNein = (t) => t.split(/\s+/).length <= 5 && NEIN_WORT.test(t) && !JA_WO
 
 function StimmeKreis({ zustand, pegel, text, beiKlick }) {
   const TXT = { bereit: "Antippen und sprechen", hoert: "Ich höre zu …", erkennt: "Verstehe …", denkt: "Denke nach …", spricht: "Spreche …" };
-  const s = zustand === "hoert" ? 1 + Math.min(0.28, pegel * 0.35) : 1;
+  // Kompakt (Veiko, 01.10.: der grosse Kreis war zu gross und seine Wellen
+  // strahlten ueber die Nachbarn). Die Wellen laufen jetzt INNERHALB eines
+  // festen Feldes um den Kreis aus; die Lautstaerke hebt ihn nur leicht an.
+  const s = zustand === "hoert" ? 1 + Math.min(0.12, pegel * 0.18) : 1;
   return html`<div class=${"stimme-kreis " + zustand} role="status">
-    <button class="kreis" style=${`transform:scale(${s})`} onClick=${beiKlick}
+    <span class="kreis-feld"><button class="kreis" style=${`transform:scale(${s})`} onClick=${beiKlick}
       aria-label=${zustand === "bereit" ? "Freisprechen starten" : zustand === "hoert" ? "Fertig gesprochen" : "Freisprechen beenden"}
       title=${zustand === "bereit" ? "Freisprechen starten" : zustand === "hoert" ? "Antippen, wenn du fertig bist" : "Antippen zum Beenden"}>
-      <${Icon} n=${zustand === "denkt" || zustand === "erkennt" ? "mehr" : zustand === "spricht" ? "welle" : "mic"} g=${30} w=${2} />
-    </button>
-    <span class="zustand">${TXT[zustand] || ""}</span>
-    ${text && html`<span class="unter">${text}</span>`}
+      <${Icon} n=${zustand === "denkt" || zustand === "erkennt" ? "mehr" : zustand === "spricht" ? "welle" : "mic"} g=${19} w=${2.1} />
+    </button></span>
+    <span class="kreis-text"><span class="zustand">${TXT[zustand] || ""}</span>
+    ${text ? html`<span class="unter">${text}</span>` : zustand === "hoert" ? html`<span class="unter">Sag „Dialog beenden“, wenn du fertig bist.</span>` : null}</span>
   </div>`;
 }
 
@@ -53,6 +61,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
   const freiAn = useRef(false);
   const aufn = useRef(null);
   const letzterStart = useRef(0);
+  const ausKopf = useRef(false);
   kontextRef.current = kontext;
 
   const setGid = (g) => { gidRef.current = g; setGidState(g); };
@@ -67,10 +76,14 @@ export function Talk({ zu, kontext, setKontext, start }) {
   useEffect(() => {
     if (!start || start.n === letzterStart.current) return;
     letzterStart.current = start.n;
-    if (start.durchgehen) durchgehen();
+    if (start.frei) { ausKopf.current = !!start.ausKopf; if (!freiAn.current) freiStart(); }
+    else if (start.durchgehen) durchgehen();
     else if (start.text) senden(start.text, [], false);
   }, [start]);
-  useEffect(() => () => { freiAn.current = false; if (aufn.current) aufn.current.abbrechen(); vorleseStopp(); }, []);
+  useEffect(() => () => { freiAn.current = false; if (aufn.current) aufn.current.abbrechen(); vorleseStopp(); bus.sende("dialog-zustand", null); }, []);
+  // Der Sprechen-Knopf im Kopf zeigt, was gerade passiert, und kann beenden.
+  useEffect(() => { bus.sende("dialog-zustand", frei ? frei.zustand : null); }, [frei && frei.zustand]);
+  useEffect(() => bus.an("dialog-ende", () => { ausKopf.current = false; freiStopp(); }), []);
   useEffect(() => {
     const k = (e) => { if (e.key === "Escape" && !document.querySelector(".modal-grund")) { if (freiAn.current) freiStopp(); else zu(); } };
     document.addEventListener("keydown", k);
@@ -85,6 +98,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
   async function senden(text, anhaenge, stimme) {
     if (laufRef.current) return false;
     laufRef.current = true;
+    bus.sende("ki-start");
     setMsgs((m) => [...m, { id: "d" + Date.now(), rolle: "du", text }]);
     setLauf({ text: "" });
     const ctl = new AbortController(); abbruch.current = ctl;
@@ -187,7 +201,13 @@ export function Talk({ zu, kontext, setKontext, start }) {
       if (!freiAn.current) break;
       if (!t) { if (++leer >= 3) { await sprechen("Ich höre nichts mehr und beende das Freisprechen."); break; } continue; }
       leer = 0;
-      if (ENDE.test(t)) { await sprechen("Gut, ich höre auf."); break; }
+      if (istEnde(t)) {
+        setMsgs((m) => [...m, { id: "d" + Date.now(), rolle: "du", text: t }]);
+        await sprechen("Gut, ich beende unser Gespräch.");
+        // Ueber den Kopf begonnen: dann auch ohne weiteren Klick wieder zu.
+        if (ausKopf.current) { ausKopf.current = false; freiStopp(); zu(); return; }
+        break;
+      }
       setFrei((f) => f && { ...f, zustand: "denkt", text: t });
       const r = await eingabe(t, [], true);
       if (r && r.text) await sprechen(r.text);
@@ -232,7 +252,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
         if (!freiAn.current) break;
         if (!t) { if (++versuch >= 2) { await sprechen("Ich lasse das für später."); break; } await sprechen("Ich habe nichts gehört. Ja, nein oder später?"); continue; }
         setMsgs((m) => [...m, { id: "d" + Date.now(), rolle: "du", text: t }]);
-        if (ENDE.test(t)) { freiAn.current = false; break; }
+        if (istEnde(t)) { freiAn.current = false; break; }
         let antwort = null, text = "";
         if (SPAETER.test(t)) antwort = "spaeter";
         else if (e.art === "rueckfrage") { antwort = istNein(t) ? "nein" : "ja"; text = antwort === "ja" ? t : ""; }
@@ -259,8 +279,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
   return html`<aside class="talk" aria-label="Talk">
     <div class="talk-kopf">
       <h2><${Icon} n="talk" g=${17} />Talk</h2>
-      <button class=${"btn klein" + (frei ? " primaer" : "")} onClick=${() => (frei ? freiStopp() : freiStart())}
-        title="Freihändig sprechen: ich höre zu, antworte und lese vor" aria-pressed=${!!frei}><${Icon} n="welle" g=${14} />${frei ? "Beenden" : "Freisprechen"}</button>
+      ${frei && html`<button class="btn klein" onClick=${() => { ausKopf.current = false; freiStopp(); }} title="Gespräch beenden (oder sag „Dialog beenden“)"><${Icon} n="stopp" g=${12} />Beenden</button>`}
       <button class="btn geist icon" onClick=${neu} title="Neues Gespräch" aria-label="Neues Gespräch"><${Icon} n="neu" g=${17} /></button>
       <button class="btn geist icon" onClick=${zu} title="Schließen (Esc)" aria-label="Talk schließen"><${Icon} n="x" /></button>
     </div>
@@ -269,8 +288,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
     ${frei && html`<${StimmeKreis} zustand=${frei.zustand} pegel=${frei.pegel || 0} text=${frei.text} beiKlick=${kreisKlick} />`}
     <div class="talk-verlauf" ref=${verlaufRef}>
       ${!msgs.length && !lauf && !frei && html`<div class="talk-start">
-        <${StimmeKreis} zustand="bereit" pegel=${0} beiKlick=${freiStart} />
-        <p style="text-align:center">Sprich oder schreib mit mir über deine Lage, deine Projekte oder das, was der Stab vorschlägt. Ich ändere nichts ohne dein Ja.</p>
+        <p style="text-align:center">Schreib mir hier, oder tipp oben auf <b>Sprechen</b> und rede einfach los. Ich ändere nichts ohne dein Ja. Zum Schluss genügt „Dialog beenden“.</p>
         <div class="knopfreihe" style="justify-content:center">
           <button class="btn klein" onClick=${() => senden("Was liegt an?", [], false)}>Was liegt an?</button>
           <button class="btn klein" onClick=${durchgehen}><${Icon} n="play" g=${12} />Entscheidungen per Stimme</button>

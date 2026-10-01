@@ -110,6 +110,7 @@ export function Neo({ id }) {
     setG((x) => ({ ...x, nachrichten: [...x.nachrichten, { id: "d" + Date.now(), rolle: "du", text, daten: { anzeige: text, anhaenge: namen }, zeit: Date.now() / 1000 }] }));
     amBoden.current = true;
     try {
+      bus.sende("ki-start");
       const r = await api(`/neo/${gid}/senden`, { methode: "POST", daten: { text, anhaenge } });
       folgen(r.job);
       return true;

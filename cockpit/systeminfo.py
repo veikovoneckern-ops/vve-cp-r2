@@ -271,3 +271,79 @@ async def gesamt(frisch: bool = False) -> dict[str, Any]:
     sich = sicherungen()
     return {"status": s, "updates": upd, "ollama_neueste": neu, "sicherungen": sich, "modelle": modelle(s),
             "empfehlungen": empfehlungen(s, upd, neu, sich, stab.gesundheit()), "auftrag": AUFTRAG}
+
+
+# ------------------------------------------------------------ Kopfzeile
+# Die wichtigsten Werte fuer die Kopfzeile, knapp und fertig gerechnet --
+# dieselbe Auswahl wie die Kaestchen in der Topbar des alten Cockpits (Netz,
+# CPU, RAM, Last, Updates, Neustart, Sicherungen, Empfehlungen), dazu die
+# Grafikkarten und der Strom. Der Browser fragt alle paar Sekunden, weil sich
+# daran auch das Logo dreht; deshalb wird /status kurz gemerkt und die
+# apt-Simulation NIE hier angestossen, sondern nur ihr letzter Stand gelesen.
+_upd_task: asyncio.Task | None = None
+
+
+def _gpu_zeilen(s: dict[str, Any]) -> list[dict[str, Any]]:
+    out = []
+    for z in str(s.get("gpu_nvidia") or "").strip().splitlines():
+        t = [x.strip() for x in z.split(",")]
+        if len(t) < 5:
+            continue
+        zahl = lambda x: float(re.sub(r"[^\d.]", "", x) or 0)  # noqa: E731
+        out.append({"temp": int(zahl(t[1])), "last": int(zahl(t[2])),
+                    "belegt_gb": round(zahl(t[3]) / 1024, 1), "gesamt_gb": round(zahl(t[4]) / 1024)})
+    return out
+
+
+async def kopf() -> dict[str, Any]:
+    global _upd_task
+    from . import llm, stab
+    s = _gemerkt("status_kopf", 4)
+    if s is None:
+        s = _merken("status_kopf", await status())
+    upd = _gemerkt("updates", 600)
+    if upd is None and (_upd_task is None or _upd_task.done()):
+        # Beim ersten Mal im Hintergrund rechnen; der naechste Abruf hat es.
+        _upd_task = asyncio.create_task(asyncio.to_thread(updates))
+    jetzt = time.time()
+    gpus = _gpu_zeilen(s or {})
+    gpu_last = max((g["last"] for g in gpus), default=0)
+    ki = {"aufrufe": llm.AKTIV["n"], "seit": llm.AKTIV["seit"], "gpu_last": gpu_last,
+          # Auch das alte Cockpit und ComfyUI rechnen auf denselben Karten --
+          # deshalb zaehlt die Kartenlast mit, nicht nur die eigenen Aufrufe.
+          "arbeitet": llm.AKTIV["n"] > 0 or gpu_last >= 20}
+    out: dict[str, Any] = {"zeit": jetzt, "status_da": bool(s), "ki": ki}
+    sich = sicherungen() or {}
+    out["sicherungen"] = {k: {"alter_h": round((jetzt - float(x.get("zeit") or 0)) / 3600, 1) if x.get("zeit") else None,
+                              "zustand": x.get("zustand")} for k, x in sich.items() if k in ("inhalt", "server") and isinstance(x, dict)}
+    ges = stab.gesundheit()
+    if upd is not None:
+        e = empfehlungen(s, upd, _gemerkt("ollama_neu", 6 * 3600), sich or None, ges)
+        out["empfehlungen"] = {"achtung": sum(1 for x in e if x["stufe"] == "achtung"),
+                               "einspielen": sum(1 for x in e if x["stufe"] == "einspielen"),
+                               "titel": [x["titel"] for x in e if x["stufe"] in ("achtung", "einspielen")][:5]}
+    if not s:
+        return out
+    h, n, m = s.get("host") or {}, s.get("network") or {}, s.get("memory_mb") or {}
+    u, p = s.get("updates") or {}, s.get("power") or {}
+    funk = str(n.get("interface") or "").startswith("wl")
+    tempo = None
+    if funk and (n.get("wlan") or {}).get("bitrate_mbit") is not None:
+        tempo = f"{round(n['wlan']['bitrate_mbit'])} Mbit/s"
+    elif not funk and n.get("lan_speed_mbit") is not None:
+        mb = n["lan_speed_mbit"]
+        tempo = f"{mb / 1000:g} GBit/s" if mb >= 1000 else f"{mb} Mbit/s"
+    watt = [d.get("watt") for d in (p.get("server"), p.get("dock")) if isinstance(d, dict) and d.get("watt") is not None]
+    out.update({
+        "host": h.get("hostname"), "uptime": str(h.get("uptime") or "").replace("up ", "") or None,
+        "netz": {"art": "WLAN" if funk else "LAN", "tempo": tempo} if n.get("interface") else None,
+        "cpu_c": (s.get("temps_c") or {}).get("cpu"),
+        "ram_p": round(m["used"] / m["total"] * 100) if m.get("total") else None,
+        "last": round(float(h["load"][0]), 2) if h.get("load") else None,
+        "kerne": (s.get("cpu") or {}).get("cores"),
+        "gpus": gpus,
+        "watt": round(sum(watt)) if watt else None,
+        "updates": {"offen": u.get("pending"), "sicherheit": u.get("security"), "neustart": bool(u.get("reboot_required"))},
+        "geladen": [str(x).split("|")[0] for x in (s.get("ollama_running") or [])],
+    })
+    return out

@@ -1,7 +1,7 @@
 // Das Grundgeruest: fuenf Bereiche plus Neo, ein Gespraech, ein Erfassen.
 // Briefing · Inbox · Projects · Team · System -- dazu Neo als eigener Knopf
 // (Veikos Wunsch: "einer der Hauptakteure in meinem Team"), Talk und Capture.
-import { html, render, useState, useEffect, useRef, Icon, Toasts, Modal, bus, toast, fehlerMelden, navigiere, zeitText } from "./ui.js";
+import { html, render, useState, useEffect, useRef, Icon, Toasts, Modal, bus, toast, fehlerMelden, navigiere } from "./ui.js";
 import { api } from "./api.js";
 import { Composer } from "./composer.js";
 import { Briefing } from "./briefing.js";
@@ -11,6 +11,7 @@ import { Team } from "./team.js";
 import { System } from "./system.js";
 import { Neo } from "./neo.js";
 import { Talk } from "./talk.js";
+import { Logo, KopfStatus, SprechKnopf, kopfAbruf } from "./kopf.js";
 
 const BEREICHE = [
   { id: "briefing", titel: "Briefing", icon: "briefing", unter: "Was jetzt zählt" },
@@ -24,16 +25,6 @@ const BEREICHE = [
 function route() {
   const teile = (location.hash.replace(/^#\/?/, "") || "briefing").split("/");
   return { bereich: BEREICHE.some((b) => b.id === teile[0]) ? teile[0] : "briefing", id: teile[1] ? decodeURIComponent(teile[1]) : null, rest: teile.slice(2) };
-}
-
-function gesundheitsStufe(g) {
-  if (!g) return ["", "Stand unbekannt"];
-  const jetzt = Date.now() / 1000;
-  if (g.sync && jetzt - g.sync > 1800) return ["rot", `Plaud-Abruf hängt seit ${zeitText(g.sync).replace("vor ", "")}`];
-  if (!g.stab_aktiv) return ["gelb", "Stab ist ausgeschaltet"];
-  if (g.letzter_fehler) return ["gelb", "Letzter Stab-Durchgang mit Fehler"];
-  if (g.letzte_datei && jetzt - g.letzte_datei > 6 * 3600) return ["gelb", `Keine neue Notiz seit ${zeitText(g.letzte_datei).replace("vor ", "")}`];
-  return ["", "Alles läuft"];
 }
 
 function Suche() {
@@ -118,7 +109,7 @@ function Anmelden({ fertig, einrichten }) {
     setLaeuft(false);
   }
   return html`<div class="anmelden"><form onSubmit=${los}>
-    <div class="marke" style="padding:0"><div class="marke-logo">VvE</div><div><b>VvE Cockpit</b><small>neue Fassung</small></div></div>
+    <div class="anmelde-logo"><span class="logo" aria-hidden="true"></span></div>
     <h1>${einrichten ? "Konto einrichten" : "Anmelden"}</h1>
     ${einrichten ? html`<p class="leise">Noch gibt es kein Konto. Lege jetzt deins an.</p>`
       : html`<p class="leise">Dieselben Zugangsdaten wie bisher in Release 2.</p>`}
@@ -152,6 +143,9 @@ function App() {
   useEffect(() => bus.an("talk-oeffnen", (d) => { setTalkStart({ ...(d || {}), n: Date.now() }); if (d && d.kontext) setKontext(d.kontext); setTalk(true); }), []);
   useEffect(() => bus.an("talk-kontext", (k) => setKontext(k)), []);
   useEffect(() => bus.an("erfassen", () => setErfassen(true)), []);
+  // Sprechen oben im Kopf: Talk geht auf und hoert sofort zu.
+  useEffect(() => bus.an("dialog-start", () => { setTalkStart({ frei: true, ausKopf: true, n: Date.now() }); setTalk(true); }), []);
+  useEffect(() => { if (konto && konto.angemeldet) return kopfAbruf(); }, [konto && konto.angemeldet]);
   useEffect(() => bus.an("ergebnis-zeigen", (id) => setAnzeige({ art: "ergebnis", id })), []);
   useEffect(() => bus.an("notiz-zeigen", (id) => setAnzeige({ art: "notiz", id })), []);
   useEffect(() => {
@@ -179,7 +173,6 @@ function App() {
   const bereich = BEREICHE.find((b) => b.id === r.bereich);
   const offen = lage ? lage.entscheidungen.length : 0;
   const neoLaeuft = lage && lage.neo_laeuft && lage.neo_laeuft.length > 0;
-  const [stufe, stufeText] = gesundheitsStufe(lage && lage.gesundheit);
   const zahl = (b) => b.id === "inbox" && offen ? html`<span class="zahl">${offen}</span>` : b.neo && neoLaeuft ? html`<span class="zahl ruhig">arbeitet</span>` : null;
   const voll = r.bereich === "inbox" || r.bereich === "neo";
 
@@ -192,7 +185,7 @@ function App() {
 
   return html`<div class=${"schale" + (talk ? " mit-talk" : "")}>
     <nav class="rail" aria-label="Bereiche">
-      <div class="marke"><div class="marke-logo">VvE</div><div><b>VvE Cockpit</b><small>neue Fassung</small></div></div>
+      <div class="marke"><${Logo} gross=${true} /></div>
       <button class="erfassen-knopf" onClick=${() => setErfassen(true)} title="Etwas an den Stab geben"><${Icon} n="plus" g=${17} w=${2.4} />Capture</button>
       <div class="nav">
         ${BEREICHE.slice(0, 3).map((b) => html`<a href=${"#/" + b.id} class=${r.bereich === b.id ? "an" : ""}><${Icon} n=${b.icon} />${b.titel}${zahl(b)}</a>`)}
@@ -206,12 +199,14 @@ function App() {
     </nav>
     <div class="haupt">
       <header class="topbar">
-        <h1>${bereich.titel}</h1><span class="unter">${bereich.unter}</span>
-        <span class="luecke"></span>
+        <span class="nur-mobil kopf-logo"><${Logo} /></span>
+        <h1 title=${bereich.unter}>${bereich.titel}</h1>
+        <${KopfStatus} gesundheit=${lage && lage.gesundheit} />
         <button class="btn geist icon nur-mobil" onClick=${() => setErfassen(true)} aria-label="Capture" title="Capture"><${Icon} n="plus" g=${20} /></button>
         <${Suche} />
-        <button class="gesund-punkt" onClick=${() => navigiere("/system")} title=${stufeText}><i class=${stufe}></i><span>${stufeText}</span></button>
-        <button class=${"talk-knopf" + (talk ? " offen" : "")} onClick=${() => setTalk(!talk)} aria-pressed=${talk}><${Icon} n="talk" g=${16} />Talk</button>
+        <button class=${"btn geist icon talk-auf" + (talk ? " an" : "")} onClick=${() => setTalk(!talk)} aria-pressed=${talk}
+          title=${talk ? "Gesprächsspalte schließen" : "Gesprächsspalte öffnen (zum Tippen)"} aria-label="Gesprächsspalte"><${Icon} n="chat" g=${18} /></button>
+        <${SprechKnopf} />
       </header>
       <main class=${"inhalt" + (voll ? " voll" : "")}>
         ${r.bereich === "briefing" && html`<${Briefing} lage=${lage} />`}

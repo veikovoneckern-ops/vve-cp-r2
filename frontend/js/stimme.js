@@ -36,7 +36,7 @@ export async function aufnehmen({ stilleStopp = false, maxSek = 180, pegel } = {
   const ende = new Promise((ok) => { fertig = ok; });
   rec.onstop = () => {
     strom.getTracks().forEach((t) => t.stop());
-    if (rahmen) cancelAnimationFrame(rahmen);
+    if (rahmen) clearInterval(rahmen);
     if (ctx) ctx.close().catch(() => {});
     fertig(new Blob(teile, { type: rec.mimeType || typ || "audio/webm" }));
   };
@@ -45,6 +45,8 @@ export async function aufnehmen({ stilleStopp = false, maxSek = 180, pegel } = {
   let gesprochen = false, stilleSeit = 0;
   try {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // Ohne vorherigen Klick auf genau diesem Weg startet der Kontext angehalten -- dann bliebe der Pegel bei null.
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
     const quelle = ctx.createMediaStreamSource(strom);
     ana = ctx.createAnalyser(); ana.fftSize = 1024;
     quelle.connect(ana);
@@ -61,8 +63,13 @@ export async function aufnehmen({ stilleStopp = false, maxSek = 180, pegel } = {
         else if (!gesprochen && t - start > 9000) rec.stop();
       }
       if (t - start > maxSek * 1000 && rec.state === "recording") rec.stop();
-      if (rec.state === "recording") rahmen = requestAnimationFrame(takt);
+      if (rec.state !== "recording" && rahmen) { clearInterval(rahmen); rahmen = null; }
     };
+    // Zeitgeber statt requestAnimationFrame: das pausiert der Browser, sobald der
+    // Tab nicht sichtbar ist -- wer beim Freisprechen in ein anderes Fenster
+    // wechselt, haette nie ein Satzende erkannt bekommen. Im Hintergrund drosselt
+    // der Browser auf etwa eine Abfrage je Sekunde; das reicht fuers Satzende.
+    rahmen = setInterval(takt, 60);
     takt();
   } catch (e) { /* ohne Pegel geht es auch */ }
   return {

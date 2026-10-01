@@ -18,6 +18,23 @@ from .konfig import OLLAMA
 
 _modelle_cache: dict[str, Any] = {"zeit": 0.0, "liste": []}
 
+# Wie viele Anfragen dieses Dienstes gerade bei Ollama rechnen. Die Kopfzeile
+# dreht daran das Logo. Gezaehlt wird hier, weil Stab, Talk und Neo alle
+# diesen einen Weg gehen -- ein Zaehler je Aufrufer liefe auseinander.
+AKTIV: dict[str, Any] = {"n": 0, "seit": None}
+
+
+def _beginn() -> None:
+    if AKTIV["n"] == 0:
+        AKTIV["seit"] = time.time()
+    AKTIV["n"] += 1
+
+
+def _ende() -> None:
+    AKTIV["n"] = max(0, AKTIV["n"] - 1)
+    if AKTIV["n"] == 0:
+        AKTIV["seit"] = None
+
 # Chinesische, japanische, koreanische Schriftzeichen. Gemessen im alten Journal:
 # "Veiko建树作为 expert" -- solche Antworten sollen nie bei Veiko ankommen.
 FREMDSCHRIFT = re.compile(r"[぀-ヿ㐀-䶿一-鿿가-힯]")
@@ -99,12 +116,16 @@ def _body(modell: str, system: str, nachrichten: list[dict[str, Any]], *, json_f
 
 
 async def _post(body: dict[str, Any], timeout: float) -> dict[str, Any]:
-    async with httpx.AsyncClient(timeout=timeout) as c:
-        r = await c.post(f"{OLLAMA}/api/chat", json=body)
-        if r.status_code == 400 and "think" in r.text.lower() and "think" in body:
-            # Modelle ohne Denkphase (z. B. llama3.3) lehnen das Feld ab.
-            body = {k: v for k, v in body.items() if k != "think"}
+    _beginn()
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as c:
             r = await c.post(f"{OLLAMA}/api/chat", json=body)
+            if r.status_code == 400 and "think" in r.text.lower() and "think" in body:
+                # Modelle ohne Denkphase (z. B. llama3.3) lehnen das Feld ab.
+                body = {k: v for k, v in body.items() if k != "think"}
+                r = await c.post(f"{OLLAMA}/api/chat", json=body)
+    finally:
+        _ende()
     if r.status_code >= 400:
         raise ModellFehler(f"Ollama antwortet {r.status_code}: {r.text[:300]}")
     return r.json()
@@ -140,6 +161,15 @@ async def strom(modell: str, system: str, nachrichten: list[dict[str, Any]], *,
                 num_ctx: int | None = 16384) -> AsyncIterator[str]:
     body = _body(modell, system, nachrichten, json_format=False, temperatur=temperatur,
                  denken=denken, num_ctx=num_ctx, stream=True)
+    _beginn()
+    try:
+        async for t in _strom_lauf(body):
+            yield t
+    finally:
+        _ende()
+
+
+async def _strom_lauf(body: dict[str, Any]) -> AsyncIterator[str]:
     async with httpx.AsyncClient(timeout=httpx.Timeout(600, connect=10)) as c:
         async with c.stream("POST", f"{OLLAMA}/api/chat", json=body) as r:
             if r.status_code == 400 and "think" in body:
