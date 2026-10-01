@@ -53,8 +53,16 @@ export function Composer({ platzhalter = "Schreib oder sprich …", beimSenden, 
     if (!kannSenden) return;
     const t = text.trim();
     const ids = bereit.map((a) => a.server);
+    // SOFORT leeren, nicht erst nach der Antwort: Board und Talk streamen 20-30 s,
+    // und so lange sah es aus, als haette Enter nichts getan (Veiko, 01.10.).
+    // Scheitert das Senden, kommt der Text zurueck -- sofern nichts Neues getippt wurde.
+    const vorher = { text, anh };
+    setText(""); setAnh([]);
     const ok = await beimSenden(t, ids, bereit.map((a) => a.name));
-    if (ok !== false) { setText(""); setAnh([]); }
+    if (ok === false) {
+      setText((jetzt) => jetzt || vorher.text);
+      setAnh((jetzt) => (jetzt.length ? jetzt : vorher.anh));
+    }
   }
 
   // Diktat mit Mitlesen: fester Text steht sofort im Feld, der gerade gesprochene

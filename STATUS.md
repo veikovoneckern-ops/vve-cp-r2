@@ -1,5 +1,16 @@
 # Stand der neuen Fassung
 
+## 01.10.2026, nachts (3) — Board-Auswahl, Enter überall, Aufzählungen, Spracherkennung
+
+| Gemeldet | Ursache | Behoben, und wo sonst geprüft |
+|---|---|---|
+| Initialen nicht mittig | `.bd-person-haupt span` (für die Namenszeile) traf auch den Avatar und machte ihn zur Spalte | Kindselektor; beide Avatar-Arten mit Vorrang zentriert. Nachgemessen in Board, Team, Inbox-Cases: höchstens 0,5 px neben der Mitte |
+| Board-Auswahl umständlich, Haken vorbelegt | Klick auf den Namen öffnete das Profil; Gruppen waren nur Filter. Die Vorbelegung war Veikos Auswahl aus dem alten Cockpit | Klick auf Person = an den Tisch/weg (Haken links); Gruppen-Knöpfe schalten ganze Gruppen (mehrere, mit Zustand an/teilweise/aus); „Alle“/„Niemand“; Liste nach Gruppen; Profil (i) und Einzelgespräch (Sprechblase statt Mikrofon) als eigene Knöpfe |
+| Enter sendet scheinbar nicht | Es sendete, das Feld leerte sich aber erst nach der kompletten Antwort (Board/Talk 20–30 s) | Im Eingabefeld selbst: sofort leeren, bei Fehler Text zurück -- gilt für alle 5 Stellen mit Eingabefeld |
+| Enter überall als Bestätigung | 6 Felder ohne Enter: Ausarbeiten (Auftrag, Recherche), Neues Projekt (Ziel), Projekt-Ziel, Team-Auftrag, Memory (erstes Feld) | `enterBestaetigt` (Hauptknopf des Fensters, sonst Speichern beim Verlassen) bzw. eigener Enter |
+| Bindestrich → Aufzählung | -- | In jedem mehrzeiligen Feld: „- “/„* “ am Zeilenanfang → „• “, Umschalt+Enter setzt fort, leerer Punkt beendet |
+| „Advisory Board“ nicht erkannt | Whispers Hörhilfe kannte nur Projekt-, Team- und Memory-Namen | Begriffe des Cockpits und die 19 Advisors dazu. Talk kann Bereiche öffnen (`zeigen` mit Bereich) und eine Frage ans Board weiterreichen; das Board antwortet dann selbst |
+
 ## 01.10.2026, nachts (2) — Advisory Board, moderne Bezeichnungen
 
 **Advisory Board** als eigener Bereich (`board.py`, `board.js`): links der Tisch (19 Advisors in 5 Gruppen, Filter, an den Tisch holen per Klick, Profil mit Prinzipien, typischen Fragen, Stärken, blinden Flecken und dem nächtlich aufgefrischten öffentlichen Stand samt Quellen), rechts das Gespräch. Antworten werden je Advisor in eigene Sprechblasen geteilt; Einzelgespräch mit einer Person; optionaler Projektbezug; Schnellstarts; Gespräche bleiben gespeichert. Profile einmalig aus BOARD_DATA des alten Cockpits (`cockpit/board_profile.json`), Tischbesetzung beim ersten Mal aus dessen Zustand; `board-stand.json` wird nur gelesen. Geprüft mit echtem Modell: Runde (4 von 10 sprachen, 26 s), Einzelgespräch, Profil, 375 px.

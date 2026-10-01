@@ -27,6 +27,7 @@ const PFADE = {
   griff: "M9 5.5h.01M15 5.5h.01M9 12h.01M15 12h.01M9 18.5h.01M15 18.5h.01",
   kalender: "M7 3v3M17 3v3M4 8h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z",
   board: "M12 4a2.2 2.2 0 1 0 0 4.4A2.2 2.2 0 0 0 12 4zM5 9.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM19 9.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 20a5 5 0 0 1 10 0M8.5 13.5h7",
+  info: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 11v5M12 7.6h.01",
   chat: "M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.6A8 8 0 1 1 21 12z",
   mic: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3M8.5 21h7",
   plus: "M12 5v14M5 12h14",
@@ -290,4 +291,53 @@ export function tippsEinrichten() {
   document.addEventListener("pointerout", (e) => { if (tippZiel && !tippZiel.contains(e.relatedTarget)) weg(); });
   document.addEventListener("pointerdown", weg, true);
   document.addEventListener("scroll", weg, true);
+}
+
+// ------------------------------------------------------------ Eingabefelder: Enter und Aufzaehlungen
+// Veikos Regel (01.10.): Enter bestaetigt, Umschalt+Enter macht eine neue Zeile --
+// ueberall. Das Eingabefeld (composer.js) sendet selbst; Felder ohne eigenes
+// Senden bekommen enterBestaetigt: der Hauptknopf des Fensters, sonst Speichern
+// beim Verlassen des Felds.
+export function enterBestaetigt(e) {
+  if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+  e.preventDefault();
+  const m = e.target.closest(".modal");
+  const knopf = m && m.querySelector(".modal-fuss .btn.primaer:not(:disabled), .modal-fuss .btn.ja:not(:disabled)");
+  if (knopf) knopf.click(); else e.target.blur();
+}
+
+// Aufzaehlungen in JEDEM mehrzeiligen Feld: "- " oder "* " am Zeilenanfang wird
+// zu "• ", Umschalt+Enter in einem Punkt beginnt den naechsten, ein leerer Punkt
+// beendet die Liste. Laeuft in der Einfang-Phase, also vor den Handlern der
+// Felder -- die lesen danach schon den umgestellten Wert.
+function feldSetzen(t, wert, pos) {
+  t.value = wert;
+  t.setSelectionRange(pos, pos);
+  t.dispatchEvent(new Event("input", { bubbles: true }));
+}
+let listenAn = false;
+export function listenEinrichten() {
+  if (listenAn) return;
+  listenAn = true;
+  document.addEventListener("input", (e) => {
+    const t = e.target;
+    if (!(t instanceof HTMLTextAreaElement) || t.readOnly) return;
+    // Jede Zeile, nicht nur die gerade getippte: Einfuegen und Diktat bringen
+    // ganze Zeilen auf einmal. "- " und "• " sind gleich lang, der Cursor bleibt stehen.
+    const v = t.value;
+    const neu = v.replace(/^(\s*)[-*] /gm, "$1• ");
+    if (neu !== v) { const pos = t.selectionStart; t.value = neu; t.setSelectionRange(pos, pos); }
+  }, true);
+  document.addEventListener("keydown", (e) => {
+    const t = e.target;
+    if (!(t instanceof HTMLTextAreaElement) || t.readOnly || e.key !== "Enter" || !e.shiftKey || e.isComposing) return;
+    const v = t.value, pos = t.selectionStart;
+    const anfang = v.lastIndexOf("\n", pos - 1) + 1;
+    const m = /^(\s*)• (.*)$/.exec(v.slice(anfang, pos));
+    if (!m) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (!m[2].trim()) feldSetzen(t, v.slice(0, anfang) + v.slice(pos), anfang);          // leerer Punkt: Liste zu Ende
+    else feldSetzen(t, v.slice(0, pos) + "\n" + m[1] + "• " + v.slice(pos), pos + m[1].length + 3);
+  }, true);
 }

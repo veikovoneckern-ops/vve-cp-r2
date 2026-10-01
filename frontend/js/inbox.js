@@ -1,7 +1,7 @@
 // INBOX -- alles, was hereinkommt, als Akte mit Verlauf.
 // Ersetzt Eingang, Zuordnungen, Drop, Schnellsichtung, Vorgaenge und Work in
 // Progress des alten Cockpits: EIN Ort pro Notiz.
-import { html, useState, useEffect, Icon, Avatar, Leer, Md, Modal, StandPill, bus, toast, fehlerMelden, aktualisieren,
+import { html, enterBestaetigt, useState, useEffect, Icon, Avatar, Leer, Md, Modal, StandPill, bus, toast, fehlerMelden, aktualisieren,
   zeitText, useAbruf, navigiere, rolleName, ROLLEN_WAHL, FORM_WAHL } from "./ui.js";
 import { api } from "./api.js";
 import { Entscheidung } from "./entscheidung.js";
@@ -226,9 +226,9 @@ export function Ausarbeiten({ v, projektId, zu, fertig }) {
         ${FORM_WAHL.map(([k, t]) => html`<option value=${k}>${t}</option>`)}</select></div>
     </div>
     <div class="feld" style="margin-top:10px"><label for="aa-auftrag">Auftrag</label>
-      <textarea id="aa-auftrag" class="eingabe" rows="4" value=${auftrag} onInput=${(e) => setAuftrag(e.target.value)}></textarea></div>
+      <textarea id="aa-auftrag" class="eingabe" rows="4" value=${auftrag} onInput=${(e) => setAuftrag(e.target.value)} onKeyDown=${enterBestaetigt}></textarea></div>
     <div class="feld" style="margin-top:10px"><label for="aa-rech">Im Internet recherchieren (optional: Suchbegriffe)</label>
-      <input id="aa-rech" class="eingabe" value=${recherche} placeholder="z. B. Anbieter Seebestattung Sassnitz" onInput=${(e) => setRecherche(e.target.value)} /></div>
+      <input id="aa-rech" class="eingabe" value=${recherche} placeholder="z. B. Anbieter Seebestattung Sassnitz" onKeyDown=${enterBestaetigt} onInput=${(e) => setRecherche(e.target.value)} /></div>
     <p class="leise klein" style="margin-top:10px">Läuft lokal auf deinem Server. Gesucht wird über deine eigene Suchmaschine. Daniel prüft das Ergebnis vor der Vorlage, bei Mängeln wird einmal nachgebessert.</p>
   <//>`;
 }

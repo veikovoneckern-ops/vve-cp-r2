@@ -1,7 +1,7 @@
 // PROJECTS -- Portfolio und je Projekt: Aufgaben, Notizen, Ergebnisse,
 // Dateien, Verlauf. Dazu die Uebersichten "Alle Aufgaben" und "Alle Notizen".
 // Ersetzt Projekte, Aufgaben, Notizen, Artefakte und Archiv des alten Cockpits.
-import { html, useState, useEffect, useRef, Icon, Avatar, Leer, Md, Modal, StandPill, bus, toast, fehlerMelden, aktualisieren,
+import { html, enterBestaetigt, useState, useEffect, useRef, Icon, Avatar, Leer, Md, Modal, StandPill, bus, toast, fehlerMelden, aktualisieren,
   zeitText, datumText, useAbruf, navigiere, kopieren, rolleName } from "./ui.js";
 import { api, hochladen } from "./api.js";
 import { Zeitplan, Struktur } from "./projektansichten.js";
@@ -73,7 +73,7 @@ function NeuesProjekt({ zu, fertig }) {
       <button class="btn primaer" disabled=${!name.trim()} onClick=${los}>Anlegen</button>`}>
     <div class="feld"><label for="np-name">Name</label><input id="np-name" class="eingabe" value=${name} onInput=${(e) => setName(e.target.value)} autofocus
       onKeyDown=${(e) => { if (e.key === "Enter" && name.trim()) los(); }} /></div>
-    <div class="feld" style="margin-top:10px"><label for="np-ziel">Ziel (optional, ein Satz)</label><input id="np-ziel" class="eingabe" value=${ziel} onInput=${(e) => setZiel(e.target.value)} /></div>
+    <div class="feld" style="margin-top:10px"><label for="np-ziel">Ziel (optional, ein Satz)</label><input id="np-ziel" class="eingabe" value=${ziel} onInput=${(e) => setZiel(e.target.value)} onKeyDown=${(e) => { if (e.key === "Enter" && name.trim()) los(); }} /></div>
     <div class="feld" style="margin-top:10px"><label>Farbe</label><div class="knopfreihe">${FARBEN.map((f) => html`
       <button type="button" aria-label=${"Farbe " + f} onClick=${() => setFarbe(f)} style=${`width:28px;height:28px;border-radius:50%;border:3px solid ${farbe === f ? "var(--ink)" : "transparent"};background:${f};cursor:pointer`}></button>`)}</div></div>
   <//>`;
@@ -216,7 +216,7 @@ function Projekt({ id, reiter }) {
       </section>
       <div>
         <section class="karte"><div class="karte-kopf"><h3>Ziel</h3></div>
-          <textarea class="eingabe" rows="2" placeholder="Ein Satz: Was soll mit diesem Projekt erreicht werden? Hilft dem Team beim Einordnen." value=${p.ziel || ""}
+          <textarea class="eingabe" rows="2" onKeyDown=${enterBestaetigt} placeholder="Ein Satz: Was soll mit diesem Projekt erreicht werden? Hilft dem Team beim Einordnen." value=${p.ziel || ""}
             onBlur=${(e) => { if (e.target.value !== (p.ziel || "")) aendern({ ziel: e.target.value }, "Ziel gespeichert."); }}></textarea></section>
         <section class="karte"><div class="karte-kopf"><h3>Neueste Ergebnisse</h3></div>
           ${d.ergebnisse.length ? d.ergebnisse.slice(0, 4).map((r) => html`<${ErgebnisZeile} key=${r.id} r=${r} />`) : html`<${Leer}>Noch keine. „Ausarbeiten lassen“ gibt einer Rolle einen Auftrag.</${Leer}>`}</section>

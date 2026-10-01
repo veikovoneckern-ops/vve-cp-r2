@@ -781,22 +781,12 @@ html.ki-arbeitet .logo-knopf{filter:drop-shadow(0 0 .6px rgba(0,0,0,.75)) drop-s
 .bd-tisch{border-right:1px solid var(--line);background:var(--surface);display:flex;flex-direction:column;min-height:0}
 .bd-tisch-kopf{padding:14px 14px 8px;display:flex;flex-direction:column;gap:2px}
 .bd-tisch-kopf h3{font-size:15px;display:flex;align-items:center;gap:8px}
-.bd-filter{display:flex;flex-wrap:wrap;gap:5px;padding:0 14px 10px;border-bottom:1px solid var(--line-2)}
-.bd-filter button{display:inline-flex;align-items:center;gap:5px;border:1px solid transparent;background:var(--knopf-grund);color:var(--ink-2);border-radius:99px;padding:3px 10px;font-size:12px;font-weight:600;cursor:pointer}
-.bd-filter button i{width:8px;height:8px;border-radius:50%}
-.bd-filter button.an{background:var(--fuell);color:var(--fuell-text)}
 .bd-personen{flex:1;overflow:auto;padding:8px;display:flex;flex-direction:column;gap:4px;min-height:0}
 .bd-person{display:flex;align-items:center;gap:4px;border-radius:10px;padding:4px;border:1px solid transparent;opacity:.62;transition:opacity .15s,background .15s}
 .bd-person.am{opacity:1;background:var(--surface-2)}
 .bd-person.einzel{border-color:var(--violett)}
 .bd-person:hover{opacity:1}
 .bd-person-haupt{flex:1;min-width:0;display:flex;align-items:center;gap:10px;background:none;border:0;padding:2px;cursor:pointer;text-align:left;color:inherit}
-.bd-person-haupt span{display:flex;flex-direction:column;min-width:0}
-.bd-person-haupt b{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.bd-person-haupt small{font-size:11px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.bd-sitz,.bd-1zu1{width:30px;height:30px;border-radius:8px;border:0;background:var(--knopf-grund);color:var(--ink-3);display:grid;place-items:center;cursor:pointer;flex:none}
-.bd-sitz.an{background:var(--fuell);color:var(--fuell-text)}
-.bd-1zu1:hover,.bd-sitz:hover{color:var(--ink)}
 .bd-ava{display:inline-grid;place-items:center;border-radius:50%;color:#fff;font-weight:750;flex:none;letter-spacing:.02em;box-shadow:0 0 0 2px var(--surface)}
 .bd-ava.board{width:32px;height:32px;background:var(--fuell);color:var(--fuell-text)}
 .bd-stapel{display:inline-flex}
@@ -829,3 +819,33 @@ html.ki-arbeitet .logo-knopf{filter:drop-shadow(0 0 .6px rgba(0,0,0,.75)) drop-s
   .bd-tisch{border-right:0;border-bottom:1px solid var(--line);max-height:38vh}
   .bd-du{max-width:88%}
 }
+
+/* Board-Tisch, zweite Fassung (01.10.): Klick auf Person/Gruppe = an den Tisch oder weg. */
+.bd-gruppen{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 12px;border-bottom:1px solid var(--line-2)}
+.bd-gr{display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;background:var(--knopf-grund);color:var(--ink-2);border-radius:99px;padding:4px 11px;font-size:12px;font-weight:650;cursor:pointer}
+.bd-gr i{width:10px;height:10px;border-radius:50%;border:2px solid var(--gf);background:transparent}
+.bd-gr.teil i{background:linear-gradient(90deg,var(--gf) 50%,transparent 50%)}
+.bd-gr.an i{background:var(--gf)}
+.bd-gr.an{background:var(--fuell);color:var(--fuell-text)}
+.bd-gr.teil{border-color:var(--ink-4)}
+.bd-abschnitt+.bd-abschnitt{margin-top:8px}
+.bd-abschnitt-kopf{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);padding:6px 8px 4px}
+.bd-abschnitt-kopf i{width:8px;height:8px;border-radius:50%}
+.bd-person{opacity:1;background:none}
+.bd-person.am{background:var(--surface-2)}
+.bd-person:not(.am) .bd-ava{filter:grayscale(.85);opacity:.55}
+.bd-person:not(.am) .bd-name b{color:var(--ink-3)}
+.bd-person-haupt>.bd-name{display:flex;flex-direction:column;min-width:0}
+.bd-person-haupt>.bd-name b{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bd-person-haupt>.bd-name small{font-size:11px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bd-haken{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--ink-4);display:grid;place-items:center;flex:none;color:#fff}
+.bd-haken.an{background:var(--sea);border-color:var(--sea)}
+.bd-klein{width:30px;height:30px;border-radius:8px;border:0;background:transparent;color:var(--ink-3);display:grid;place-items:center;cursor:pointer;flex:none}
+.bd-klein:hover{background:var(--knopf-grund-hover);color:var(--ink)}
+
+/* Avatare: Buchstaben IMMER mittig. Eine Regel der Form "span im Container"
+   machte den Avatar im Board zur Spalte mit dem Text oben (01.10.) -- deshalb
+   hier mit Vorrang festgeschrieben, fuer beide Avatar-Arten. */
+.avatar,.bd-ava{display:inline-grid!important;place-items:center!important;flex-direction:row!important;line-height:1!important;text-align:center;padding:0!important}
+/* Board neben offenem Talk: der Tisch gibt Breite ab, damit das Gespraech lesbar bleibt. */
+@media (max-width:1600px){.schale.mit-talk .bd{grid-template-columns:250px minmax(0,1fr)}.schale.mit-talk .bd-person-haupt>.bd-name small{display:none}}

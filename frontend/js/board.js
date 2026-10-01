@@ -8,6 +8,7 @@ import { html, useState, useEffect, useRef, Icon, Md, Modal, Leer, toast, fehler
 import { api, strom } from "./api.js";
 import { Composer } from "./composer.js";
 
+const KURZ = { c1: "KI & Tech", c2: "Business", c3: "Gesellschaft", c4: "Leadership", c5: "Design" };
 const GRUPPEN_FARBE = { c1: "#2C6BB3", c2: "#C07C12", c3: "#0E7490", c4: "#B4322A", c5: "#7C3AED" };
 const initialen = (n) => n.split(/\s+/).filter(Boolean).map((w) => w[0]).slice(0, 2).join("").toUpperCase();
 const farbe = (p) => GRUPPEN_FARBE[(p.clusters || [])[0]] || "#647388";
@@ -18,6 +19,11 @@ const START = [
   ["Pro und Contra", "Gebt mir die stärksten Argumente dafür und dagegen, jeweils aus eurer Sicht: "],
   ["Entscheidungshilfe", "Ich muss mich zwischen diesen Optionen entscheiden. Wozu ratet ihr, und warum? Optionen: "],
 ];
+
+// Eine Frage, die Talk ans Board weiterreicht ("frag das Board, was es von X haelt").
+// Gemerkt, weil das Board erst nach dem Seitenwechsel geladen wird.
+let wartendeFrage = null;
+export function boardFrageMerken(frage) { wartendeFrage = frage; bus.sende("board-frage"); }
 
 function Avatar({ p, g = 34 }) {
   return html`<span class="bd-ava" style=${`width:${g}px;height:${g}px;font-size:${Math.round(g * 0.36)}px;background:${farbe(p)}`} aria-hidden="true">${initialen(p.name)}</span>`;
@@ -71,7 +77,6 @@ function Profil({ p, amTisch, umschalten, einzeln, zu }) {
 
 export function Board({ id }) {
   const [d, setD] = useState(null);
-  const [gruppe, setGruppe] = useState("");
   const [profil, setProfil] = useState(null);
   const [msgs, setMsgs] = useState([]);
   const [lauf, setLauf] = useState(null);
@@ -95,11 +100,18 @@ export function Board({ id }) {
     }).catch(() => navigiere("/board"));
   }, [id]);
   useEffect(() => { const v = verlauf.current; if (v) v.scrollTop = v.scrollHeight; }, [msgs, lauf]);
+  // Von Talk weitergereichte Frage: sobald die Daten da sind, stellt das Board sie selbst.
+  const [frageTakt, setFrageTakt] = useState(0);
+  useEffect(() => bus.an("board-frage", () => setFrageTakt((n) => n + 1)), []);
+  useEffect(() => {
+    if (!d || !wartendeFrage || lauf) return;
+    const f = wartendeFrage; wartendeFrage = null;
+    senden(f);
+  }, [d, frageTakt]);
 
   if (!d) return html`<div class="seite"><div class="lade">Lade Advisory Board …</div></div>`;
   const nach = Object.fromEntries(d.personen.map((p) => [p.id, p]));
   const tisch = new Set(d.tisch);
-  const sichtbar = d.personen.filter((p) => !gruppe || p.clusters.includes(gruppe));
   const einzelP = einzel ? nach[einzel] : null;
 
   async function tischSetzen(ids) {
@@ -107,6 +119,13 @@ export function Board({ id }) {
     try { await api("/board/tisch", { methode: "POST", daten: { ids } }); } catch (e) { fehlerMelden(e); laden(); }
   }
   const umschalten = (pid) => tischSetzen(tisch.has(pid) ? d.tisch.filter((x) => x !== pid) : [...d.tisch, pid]);
+  // Ganze Gruppen: sitzen alle ihre Leute am Tisch, nimmt der Klick sie weg, sonst holt er alle dazu.
+  const gruppenLeute = (gid) => d.personen.filter((p) => p.clusters.includes(gid)).map((p) => p.id);
+  const gruppenStand = (gid) => { const l = gruppenLeute(gid), n = l.filter((i) => tisch.has(i)).length; return n === l.length ? "an" : n ? "teil" : ""; };
+  const gruppeUmschalten = (gid) => {
+    const l = gruppenLeute(gid);
+    tischSetzen(gruppenStand(gid) === "an" ? d.tisch.filter((i) => !l.includes(i)) : [...new Set([...d.tisch, ...l])]);
+  };
 
   async function senden(text) {
     if (lauf) return false;
@@ -139,20 +158,34 @@ export function Board({ id }) {
 
   return html`<div class="bd">
     <aside class="bd-tisch">
-      <div class="bd-tisch-kopf"><h3>Am Tisch <span class="pill">${d.tisch.length}</span></h3>
-        <span class="leise klein">${d.aufgefrischt ? "Stand aufgefrischt " + zeitText(d.aufgefrischt) : ""}</span></div>
-      <div class="bd-filter">
-        <button class=${gruppe ? "" : "an"} onClick=${() => setGruppe("")}>Alle</button>
-        ${d.gruppen.map((g) => html`<button class=${gruppe === g.id ? "an" : ""} onClick=${() => setGruppe(g.id)} title=${g.name}>
-          <i style=${`background:${GRUPPEN_FARBE[g.id]}`}></i>${g.name.split(/[ ,&]/)[0]}</button>`)}
+      <div class="bd-tisch-kopf">
+        <h3>Am Tisch <span class="pill">${d.tisch.length} von ${d.personen.length}</span></h3>
+        <span class="leise klein">Klick auf eine Person oder Gruppe holt sie an den Tisch oder nimmt sie weg.${d.aufgefrischt ? " Stand aufgefrischt " + zeitText(d.aufgefrischt) + "." : ""}</span>
+      </div>
+      <div class="bd-gruppen" role="group" aria-label="Ganze Gruppen an den Tisch">
+        <button class=${"bd-gr" + (d.tisch.length === d.personen.length ? " an" : "")} onClick=${() => tischSetzen(d.personen.map((p) => p.id))} title="Alle an den Tisch">Alle</button>
+        <button class=${"bd-gr" + (!d.tisch.length ? " an" : "")} onClick=${() => tischSetzen([])} title="Tisch leeren">Niemand</button>
+        ${d.gruppen.map((g) => {
+          const st = gruppenStand(g.id);
+          return html`<button class=${"bd-gr " + st} onClick=${() => gruppeUmschalten(g.id)} aria-pressed=${st === "an"}
+            title=${(st === "an" ? "Ganze Gruppe vom Tisch nehmen: " : "Ganze Gruppe an den Tisch: ") + g.name}>
+            <i style=${`--gf:${GRUPPEN_FARBE[g.id]}`}></i>${KURZ[g.id] || g.name}</button>`;
+        })}
       </div>
       <div class="bd-personen">
-        ${sichtbar.map((p) => html`<div class=${"bd-person" + (tisch.has(p.id) ? " am" : "") + (einzel === p.id ? " einzel" : "")} key=${p.id}>
-          <button class="bd-person-haupt" onClick=${() => setProfil(p)} title="Profil ansehen">
-            <${Avatar} p=${p} /><span><b>${p.name}</b><small>${p.gruppen[0]}</small></span></button>
-          <button class=${"bd-sitz" + (tisch.has(p.id) ? " an" : "")} onClick=${() => umschalten(p.id)}
-            title=${tisch.has(p.id) ? "Vom Tisch nehmen" : "An den Tisch holen"} aria-pressed=${tisch.has(p.id)}><${Icon} n=${tisch.has(p.id) ? "check" : "plus"} g=${14} w=${2.4} /></button>
-          <button class="bd-1zu1" onClick=${() => { setEinzel(p.id); navigiere("/board"); }} title=${"Einzelgespräch mit " + p.name}><${Icon} n="talk" g=${14} /></button>
+        ${d.gruppen.map((g) => html`<div class="bd-abschnitt" key=${g.id}>
+          <div class="bd-abschnitt-kopf"><i style=${`background:${GRUPPEN_FARBE[g.id]}`}></i>${g.name}</div>
+          ${d.personen.filter((p) => p.clusters[0] === g.id).map((p) => {
+            const am = tisch.has(p.id);
+            return html`<div class=${"bd-person" + (am ? " am" : "") + (einzel === p.id ? " einzel" : "")} key=${p.id}>
+              <button class="bd-person-haupt" onClick=${() => umschalten(p.id)} aria-pressed=${am}
+                title=${am ? `${p.name} vom Tisch nehmen` : `${p.name} an den Tisch holen`}>
+                <span class=${"bd-haken" + (am ? " an" : "")} aria-hidden="true">${am ? html`<${Icon} n="check" g=${12} w=${3} />` : ""}</span>
+                <${Avatar} p=${p} /><span class="bd-name"><b>${p.name}</b><small>${p.gruppen.join(" · ")}</small></span></button>
+              <button class="bd-klein" onClick=${() => setProfil(p)} title=${"Profil von " + p.name}><${Icon} n="info" g=${15} /></button>
+              <button class="bd-klein" onClick=${() => { setEinzel(p.id); navigiere("/board"); }} title=${"Einzelgespräch mit " + p.name}><${Icon} n="chat" g=${15} /></button>
+            </div>`;
+          })}
         </div>`)}
       </div>
     </aside>

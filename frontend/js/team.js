@@ -1,7 +1,7 @@
 // TEAM -- Veikos KI-Team: wer ist da, womit rechnet er, was hat er zuletzt getan.
 // Dazu Memory (was das Team ueber Veiko weiss) und Freigaben (was das Team
 // ohne Nachfrage tun darf). Das Advisory Board hat einen eigenen Bereich (board.js).
-import { html, useState, useEffect, Icon, Avatar, Leer, Modal, toast, fehlerMelden, aktualisieren, zeitText, useAbruf, navigiere, bus } from "./ui.js";
+import { html, enterBestaetigt, useState, useEffect, Icon, Avatar, Leer, Modal, toast, fehlerMelden, aktualisieren, zeitText, useAbruf, navigiere, bus } from "./ui.js";
 import { api } from "./api.js";
 
 const TABS = [["mitglieder", "Mitglieder"], ["gedaechtnis", "Memory"], ["vertrauen", "Freigaben"]];
@@ -63,7 +63,7 @@ function MitgliedDetail({ id, zu, nachher }) {
       <button class="btn primaer" disabled=${auftrag === (m.auftrag || "")} onClick=${speichern}>Auftrag speichern</button>`}>
     <div class="raster zwei">
       <div class="feld"><label for="md-auftrag">Auftrag (so arbeitet ${m.name})</label>
-        <textarea id="md-auftrag" class="eingabe" rows="16" value=${auftrag} onInput=${(e) => setAuftrag(e.target.value)} style="font-size:13px"></textarea></div>
+        <textarea id="md-auftrag" class="eingabe" rows="16" value=${auftrag} onInput=${(e) => setAuftrag(e.target.value)} onKeyDown=${enterBestaetigt} style="font-size:13px"></textarea></div>
       <div><h4 style="margin-bottom:8px">Zuletzt</h4>
         ${m.zuletzt.length ? m.zuletzt.map((z) => html`<div class="zeile"><div class="haupt-text"><a href=${"#/inbox/" + z.vorgang_id} onClick=${zu}>${z.titel || "Case"}</a>
           <div class="leise klein">${z.text.slice(0, 120)}</div></div><span class="neben">${zeitText(z.zeit)}</span></div>`) : html`<${Leer}>Noch nichts in der neuen Fassung.</${Leer}>`}
@@ -107,7 +107,7 @@ function Gedaechtnis() {
       <div class="feld"><label for="gd-art">Art</label><select id="gd-art" class="eingabe" value=${neu.art} onChange=${(e) => setNeu({ ...neu, art: e.target.value })}>
         ${ARTEN.map(([k, t]) => html`<option value=${k}>${t}</option>`)}</select></div>
       <div class="feld" style="margin-top:8px"><label for="gd-b">${neu.art === "hoerfehler" ? "Was Whisper versteht" : "Begriff oder Name"}</label>
-        <input id="gd-b" class="eingabe" value=${neu.begriff} placeholder=${neu.art === "hoerfehler" ? "z. B. Kronis" : "z. B. Mutti"} onInput=${(e) => setNeu({ ...neu, begriff: e.target.value })} /></div>
+        <input id="gd-b" class="eingabe" value=${neu.begriff} placeholder=${neu.art === "hoerfehler" ? "z. B. Kronis" : "z. B. Mutti"} onInput=${(e) => setNeu({ ...neu, begriff: e.target.value })} onKeyDown=${(e) => { if (e.key === "Enter" && neu.begriff && neu.bedeutung) anlegen(); }} /></div>
       <div class="feld" style="margin-top:8px"><label for="gd-bed">${neu.art === "hoerfehler" ? "Was gemeint ist" : "Bedeutung"}</label>
         <input id="gd-bed" class="eingabe" value=${neu.bedeutung} placeholder=${neu.art === "hoerfehler" ? "z. B. Krones" : "z. B. Brunhilde von Eckern, meine Mutter"} onInput=${(e) => setNeu({ ...neu, bedeutung: e.target.value })}
           onKeyDown=${(e) => { if (e.key === "Enter" && neu.begriff && neu.bedeutung) anlegen(); }} /></div>

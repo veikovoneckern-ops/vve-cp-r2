@@ -14,6 +14,7 @@
 import { html, useState, useEffect, useRef, Icon, Md, toast, fehlerMelden, aktualisieren, navigiere, rolleName, bus } from "./ui.js";
 import { api, strom } from "./api.js";
 import { Composer } from "./composer.js";
+import { boardFrageMerken } from "./board.js";
 import { aufnehmen, erkennen, vorlesen, vorleseStopp, mikrofonGrund } from "./stimme.js";
 
 const NEIN_WORT = /\b(nein|nee|nö|nicht|lieber nicht|ablehnen|falsch|stopp)\b/i;
@@ -121,7 +122,12 @@ export function Talk({ zu, kontext, setKontext, start }) {
       setMsgs((m) => [...m, { id: fertig.nachricht_id, rolle: "ck", text: fertig.text, vorschlaege: fertig.vorschlaege }]);
       // "Zeig mir …": aendert nichts, deshalb sofort und ohne Knopf.
       const z = (fertig.zeigen || [])[0];
-      if (z) navigiere("/projects/" + z.projekt_id + (z.ziel && z.ziel !== "ueberblick" ? "/" + z.ziel : ""));
+      if (z && z.projekt_id) navigiere("/projects/" + z.projekt_id + (z.ziel && z.ziel !== "ueberblick" ? "/" + z.ziel : ""));
+      else if (z && z.ziel) {
+        // Ein Bereich des Cockpits; eine mitgegebene Frage ans Board stellt das Board selbst.
+        if (z.ziel === "board" && z.frage) boardFrageMerken(z.frage);
+        navigiere("/" + z.ziel);
+      }
       return fertig;
     }
     return true;

@@ -1,7 +1,7 @@
 // Das Grundgeruest: fuenf Bereiche plus Neo, ein Gespraech, ein Erfassen.
 // Briefing · Inbox · Projects · Team · System -- dazu Neo als eigener Knopf
 // (Veikos Wunsch: "einer der Hauptakteure in meinem Team"), Talk und Capture.
-import { html, render, useState, useEffect, useRef, Icon, Toasts, Modal, bus, toast, fehlerMelden, navigiere, tippsEinrichten } from "./ui.js";
+import { html, render, useState, useEffect, useRef, Icon, Toasts, Modal, bus, toast, fehlerMelden, navigiere, tippsEinrichten, listenEinrichten } from "./ui.js";
 import { api } from "./api.js";
 import { Composer } from "./composer.js";
 import { Briefing } from "./briefing.js";
@@ -263,4 +263,5 @@ function App() {
 }
 
 tippsEinrichten();
+listenEinrichten();
 render(html`<${App} />`, document.getElementById("app"));

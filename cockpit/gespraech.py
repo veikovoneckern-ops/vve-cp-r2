@@ -57,7 +57,8 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"aufgabe_neu","titel":"…","projekt_id":"p… oder null","faellig":"JJJJ-MM-TT oder null"}
 - {"aktion":"aufgabe_erledigt","aufgabe_id":"t…"}
 - {"aktion":"aufgabe_aendern","aufgabe_id":"t…","titel":"neuer Titel oder weglassen","faellig":"JJJJ-MM-TT oder weglassen","status":"offen|erledigt oder weglassen"}
-- {"aktion":"zeigen","ziel":"ueberblick|aufgaben|zeitplan|struktur|notizen|ergebnisse|verlauf|dateien","projekt_id":"p…"} -- öffnet die Ansicht sofort, ohne Rückfrage (ändert nichts)
+- {"aktion":"zeigen","ziel":"ueberblick|aufgaben|zeitplan|struktur|notizen|ergebnisse|verlauf|dateien","projekt_id":"p…"} -- öffnet eine Ansicht des Projekts sofort, ohne Rückfrage (ändert nichts)
+- {"aktion":"zeigen","ziel":"board|briefing|inbox|projects|team|neo|system"} -- öffnet einen Bereich des Cockpits sofort. Will Veiko „mit dem Advisory Board sprechen“: ziel board. Stellt er dabei schon eine Frage ans Board, gib sie als "frage" mit -- das Board antwortet dann selbst, du antwortest nicht an seiner Stelle.
 - {"aktion":"ausarbeiten","rolle":"stratege|buch|designer|video","form":"text|aufstellung|konzept|dokument|webseite|praesentation","auftrag":"…","recherche":"Suchanfrage oder null","vorgang_id":"v… oder null","projekt_id":"p… oder null"}
 - {"aktion":"merken","art":"person|organisation|begriff|hoerfehler","begriff":"…","bedeutung":"…"}
 - {"aktion":"notiz","text":"…","projekt_id":"p… oder null"}
@@ -65,6 +66,7 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"neo","auftrag":"was Neo am Cockpit oder Server tun soll"}
 Schlage nur vor, was Veiko erkennbar will. Ohne Handlungswunsch kein Block.
 WICHTIG: Du selbst führst NICHTS aus. Schreib nie „ich mache das“, „ich korrigiere“, „ich merke mir“ oder „erledigt“. Sag in einem Satz, was du vorschlägst, und schließ mit der Frage „Soll ich das so machen?“. Ausgeführt wird erst, wenn Veiko bestätigt; das Cockpit meldet es dann selbst.
+AUSNAHME zeigen: das öffnet nur eine Ansicht und passiert sofort. Dann KEINE Frage, sondern ein kurzer Satz wie „Ich öffne dir das Advisory Board.“ Reichst du eine Frage ans Board weiter, sag „Ich gebe deine Frage ans Advisory Board weiter.“ und antworte nicht selbst an seiner Stelle.
 Wenn Veiko eine offene Entscheidung bestätigt oder ablehnt, gehört genau EINE passende entscheiden-Aktion in den Block, nicht mehr.
 aufgabe_erledigt nur, wenn Veiko sagt, dass er etwas erledigt hat. Überfällig heißt nicht erledigt.
 Schaut Veiko auf ein PROJEKT (siehe KONTEXT), dann geht es um dieses Projekt, solange er nichts anderes sagt: neue Aufgaben, Notizen und Ausarbeitungen gehören dorthin. Will er etwas sehen („zeig mir die Aufgaben“), nimm zeigen.
@@ -181,6 +183,9 @@ def vorschlaege_aus(text: str) -> tuple[str, list[dict[str, Any]]]:
 DATUM = re.compile(r"\d{4}-\d{2}-\d{2}")
 ZIELE = {"ueberblick": "Überblick", "aufgaben": "Aufgaben", "zeitplan": "Zeitplan", "struktur": "Struktur", "notizen": "Notizen", "ergebnisse": "Ergebnisse",
          "verlauf": "Verlauf", "dateien": "Dateien"}
+# Bereiche des Cockpits, die Talk ohne Projekt oeffnen kann.
+BEREICHE = {"board": "Advisory Board", "briefing": "Briefing", "inbox": "Inbox", "projects": "Projects", "team": "Team",
+            "neo": "Neo", "system": "System"}
 
 
 def beschriften(a: dict[str, Any]) -> str | None:
@@ -211,7 +216,8 @@ def beschriften(a: dict[str, Any]) -> str | None:
             was.append("Status " + a["status"])
         return f"Aufgabe „{t['titel'][:60]}“ ändern: " + ", ".join(was) if was else None
     if art == "zeigen":
-        return ZIELE.get(a.get("ziel")) and f"Zeigen: {ZIELE[a['ziel']]}"
+        name = ZIELE.get(a.get("ziel")) or BEREICHE.get(a.get("ziel"))
+        return name and f"Zeigen: {name}"
     if art == "ausarbeiten":
         return f"{stab.rollen_name(a.get('rolle') or 'stratege')} ausarbeiten lassen: {a['auftrag'][:90]}"
     if art == "merken":
@@ -342,11 +348,11 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     # Im Projekt gehoert Neues in dieses Projekt, auch wenn das Modell die Kennung vergisst.
     if kontext and kontext.get("art") == "projekt" and db.holen("projekte", kontext.get("id") or ""):
         for v in vorschlaege:
-            if v["aktion"] in ("aufgabe_neu", "notiz", "ausarbeiten", "zeigen") and not v.get("projekt_id"):
+            if (v["aktion"] in ("aufgabe_neu", "notiz", "ausarbeiten") or (v["aktion"] == "zeigen" and v.get("ziel") in ZIELE))                     and not v.get("projekt_id"):
                 v["projekt_id"] = kontext["id"]
                 v["label"] = beschriften(v) or v["label"]
     # "Zeigen" aendert nichts -- das Cockpit fuehrt es sofort aus, ohne Knopf.
-    zeigen = [v for v in vorschlaege if v["aktion"] == "zeigen" and v.get("projekt_id")]
+    zeigen = [v for v in vorschlaege if v["aktion"] == "zeigen" and (v.get("projekt_id") or v.get("ziel") in BEREICHE)]
     vorschlaege = [v for v in vorschlaege if v["aktion"] != "zeigen"]
     if llm.fremdschrift(sichtbar):
         sichtbar = llm.FREMDSCHRIFT.sub("", sichtbar)
@@ -354,7 +360,8 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
                         (gid, "assistent", sichtbar, json.dumps({"vorschlaege": vorschlaege, "modell": modell}, ensure_ascii=False), time.time()))
     db.ausfuehren("UPDATE gespraeche SET geaendert=? WHERE id=?", (time.time(), gid))
     yield {"typ": "fertig", "text": sichtbar, "vorschlaege": vorschlaege, "nachricht_id": mid, "modell": modell,
-           "zeigen": [{"ziel": v["ziel"], "projekt_id": v["projekt_id"]} for v in zeigen[:1]]}
+           "zeigen": [{"ziel": v["ziel"], "projekt_id": v.get("projekt_id") if v.get("ziel") in ZIELE else None,
+                       "frage": str(v.get("frage") or "")[:2000] or None} for v in zeigen[:1]]}
 
 
 async def vorschlaege_ausfuehren(nachricht_id: int, indizes: list[int]) -> list[dict[str, Any]]:

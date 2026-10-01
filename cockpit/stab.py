@@ -106,7 +106,16 @@ def whisper_vorlage() -> str:
              for g in db.alle("SELECT art, begriff, bedeutung FROM gedaechtnis WHERE bestaetigt=1")]
     namen += [p["name"] for p in db.alle("SELECT name FROM projekte WHERE status!='archiviert'")]
     namen += [t["name"] for t in db.alle("SELECT name FROM team")]  # "Neo" statt "Nioh"
-    return ", ".join(dict.fromkeys(n for n in namen if n))[:600]
+    # Die Woerter des Cockpits selbst und die Advisors -- sonst hoert Whisper bei
+    # "Advisory Board" irgendetwas (Veiko, 01.10.). Whisper nimmt etwa 220 Tokens
+    # Vorlage; was dahinter steht, wird abgeschnitten, also das Wichtigste zuerst.
+    namen += ["Advisory Board", "Board", "Briefing", "Inbox", "Capture", "Talk", "Case", "Memory", "Projects", "Dialog beenden"]
+    try:
+        from .board import PROFILE
+        namen += [p["name"] for p in PROFILE["persons"]]
+    except (ImportError, OSError, ValueError, KeyError):
+        pass
+    return ", ".join(dict.fromkeys(n for n in namen if n))[:900]
 
 
 def projektliste_text() -> str:
