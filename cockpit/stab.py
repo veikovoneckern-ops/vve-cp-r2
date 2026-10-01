@@ -66,12 +66,13 @@ AUSARBEITUNG_RE = re.compile(
     re.IGNORECASE)
 
 ROLLEN_FUER_ARBEIT = ("stratege", "buch", "designer", "video", "cockpit", "pmo")
-FORMEN = ("text", "aufstellung", "konzept", "webseite", "praesentation")
+FORMEN = ("text", "aufstellung", "konzept", "dokument", "webseite", "praesentation")
 FORM_ANWEISUNG = {
     "text": "Liefere einen fertigen, gut lesbaren Text in Markdown.",
     "aufstellung": "Liefere eine Aufstellung als Markdown-Tabelle oder gegliederte Liste. Jede Zeile mit Quelle, wo es eine gibt.",
     "konzept": "Liefere ein Konzept in Markdown: Ziel, Ausgangslage, Vorschlag, Schritte, offene Punkte.",
     "webseite": "Liefere eine vollstaendige, eigenstaendige HTML-Seite (inline CSS, kein externes Skript) in EINEM ```html-Block. Davor zwei Saetze, was die Seite zeigt.",
+    "dokument": "Liefere ein vollständiges, gegliedertes Dokument in Markdown (Titel mit #, Abschnitte mit ##, Listen, Tabellen wo sinnvoll). Es wird als Word-Datei ausgegeben -- schreib es so, dass man es direkt weitergeben kann.",
     "praesentation": "Liefere Folien in Markdown. Trenne Folien mit einer Zeile, die nur '---' enthaelt. Jede Folie: '# Titel' und hoechstens fuenf Stichpunkte.",
 }
 
@@ -598,6 +599,8 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
               "REGELN: Schreibe Deutsch. Erfinde keine Fakten, Zahlen oder Namen. Stütze dich auf die Notiz, "
               "das Gedächtnis und die QUELLEN; zitiere Quellen als [1], [2]. Was fehlt, markierst du mit „fehlt:“ statt es zu raten. "
               "Keine Platzhalter in eckigen Klammern.\n\n"
+              "Das GEDÄCHTNIS hilft dir nur, Namen und Begriffe im Auftrag richtig zu verstehen. Bring es NICHT von dir aus "
+              "ins Ergebnis: was dort steht, gehört nur hinein, wenn der Auftrag es betrifft.\n\n"
               f"GEDÄCHTNIS:\n{gedaechtnis_text()}")
     frage = (f"AUFTRAG: {a.get('auftrag')}\n\n{_vorgang_kontext(v)}" +
              (f"\n\nQUELLEN:\n{quellen_text}" if quellen_text else "\n\n(keine Internetquellen)"))
@@ -691,6 +694,10 @@ def ergebnis_speichern(v: dict[str, Any], a: dict[str, Any], text: str, rid: str
             ansicht = 1
     elif form == "praesentation":
         (ERGEBNIS_DIR / f"{eid}.html").write_text(_folien_html(text, titel), encoding="utf-8")
+        ansicht = 1
+    elif form == "dokument":
+        from . import dokumente
+        (ERGEBNIS_DIR / f"{eid}.html").write_text(dokumente.zu_html(titel, text), encoding="utf-8")
         ansicht = 1
     db.anlegen("ergebnisse", {
         "id": eid, "vorgang_id": v["id"], "projekt_id": v.get("projekt_id"), "titel": titel, "form": form,

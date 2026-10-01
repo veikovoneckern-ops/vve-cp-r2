@@ -2,35 +2,61 @@
 // Drei Arten zu reden:
 //   tippen oder diktieren     -- Composer, Enter sendet
 //   Freisprechen              -- zuhoeren, antworten, vorlesen, weiter zuhoeren
-//   Per Stimme durchgehen     -- die offenen Entscheidungen der Reihe nach;
-//                                ja / nein / spaeter / frei antworten
-// Aendern tut das Gespraech nur auf Bestaetigung (Knopf oder ein gesprochenes "ja").
+//   Per Stimme durchgehen     -- die offenen Entscheidungen der Reihe nach
+// Aendern tut das Gespraech nur auf Bestaetigung: Knopf, oder ein "ja" auf den
+// letzten Vorschlag (gesprochen oder getippt).
+//
+// Die Endlosschleife vom 01.10.2026: die Freisprech-Schleife ist EINE lange
+// laufende Funktion und sah deshalb immer den Stand von ihrem Start --
+// Gespraechskennung null (jeder Satz ein neues Gespraech) und keine offenen
+// Vorschlaege (ein "ja" fuehrte nie etwas aus). Kennung und Verlauf liegen
+// deshalb zusaetzlich in Refs, die die Schleife immer aktuell liest.
 import { html, useState, useEffect, useRef, Icon, Md, toast, fehlerMelden, aktualisieren, navigiere, rolleName } from "./ui.js";
 import { api, strom } from "./api.js";
 import { Composer } from "./composer.js";
 import { aufnehmen, erkennen, vorlesen, vorleseStopp, mikrofonGrund } from "./stimme.js";
 
-const JA = /^(ja|jo|jep|genau|klar|mach (das|es)|machen|gerne|ok(ay)?|einverstanden|passt|anlegen|merken|bitte|richtig|stimmt|ja bitte|ja,? mach)\b/i;
-const NEIN = /^(nein|nee|nö|lieber nicht|nicht|ablehnen|falsch|stimmt nicht)\b/i;
+const NEIN_WORT = /\b(nein|nee|nö|nicht|lieber nicht|ablehnen|falsch|stopp)\b/i;
+const JA_WORT = /\b(ja|jawohl|jep|genau|klar|gerne|ok|okay|einverstanden|passt|richtig|bitte|mach(e)? (das|es)|tu (das|es)|(kannst|sollst|darfst) du (so )?(machen|tun)|so machen|so tun|anlegen|merken|ausführen)\b/i;
 const SPAETER = /^(später|spaeter|weiter|nächste|naechste|überspringen|ueberspringen|skip|egal)\b/i;
 const ENDE = /^(stopp|stop|ende|beenden|aufhören|aufhoeren|das wars|das war's|danke,? das (war|wars)|tschüss|tschuess|schluss)\b/i;
 const reinigen = (t) => String(t || "").trim().replace(/[.!?,]+$/, "").trim();
+// Ein kurzes Ja ohne Nein -- laengere Saetze sind eine neue Frage, kein Ja.
+const istJa = (t) => t.split(/\s+/).length <= 10 && JA_WORT.test(t) && !NEIN_WORT.test(t);
+const istNein = (t) => t.split(/\s+/).length <= 5 && NEIN_WORT.test(t) && !JA_WORT.test(t.replace(/\bnein\b/i, ""));
 
-function Welle({ pegel }) {
-  const n = [0.5, 0.8, 1, 0.8, 0.5];
-  return html`<span class="welle" aria-hidden="true">${n.map((f, i) => html`<i key=${i} style=${`height:${4 + Math.round(18 * f * pegel)}px`}></i>`)}</span>`;
+function StimmeKreis({ zustand, pegel, text, beiKlick }) {
+  const TXT = { bereit: "Antippen und sprechen", hoert: "Ich höre zu …", erkennt: "Verstehe …", denkt: "Denke nach …", spricht: "Spreche …" };
+  const s = zustand === "hoert" ? 1 + Math.min(0.28, pegel * 0.35) : 1;
+  return html`<div class=${"stimme-kreis " + zustand} role="status">
+    <button class="kreis" style=${`transform:scale(${s})`} onClick=${beiKlick}
+      aria-label=${zustand === "bereit" ? "Freisprechen starten" : zustand === "hoert" ? "Fertig gesprochen" : "Freisprechen beenden"}
+      title=${zustand === "bereit" ? "Freisprechen starten" : zustand === "hoert" ? "Antippen, wenn du fertig bist" : "Antippen zum Beenden"}>
+      <${Icon} n=${zustand === "denkt" || zustand === "erkennt" ? "mehr" : zustand === "spricht" ? "welle" : "mic"} g=${30} w=${2} />
+    </button>
+    <span class="zustand">${TXT[zustand] || ""}</span>
+    ${text && html`<span class="unter">${text}</span>`}
+  </div>`;
 }
 
 export function Talk({ zu, kontext, setKontext, start }) {
-  const [gid, setGid] = useState(() => { try { return localStorage.getItem("vvec_talk_g") || null; } catch (e) { return null; } });
-  const [msgs, setMsgs] = useState([]);
+  const [gid, setGidState] = useState(() => { try { return localStorage.getItem("vvec_talk_g") || null; } catch (e) { return null; } });
+  const [msgs, setMsgsState] = useState([]);
   const [lauf, setLauf] = useState(null); // {text}
   const [frei, setFrei] = useState(null); // {modus:"frei"|"durch", zustand, text, pegel}
+  const gidRef = useRef(gid);
+  const msgsRef = useRef([]);
+  const laufRef = useRef(false);
+  const kontextRef = useRef(kontext);
   const verlaufRef = useRef(null);
   const abbruch = useRef(null);
   const freiAn = useRef(false);
   const aufn = useRef(null);
   const letzterStart = useRef(0);
+  kontextRef.current = kontext;
+
+  const setGid = (g) => { gidRef.current = g; setGidState(g); };
+  const setMsgs = (f) => setMsgsState((alt) => { const neu = typeof f === "function" ? f(alt) : f; msgsRef.current = neu; return neu; });
 
   useEffect(() => { try { gid ? localStorage.setItem("vvec_talk_g", gid) : localStorage.removeItem("vvec_talk_g"); } catch (e) { /* egal */ } }, [gid]);
   useEffect(() => {
@@ -46,10 +72,10 @@ export function Talk({ zu, kontext, setKontext, start }) {
   }, [start]);
   useEffect(() => () => { freiAn.current = false; if (aufn.current) aufn.current.abbrechen(); vorleseStopp(); }, []);
   useEffect(() => {
-    const k = (e) => { if (e.key === "Escape" && !document.querySelector(".modal-grund")) { if (frei) freiStopp(); else zu(); } };
+    const k = (e) => { if (e.key === "Escape" && !document.querySelector(".modal-grund")) { if (freiAn.current) freiStopp(); else zu(); } };
     document.addEventListener("keydown", k);
     return () => document.removeEventListener("keydown", k);
-  }, [frei]);
+  }, []);
 
   function zuAnzeige(m) {
     const d = m.daten || {};
@@ -57,13 +83,15 @@ export function Talk({ zu, kontext, setKontext, start }) {
   }
 
   async function senden(text, anhaenge, stimme) {
-    if (lauf) return false;
+    if (laufRef.current) return false;
+    laufRef.current = true;
     setMsgs((m) => [...m, { id: "d" + Date.now(), rolle: "du", text }]);
     setLauf({ text: "" });
     const ctl = new AbortController(); abbruch.current = ctl;
     let fertig = null, stromFehler = null;
+    const k = kontextRef.current;
     try {
-      await strom("/talk/senden", { gespraech_id: gid, text, kontext: kontext ? { art: kontext.art, id: kontext.id } : null, anhaenge, stimme }, (e) => {
+      await strom("/talk/senden", { gespraech_id: gidRef.current, text, kontext: k ? { art: k.art, id: k.id } : null, anhaenge, stimme }, (e) => {
         if (e.typ === "start") setGid(e.gespraech_id);
         else if (e.typ === "text") setLauf((l) => ({ text: (l ? l.text : "") + e.t }));
         else if (e.typ === "fertig") fertig = e;
@@ -73,6 +101,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
     } catch (e) {
       if (e.name !== "AbortError") { fehlerMelden(e); setMsgs((m) => [...m, { id: "f" + Date.now(), rolle: "ck", text: "Das hat nicht geklappt: " + e.message, vorschlaege: [] }]); }
     }
+    laufRef.current = false;
     setLauf(null);
     if (fertig) {
       setMsgs((m) => [...m, { id: fertig.nachricht_id, rolle: "ck", text: fertig.text, vorschlaege: fertig.vorschlaege }]);
@@ -89,7 +118,10 @@ export function Talk({ zu, kontext, setKontext, start }) {
       if (fehl.length) toast("Nicht alles ging: " + fehl.map((f) => f.grund).join("; "), { fehler: true });
       else {
         const neo = r.ergebnisse.find((x) => x.neo_gespraech);
-        toast(neo ? "Neo arbeitet daran." : "Erledigt.", neo ? { aktion: { text: "Zu Neo", fn: () => navigiere("/neo/" + neo.neo_gespraech) } } : {});
+        const vg = r.ergebnisse.find((x) => x.vorgang_id);
+        toast(neo ? "Neo arbeitet daran." : vg ? "Ist beim Stab. Das Ergebnis erscheint in der Inbox." : "Erledigt.",
+          neo ? { aktion: { text: "Zu Neo", fn: () => navigiere("/neo/" + neo.neo_gespraech) } }
+            : vg ? { aktion: { text: "Ansehen", fn: () => navigiere("/inbox/" + vg.vorgang_id) } } : {});
       }
       aktualisieren();
       return !fehl.length;
@@ -97,10 +129,32 @@ export function Talk({ zu, kontext, setKontext, start }) {
   }
 
   function offeneVorschlaege() {
-    const letzte = [...msgs].reverse().find((m) => m.rolle === "ck");
-    if (!letzte || !letzte.vorschlaege) return null;
+    const letzte = [...msgsRef.current].reverse().find((m) => m.rolle === "ck");
+    if (!letzte || !letzte.vorschlaege || typeof letzte.id !== "number") return null;
     const idx = letzte.vorschlaege.map((v, i) => (!v.erledigt ? i : -1)).filter((i) => i >= 0);
     return idx.length ? { mid: letzte.id, idx } : null;
+  }
+
+  // Getippt oder gesprochen: ein Ja auf offene Vorschlaege fuehrt sie aus,
+  // ein Nein verwirft sie -- statt die KI dasselbe noch einmal fragen zu lassen.
+  async function eingabe(text, anhaenge, stimme) {
+    const t = reinigen(text);
+    const offen = offeneVorschlaege();
+    if (offen && t && !(anhaenge || []).length) {
+      if (istJa(t)) {
+        setMsgs((m) => [...m, { id: "d" + Date.now(), rolle: "du", text }]);
+        const ok = await ausfuehren(offen.mid, offen.idx);
+        const antwort = ok ? "Erledigt." : "Das ging leider nicht ganz. Details stehen in der Meldung.";
+        setMsgs((m) => [...m, { id: "s" + Date.now(), rolle: "ck", text: antwort, vorschlaege: [] }]);
+        return { text: antwort, vorschlaege: [] };
+      }
+      if (istNein(t)) {
+        setMsgs((m) => m.map((x) => x.id === offen.mid ? { ...x, vorschlaege: x.vorschlaege.map((v) => v.erledigt ? v : { ...v, erledigt: true, abgelehnt: true }) } : x));
+        setMsgs((m) => [...m, { id: "d" + Date.now(), rolle: "du", text }, { id: "s" + Date.now() + 1, rolle: "ck", text: "Gut, dann nicht.", vorschlaege: [] }]);
+        return { text: "Gut, dann nicht.", vorschlaege: [] };
+      }
+    }
+    return senden(text || "(siehe Anhang)", anhaenge, stimme);
   }
 
   // ------------------------------------------------------------ Freisprechen
@@ -110,15 +164,14 @@ export function Talk({ zu, kontext, setKontext, start }) {
     aufn.current = ctl;
     const blob = await ctl.ende;
     aufn.current = null;
-    if (!freiAn.current) return "";
-    if (!ctl.gesprochen()) return "";
+    if (!freiAn.current || !ctl.gesprochen()) return "";
     setFrei((f) => f && { ...f, zustand: "erkennt" });
     const d = await erkennen(blob);
     return reinigen(d.text);
   }
   async function sprechen(text) {
     if (!freiAn.current || !text) return;
-    setFrei((f) => f && { ...f, zustand: "spricht" });
+    setFrei((f) => f && { ...f, zustand: "spricht", text: "" });
     try { await vorlesen(text); } catch (e) { /* ohne Ton weiter */ }
   }
 
@@ -126,7 +179,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
     const grund = mikrofonGrund();
     if (grund) { toast(grund, { fehler: true }); return; }
     freiAn.current = true;
-    setFrei({ modus: "frei", zustand: "hoert", pegel: 0 });
+    setFrei({ modus: "frei", zustand: "hoert", pegel: 0, text: "" });
     let leer = 0;
     while (freiAn.current) {
       let t = "";
@@ -135,15 +188,9 @@ export function Talk({ zu, kontext, setKontext, start }) {
       if (!t) { if (++leer >= 3) { await sprechen("Ich höre nichts mehr und beende das Freisprechen."); break; } continue; }
       leer = 0;
       if (ENDE.test(t)) { await sprechen("Gut, ich höre auf."); break; }
-      const offen = offeneVorschlaege();
-      if (offen && JA.test(t)) {
-        const ok = await ausfuehren(offen.mid, offen.idx);
-        await sprechen(ok ? "Erledigt." : "Das ging leider nicht ganz.");
-        continue;
-      }
-      setFrei((f) => f && { ...f, zustand: "denkt" });
-      const r = await senden(t, [], true);
-      if (r && r.text) await sprechen(r.text + (r.vorschlaege && r.vorschlaege.length ? " Soll ich das so machen?" : ""));
+      setFrei((f) => f && { ...f, zustand: "denkt", text: t });
+      const r = await eingabe(t, [], true);
+      if (r && r.text) await sprechen(r.text);
     }
     freiStopp();
   }
@@ -152,6 +199,11 @@ export function Talk({ zu, kontext, setKontext, start }) {
     if (aufn.current) aufn.current.abbrechen();
     vorleseStopp();
     setFrei(null);
+  }
+  function kreisKlick() {
+    if (!frei) return freiStart();
+    if (frei.zustand === "hoert" && aufn.current) aufn.current.stopp();
+    else freiStopp();
   }
 
   // ------------------------------------------------------------ Durchgehen
@@ -170,9 +222,9 @@ export function Talk({ zu, kontext, setKontext, start }) {
     let erledigt = 0;
     for (let i = 0; i < liste.length && freiAn.current; i++) {
       const e = liste[i];
-      setFrei((f) => f && { ...f, text: `${i + 1} von ${liste.length}: ${e.frage}` });
       systemZeile(`**${i + 1} von ${liste.length}** · ${rolleName(e.wer)}: ${e.frage}`);
       await sprechen(`${rolleName(e.wer)} ${e.art === "rueckfrage" ? "fragt" : "schlägt vor"}: ${e.frage}`);
+      setFrei((f) => f && { ...f, text: `${i + 1} von ${liste.length}` });
       let versuch = 0;
       while (freiAn.current) {
         let t = "";
@@ -183,9 +235,9 @@ export function Talk({ zu, kontext, setKontext, start }) {
         if (ENDE.test(t)) { freiAn.current = false; break; }
         let antwort = null, text = "";
         if (SPAETER.test(t)) antwort = "spaeter";
-        else if (e.art === "rueckfrage") { antwort = NEIN.test(t) && t.split(" ").length <= 2 ? "nein" : "ja"; text = antwort === "ja" ? t : ""; }
-        else if (JA.test(t)) antwort = "ja";
-        else if (NEIN.test(t)) antwort = "nein";
+        else if (e.art === "rueckfrage") { antwort = istNein(t) ? "nein" : "ja"; text = antwort === "ja" ? t : ""; }
+        else if (istJa(t)) antwort = "ja";
+        else if (istNein(t)) antwort = "nein";
         if (!antwort) { if (++versuch >= 2) { await sprechen("Ich lasse das für später."); break; } await sprechen("Bitte sag ja, nein oder später."); continue; }
         try {
           await api("/entscheidungen/" + e.id, { methode: "POST", daten: { antwort, text } });
@@ -202,23 +254,24 @@ export function Talk({ zu, kontext, setKontext, start }) {
     freiStopp();
   }
 
-  function neu() { if (lauf) return; setGid(null); setMsgs([]); }
+  function neu() { if (laufRef.current) return; setGid(null); setMsgs([]); }
 
-  const ZUSTAND = { hoert: "Ich höre zu …", erkennt: "Verstehe …", denkt: "Denke nach …", spricht: "Spreche …" };
   return html`<aside class="talk" aria-label="Talk">
     <div class="talk-kopf">
       <h2><${Icon} n="talk" g=${17} />Talk</h2>
-      <button class=${"btn klein" + (frei && frei.modus === "frei" ? " primaer" : "")} onClick=${() => (frei ? freiStopp() : freiStart())}
+      <button class=${"btn klein" + (frei ? " primaer" : "")} onClick=${() => (frei ? freiStopp() : freiStart())}
         title="Freihändig sprechen: ich höre zu, antworte und lese vor" aria-pressed=${!!frei}><${Icon} n="welle" g=${14} />${frei ? "Beenden" : "Freisprechen"}</button>
       <button class="btn geist icon" onClick=${neu} title="Neues Gespräch" aria-label="Neues Gespräch"><${Icon} n="neu" g=${17} /></button>
       <button class="btn geist icon" onClick=${zu} title="Schließen (Esc)" aria-label="Talk schließen"><${Icon} n="x" /></button>
     </div>
     ${kontext && html`<div class="talk-kontext"><${Icon} n="auge" g=${14} /><span>schaut auf: ${kontext.titel || kontext.art}</span>
       <button class="btn klein geist icon" onClick=${() => setKontext(null)} aria-label="Bezug entfernen" title="Ohne Bezug weiterreden"><${Icon} n="x" g=${13} /></button></div>`}
+    ${frei && html`<${StimmeKreis} zustand=${frei.zustand} pegel=${frei.pegel || 0} text=${frei.text} beiKlick=${kreisKlick} />`}
     <div class="talk-verlauf" ref=${verlaufRef}>
-      ${!msgs.length && !lauf && html`<div class="talk-start">
-        <p>Frag mich etwas über deine Lage, deine Projekte oder das, was der Stab vorschlägt. Ich ändere nichts ohne deine Bestätigung.</p>
-        <div class="knopfreihe">
+      ${!msgs.length && !lauf && !frei && html`<div class="talk-start">
+        <${StimmeKreis} zustand="bereit" pegel=${0} beiKlick=${freiStart} />
+        <p style="text-align:center">Sprich oder schreib mit mir über deine Lage, deine Projekte oder das, was der Stab vorschlägt. Ich ändere nichts ohne dein Ja.</p>
+        <div class="knopfreihe" style="justify-content:center">
           <button class="btn klein" onClick=${() => senden("Was liegt an?", [], false)}>Was liegt an?</button>
           <button class="btn klein" onClick=${durchgehen}><${Icon} n="play" g=${12} />Entscheidungen per Stimme</button>
           ${kontext && html`<button class="btn klein" onClick=${() => senden("Fass mir das kurz zusammen und sag, was als Nächstes zu tun ist.", [], false)}>Zusammenfassen</button>`}
@@ -227,9 +280,10 @@ export function Talk({ zu, kontext, setKontext, start }) {
         ? html`<div class="talk-blase du" key=${m.id}>${m.text}</div>`
         : html`<div class="talk-blase ck" key=${m.id}>
             <${Md} text=${m.text} />
-            ${m.vorschlaege && m.vorschlaege.map((v, i) => html`<div class=${"vorschlag" + (v.erledigt ? " erledigt" : "")} key=${i}>
-              <span>${v.label}</span>
-              ${v.erledigt ? html`<span class="pill gruen">erledigt</span>` : html`<button class="btn klein primaer" onClick=${() => ausfuehren(m.id, [i])}>Ausführen</button>`}
+            ${m.vorschlaege && m.vorschlaege.map((v, i) => html`<div class=${"vorschlag" + (v.erledigt && !v.abgelehnt ? " erledigt" : "")} key=${i}>
+              <span style=${v.abgelehnt ? "text-decoration:line-through;color:var(--ink-3)" : ""}>${v.label}</span>
+              ${v.abgelehnt ? html`<span class="pill">abgelehnt</span>` : v.erledigt ? html`<span class="pill gruen">erledigt</span>`
+                : html`<button class="btn klein primaer" onClick=${() => ausfuehren(m.id, [i])}>Ausführen</button>`}
             </div>`)}
             ${m.vorschlaege && m.vorschlaege.filter((v) => !v.erledigt).length > 1 && html`<button class="btn klein" style="margin-top:6px"
               onClick=${() => ausfuehren(m.id, m.vorschlaege.map((v, i) => (v.erledigt ? -1 : i)).filter((i) => i >= 0))}>Alle ausführen</button>`}
@@ -238,14 +292,8 @@ export function Talk({ zu, kontext, setKontext, start }) {
       ${lauf && html`<div class="talk-blase ck">${lauf.text ? html`<${Md} text=${lauf.text} />` : html`<span class="leise">Denke nach …</span>`}</div>`}
     </div>
     <div class="talk-eingabe">
-      ${frei && html`<div class="frei-leiste" role="status">
-        <${Welle} pegel=${frei.zustand === "hoert" ? frei.pegel : frei.zustand === "spricht" ? 0.6 : 0.15} />
-        <div style="min-width:0"><b>${ZUSTAND[frei.zustand] || ""}</b>${frei.text && html`<div class="leise klein" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${frei.text}</div>`}</div>
-        <span class="luecke"></span>
-        <button class="btn klein" onClick=${freiStopp}>Beenden</button>
-      </div>`}
-      <${Composer} platzhalter=${kontext ? "Frag zu „" + (kontext.titel || "").slice(0, 40) + "“ …" : "Frag oder beauftrage den Stab …"}
-        beimSenden=${(t, a) => senden(t || "(siehe Anhang)", a, false).then(() => true)} laeuft=${!!lauf}
+      <${Composer} platzhalter=${kontext ? "Frag zu „" + (kontext.titel || "").slice(0, 40) + "“ …" : "Frag oder beauftrage den Stab … („ja“ bestätigt den letzten Vorschlag)"}
+        beimSenden=${(t, a) => eingabe(t, a, false).then(() => true)} laeuft=${!!lauf}
         beimStoppen=${() => abbruch.current && abbruch.current.abort()} entwurfKey="talk" hinweis="" />
     </div>
   </aside>`;

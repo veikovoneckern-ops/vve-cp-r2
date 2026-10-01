@@ -52,6 +52,7 @@ const PFADE = {
   mehr: "M5 12h.01M12 12h.01M19 12h.01",
   play: "M7 5v14l11-7z",
   liste: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
+  download: "M12 4v11M7 10l5 5 5-5M5 20h14",
 };
 export function Icon({ n, g = 18, w = 1.9 }) {
   return html`<svg class="ico" viewBox="0 0 24 24" width=${g} height=${g} fill="none" stroke="currentColor"
@@ -240,5 +241,5 @@ export const rolleName = (id) => ROLLEN_NAME[id] || id || "Stab";
 
 export const ROLLEN_WAHL =[["stratege", "Clayton · Strategie, Konzepte"], ["buch", "Neal · Texte, Artikel, Bücher"],
   ["designer", "Annie · Gestaltung, Bild-Prompts"], ["video", "Ridley · Video, Storyboard"], ["pmo", "Jason · Planung, Überblick"]];
-export const FORM_WAHL = [["text", "Text"], ["aufstellung", "Aufstellung / Liste"], ["konzept", "Konzept"],
+export const FORM_WAHL = [["dokument", "Dokument (Word)"], ["text", "Text"], ["aufstellung", "Aufstellung / Liste"], ["konzept", "Konzept"],
   ["praesentation", "Präsentation"], ["webseite", "Webseite"]];

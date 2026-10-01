@@ -265,6 +265,8 @@ export function ErgebnisAnsicht({ id, zu }) {
   if (!e) return html`<${Modal} titel="Ergebnis" zu=${zu}><div class="lade">Lade …</div><//>`;
   const p = e.pruefung || {};
   return html`<${Modal} titel=${e.titel} zu=${zu} breit=${true} fuss=${html`
+      <a class="btn" href=${"/api/ergebnisse/" + e.id + "/datei?format=docx"} download><${Icon} n="download" g=${15} />Word</a>
+      ${e.form === "praesentation" && html`<a class="btn" href=${"/api/ergebnisse/" + e.id + "/datei?format=pptx"} download><${Icon} n="download" g=${15} />PowerPoint</a>`}
       <button class="btn" onClick=${async () => { if (await kopieren(e.inhalt)) toast("Kopiert."); }}><${Icon} n="kopie" g=${15} />Kopieren</button>
       <button class="btn" onClick=${() => { zu(); bus.sende("talk-oeffnen", { kontext: { art: "ergebnis", id: e.id, titel: e.titel } }); }}><${Icon} n="talk" g=${15} />Besprechen</button>
       ${e.vorgang_id && html`<a class="btn" href=${"#/inbox/" + e.vorgang_id} onClick=${zu}>Zur Akte</a>`}

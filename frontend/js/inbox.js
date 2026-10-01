@@ -200,7 +200,7 @@ function Ereignis({ e, notizText, notizAuf, setNotizAuf }) {
 
 export function Ausarbeiten({ v, projektId, zu, fertig }) {
   const [rolle, setRolle] = useState("stratege");
-  const [form, setForm] = useState("text");
+  const [form, setForm] = useState("dokument");
   const [auftrag, setAuftrag] = useState(v ? (v.einordnung || v.titel || "") : "");
   const [recherche, setRecherche] = useState("");
   const [laeuft, setLaeuft] = useState(false);

@@ -90,6 +90,7 @@ export function Neo({ id }) {
           if (e.typ === "schritt_start") n.aktuell = e;
           else if (e.typ === "schritt") { n.schritte.push(e); n.aktuell = null; }
           else if (e.typ === "zwischen") n.zwischen = e.text;
+          else if (e.typ === "datei") n.dateien = [...(n.dateien || []), e];
           else if (e.typ === "vorschau") { setUrl(e.url); setVorschauAn(true); setNeuLaden((x) => x + 1); }
         }
         return n;
@@ -158,8 +159,8 @@ export function Neo({ id }) {
         ${team && html`<select class="eingabe" style="width:auto;min-height:32px;font-size:12.5px" value=${neoModell || ""} onChange=${(e) => modellSetzen(e.target.value)} aria-label="Neos Modell" title="Womit Neo rechnet">
           <option value="">Vorgabe (qwen3-coder-neo)</option>
           ${team.modelle.filter((m) => !m.includes("embed")).map((m) => html`<option value=${m}>${m}</option>`)}</select>`}
-        <button class=${"btn klein" + (zeigeVorschau ? " primaer" : "")} onClick=${() => setVorschauAn(!vorschauAn)} aria-pressed=${zeigeVorschau} title="Vorschau-Spalte"><${Icon} n="auge" g=${14} />Vorschau</button>
-        <button class="btn klein" onClick=${() => setVoll(!voll)} aria-pressed=${voll} title=${voll ? "Vollbild verlassen (Esc)" : "Vollbild"}><${Icon} n=${voll ? "klein" : "voll"} g=${14} />${voll ? "Verlassen" : "Vollbild"}</button>
+        <button class=${"btn klein" + (zeigeVorschau ? " primaer" : "")} onClick=${() => setVorschauAn(!vorschauAn)} aria-pressed=${zeigeVorschau} title="Vorschau-Spalte"><${Icon} n="auge" g=${14} /><span class="txt">Vorschau</span></button>
+        <button class="btn klein" onClick=${() => setVoll(!voll)} aria-pressed=${voll} title=${voll ? "Vollbild verlassen (Esc)" : "Vollbild"}><${Icon} n=${voll ? "klein" : "voll"} g=${14} /><span class="txt">${voll ? "Verlassen" : "Vollbild"}</span></button>
       </div>
       <div class="neo-verlauf" ref=${verlaufRef} onScroll=${(e) => { const v = e.target; amBoden.current = v.scrollHeight - v.scrollTop - v.clientHeight < 60; }}>
         ${!g ? html`<div class="lade">Lade Gespräch …</div>` : !nachrichten.length && !job ? html`<div class="karte" style="max-width:640px">
@@ -193,9 +194,12 @@ function Beitrag({ m, zeigen }) {
     <div class="kopfzeile"><b>Neo</b><span>${zeitText(m.zeit)}</span>${d.dauer != null && html`<span>${dauer(d.dauer)}</span>`}
       ${d.modell && html`<span class="mono klein">${d.modell}</span>`}${d.abgebrochen && html`<span class="pill gelb">abgebrochen</span>`}
       <button class="btn klein geist" style="margin-left:auto" onClick=${async () => { if (await kopieren(m.text)) toast("Kopiert."); }} title="Antwort kopieren"><${Icon} n="kopie" g=${13} /></button></div>
-    <${Md} text=${m.text} />
-    ${(d.dateien || []).length > 0 && html`<div style="margin-top:8px" class="klein"><b>Geänderte Dateien:</b>
-      <ul style="margin:2px 0 0;padding-left:18px">${d.dateien.map((f) => html`<li><code>${f.pfad}</code>${f.begruendung ? " · " + f.begruendung : ""}</li>`)}</ul></div>`}
+    <${Md} text=${(m.text || "").replace(/\[Deine Arbeitsschritte damals:[\s\S]*?\]\s*$/, "").trim()} />
+    ${!schritte.length && /\[Deine Arbeitsschritte damals:/.test(m.text || "") && html`<div class="hinweisbox klein" style="margin-top:6px">Diese Antwort beschreibt Arbeit, die nicht stattgefunden hat: Neo hat dabei kein einziges Werkzeug benutzt. Seit dem 01.10. wird das erkannt und Neo zurückgeschickt.</div>`}
+    ${(d.dateien || []).some((f) => f.download) && html`<div>${d.dateien.filter((f) => f.download).map((f) => html`
+      <a class="datei-chip" href=${f.download} download><${Icon} n="download" g=${14} />${f.name}</a>`)}</div>`}
+    ${(d.dateien || []).some((f) => !f.download) && html`<div style="margin-top:8px" class="klein"><b>Geänderte Dateien:</b>
+      <ul style="margin:2px 0 0;padding-left:18px">${d.dateien.filter((f) => !f.download).map((f) => html`<li><code>${f.pfad}</code>${f.begruendung ? " · " + f.begruendung : ""}</li>`)}</ul></div>`}
     ${d.vorschau && html`<button class="btn klein" style="margin-top:8px" onClick=${() => zeigen(d.vorschau)}><${Icon} n="auge" g=${13} />Ergebnis in der Vorschau</button>`}
     ${schritte.length > 0 && html`<details class="schritte"><summary>${schritte.length} Arbeitsschritte</summary>
       ${schritte.map((s, i) => html`<details class="schritt" key=${i}><summary><span class="name">${s.name}</span> ${s.kurz}</summary><pre>${s.ergebnis}</pre></details>`)}</details>`}
@@ -212,6 +216,7 @@ function Laeuft({ job, jetzt, abbrechen }) {
       <button class="btn klein gefahr" onClick=${abbrechen}><${Icon} n="stopp" g=${12} />Abbrechen</button>
     </div>
     ${job.zwischen && html`<div class="neo-beitrag" style="margin-top:8px;opacity:.85"><${Md} text=${job.zwischen} /></div>`}
+    ${(job.dateien || []).length > 0 && html`<div>${job.dateien.map((f) => html`<a class="datei-chip" href=${f.url} download><${Icon} n="download" g=${14} />${f.name}</a>`)}</div>`}
     ${job.schritte.length > 0 && html`<details class="schritte" open style="margin-top:6px"><summary>Schritte bisher</summary>
       ${job.schritte.slice(-12).map((s, i) => html`<details class="schritt" key=${i}><summary><span class="name">${s.name}</span> ${s.kurz}</summary><pre>${s.ergebnis}</pre></details>`)}</details>`}
   </div>`;
@@ -231,12 +236,10 @@ function Vorschau({ url, neuLaden, zu, setUrl, beispiel }) {
       </div>
       <iframe key=${url + neuLaden} src=${url} sandbox="allow-scripts allow-forms allow-popups" title="Vorschau von Neos Ergebnis"></iframe>`
     : html`<${MatrixRegen}>
-        <div class="tafel">
-          <b>&gt; vorschau_bereit_</b>
-          Hier erscheint, was Neo baut. Bitte ihn zum Beispiel, eine Seite zu bauen und in der Vorschau zu zeigen. Er legt sie auf deinem Server ab, abgeschottet vom Cockpit.
-          <div><button onClick=${beispiel}>Beispiel ausprobieren</button> <button onClick=${zu}>Vorschau schließen</button></div>
-          ${frueher.length > 0 && html`<div style="margin-top:10px">Frühere Vorschauen:
-            ${frueher.slice(0, 5).map((f) => html`<div><button style="margin-top:4px" onClick=${() => setUrl(f.url)}>${f.name}</button></div>`)}</div>`}
+        <div class="hinweis-unten">
+          <span>› Hier erscheint das Ergebnis, sobald es vorliegt.</span>
+          ${frueher.length > 0 && html`<span style="margin-left:auto">${frueher.slice(0, 3).map((f) => html`<button onClick=${() => setUrl(f.url)} title="Frühere Vorschau öffnen">${f.name}</button> `)}</span>`}
+          <button onClick=${zu} title="Vorschau-Spalte schließen" aria-label="Vorschau schließen">×</button>
         </div>
       <//>`}
   </aside>`;

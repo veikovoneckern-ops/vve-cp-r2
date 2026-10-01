@@ -490,6 +490,33 @@ async def ergebnis(rid: str):
     return e
 
 
+@router.get("/ergebnisse/{rid}/datei")
+async def ergebnis_datei(rid: str, format: str = "docx"):
+    """Jedes Ergebnis als Word, PowerPoint, Markdown oder HTML herunterladen."""
+    from . import dokumente
+    e = db.holen("ergebnisse", rid)
+    if not e:
+        raise HTTPException(404, "Ergebnis nicht gefunden")
+    fmt = format if format in dokumente.FORMATE else "docx"
+    text = e.get("inhalt") or ""
+    if e.get("form") == "webseite" and fmt == "html" and (ERGEBNIS_DIR / f"{rid}.html").is_file():
+        roh = (ERGEBNIS_DIR / f"{rid}.html").read_bytes()
+    elif fmt == "docx":
+        roh = dokumente.zu_docx(e["titel"], text)
+    elif fmt == "pptx":
+        roh = dokumente.zu_pptx(e["titel"], text)
+    elif fmt == "html":
+        roh = dokumente.zu_html(e["titel"], text).encode("utf-8")
+    else:
+        roh = text.encode("utf-8")
+    typen = {"docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+             "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+             "html": "text/html; charset=utf-8", "md": "text/markdown; charset=utf-8"}
+    name = dokumente.dateiname(e["titel"], fmt)
+    return Response(roh, media_type=typen[fmt], headers={"Content-Disposition": f"attachment; filename=\"{name}\"",
+                                                         "X-Content-Type-Options": "nosniff"})
+
+
 @router.get("/ergebnisse/{rid}/ansicht")
 async def ergebnis_ansicht(rid: str):
     p = ERGEBNIS_DIR / f"{rid}.html"
@@ -758,6 +785,19 @@ async def neo_vorschau(pfad: str):
     return Response(ziel.read_bytes(), media_type=typ, headers=SANDBOX)
 
 
+@router.get("/neo/export/{name}")
+async def neo_export(name: str):
+    from .dokumente import EXPORT_DIR
+    ziel = (EXPORT_DIR / name).resolve()
+    try:
+        ziel.relative_to(EXPORT_DIR.resolve())
+    except ValueError:
+        raise HTTPException(404, "Nicht gefunden")
+    if not ziel.is_file():
+        raise HTTPException(404, "Datei nicht gefunden")
+    return FileResponse(str(ziel), filename=ziel.name, headers={"X-Content-Type-Options": "nosniff"})
+
+
 @router.get("/neo/vorschauen")
 async def neo_vorschauen():
     liste = []
@@ -789,6 +829,36 @@ async def system():
                  ("projekte", "aufgaben", "notizen", "vorgaenge", "ergebnisse", "gedaechtnis", "gespraeche")}
     out["einstellungen"] = await einstellungen()
     return out
+
+
+@router.get("/system/details")
+async def system_details(frisch: int = 0):
+    from . import systeminfo
+    d = await systeminfo.gesamt(bool(frisch))
+    a = dict(d["auftrag"])
+    a["log"] = a.get("log", "")[-8000:]
+    d["auftrag"] = a
+    return d
+
+
+@router.post("/system/auftrag")
+async def system_auftrag(request: Request):
+    from . import systeminfo
+    d = await _koerper(request)
+    art = str(d.get("art") or "")
+    if art not in ("updates", "neustart"):
+        raise HTTPException(400, "Unbekannter Auftrag")
+    if not systeminfo.starten(art):
+        raise HTTPException(409, "Es läuft schon ein Auftrag.")
+    return {"ok": True}
+
+
+@router.get("/system/auftrag")
+async def system_auftrag_stand():
+    from . import systeminfo
+    a = dict(systeminfo.AUFTRAG)
+    a["log"] = a.get("log", "")[-8000:]
+    return a
 
 
 @router.post("/system/abgleich")

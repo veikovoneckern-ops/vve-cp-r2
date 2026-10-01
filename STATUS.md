@@ -1,5 +1,19 @@
 # Stand der neuen Fassung
 
+## 01.10.2026, nachmittags — Rückmeldung von Veiko eingearbeitet
+
+| Gemeldet | Ursache | Behoben |
+|---|---|---|
+| Dialog endet in einer Endlosschleife | Die Freisprech-Schleife sah die Gesprächskennung vom Start (null): jeder Satz begann ein neues Gespräch, ein „Ja" fand nie den Vorschlag | Kennung und Verlauf in Refs; ein kurzes „Ja“ (gesprochen oder getippt) führt den letzten Vorschlag aus, „Nein“ verwirft ihn; doppelte Vorschläge werden zusammengefasst; Talk sagt nie mehr „ich mache das“, sondern fragt |
+| „Dokument erstellen“ funktioniert nicht | (1) kein Werkzeug für Word auf dem Server; (2) Neo ahmte ein Format aus seinem Verlauf nach und erfand Arbeitsschritte als Text; (3) qwen3-coder schreibt Werkzeugaufrufe bei langen Inhalten als XML-Text, den Ollama nicht erkennt | `cockpit/dokumente.py` (Markdown → Word/PowerPoint/HTML, python-docx/pptx); Werkzeug `dokument_erstellen` mit Download-Knopf; Verlauf ohne Schritte-Format; Übersetzer für das XML-Format; Behauptung ohne Werkzeugaufruf wird erkannt und Neo zurückgeschickt; Stab-Ergebnisart „Dokument (Word)“, jedes Ergebnis als Word/PowerPoint herunterladbar |
+| Vorschau zeigt nichts | Neo hatte die Seite nie geschrieben (siehe oben); außerdem lehnte vorschau_zeigen Pfade außerhalb der Ablage ab | vorschau_zeigen nimmt jede HTML-Datei an und kopiert sie in die Ablage; Neos Auftrag nennt den echten Ordner |
+| Box mitten im Matrix-Regen | — | entfernt; nur noch eine kleine Zeile unten |
+| Ausführliche Server-Darstellung fehlt | — | Bereich System: Empfehlungen (einspielen / nicht einspielen / Achtung, gleich hohe Kästen), Aufbau-Schaubild, Updates im Einzelnen (apt-Simulation, gestaffelt), Dienste, Zeitgeber, Fassungen, Modelle mit Teamzuordnung, Sicherungen, Sicherheit; „Einspielen“ und „Neustart“ über die freigegebenen sudo-Regeln von vveadmin |
+| Visualisierung beim Sprechen | — | Sprechkreis im Talk: rot beim Zuhören (folgt der Lautstärke), drehender Ring beim Nachdenken, Wellen beim Sprechen |
+| Hellblaue Knöpfe | Dunkelmodus-Akzent #8bb4e6 als Füllung | Petrol (#0F5E68) mit weißer Schrift in beiden Modi; Bestätigen in Grün, Talk in Violett |
+
+Geprüft in einer Testinstanz mit einer Kopie der echten Daten: Neo erzeugt ein Word-Dokument (37 KB, Download funktioniert) und legt eine Seite in die Vorschau; Talk: Vorschlag → „ja“ → ausgeführt, ein Gespräch statt vieler; „Word-Dokument erstellen“ über Talk → Neal → Daniel → Word-Download. Telefonbreite: nichts ragt über den Rand. Nicht gedrückt: „Einspielen“ (hätte Docker wirklich aktualisiert).
+
 ## 01.10.2026 — erste vollständige Fassung, parallel zum alten Cockpit
 
 Gebaut nach dem freigegebenen Konzept (KONZEPT.md). Das alte Cockpit ist unverändert, es läuft weiter und wird nur gelesen.

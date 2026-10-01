@@ -53,16 +53,22 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"antworten","entscheidung_id":"e…","text":"Veikos Antwort auf eine Rückfrage"}
 - {"aktion":"aufgabe_neu","titel":"…","projekt_id":"p… oder null","faellig":"JJJJ-MM-TT oder null"}
 - {"aktion":"aufgabe_erledigt","aufgabe_id":"t…"}
-- {"aktion":"ausarbeiten","rolle":"stratege|buch|designer|video","form":"text|aufstellung|konzept|webseite|praesentation","auftrag":"…","recherche":"Suchanfrage oder null","vorgang_id":"v… oder null","projekt_id":"p… oder null"}
+- {"aktion":"ausarbeiten","rolle":"stratege|buch|designer|video","form":"text|aufstellung|konzept|dokument|webseite|praesentation","auftrag":"…","recherche":"Suchanfrage oder null","vorgang_id":"v… oder null","projekt_id":"p… oder null"}
 - {"aktion":"merken","art":"person|organisation|begriff|hoerfehler","begriff":"…","bedeutung":"…"}
 - {"aktion":"notiz","text":"…","projekt_id":"p… oder null"}
 - {"aktion":"projekt_neu","name":"…"}
 - {"aktion":"neo","auftrag":"was Neo am Cockpit oder Server tun soll"}
-Schlage nur vor, was Veiko erkennbar will. Ohne Handlungswunsch kein Block. Sag im Text in einem Satz, was du vorschlägst; ausgeführt wird erst nach seiner Bestätigung.
+Schlage nur vor, was Veiko erkennbar will. Ohne Handlungswunsch kein Block.
+WICHTIG: Du selbst führst NICHTS aus. Schreib nie „ich mache das“, „ich korrigiere“, „ich merke mir“ oder „erledigt“. Sag in einem Satz, was du vorschlägst, und schließ mit der Frage „Soll ich das so machen?“. Ausgeführt wird erst, wenn Veiko bestätigt; das Cockpit meldet es dann selbst.
+Wenn Veiko eine offene Entscheidung bestätigt oder ablehnt, gehört genau EINE passende entscheiden-Aktion in den Block, nicht mehr.
+aufgabe_erledigt nur, wenn Veiko sagt, dass er etwas erledigt hat. Überfällig heißt nicht erledigt.
+Wünscht Veiko ein Dokument, eine Präsentation, eine Recherche oder einen Entwurf: ausarbeiten (form dokument für Word, praesentation für Folien). Geht es um das Cockpit, den Server oder Software: neo.
 
 Arbeitsweisen auf Zuruf: "Brainstorming" = viele unterschiedliche Ideen, nummeriert, dann die drei stärksten mit Begründung. "ExO-Bewertung" = anhand des veröffentlichten ExO-Rahmens (MTP, SCALE, IDEAS) einschätzen, ehrlich mit Lücken."""
 
-STIMME_ZUSATZ = "- Die Antwort wird VORGELESEN: höchstens vier kurze Sätze, keine Tabellen, keine Aufzählungszeichen, keine Markdown-Zeichen."
+STIMME_ZUSATZ = ("- Die Antwort wird VORGELESEN: höchstens vier kurze Sätze, keine Tabellen, keine Aufzählungszeichen, keine Markdown-Zeichen.\n"
+                 "- Veiko antwortet gesprochen. Ein „ja“, „mach das“, „das kannst du so tun“ auf deinen Vorschlag führt das Cockpit selbst aus; "
+                 "wiederhole dann nicht denselben Vorschlag.")
 
 
 def _zeit(ts: float | None) -> str:
@@ -285,6 +291,14 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
         yield {"typ": "fehler", "text": str(f)}
         return
     sichtbar, vorschlaege = vorschlaege_aus(gesamt)
+    # Dieselbe Aktion nicht zweimal vorschlagen (gemessen: zweimal "Ja: Kronis …" in einer Antwort).
+    gesehen, eindeutig = set(), []
+    for v in vorschlaege:
+        schluessel = json.dumps({k: v.get(k) for k in v if k not in ("label",)}, sort_keys=True, ensure_ascii=False)
+        if schluessel not in gesehen:
+            gesehen.add(schluessel)
+            eindeutig.append(v)
+    vorschlaege = eindeutig
     if llm.fremdschrift(sichtbar):
         sichtbar = llm.FREMDSCHRIFT.sub("", sichtbar)
     mid = db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",

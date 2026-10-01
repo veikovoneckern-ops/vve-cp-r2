@@ -1,0 +1,273 @@
+"""
+SYSTEM IM DETAIL -- Updates, Empfehlungen, Sicherungen. Ersetzt die
+ausfuehrliche Server-Sektion des alten Cockpits fuer die neue Fassung.
+
+Woher die Werte kommen:
+  - /status von vve-status (Telemetrie, wie im alten Cockpit)
+  - apt selbst: `apt-get -s upgrade` (Simulation, braucht kein root) und
+    `apt list --upgradable`. Was upgradebar ist, aber in der Simulation nicht
+    eingespielt wuerde, haelt Ubuntu GESTAFFELT zurueck -- das ist die Antwort
+    auf "was einspielen, was nicht".
+  - GitHub fuer die neueste Ollama-Fassung (6 Stunden gemerkt).
+  - /var/lib/vvec/sicherung-status.json fuer die OneDrive-Sicherungen.
+
+Was eingespielt werden darf, entscheidet die sudo-Regel fuer vveadmin, nicht
+dieser Code: genau `apt-get update`, `apt-get -y upgrade` und `reboot` gehen
+ohne Passwort. Alles andere (Ollama-Update, Firmware) steht als Befehl da.
+
+ischroot: Im alten Backend log apt wegen des gehaerteten Namensraums ueber die
+Staffelung. Dieser Dienst laeuft ungehaertet; die Simulation bekommt trotzdem
+`Dir::Bin::ischroot=/bin/false` -- dieselbe Wirklichkeit wie der echte Lauf.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import re
+import subprocess
+import time
+from pathlib import Path
+from typing import Any
+
+import httpx
+
+from . import db
+from .konfig import ALT_DATEN, STATUS_URL
+
+_cache: dict[str, Any] = {}
+APT_SIM = ["apt-get", "-s", "-o", "Debug::NoLocking=1", "-o", "Dir::Bin::ischroot=/bin/false", "upgrade"]
+
+
+def _gemerkt(schluessel: str, sek: float):
+    e = _cache.get(schluessel)
+    return e["wert"] if e and time.time() - e["zeit"] < sek else None
+
+
+def _merken(schluessel: str, wert: Any) -> Any:
+    _cache[schluessel] = {"zeit": time.time(), "wert": wert}
+    return wert
+
+
+def _lauf(befehl: list[str], timeout: int = 60) -> str:
+    try:
+        r = subprocess.run(befehl, capture_output=True, text=True, timeout=timeout,
+                           env={"LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"})
+        return r.stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+def updates(frisch: bool = False) -> dict[str, Any]:
+    if not frisch:
+        g = _gemerkt("updates", 600)
+        if g is not None:
+            return g
+    sim = _lauf(APT_SIM)
+    einspielbar = {}
+    for z in sim.splitlines():
+        m = re.match(r"^Inst (\S+) (?:\[(\S+)\] )?\((\S+)", z)
+        if m:
+            einspielbar[m.group(1)] = {"name": m.group(1), "von": m.group(2) or "", "nach": m.group(3)}
+    alle = {}
+    for z in _lauf(["apt", "list", "--upgradable"]).splitlines():
+        m = re.match(r"^([^/\s]+)/(\S+) (\S+) \S+ \[(?:upgradable from|aktualisierbar von): ([^\]]+)\]", z)
+        if m:
+            alle[m.group(1)] = {"name": m.group(1), "quelle": m.group(2), "nach": m.group(3), "von": m.group(4)}
+    pakete = []
+    for name, p in sorted(alle.items()):
+        pakete.append({**p, "einspielbar": name in einspielbar,
+                       "sicherheit": "security" in p.get("quelle", "")})
+    for name, p in einspielbar.items():
+        if name not in alle:
+            pakete.append({**p, "quelle": "", "einspielbar": True, "sicherheit": False})
+    # Kurzbeschreibungen in EINEM apt-cache-Aufruf
+    if pakete:
+        beschr, aktuell = {}, None
+        for z in _lauf(["apt-cache", "show", "--no-all-versions"] + [p["name"] for p in pakete]).splitlines():
+            if z.startswith("Package: "):
+                aktuell = z[9:].strip()
+            elif aktuell and (z.startswith("Description-en: ") or z.startswith("Description: ")) and aktuell not in beschr:
+                beschr[aktuell] = z.split(": ", 1)[1].strip()
+        for p in pakete:
+            p["beschreibung"] = beschr.get(p["name"], "")
+    return _merken("updates", {"pakete": pakete, "zeit": time.time(),
+                               "einspielbar": sum(1 for p in pakete if p["einspielbar"]),
+                               "gestaffelt": sum(1 for p in pakete if not p["einspielbar"])})
+
+
+async def ollama_neueste() -> str | None:
+    g = _gemerkt("ollama_neu", 6 * 3600)
+    if g is not None:
+        return g
+    try:
+        async with httpx.AsyncClient(timeout=6, headers={"User-Agent": "VvE-Cockpit"}) as c:
+            r = await c.get("https://api.github.com/repos/ollama/ollama/releases/latest")
+        tag = str(r.json().get("tag_name") or "").lstrip("v") or None
+    except (httpx.HTTPError, ValueError):
+        tag = None
+    return _merken("ollama_neu", tag) if tag else None
+
+
+def _fassung(s: str | None) -> tuple:
+    return tuple(int(x) for x in re.findall(r"\d+", s or "")[:3])
+
+
+def sicherungen() -> dict[str, Any] | None:
+    try:
+        return json.loads((ALT_DATEN / "sicherung-status.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+async def status() -> dict[str, Any] | None:
+    try:
+        async with httpx.AsyncClient(timeout=5) as c:
+            return (await c.get(f"{STATUS_URL}/status")).json()
+    except (httpx.HTTPError, ValueError):
+        return None
+
+
+def _gb(s: str) -> float:
+    m = re.match(r"([\d.]+)\s*(GB|MB)", s or "")
+    if not m:
+        return 0.0
+    return float(m.group(1)) / (1024 if m.group(2) == "MB" else 1)
+
+
+def modelle(s: dict[str, Any] | None) -> list[dict[str, Any]]:
+    s = s or {}
+    team = {}
+    for t in db.alle("SELECT name, modell FROM team WHERE modell!=''"):
+        team.setdefault(t["modell"], []).append(t["name"])
+    geladen = {}
+    for m in s.get("ollama_laeuft") or []:
+        if isinstance(m, dict):
+            geladen[m.get("name")] = m
+    out = []
+    for z in s.get("ollama_models") or []:
+        name, _, groesse = str(z).partition("|")
+        out.append({"name": name, "groesse": groesse, "gb": _gb(groesse), "team": team.get(name, []),
+                    "geladen": name in geladen, "prozessor": (geladen.get(name) or {}).get("prozessor")})
+    return out
+
+
+def empfehlungen(s: dict[str, Any] | None, upd: dict[str, Any], ollama_neu: str | None,
+                 sich: dict[str, Any] | None, stab_ges: dict[str, Any]) -> list[dict[str, Any]]:
+    """Jede Empfehlung wird aus Live-Daten gerechnet und verschwindet von selbst,
+    sobald sie erledigt ist -- dieselbe Regel wie im alten Cockpit."""
+    s = s or {}
+    e: list[dict[str, Any]] = []
+    jetzt = time.time()
+    ein = [p for p in upd.get("pakete", []) if p["einspielbar"]]
+    gest = [p for p in upd.get("pakete", []) if not p["einspielbar"]]
+    if ein:
+        sich_n = sum(1 for p in ein if p["sicherheit"])
+        e.append({"stufe": "einspielen", "titel": f"{len(ein)} Update{'s' if len(ein) != 1 else ''} einspielen" + (f", davon {sich_n} Sicherheit" if sich_n else ""),
+                  "warum": "Diese Pakete würde apt jetzt einspielen: " + ", ".join(p["name"] for p in ein[:8]) + ("…" if len(ein) > 8 else "") + ".",
+                  "aktion": {"art": "updates", "text": "Einspielen"}})
+    if gest:
+        e.append({"stufe": "nicht", "titel": f"{len(gest)} gestaffelt zurückgehalten, nicht einspielen",
+                  "warum": "Ubuntu verteilt diese Fassungen schrittweise und hält sie hier noch zurück: " + ", ".join(p["name"] for p in gest[:8]) +
+                           ". Das ist Absicht; sie kommen von selbst, sobald Ubuntu sie freigibt."})
+    upd_s = s.get("updates") or {}
+    if upd_s.get("reboot_required"):
+        e.append({"stufe": "achtung", "titel": "Neustart fällig", "warum": "Ein Update (meist Kernel oder Firmware) wird erst nach einem Neustart wirksam. Laufende Arbeit des Stabs und von Neo bricht dabei ab.",
+                  "aktion": {"art": "neustart", "text": "Server neu starten"}})
+    laufend = (s.get("versions") or {}).get("ollama", "")
+    if ollama_neu and laufend and _fassung(ollama_neu) > _fassung(laufend):
+        e.append({"stufe": "einspielen", "titel": f"Ollama {ollama_neu} verfügbar (läuft: {laufend.replace('Ollama ', '')})",
+                  "warum": "Neuere Modelle lassen sich mit einer alten Fassung oft nicht laden. Lokale Modelle sind während des Updates einige Minuten nicht erreichbar. Braucht dein Passwort, deshalb als Befehl; am besten in tmux, damit ein Verbindungsabbruch nichts zerreißt.",
+                  "befehl": "tmux new -s ollama\ncurl -fsSL https://ollama.com/install.sh -o /tmp/ollama-install.sh && sudo sh /tmp/ollama-install.sh"})
+    fw = ((s.get("firmware") or {}).get("fwupd") or {})
+    for u in fw.get("updates") or []:
+        sb_db = u.get("secure_boot_db")
+        if sb_db and s.get("firmware", {}).get("secure_boot") is False or (sb_db and u.get("gescheitert")):
+            e.append({"stufe": "nicht", "titel": f"Firmware {u.get('name')}: nicht einspielen",
+                      "warum": "Secure Boot ist auf diesem Server aus; das Update der Secure-Boot-Datenbank wirkt dann nicht (zuletzt: eingespielt, aber nach dem Neustart wieder fällig)."})
+        else:
+            e.append({"stufe": "einspielen", "titel": f"Firmware {u.get('name')} {u.get('version')} → {u.get('neu')}",
+                      "warum": f"{u.get('was') or 'Firmware-Update'} von {u.get('hersteller') or 'Hersteller'}. Braucht dein Passwort.",
+                      "befehl": "sudo fwupdmgr update"})
+    for art, name in (("inhalt", "Inhalt"), ("server", "Server")):
+        x = (sich or {}).get(art) or {}
+        if not x:
+            continue
+        alter = jetzt - float(x.get("zeit") or 0)
+        if x.get("zustand") != "ok" or alter > 48 * 3600:
+            e.append({"stufe": "achtung", "titel": f"Sicherung {name}: {'fehlgeschlagen' if x.get('zustand') != 'ok' else 'älter als zwei Tage'}",
+                      "warum": f"Letzter Lauf {time.strftime('%d.%m. %H:%M', time.localtime(float(x.get('zeit') or 0)))}: {x.get('text') or x.get('zustand')}. Läuft täglich um 03:00/03:15; zwei Ausfälle in Folge sind kein Zufall."})
+    platte = s.get("disk_gb") or {}
+    if platte.get("total") and platte.get("free", 0) / platte["total"] < 0.1:
+        e.append({"stufe": "achtung", "titel": f"Platte fast voll ({round(platte['free'])} GB frei)", "warum": "Unter zehn Prozent frei. Große Modelle oder ComfyUI-Ausgaben aufräumen."})
+    for i, z in enumerate(str(s.get("gpu_nvidia") or "").strip().splitlines()):
+        teile = [t.strip() for t in z.split(",")]
+        if len(teile) > 1 and teile[1].isdigit() and int(teile[1]) >= 80:
+            e.append({"stufe": "achtung", "titel": f"Grafikkarte {i + 1} heiß: {teile[1]} °C", "warum": "Ab 90 °C greift der WatchDog mit dem Notfallablauf. Lüftung und Docks prüfen."})
+    if stab_ges.get("sync") and jetzt - stab_ges["sync"] > 1800:
+        e.append({"stufe": "achtung", "titel": "Plaud-Abruf hängt", "warum": "Seit über einer halben Stunde kein erfolgreicher Abruf. Häufigste Ursache: Anmeldung bei Plaud abgelaufen (Anleitung im alten Repo, ANLEITUNG.md)."})
+    sicher = s.get("sicherheit") or {}
+    if (sicher.get("ufw") or {}).get("offene_regeln"):
+        e.append({"stufe": "achtung", "titel": "Firewall: Regel für alle offen", "warum": "Eine ufw-Regel erlaubt Zugriff aus dem ganzen Internet statt nur aus dem Tailnet: " + ", ".join(map(str, sicher["ufw"]["offene_regeln"]))})
+    for name, t in (s.get("timers") or {}).items():
+        if name.startswith("vvec-backup"):
+            continue
+        if t.get("geladen") and t.get("aktiv") != "active":
+            e.append({"stufe": "achtung", "titel": f"Zeitgeber {name} läuft nicht", "warum": f"Stand: {t.get('aktiv')}. Was er anstößt, passiert gerade nicht."})
+    for c in s.get("docker") or []:
+        name, _, zustand = str(c).partition("|")
+        if not zustand.startswith("Up"):
+            e.append({"stufe": "achtung", "titel": f"Container {name} läuft nicht", "warum": f"Stand: {zustand}.", "befehl": f"docker start {name}"})
+    reihen = {"achtung": 0, "einspielen": 1, "nicht": 2, "info": 3}
+    return sorted(e, key=lambda x: reihen.get(x["stufe"], 9))
+
+
+# ------------------------------------------------------------ Auftraege (apt, Neustart)
+AUFTRAG: dict[str, Any] = {"art": None, "laeuft": False, "log": "", "rc": None, "start": None, "ende": None}
+
+
+async def _ausfuehren(befehle: list[list[str]]) -> None:
+    AUFTRAG.update(laeuft=True, log="", rc=None, start=time.time(), ende=None)
+    rc = 0
+    for b in befehle:
+        AUFTRAG["log"] += f"$ {' '.join(b)}\n"
+        try:
+            p = await asyncio.create_subprocess_exec(*b, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+                                                     env={"LANG": "C.UTF-8", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                                                          "DEBIAN_FRONTEND": "noninteractive"})
+            assert p.stdout
+            async for zeile in p.stdout:
+                AUFTRAG["log"] = (AUFTRAG["log"] + zeile.decode("utf-8", "replace"))[-40000:]
+            rc = await p.wait()
+        except OSError as f:
+            AUFTRAG["log"] += f"Fehler: {f}\n"
+            rc = 1
+        if rc != 0:
+            if "a password is required" in AUFTRAG["log"]:
+                AUFTRAG["log"] += "\nsudo verlangt ein Passwort: dieser Befehl ist für vveadmin nicht ohne Passwort freigegeben.\n"
+            break
+    AUFTRAG.update(laeuft=False, rc=rc, ende=time.time())
+    _cache.pop("updates", None)
+
+
+def starten(art: str) -> bool:
+    if AUFTRAG["laeuft"]:
+        return False
+    AUFTRAG["art"] = art
+    if art == "updates":
+        befehle = [["sudo", "-n", "/usr/bin/apt-get", "update"], ["sudo", "-n", "/usr/bin/apt-get", "-y", "upgrade"]]
+    elif art == "neustart":
+        befehle = [["sudo", "-n", "/usr/sbin/reboot"]]
+    else:
+        return False
+    asyncio.create_task(_ausfuehren(befehle))
+    return True
+
+
+async def gesamt(frisch: bool = False) -> dict[str, Any]:
+    from . import stab
+    s = await status()
+    upd = await asyncio.to_thread(updates, frisch)
+    neu = await ollama_neueste()
+    sich = sicherungen()
+    return {"status": s, "updates": upd, "ollama_neueste": neu, "sicherungen": sich, "modelle": modelle(s),
+            "empfehlungen": empfehlungen(s, upd, neu, sich, stab.gesundheit()), "auftrag": AUFTRAG}

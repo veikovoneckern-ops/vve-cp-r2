@@ -48,9 +48,17 @@ WERKZEUGE = [
      "parameters": {"type": "object", "properties": {"pfad": {"type": "string"}, "inhalt": {"type": "string"}, "begruendung": {"type": "string"}}, "required": ["pfad", "inhalt"]}},
     {"name": "befehl_ausfuehren", "description": "Fuehrt einen Shell-Befehl als vveadmin aus (kein sudo-Passwort). Sofort, ohne Rueckfrage, Zeitlimit 180 s. Verkette mit && statt vieler Einzelaufrufe.",
      "parameters": {"type": "object", "properties": {"befehl": {"type": "string"}, "arbeitsverzeichnis": {"type": "string"}}, "required": ["befehl"]}},
-    {"name": "vorschau_zeigen", "description": "Zeigt eine HTML-Datei in Veikos Vorschau-Spalte. Die Datei muss unter ~/vve-cp-r2/daten/vorschau/ liegen (z. B. daten/vorschau/entwurf/index.html).",
+    {"name": "vorschau_zeigen", "description": "Zeigt eine HTML-Datei in Veikos Vorschau-Spalte. Die Datei muss unter ~/vve-cp-r2/daten/vorschau/ liegen (z. B. daten/vorschau/entwurf/index.html). Erst mit datei_schreiben anlegen, dann zeigen.",
      "parameters": {"type": "object", "properties": {"pfad": {"type": "string"}}, "required": ["pfad"]}},
+    {"name": "dokument_erstellen", "description": "Erstellt ein Dokument zum Herunterladen: format 'docx' (Word), 'pptx' (PowerPoint), 'html' oder 'md'. 'inhalt' ist Markdown (Überschriften mit #, Listen mit -, Tabellen mit |). Bei pptx trennt eine Zeile '---' die Folien. Veiko bekommt einen Download-Knopf. Der EINZIGE Weg zu Word- und PowerPoint-Dateien -- es gibt kein pandoc und kein LibreOffice.",
+     "parameters": {"type": "object", "properties": {"titel": {"type": "string"}, "inhalt": {"type": "string"}, "format": {"type": "string", "enum": ["docx", "pptx", "html", "md"]}}, "required": ["titel", "inhalt", "format"]}},
 ]
+
+# Behauptung ohne Beleg erkennen (Lehre aus dem alten Cockpit, 07.09.2026):
+# Neo schrieb "Ich habe die Datei erstellt", ohne ein Werkzeug aufgerufen zu
+# haben -- am 01.10.2026 zweimal in der neuen Fassung, mit leerer Vorschau.
+BEHAUPTUNG = re.compile(r"\b(habe|hab)\b[^.?!\n]{0,120}\b(erstellt|geschrieben|gebaut|angelegt|erzeugt|exportiert|gespeichert|"
+                        r"geändert|aktualisiert|umgesetzt|hochgeladen|gepusht|installiert|eingerichtet|abgelegt)\b", re.I)
 
 
 def _pfad(p: str) -> Path:
@@ -117,17 +125,54 @@ async def werkzeug(name: str, e: dict[str, Any], lauf: dict[str, Any]) -> str:
             return f"Fehler: Arbeitsverzeichnis {cwd} gibt es nicht."
         return await _shell(befehl, str(cwd))
     if name == "vorschau_zeigen":
-        z = _pfad(e.get("pfad", ""))
+        roh = str(e.get("pfad", "")).strip()
+        z = _pfad(roh)
+        if not z.exists() and not roh.startswith(("/", "~")):
+            z = (VORSCHAU_DIR / roh.removeprefix("daten/vorschau/").removeprefix("vorschau/")).resolve()
+        if z.is_dir():
+            z = z / "index.html"
+        if not z.is_file():
+            return f"Fehler: {z} gibt es nicht. Erst mit datei_schreiben anlegen (z. B. {VORSCHAU_DIR}/<name>/index.html), dann zeigen."
         try:
             rel = z.relative_to(VORSCHAU_DIR.resolve())
         except ValueError:
-            return f"Fehler: Die Vorschau zeigt nur Dateien unter {VORSCHAU_DIR}. Leg die Seite dort ab."
-        if not z.is_file():
-            return f"Fehler: {z} gibt es nicht."
+            # Liegt woanders (oefter: im Repo oder in /tmp)? Dann samt Nachbardateien
+            # in die Vorschau-Ablage kopieren, statt abzulehnen -- eine Ablehnung
+            # fuehrte dazu, dass Neo Veiko zur Handarbeit schickte.
+            if z.suffix.lower() not in (".html", ".htm"):
+                return "Fehler: Die Vorschau zeigt HTML-Seiten. Schreib eine .html-Datei."
+            ziel_dir = VORSCHAU_DIR / (z.parent.name or "vorschau")
+            ziel_dir.mkdir(parents=True, exist_ok=True)
+            import shutil
+            for f in z.parent.iterdir():
+                if f.is_file() and f.stat().st_size < 5_000_000:
+                    shutil.copy2(f, ziel_dir / f.name)
+            z = ziel_dir / z.name
+            rel = z.relative_to(VORSCHAU_DIR.resolve())
         url = "/api/neo/vorschau/" + str(rel).replace("\\", "/")
         lauf["vorschau"] = url
         await lauf["schlange"].put({"typ": "vorschau", "url": url})
         return f"Vorschau gezeigt: {url}"
+    if name == "dokument_erstellen":
+        from . import dokumente
+        inhalt = str(e.get("inhalt") or "")
+        if len(inhalt.strip()) < 20:
+            return "Fehler: 'inhalt' ist leer oder zu kurz. Schick den vollständigen Text als Markdown."
+        try:
+            ziel = dokumente.erstellen(str(e.get("titel") or "Dokument"), inhalt, str(e.get("format") or "docx"))
+        except Exception as f:  # noqa: BLE001
+            return f"Fehler beim Erstellen: {f}"
+        url = "/api/neo/export/" + ziel.name
+        lauf["dateien"].append({"pfad": str(ziel), "begruendung": "zum Herunterladen", "download": url, "name": ziel.name})
+        await lauf["schlange"].put({"typ": "datei", "name": ziel.name, "url": url})
+        if ziel.suffix == ".html":
+            vz = VORSCHAU_DIR / ziel.stem
+            vz.mkdir(parents=True, exist_ok=True)
+            (vz / "index.html").write_text(ziel.read_text(encoding="utf-8"), encoding="utf-8")
+            lauf["vorschau"] = f"/api/neo/vorschau/{ziel.stem}/index.html"
+            await lauf["schlange"].put({"typ": "vorschau", "url": lauf["vorschau"]})
+        return (f"Erstellt: {ziel.name} ({ziel.stat().st_size // 1024 + 1} KB). Der Download-Knopf erscheint direkt "
+                "unter deiner Antwort im Gespräch -- sag Veiko genau das, nichts anderes.")
     return f"Fehler: unbekanntes Werkzeug {name}"
 
 
@@ -168,9 +213,44 @@ def system_text() -> str:
             "Sieh nach, bevor du etwas behauptest -- nicht raten. datei_schreiben und befehl_ausfuehren wirken SOFORT. "
             "Lies eine Datei, bevor du sie ersetzt. Verkette Befehle mit && statt vieler Einzelaufrufe. "
             f"Bis zu {MAX_SCHRITTE} Werkzeugaufrufe je Auftrag. Nur die letzten {VOLLE_SCHRITTE} Werkzeugergebnisse bleiben dir in voller Länge.\n"
-            "Wenn du fertig bist, antworte Veiko auf Deutsch: zuerst in ein bis zwei Sätzen das Ergebnis, dann was du konkret "
+            "\n## Was Veiko häufig will und wie du es lieferst\n"
+            "- Ein Dokument (Word, PowerPoint): schreib den vollständigen Inhalt als Markdown und ruf dokument_erstellen auf "
+            "(format docx oder pptx). Angehängte Unterlagen liest du vorher mit datei_lesen (Pfad steht in der Nachricht).\n"
+            f"- Etwas zum Ansehen (Seite, Entwurf, Übersicht): datei_schreiben nach {VORSCHAU_DIR}/<name>/index.html, dann vorschau_zeigen "
+            "mit genau diesem Pfad. vorschau_zeigen ist ein Werkzeug wie jedes andere -- du rufst es selbst auf, Veiko muss nichts tun.\n"
+            "- Etwas am Server oder Cockpit prüfen oder ändern: befehl_ausfuehren, datei_lesen, datei_schreiben.\n"
+            "\n## Ehrlichkeit\n"
+            "Etwas ist erst getan, wenn du das Werkzeug dafür aufgerufen hast und es ohne Fehler zurückkam. "
+            "Schreib NIE „ich habe … erstellt“, wenn du in diesem Auftrag kein Werkzeug dafür benutzt hast. "
+            "Wenn etwas scheitert, sag das und warum.\n"
+            "\nWenn du fertig bist, antworte Veiko auf Deutsch: zuerst in ein bis zwei Sätzen das Ergebnis, dann was du konkret "
             "getan hast (Dateien, Befehle), dann was er prüfen sollte. Kein Fachbegriff ohne kurze Erklärung. "
             "Schick ihn nie zu Handarbeit, die du selbst erledigen kannst.")
+
+
+_XML_FN = re.compile(r"<function=([\w-]+)>(.*?)(?:</function>|(?=<function=)|\Z)", re.S)
+_XML_PARAM = re.compile(r"<parameter=([\w-]+)>\n?(.*?)\n?(?:</parameter>|(?=<parameter=)|(?=</function>)|\Z)", re.S)
+
+
+def _xml_aufrufe(text: str) -> tuple[str, list[dict[str, Any]]]:
+    """qwen3-coder schreibt Werkzeugaufrufe in seinem eigenen XML-Format
+    (<function=name><parameter=x>…</parameter></function>). Bei langen Inhalten
+    erkennt Ollama das nicht und reicht es als TEXT durch -- dann passierte
+    gar nichts (gemessen am 01.10.2026 mit dokument_erstellen). Hier wird es
+    in einen echten Aufruf uebersetzt."""
+    if "<function=" not in text:
+        return text, []
+    aufrufe = []
+    bekannte = {w["name"] for w in WERKZEUGE}
+    for m in _XML_FN.finditer(text):
+        name = m.group(1)
+        if name not in bekannte:
+            continue
+        args = {p.group(1): p.group(2).strip("\n") for p in _XML_PARAM.finditer(m.group(2))}
+        aufrufe.append({"function": {"name": name, "arguments": args}})
+    vorne = text.split("<function=", 1)[0]
+    vorne = re.sub(r"<tool_call>\s*$", "", vorne).strip()
+    return vorne, aufrufe
 
 
 def _gekuerzt(verlauf: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -191,9 +271,12 @@ def _vorgeschichte(gid: str, grenze: int = 14) -> list[dict[str, Any]]:
         if m["rolle"] == "du":
             out.append({"role": "user", "content": m["text"]})
         elif m["rolle"] == "neo":
-            schritte = (m.get("daten") or {}).get("schritte") or []
-            zus = ("\n\n[Deine Arbeitsschritte damals: " + "; ".join(s.get("name", "") + "(" + s.get("kurz", "")[:60] + ")" for s in schritte[:15]) + "]") if schritte else ""
-            out.append({"role": "assistant", "content": (m["text"] or "")[:6000] + zus})
+            # Nur der Antworttext -- KEINE Zusammenfassung der Schritte in eckigen
+            # Klammern. Das Modell ahmte genau dieses Format nach und schrieb
+            # erfundene "Arbeitsschritte" als Text, statt Werkzeuge aufzurufen
+            # (gemessen am 01.10.2026: Antwort nach 3 s, kein einziger Schritt).
+            text = re.sub(r"\[Deine Arbeitsschritte damals:.*?\]\s*$", "", m["text"] or "", flags=re.S).strip()
+            out.append({"role": "assistant", "content": text[:6000]})
     return out
 
 
@@ -213,6 +296,7 @@ async def _kern(gid: str, modell: str, lauf: dict[str, Any]) -> None:
     verlauf = _vorgeschichte(gid)
     system = system_text()
     letzter_text = ""
+    nachgefragt = 0
     try:
         for _ in range(MAX_SCHRITTE):
             antwort = await llm.chat_mit_werkzeugen(modell, system, _gekuerzt(verlauf),
@@ -229,6 +313,8 @@ async def _kern(gid: str, modell: str, lauf: dict[str, Any]) -> None:
                 if not text and not aufrufe:
                     letzter_text = (letzter_text + "\n\n" if letzter_text else "") + "Das Modell hat auf diesen Schritt nichts geliefert (zweimal versucht)."
                     break
+            if not aufrufe and "<function=" in text:
+                text, aufrufe = _xml_aufrufe(text)
             verlauf.append({"role": "assistant", "content": text,
                             **({"tool_calls": aufrufe} if aufrufe else {})})
             if text:
@@ -236,6 +322,17 @@ async def _kern(gid: str, modell: str, lauf: dict[str, Any]) -> None:
                 if aufrufe:
                     await schlange.put({"typ": "zwischen", "text": text})
             if not aufrufe:
+                # Behauptet, etwas getan zu haben, aber in DIESEM Auftrag kein
+                # Werkzeug benutzt? Dann einmal (hoechstens zweimal) zurueckschicken.
+                if not lauf["schritte"] and BEHAUPTUNG.search(text) and nachgefragt < 2:
+                    nachgefragt += 1
+                    await schlange.put({"typ": "zwischen", "text": "(Neo hat etwas behauptet, ohne es getan zu haben. Ich schicke ihn zurück an die Arbeit.)"})
+                    verlauf.append({"role": "user", "content":
+                                    "Du hast geschrieben, dass du etwas getan hast, aber in diesem Auftrag kein einziges Werkzeug "
+                                    "aufgerufen. Es ist also NICHT passiert. Erledige es jetzt wirklich mit den Werkzeugen "
+                                    "(z. B. dokument_erstellen, datei_schreiben, vorschau_zeigen, befehl_ausfuehren). "
+                                    "Wenn du es nicht kannst, sag ehrlich warum."})
+                    continue
                 break
             for a in aufrufe:
                 fn = a.get("function") or {}
@@ -270,6 +367,11 @@ def _abschliessen(gid: str, lauf: dict[str, Any], text: str, modell: str, abgebr
     if lauf.get("gespeichert"):
         return
     lauf["gespeichert"] = True
+    # Dieselbe Datei zweimal geschrieben -> einmal nennen (der letzte Stand zaehlt).
+    eindeutig: dict[str, Any] = {}
+    for f in lauf["dateien"]:
+        eindeutig[f.get("download") or f["pfad"]] = f
+    lauf["dateien"] = list(eindeutig.values())
     db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",
                   (gid, "neo", text or "(keine Antwort)", json.dumps({
                       "schritte": lauf["schritte"], "dateien": lauf["dateien"], "vorschau": lauf.get("vorschau"),

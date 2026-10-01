@@ -8,5 +8,8 @@ faster-whisper==1.2.1
 # PyAV 19 hat open(metadata_errors=...) entfernt, faster-whisper 1.2.1 ruft es noch.
 # Dieselbe Fassung wie im Backend des alten Cockpits.
 av==18.1.0
+# Word und PowerPoint (cockpit/dokumente.py) -- auf dem Server gibt es weder pandoc noch LibreOffice.
+python-docx==1.2.0
+python-pptx
 nvidia-cublas-cu12
 nvidia-cudnn-cu12==9.*
