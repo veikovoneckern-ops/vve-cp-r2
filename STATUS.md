@@ -41,6 +41,16 @@ Gebaut nach dem freigegebenen Konzept (KONZEPT.md). Das alte Cockpit ist unverä
 - Ketten, Org-Chart, Bildwerk: laut Konzept „später“.
 - Präsentationen als .pptx: python-pptx ist nicht installiert; Präsentationen erscheinen als HTML-Folien in der Ansicht.
 
+### Braucht einmal Veikos Passwort (vveadmin hat dafür kein sudo)
+
+1. **https fürs Mikrofon:** `sudo tailscale serve --bg --https=8443 http://100.65.221.106:8790`
+   → danach `https://vveorgxais.tail4ca1ab.ts.net:8443`. Bis dahin läuft alles unter
+   `http://100.65.221.106:8790`, nur das Mikrofon gibt der Browser dort nicht frei.
+2. **Fernsicherung:** Die Datenbank wird täglich um 03:30 nach `daten/sicherungen/` gesichert
+   (30 Stände, `vve-cp-r2-sicherung.timer`). Das liegt auf derselben Platte. Damit sie auch
+   nach OneDrive geht, muss `~/vve-cp-r2/daten` in `vvec-sicherung.sh` des alten Cockpits
+   aufgenommen werden (läuft als root; Änderung im Repo `vve-cp`, nicht hier).
+
 ### Parallelbetrieb
 
 Beide Fassungen lesen dieselbe Plaud-Ablage. Neue Notizen ab dem ersten Start der neuen Fassung bearbeitet der Stab hier UND die alte Pipeline dort, jede in ihrer eigenen Ablage. Wer ganz umsteigt, schaltet im alten Cockpit unter Setup Settings die automatische Verarbeitung aus.

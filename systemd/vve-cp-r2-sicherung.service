@@ -1,0 +1,8 @@
+[Unit]
+Description=VvE Cockpit (neue Fassung): Datenbank sichern
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/vve-cp-r2
+EnvironmentFile=-%h/.config/vve-cp-r2.env
+ExecStart=%h/vve-cp-r2/.venv/bin/python -m cockpit.sicherung

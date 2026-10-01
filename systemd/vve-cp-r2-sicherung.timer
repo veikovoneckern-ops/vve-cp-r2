@@ -1,0 +1,10 @@
+[Unit]
+Description=VvE Cockpit (neue Fassung): Datenbank taeglich sichern
+
+[Timer]
+# Nach den beiden Sicherungen des alten Cockpits (03:00/03:15 deutscher Zeit).
+OnCalendar=*-*-* 03:30:00 Europe/Berlin
+Persistent=true
+
+[Install]
+WantedBy=timers.target
