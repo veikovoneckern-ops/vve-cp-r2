@@ -19,7 +19,7 @@ from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFil
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from . import anmeldung, db, gespraech, importer, llm, neo, stab, stimme
-from .konfig import (ALT_BACKEND, ALT_COCKPIT_URL, ERGEBNIS_DIR, STATUS_URL, UPLOADS,
+from .konfig import (ALT_BACKEND, ALT_COCKPIT_URL, ERGEBNIS_DIR, SEARX, STATUS_URL, UPLOADS,
                      VORSCHAU_DIR)
 
 router = APIRouter(prefix="/api")
@@ -418,12 +418,48 @@ async def aufgabe_neu(request: Request):
 @router.patch("/aufgaben/{tid}")
 async def aufgabe_aendern(tid: str, request: Request):
     d = await _koerper(request)
-    erlaubt = {k: d[k] for k in ("titel", "status", "prio", "faellig", "notiz", "projekt_id", "archiviert") if k in d}
+    erlaubt = {k: d[k] for k in ("titel", "status", "prio", "faellig", "start", "notiz", "projekt_id", "archiviert") if k in d}
     erlaubt["geaendert"] = time.time()
     r = db.aendern("aufgaben", tid, erlaubt)
     if not r:
         raise HTTPException(404, "Aufgabe nicht gefunden")
     return r
+
+
+@router.post("/aufgaben/{tid}/verschieben")
+async def aufgabe_verschieben(tid: str, request: Request):
+    """Struktur per Ziehen: wo = davor | danach | darunter (als Unteraufgabe) | oben
+    (oberste Ebene, ans Ende). Die Geschwister werden neu durchnummeriert; ein Ast
+    wandert mit seinen Unteraufgaben. Ein Ast kann nie unter sich selbst landen."""
+    d = await _koerper(request)
+    wo, ziel_id = str(d.get("wo") or ""), d.get("ziel_id")
+    t = db.holen("aufgaben", tid)
+    if not t:
+        raise HTTPException(404, "Aufgabe nicht gefunden")
+    if wo not in ("davor", "danach", "darunter", "oben"):
+        raise HTTPException(400, "wo muss davor, danach, darunter oder oben sein")
+    ziel = db.holen("aufgaben", ziel_id) if ziel_id else None
+    if wo != "oben" and (not ziel or ziel["projekt_id"] != t["projekt_id"]):
+        raise HTTPException(400, "Ziel nicht im selben Projekt")
+    eltern = None if wo == "oben" else (ziel["id"] if wo == "darunter" else ziel.get("eltern_id"))
+    # Zyklus: das neue Eltern-Element darf nicht die Aufgabe selbst oder einer ihrer Nachfahren sein.
+    p = eltern
+    while p:
+        if p == tid:
+            raise HTTPException(409, "Eine Aufgabe kann nicht unter sich selbst hängen.")
+        p = db.wert("SELECT eltern_id FROM aufgaben WHERE id=?", (p,))
+    geschwister = [g["id"] for g in db.alle(
+        "SELECT id FROM aufgaben WHERE projekt_id IS ? AND eltern_id IS ? AND archiviert=0 AND id!=? "
+        "ORDER BY sortierung, (faellig='' OR faellig IS NULL), faellig, erstellt", (t["projekt_id"], eltern, tid))]
+    if wo in ("davor", "danach") and ziel["id"] in geschwister:
+        geschwister.insert(geschwister.index(ziel["id"]) + (wo == "danach"), tid)
+    else:
+        geschwister.append(tid)
+    if t.get("eltern_id") != eltern:
+        db.aendern("aufgaben", tid, {"eltern_id": eltern, "geaendert": time.time()}, aktion="verschoben")
+    for i, gid in enumerate(geschwister):
+        db.ausfuehren("UPDATE aufgaben SET sortierung=? WHERE id=?", ((i + 1) * 10, gid))
+    return {"ok": True}
 
 
 @router.delete("/aufgaben/{tid}")
@@ -821,6 +857,12 @@ async def system():
             out["alt_backend"] = r.json() if r.status_code == 200 else {"code": r.status_code}
         except (httpx.HTTPError, ValueError):
             out["alt_backend"] = None
+        # Websuche: /healthz der eigenen SearXNG -- fragt keine Suchmaschine an.
+        try:
+            r = await c.get(f"{SEARX}/healthz")
+            out["websuche"] = {"erreichbar": r.status_code == 200, "code": r.status_code}
+        except httpx.HTTPError:
+            out["websuche"] = {"erreichbar": False, "code": None}
     out["modelle"] = await llm.installierte_modelle(frisch=True)
     out["geladen"] = await llm.geladene_modelle()
     gesamt, _, frei = shutil.disk_usage("/")
@@ -852,7 +894,7 @@ async def system_auftrag(request: Request):
     from . import systeminfo
     d = await _koerper(request)
     art = str(d.get("art") or "")
-    if art not in ("updates", "neustart"):
+    if art not in ("updates", "neustart", "ollama-neustart", "caddy-neustart"):
         raise HTTPException(400, "Unbekannter Auftrag")
     if not systeminfo.starten(art):
         raise HTTPException(409, "Es läuft schon ein Auftrag.")

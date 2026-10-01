@@ -4,14 +4,15 @@
 import { html, useState, useEffect, useRef, Icon, Avatar, Leer, Md, Modal, StandPill, bus, toast, fehlerMelden, aktualisieren,
   zeitText, datumText, useAbruf, navigiere, kopieren, rolleName } from "./ui.js";
 import { api, hochladen } from "./api.js";
+import { Zeitplan, Struktur } from "./projektansichten.js";
 import { Ausarbeiten } from "./inbox.js";
 
 const FARBEN = ["#2C6BB3", "#0E9377", "#C07C12", "#E0392B", "#7C3AED", "#D0458F", "#0E7490", "#647388"];
 
-export function Projects({ id }) {
+export function Projects({ id, rest }) {
   if (id === "_aufgaben") return html`<${Uebersicht} art="aufgaben" />`;
   if (id === "_notizen") return html`<${Uebersicht} art="notizen" />`;
-  if (id) return html`<${Projekt} key=${id} id=${id} />`;
+  if (id) return html`<${Projekt} key=${id} id=${id} reiter=${rest && rest[0]} />`;
   return html`<${Uebersicht} art="projekte" />`;
 }
 
@@ -158,8 +159,11 @@ function NotizListe({ projektId }) {
   </section>`;
 }
 
-function Projekt({ id }) {
-  const [tab, setTab] = useState("ueberblick");
+// Der Reiter steht in der Adresse (#/projects/<id>/<reiter>): so kann Talk
+// eine Ansicht zeigen, und Zurueck im Browser fuehrt zum vorigen Reiter.
+function Projekt({ id, reiter }) {
+  const tab = reiter || "ueberblick";
+  const setTab = (k) => navigiere("/projects/" + id + (k === "ueberblick" ? "" : "/" + k));
   const [d, laden, fehler] = useAbruf("/projekte/" + id, 30000, []);
   const [nameBearb, setNameBearb] = useState(null);
   const [ausarbeiten, setAusarbeiten] = useState(false);
@@ -182,7 +186,7 @@ function Projekt({ id }) {
     laden();
   }
 
-  const TABS = [["ueberblick", "Überblick"], ["aufgaben", "Aufgaben", offen.length], ["notizen", "Notizen", d.notizen.length],
+  const TABS = [["ueberblick", "Überblick"], ["aufgaben", "Aufgaben", offen.length], ["zeitplan", "Zeitplan"], ["struktur", "Struktur"], ["notizen", "Notizen", d.notizen.length],
     ["ergebnisse", "Ergebnisse", d.ergebnisse.length], ["verlauf", "Verlauf", d.vorgaenge.length], ["dateien", "Dateien", d.dateien.length]];
 
   return html`<div class="seite">
@@ -196,7 +200,6 @@ function Projekt({ id }) {
         <div class="leise klein" style="margin-top:3px">${p.ziel || "Kein Ziel eingetragen."}${(p.fruehere_namen || []).length ? ` · früher: ${p.fruehere_namen.join(", ")}` : ""}</div>
       </div>
       <div class="knopfreihe">
-        <button class="btn" onClick=${() => bus.sende("talk-oeffnen", { kontext: { art: "projekt", id, titel: p.name } })}><${Icon} n="talk" g=${15} />Besprechen</button>
         <button class="btn" onClick=${() => setAusarbeiten(true)}><${Icon} n="stift" g=${15} />Ausarbeiten lassen</button>
         <select class="eingabe" style="width:auto" value=${p.status} aria-label="Status" onChange=${(e) => aendern({ status: e.target.value }, "Status geändert.")}>
           <option value="aktiv">aktiv</option><option value="pausiert">pausiert</option><option value="abgeschlossen">abgeschlossen</option><option value="archiviert">archiviert</option>
@@ -229,6 +232,8 @@ function Projekt({ id }) {
         ${erledigt.map((t) => html`<${AufgabeZeile} key=${t.id} t=${t} nachher=${laden} />`)}</details>`}
       ${!d.aufgaben.length && html`<${Leer} titel="Noch keine Aufgaben." />`}
     </section>`}
+    ${tab === "zeitplan" && html`<${Zeitplan} projekt=${p} aufgaben=${d.aufgaben} laden=${laden} />`}
+    ${tab === "struktur" && html`<${Struktur} aufgaben=${d.aufgaben} laden=${laden} />`}
     ${tab === "notizen" && html`<${NotizListe} projektId=${id} />`}
     ${tab === "ergebnisse" && html`<section class="karte">${d.ergebnisse.length ? d.ergebnisse.map((r) => html`<${ErgebnisZeile} key=${r.id} r=${r} />`)
       : html`<${Leer} titel="Noch keine Ergebnisse.">Mit „Ausarbeiten lassen“ bekommt eine Rolle einen Auftrag. Das Ergebnis landet hier, geprüft von Daniel.</${Leer}>`}</section>`}

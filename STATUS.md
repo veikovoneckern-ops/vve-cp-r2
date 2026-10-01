@@ -1,5 +1,23 @@
 # Stand der neuen Fassung
 
+## 01.10.2026, spät — Kopfzeile und Server-Sektion wie im alten Cockpit, Projektansichten, Sprechen im Projekt
+
+| Gewünscht | Umgesetzt |
+|---|---|
+| Favicon wie im alten Cockpit (rot) | Der rote Orbit-Ring aus `einbau.py` (`frontend/bilder/favicon.png`) |
+| Logo dreht sich und zeigt die Last | Farbe = LED-Leiste der Grafikkarten (`ledFarbe()` in `kopf.js`, gleiche Rechnung wie `vve-rgb.py`): weiß bei wenig, rot unter Volllast. Feiner Schatten hält Weiß im hellen Modus sichtbar |
+| Kopfzeile wie im alten Cockpit, bündig | Titel (im Projekt: Projektname / „Projekt-Detail“) · Cockpit-Leiste (Letzter Abruf, Letzte Notiz, Inbox) · Server-Kästchen (Wert oben, Bezeichnung darunter) · Sprechen · Suche · Gespräch. Alles 44 px hoch auf einer Mittellinie; die Hostzeile steht jetzt im Kopf der Server-Sektion |
+| Server-Status 1:1 wie im alten Cockpit | `server.js`: klappt unter der Kopfzeile auf (Klick auf die Kästchen, Esc schließt). Aufbau-Schaubild · Updates/Sicherungen/Empfehlungen · Software (8 Karten) · Womit Sie arbeiten · Was die Maschine meldet. Neu-Start-Knöpfe für Ollama und Caddy (sudo-Freigabe vorhanden) |
+| Kacheln nebeneinander gleich hoch/breit | Raster mit `grid-auto-rows:1fr`; als feste Regel in CLAUDE.md |
+| Projektansichten (Gantt, Ziehen) | Reiter **Zeitplan** (Zeitachse, Beginn und Fälligkeit direkt änderbar) und **Struktur** (Baum, Ziehen: Mitte = Unteraufgabe, Rand = davor/danach, freie Fläche = oberste Ebene, Zyklen abgelehnt, scrollt am Rand mit). Neue Spalten `eltern_id`, `sortierung`, `start`; Unteraufgaben einmalig aus dem alten Cockpit übernommen. Reiter steht in der Adresse |
+| Sprechen im Projekt | Rahmen sofort gesetzt und angesagt („Wir sprechen über das Projekt …“). Neue Aktionen: `zeigen` (öffnet einen Reiter, ohne Rückfrage) und `aufgabe_aendern` (Titel/Termin/Status, mit Ja). Neues landet ohne Angabe im Projekt |
+
+Doppelte Wege entfernt: System zeigt nur noch Stab, Daten, Einstellungen (die Maschine steht in der Server-Sektion); „Besprechen“ im Projektkopf entfällt (Sprechen und die Gesprächsspalte haben den Projektbezug).
+
+Bewusst noch nicht: **Ablauf** (Stufen nach Abhängigkeiten mit KI-Planung) — braucht Abhängigkeiten zwischen Aufgaben und einen Planungsschritt; eigener Schritt.
+
+Geprüft in einer Testinstanz (Kopie der echten Daten): Kopfzeile alle Elemente Mitte 34 px; Server-Sektion jede Reihe gleich hoch und breit (4 × 354 px); Struktur mit echten Pointer-Ereignissen (Unteraufgabe, oberste Ebene mit Mitscrollen, Zyklus abgelehnt); Zeitplan (Beginn gesetzt → Balken, Linien auf Monatsgrenzen); Talk im Projekt („Zeig mir die Aufgaben“ → Reiter; Aufgabe anlegen landet im Projekt; Termin verschieben nach Ja); 375 px ohne Überstand.
+
 ## 01.10.2026, abends — Logo, Kopfzeile, Sprechen, Knopffarben
 
 | Gewünscht | Umgesetzt |

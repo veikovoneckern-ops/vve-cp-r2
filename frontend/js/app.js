@@ -11,7 +11,8 @@ import { Team } from "./team.js";
 import { System } from "./system.js";
 import { Neo } from "./neo.js";
 import { Talk } from "./talk.js";
-import { Logo, KopfStatus, SprechKnopf, kopfAbruf } from "./kopf.js";
+import { Logo, CockpitLeiste, ServerKaesten, SprechKnopf, kopfAbruf } from "./kopf.js";
+import { ServerSektion } from "./server.js";
 
 const BEREICHE = [
   { id: "briefing", titel: "Briefing", icon: "briefing", unter: "Was jetzt zählt" },
@@ -19,7 +20,7 @@ const BEREICHE = [
   { id: "projects", titel: "Projects", icon: "projects", unter: "Vorhaben, Aufgaben, Ergebnisse" },
   { id: "neo", titel: "Neo", icon: "neo", unter: "Cockpit Engineer", neo: true },
   { id: "team", titel: "Team", icon: "team", unter: "Dein Stab" },
-  { id: "system", titel: "System", icon: "system", unter: "Maschine und Einstellungen" },
+  { id: "system", titel: "System", icon: "system", unter: "Stab, Daten, Einstellungen" },
 ];
 
 function route() {
@@ -27,24 +28,35 @@ function route() {
   return { bereich: BEREICHE.some((b) => b.id === teile[0]) ? teile[0] : "briefing", id: teile[1] ? decodeURIComponent(teile[1]) : null, rest: teile.slice(2) };
 }
 
-function Suche() {
+// Suche als Symbol wie im alten Cockpit; das Feld klappt darunter auf (Strg+K).
+// Spart in der Kopfzeile den Platz, den die Statuskaesten brauchen.
+function SucheKnopf() {
+  const [auf, setAuf] = useState(false);
+  useEffect(() => {
+    const k = (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setAuf(true); } };
+    document.addEventListener("keydown", k);
+    return () => document.removeEventListener("keydown", k);
+  }, []);
+  return html`<div class="suche-wrap">
+    <button class=${"kopf-icon" + (auf ? " an" : "")} onClick=${() => setAuf(!auf)} aria-label="Suchen" title="Suchen (Strg+K)"><${Icon} n="suche" g=${17} /></button>
+    ${auf && html`<div class="suche-pop"><${Suche} zu=${() => setAuf(false)} /></div>`}
+  </div>`;
+}
+
+function Suche({ zu }) {
   const [q, setQ] = useState("");
   const [treffer, setTreffer] = useState([]);
   const [offen, setOffen] = useState(false);
   const [an, setAn] = useState(0);
   const feld = useRef(null);
-  useEffect(() => {
-    const k = (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); feld.current && feld.current.focus(); } };
-    document.addEventListener("keydown", k);
-    return () => document.removeEventListener("keydown", k);
-  }, []);
+  useEffect(() => { feld.current && feld.current.focus(); }, []);
   useEffect(() => {
     if (q.trim().length < 2) { setTreffer([]); return; }
     const t = setTimeout(() => api("/suche?q=" + encodeURIComponent(q)).then((d) => { setTreffer(d.treffer); setAn(0); }).catch(() => {}), 200);
     return () => clearTimeout(t);
   }, [q]);
   const oeffnen = (t) => {
-    setOffen(false); setQ("");
+    setOffen(false); setQ(""); zu();
     if (t.art === "projekt") navigiere("/projects/" + t.id);
     else if (t.art === "vorgang") navigiere("/inbox/" + t.id);
     else if (t.art === "aufgabe") navigiere(t.unter ? "/projects/" + t.unter : "/projects/_aufgaben");
@@ -56,12 +68,12 @@ function Suche() {
     <${Icon} n="suche" g=${15} />
     <input ref=${feld} value=${q} placeholder="Suchen … (Strg+K)" aria-label="Im Cockpit suchen"
       onInput=${(e) => { setQ(e.target.value); setOffen(true); }} onFocus=${() => setOffen(true)}
-      onBlur=${() => setTimeout(() => setOffen(false), 150)}
+      onBlur=${() => setTimeout(() => { setOffen(false); zu(); }, 180)}
       onKeyDown=${(e) => {
         if (e.key === "ArrowDown") { e.preventDefault(); setAn((a) => Math.min(a + 1, treffer.length - 1)); }
         if (e.key === "ArrowUp") { e.preventDefault(); setAn((a) => Math.max(a - 1, 0)); }
         if (e.key === "Enter" && treffer[an]) oeffnen(treffer[an]);
-        if (e.key === "Escape") { setQ(""); e.target.blur(); }
+        if (e.key === "Escape") { e.stopPropagation(); setQ(""); zu(); }
       }} />
     ${offen && q.trim().length >= 2 && html`<div class="suche-treffer">
       ${treffer.length ? treffer.map((t, i) => html`<button class=${i === an ? "an" : ""} onMouseDown=${() => oeffnen(t)}>
@@ -129,6 +141,8 @@ function App() {
   const [erfassen, setErfassen] = useState(false);
   const [lage, setLage] = useState(null);
   const [anzeige, setAnzeige] = useState(null);
+  // Server-Sektion: klappt unter der Kopfzeile auf, wie im alten Cockpit.
+  const [server, setServer] = useState(false);
 
   const pruefen = () => api("/konto/ich").then(setKonto).catch(() => setKonto({ angemeldet: false, fehler: true }));
   useEffect(() => { pruefen(); }, []);
@@ -143,6 +157,9 @@ function App() {
   useEffect(() => bus.an("talk-oeffnen", (d) => { setTalkStart({ ...(d || {}), n: Date.now() }); if (d && d.kontext) setKontext(d.kontext); setTalk(true); }), []);
   useEffect(() => bus.an("talk-kontext", (k) => setKontext(k)), []);
   useEffect(() => bus.an("erfassen", () => setErfassen(true)), []);
+  useEffect(() => bus.an("server-sektion", (an) => setServer(!!an)), []);
+  // Ein Wechsel der Ansicht klappt sie zu -- sonst laege sie ueber der neuen Ansicht.
+  useEffect(() => { setServer(false); }, [r.bereich, r.id]);
   // Sprechen oben im Kopf: Talk geht auf und hoert sofort zu.
   useEffect(() => bus.an("dialog-start", () => { setTalkStart({ frei: true, ausKopf: true, n: Date.now() }); setTalk(true); }), []);
   useEffect(() => { if (konto && konto.angemeldet) return kopfAbruf(); }, [konto && konto.angemeldet]);
@@ -175,6 +192,10 @@ function App() {
   const neoLaeuft = lage && lage.neo_laeuft && lage.neo_laeuft.length > 0;
   const zahl = (b) => b.id === "inbox" && offen ? html`<span class="zahl">${offen}</span>` : b.neo && neoLaeuft ? html`<span class="zahl ruhig">arbeitet</span>` : null;
   const voll = r.bereich === "inbox" || r.bereich === "neo";
+  // Im Projekt steht oben der Projektname (wie im alten Cockpit "BVE / Projekt-Detail").
+  const imProjekt = r.bereich === "projects" && r.id && !r.id.startsWith("_") && kontext && kontext.art === "projekt";
+  const titel = imProjekt ? kontext.titel : bereich.titel;
+  const unter = imProjekt ? "Projekt-Detail" : bereich.unter;
 
   function thema() {
     const jetzt = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
@@ -200,14 +221,21 @@ function App() {
     <div class="haupt">
       <header class="topbar">
         <span class="nur-mobil kopf-logo"><${Logo} /></span>
-        <h1 title=${bereich.unter}>${bereich.titel}</h1>
-        <${KopfStatus} gesundheit=${lage && lage.gesundheit} />
-        <button class="btn geist icon nur-mobil" onClick=${() => setErfassen(true)} aria-label="Capture" title="Capture"><${Icon} n="plus" g=${20} /></button>
-        <${Suche} />
-        <button class=${"btn geist icon talk-auf" + (talk ? " an" : "")} onClick=${() => setTalk(!talk)} aria-pressed=${talk}
-          title=${talk ? "Gesprächsspalte schließen" : "Gesprächsspalte öffnen (zum Tippen)"} aria-label="Gesprächsspalte"><${Icon} n="chat" g=${18} /></button>
-        <${SprechKnopf} />
+        <div class="kopf-titel">
+          <h1>${titel}</h1><span>${unter}</span>
+        </div>
+        <${CockpitLeiste} lage=${lage} />
+        <span class="kopf-trenner"></span>
+        <${ServerKaesten} offen=${server} umschalten=${() => setServer(!server)} gesundheit=${lage && lage.gesundheit} />
+        <span class="kopf-knoepfe">
+          <button class="kopf-icon nur-mobil" onClick=${() => setErfassen(true)} aria-label="Capture" title="Capture"><${Icon} n="plus" g=${19} /></button>
+          <${SprechKnopf} />
+          <${SucheKnopf} />
+          <button class=${"kopf-icon talk-auf" + (talk ? " an" : "")} onClick=${() => setTalk(!talk)} aria-pressed=${talk}
+            title=${talk ? "Gesprächsspalte schließen" : "Gesprächsspalte öffnen (zum Tippen)"} aria-label="Gesprächsspalte"><${Icon} n="chat" g=${18} /></button>
+        </span>
       </header>
+      ${server && html`<${ServerSektion} zu=${() => setServer(false)} gesundheit=${lage && lage.gesundheit} />`}
       <main class=${"inhalt" + (voll ? " voll" : "")}>
         ${r.bereich === "briefing" && html`<${Briefing} lage=${lage} />`}
         ${r.bereich === "inbox" && html`<${Inbox} id=${r.id} />`}

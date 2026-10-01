@@ -24,6 +24,9 @@ Veiko ist kein Entwickler von Beruf. Erklären ohne Jargon, eine Empfehlung stat
 - **Nichts erfinden.** Fehlt ein Wert, sagt die Oberfläche „nicht verfügbar“.
 - **Alle Pfade relativ**, nie einen Hostnamen in `fetch()`.
 - **Kein Bauschritt.** ES-Module, Preact + htm aus `frontend/vendor/`.
+- **Symmetrie (Veikos Vorgabe).** Kacheln nebeneinander sind gleich hoch und gleich breit: Raster mit `grid-auto-rows:1fr` (`.sv-raster`, `.raster-gleich`), kein Mehrspaltensatz. Langer Inhalt scrollt in seiner Kachel, statt die Reihe zu strecken. In der Kopfzeile sitzt alles auf einer Mittellinie (`--kasten`).
+- **Ein Ort je Sache.** Maschine und Server stehen nur in der Server-Sektion (klappt über die Kästchen im Kopf auf), nicht zusätzlich unter System. Wer etwas baut, das es woanders schon gibt, sagt das Veiko vorher.
+- **Ziehen über Pointer Events**, nie über natives HTML5-Drag (im alten Cockpit dreimal gescheitert).
 
 ## Prüfen
 

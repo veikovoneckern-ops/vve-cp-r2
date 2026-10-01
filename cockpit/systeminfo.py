@@ -257,6 +257,10 @@ def starten(art: str) -> bool:
         befehle = [["sudo", "-n", "/usr/bin/apt-get", "update"], ["sudo", "-n", "/usr/bin/apt-get", "-y", "upgrade"]]
     elif art == "neustart":
         befehle = [["sudo", "-n", "/usr/sbin/reboot"]]
+    elif art in ("ollama-neustart", "caddy-neustart"):
+        # Genau diese beiden Neustarts sind fuer vveadmin ohne Passwort
+        # freigegeben -- dieselben Knoepfe wie im Software-Schaubild des alten Cockpits.
+        befehle = [["sudo", "-n", "/usr/bin/systemctl", "restart", art.split("-")[0]]]
     else:
         return False
     asyncio.create_task(_ausfuehren(befehle))

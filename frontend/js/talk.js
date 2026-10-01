@@ -119,6 +119,9 @@ export function Talk({ zu, kontext, setKontext, start }) {
     setLauf(null);
     if (fertig) {
       setMsgs((m) => [...m, { id: fertig.nachricht_id, rolle: "ck", text: fertig.text, vorschlaege: fertig.vorschlaege }]);
+      // "Zeig mir …": aendert nichts, deshalb sofort und ohne Knopf.
+      const z = (fertig.zeigen || [])[0];
+      if (z) navigiere("/projects/" + z.projekt_id + (z.ziel && z.ziel !== "ueberblick" ? "/" + z.ziel : ""));
       return fertig;
     }
     return true;
@@ -194,6 +197,13 @@ export function Talk({ zu, kontext, setKontext, start }) {
     if (grund) { toast(grund, { fehler: true }); return; }
     freiAn.current = true;
     setFrei({ modus: "frei", zustand: "hoert", pegel: 0, text: "" });
+    // Im Projekt (oder an einer Akte) ist der Rahmen sofort gesetzt -- und das
+    // Cockpit sagt ihn an, damit klar ist, worueber gesprochen wird.
+    const k = kontextRef.current;
+    if (k && k.titel) {
+      const was = { projekt: "das Projekt", vorgang: "den Vorgang", ergebnis: "das Ergebnis" }[k.art] || "";
+      await sprechen(`Wir sprechen über ${was} ${k.titel}. Was möchtest du wissen oder tun?`);
+    }
     let leer = 0;
     while (freiAn.current) {
       let t = "";

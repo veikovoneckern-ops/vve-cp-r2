@@ -99,8 +99,19 @@ def abgleichen() -> dict[str, int]:
             "erstellt": _datum_ts(t.get("created")) or time.time(),
             "geaendert": _datum_ts(t.get("updated")) or time.time(),
             "archiviert": 1 if t.get("archived") else 0,
+            "eltern_id": t.get("parentId"), "start": t.get("start") or None,
         })
         zaehler["aufgaben"] += 1
+
+    # Einmalig: Unteraufgaben und Beginn fuer Aufgaben, die vor dem 01.10.2026
+    # (als es die Spalten noch nicht gab) uebernommen wurden. Nur einmal, damit
+    # ein spaeter hier geloester Ast nicht beim naechsten Abgleich zurueckkommt.
+    if not db.einstellung("struktur_nachgezogen"):
+        for t in state.get("todos") or []:
+            if t.get("id") and (t.get("parentId") or t.get("start")):
+                db.ausfuehren("UPDATE aufgaben SET eltern_id=COALESCE(eltern_id, ?), start=COALESCE(start, ?) WHERE id=?",
+                              (t.get("parentId"), t.get("start") or None, t["id"]))
+        db.einstellung_setzen("struktur_nachgezogen", time.time())
 
     bekannte_plaud: set[str] = set()
     for n in state.get("notes") or []:

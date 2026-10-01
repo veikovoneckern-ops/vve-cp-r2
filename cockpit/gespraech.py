@@ -26,6 +26,8 @@ AKTIONEN = {
     "antworten": ("entscheidung_id", "text"),
     "aufgabe_neu": ("titel",),
     "aufgabe_erledigt": ("aufgabe_id",),
+    "aufgabe_aendern": ("aufgabe_id",),
+    "zeigen": ("ziel",),
     "ausarbeiten": ("auftrag",),
     "merken": ("begriff", "bedeutung"),
     "notiz": ("text",),
@@ -53,6 +55,8 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"antworten","entscheidung_id":"e…","text":"Veikos Antwort auf eine Rückfrage"}
 - {"aktion":"aufgabe_neu","titel":"…","projekt_id":"p… oder null","faellig":"JJJJ-MM-TT oder null"}
 - {"aktion":"aufgabe_erledigt","aufgabe_id":"t…"}
+- {"aktion":"aufgabe_aendern","aufgabe_id":"t…","titel":"neuer Titel oder weglassen","faellig":"JJJJ-MM-TT oder weglassen","status":"offen|erledigt oder weglassen"}
+- {"aktion":"zeigen","ziel":"ueberblick|aufgaben|zeitplan|struktur|notizen|ergebnisse|verlauf|dateien","projekt_id":"p…"} -- öffnet die Ansicht sofort, ohne Rückfrage (ändert nichts)
 - {"aktion":"ausarbeiten","rolle":"stratege|buch|designer|video","form":"text|aufstellung|konzept|dokument|webseite|praesentation","auftrag":"…","recherche":"Suchanfrage oder null","vorgang_id":"v… oder null","projekt_id":"p… oder null"}
 - {"aktion":"merken","art":"person|organisation|begriff|hoerfehler","begriff":"…","bedeutung":"…"}
 - {"aktion":"notiz","text":"…","projekt_id":"p… oder null"}
@@ -62,11 +66,13 @@ Schlage nur vor, was Veiko erkennbar will. Ohne Handlungswunsch kein Block.
 WICHTIG: Du selbst führst NICHTS aus. Schreib nie „ich mache das“, „ich korrigiere“, „ich merke mir“ oder „erledigt“. Sag in einem Satz, was du vorschlägst, und schließ mit der Frage „Soll ich das so machen?“. Ausgeführt wird erst, wenn Veiko bestätigt; das Cockpit meldet es dann selbst.
 Wenn Veiko eine offene Entscheidung bestätigt oder ablehnt, gehört genau EINE passende entscheiden-Aktion in den Block, nicht mehr.
 aufgabe_erledigt nur, wenn Veiko sagt, dass er etwas erledigt hat. Überfällig heißt nicht erledigt.
+Schaut Veiko auf ein PROJEKT (siehe KONTEXT), dann geht es um dieses Projekt, solange er nichts anderes sagt: neue Aufgaben, Notizen und Ausarbeitungen gehören dorthin. Will er etwas sehen („zeig mir die Aufgaben“), nimm zeigen.
 Wünscht Veiko ein Dokument, eine Präsentation, eine Recherche oder einen Entwurf: ausarbeiten (form dokument für Word, praesentation für Folien). Geht es um das Cockpit, den Server oder Software: neo.
 
 Arbeitsweisen auf Zuruf: "Brainstorming" = viele unterschiedliche Ideen, nummeriert, dann die drei stärksten mit Begründung. "ExO-Bewertung" = anhand des veröffentlichten ExO-Rahmens (MTP, SCALE, IDEAS) einschätzen, ehrlich mit Lücken."""
 
 STIMME_ZUSATZ = ("- Die Antwort wird VORGELESEN: höchstens vier kurze Sätze, keine Tabellen, keine Aufzählungszeichen, keine Markdown-Zeichen.\n"
+                 "- Daten im Text so, wie man sie sagt („Freitag, 9. Oktober“), nie als 2026-10-09. Im aktionen-Block bleibt JJJJ-MM-TT.\n"
                  "- Veiko antwortet gesprochen. Ein „ja“, „mach das“, „das kannst du so tun“ auf deinen Vorschlag führt das Cockpit selbst aus; "
                  "wiederhole dann nicht denselben Vorschlag.")
 
@@ -171,6 +177,11 @@ def vorschlaege_aus(text: str) -> tuple[str, list[dict[str, Any]]]:
     return sichtbar, gut
 
 
+DATUM = re.compile(r"\d{4}-\d{2}-\d{2}")
+ZIELE = {"ueberblick": "Überblick", "aufgaben": "Aufgaben", "zeitplan": "Zeitplan", "struktur": "Struktur", "notizen": "Notizen", "ergebnisse": "Ergebnisse",
+         "verlauf": "Verlauf", "dateien": "Dateien"}
+
+
 def beschriften(a: dict[str, Any]) -> str | None:
     art = a["aktion"]
     if art in ("entscheiden", "antworten"):
@@ -186,6 +197,20 @@ def beschriften(a: dict[str, Any]) -> str | None:
     if art == "aufgabe_erledigt":
         t = db.holen("aufgaben", a["aufgabe_id"])
         return f"Als erledigt markieren: {t['titel'][:90]}" if t else None
+    if art == "aufgabe_aendern":
+        t = db.holen("aufgaben", a["aufgabe_id"])
+        if not t:
+            return None
+        was = []
+        if a.get("titel") and a["titel"] != t["titel"]:
+            was.append(f"Titel „{str(a['titel'])[:60]}“")
+        if a.get("faellig") and DATUM.fullmatch(str(a["faellig"])):
+            was.append("Termin " + time.strftime("%d.%m.%Y", time.strptime(a["faellig"], "%Y-%m-%d")))
+        if a.get("status") in ("offen", "erledigt") and a["status"] != t["status"]:
+            was.append("Status " + a["status"])
+        return f"Aufgabe „{t['titel'][:60]}“ ändern: " + ", ".join(was) if was else None
+    if art == "zeigen":
+        return ZIELE.get(a.get("ziel")) and f"Zeigen: {ZIELE[a['ziel']]}"
     if art == "ausarbeiten":
         return f"{stab.rollen_name(a.get('rolle') or 'stratege')} ausarbeiten lassen: {a['auftrag'][:90]}"
     if art == "merken":
@@ -213,6 +238,20 @@ async def ausfuehren(a: dict[str, Any]) -> dict[str, Any]:
         return {"ok": True}
     if art == "aufgabe_erledigt":
         db.aendern("aufgaben", a["aufgabe_id"], {"status": "erledigt", "geaendert": time.time()})
+        return {"ok": True}
+    if art == "aufgabe_aendern":
+        # Nur diese drei Felder; alles andere im Vorschlag wird nicht angefasst.
+        werte: dict[str, Any] = {}
+        if a.get("titel"):
+            werte["titel"] = str(a["titel"])[:200]
+        if a.get("faellig") and DATUM.fullmatch(str(a["faellig"])):
+            werte["faellig"] = a["faellig"]
+        if a.get("status") in ("offen", "erledigt"):
+            werte["status"] = a["status"]
+        if not werte or not db.holen("aufgaben", a["aufgabe_id"]):
+            return {"ok": False, "grund": "Nichts zu ändern oder Aufgabe nicht gefunden"}
+        werte["geaendert"] = time.time()
+        db.aendern("aufgaben", a["aufgabe_id"], werte)
         return {"ok": True}
     if art == "ausarbeiten":
         vid = a.get("vorgang_id") if db.holen("vorgaenge", a.get("vorgang_id") or "") else None
@@ -299,12 +338,22 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
             gesehen.add(schluessel)
             eindeutig.append(v)
     vorschlaege = eindeutig
+    # Im Projekt gehoert Neues in dieses Projekt, auch wenn das Modell die Kennung vergisst.
+    if kontext and kontext.get("art") == "projekt" and db.holen("projekte", kontext.get("id") or ""):
+        for v in vorschlaege:
+            if v["aktion"] in ("aufgabe_neu", "notiz", "ausarbeiten", "zeigen") and not v.get("projekt_id"):
+                v["projekt_id"] = kontext["id"]
+                v["label"] = beschriften(v) or v["label"]
+    # "Zeigen" aendert nichts -- das Cockpit fuehrt es sofort aus, ohne Knopf.
+    zeigen = [v for v in vorschlaege if v["aktion"] == "zeigen" and v.get("projekt_id")]
+    vorschlaege = [v for v in vorschlaege if v["aktion"] != "zeigen"]
     if llm.fremdschrift(sichtbar):
         sichtbar = llm.FREMDSCHRIFT.sub("", sichtbar)
     mid = db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",
                         (gid, "assistent", sichtbar, json.dumps({"vorschlaege": vorschlaege, "modell": modell}, ensure_ascii=False), time.time()))
     db.ausfuehren("UPDATE gespraeche SET geaendert=? WHERE id=?", (time.time(), gid))
-    yield {"typ": "fertig", "text": sichtbar, "vorschlaege": vorschlaege, "nachricht_id": mid, "modell": modell}
+    yield {"typ": "fertig", "text": sichtbar, "vorschlaege": vorschlaege, "nachricht_id": mid, "modell": modell,
+           "zeigen": [{"ziel": v["ziel"], "projekt_id": v["projekt_id"]} for v in zeigen[:1]]}
 
 
 async def vorschlaege_ausfuehren(nachricht_id: int, indizes: list[int]) -> list[dict[str, Any]]:

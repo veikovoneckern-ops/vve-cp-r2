@@ -98,6 +98,20 @@ CREATE TABLE IF NOT EXISTS einstellungen (schluessel TEXT PRIMARY KEY, wert TEXT
 with _lock:
     _con.executescript(SCHEMA)
 
+# Spalten, die nach dem ersten Start dazukamen. CREATE TABLE IF NOT EXISTS
+# fasst eine bestehende Tabelle nicht an -- deshalb hier einzeln nachruesten.
+NACHRUESTEN = [
+    # Struktur und Zeitplan der Projektansicht (01.10.2026): Unteraufgaben,
+    # Reihenfolge per Ziehen, Beginn fuer den Balken im Zeitplan.
+    ("aufgaben", "eltern_id", "TEXT"),
+    ("aufgaben", "sortierung", "INTEGER DEFAULT 0"),
+    ("aufgaben", "start", "TEXT"),
+]
+with _lock:
+    for _tab, _spalte, _typ in NACHRUESTEN:
+        if _spalte not in {r[1] for r in _con.execute(f"PRAGMA table_info({_tab})")}:
+            _con.execute(f"ALTER TABLE {_tab} ADD COLUMN {_spalte} {_typ}")
+
 
 def jetzt() -> float:
     return time.time()
