@@ -229,7 +229,7 @@ async def vorgang_aktion(vid: str, request: Request):
             db.aendern("aufgaben", t["id"], {"archiviert": 1, "geaendert": time.time()}, wer="du", vorgang_id=vid, aktion="archiviert")
             weg += 1
         db.ereignis(vid, "du", "entscheidung", "Verworfen." + (f" {d['kommentar']}" if d.get("kommentar") else "") +
-                    (f" {weg} Aufgaben des Stabs archiviert." if weg else ""))
+                    (f" {weg} Aufgaben des Teams archiviert." if weg else ""))
     elif a == "wieder_oeffnen":
         if v["stand"] == "verworfen":
             for t in db.alle("SELECT id FROM aufgaben WHERE vorgang_id=? AND quelle='stab' AND archiviert=1", (vid,)):
@@ -309,7 +309,7 @@ async def rueckgaengig(pid: int):
         raise HTTPException(409, r.get("grund"))
     p = db.eine("SELECT vorgang_id FROM protokoll WHERE id=?", (pid,))
     if p and p.get("vorgang_id"):
-        db.ereignis(p["vorgang_id"], "du", "info", "Eine Änderung des Stabs zurückgenommen.")
+        db.ereignis(p["vorgang_id"], "du", "info", "Eine Änderung des Teams zurückgenommen.")
     return r
 
 
@@ -719,6 +719,51 @@ async def talk_senden(request: Request):
             yield json.dumps(e, ensure_ascii=False) + "\n"
     return StreamingResponse(strom(), media_type="application/x-ndjson",
                              headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+
+# ================================================================ Advisory Board
+@router.get("/board")
+async def board_uebersicht():
+    from . import board
+    return board.uebersicht()
+
+
+@router.post("/board/tisch")
+async def board_tisch(request: Request):
+    from . import board
+    d = await _koerper(request)
+    ids = [i for i in (d.get("ids") or []) if i in board.NACH_ID]
+    db.einstellung_setzen("board_tisch", ids)
+    return {"tisch": ids}
+
+
+@router.get("/board/gespraech/{gid}")
+async def board_gespraech(gid: str):
+    g = db.holen("gespraeche", gid)
+    if not g or g["art"] != "board":
+        raise HTTPException(404, "Gespräch nicht gefunden")
+    return {"gespraech": g, "nachrichten": db.alle("SELECT * FROM nachrichten WHERE gespraech_id=? ORDER BY id", (gid,))}
+
+
+@router.delete("/board/gespraech/{gid}")
+async def board_gespraech_weg(gid: str):
+    # Nicht loeschen, nur aus der Liste nehmen -- wie ueberall in dieser Fassung.
+    db.ausfuehren("UPDATE gespraeche SET art='board-archiv' WHERE id=? AND art='board'", (gid,))
+    return {"ok": True}
+
+
+@router.post("/board/senden")
+async def board_senden(request: Request):
+    from . import board
+    d = await _koerper(request)
+    text = str(d.get("text") or "").strip()
+    if not text:
+        raise HTTPException(400, "Es fehlt die Frage.")
+
+    async def strom():
+        async for e in board.senden(d.get("gespraech_id"), text, d.get("mit") or None, d.get("projekt_id") or None):
+            yield json.dumps(e, ensure_ascii=False) + "\n"
+    return StreamingResponse(strom(), media_type="application/x-ndjson")
 
 
 @router.get("/talk/gespraeche")

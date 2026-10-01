@@ -128,7 +128,7 @@ def rolle(rid: str) -> dict[str, Any]:
 
 def rollen_name(rid: str | None) -> str:
     if not rid:
-        return "Stab"
+        return "Team"
     if rid in ("du", "veiko"):
         return "Du"
     if rid == "system":
@@ -592,7 +592,7 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
     # Nur der Kern des Rollenauftrags: der volle Text (Clayton: "Zielbild,
     # Geschaeftsmodell, Wege") faerbte jede Arbeit -- eine Anbieterliste kam mit
     # vorangestelltem "Business-Check". Die Aufgabe bestimmt die Form, nicht die Rolle.
-    system = (f"Du bist {r.get('name')}, {r.get('titel')} in Veiko von Eckerns Stab. {r.get('kurz') or ''}\n\n"
+    system = (f"Du bist {r.get('name')}, {r.get('titel')} in Veiko von Eckerns KI-Team. {r.get('kurz') or ''}\n\n"
               "JETZT: deine konkrete Arbeitsaufgabe. Keine Vorrede, keine Lagebesprechung, keine Einordnung "
               "als Geschäftsmodell, keine Meta-Kommentare. Liefere direkt das fertige Ergebnis in der verlangten Form.\n"
               f"FORM: {FORM_ANWEISUNG[form]}\n"

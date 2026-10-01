@@ -1,5 +1,13 @@
 # Stand der neuen Fassung
 
+## 01.10.2026, nachts (2) — Advisory Board, moderne Bezeichnungen
+
+**Advisory Board** als eigener Bereich (`board.py`, `board.js`): links der Tisch (19 Advisors in 5 Gruppen, Filter, an den Tisch holen per Klick, Profil mit Prinzipien, typischen Fragen, Stärken, blinden Flecken und dem nächtlich aufgefrischten öffentlichen Stand samt Quellen), rechts das Gespräch. Antworten werden je Advisor in eigene Sprechblasen geteilt; Einzelgespräch mit einer Person; optionaler Projektbezug; Schnellstarts; Gespräche bleiben gespeichert. Profile einmalig aus BOARD_DATA des alten Cockpits (`cockpit/board_profile.json`), Tischbesetzung beim ersten Mal aus dessen Zustand; `board-stand.json` wird nur gelesen. Geprüft mit echtem Modell: Runde (4 von 10 sprachen, 26 s), Einzelgespräch, Profil, 375 px.
+
+**Bezeichnungen** (sichtbare Texte und Talk-Auftrag): Stab → Team, Akte → Case, Gedächtnis → Memory, Beirat/Vordenker → Advisory Board/Advisors, Vertrauensstufen → Freigaben, Rückfrage → Frage. Bezeichner im Code und Datenbankfelder bleiben (`stab_aktiv`, `quelle='stab'` usw.), damit gespeicherte Daten passen.
+
+Doppelter Weg entfernt: Reiter „Beirat“ unter Team (das Board hat jetzt einen eigenen Bereich).
+
 ## 01.10.2026, nachts — Struktur wie im alten Cockpit, Neo mit Bildern, Diktat zum Mitlesen, Knöpfe
 
 | Gemeldet / gewünscht | Ursache / Umsetzung |

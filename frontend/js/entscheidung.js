@@ -7,7 +7,7 @@ import { Composer } from "./composer.js";
 
 const HAUPT = { projekt_neu: "Anlegen", gedaechtnis: "Merken", ausarbeitung: "Ja, ausarbeiten", zuordnung: "Zuordnen", aufgabe: "Anlegen" };
 const AENDERN = { projekt_neu: "Anderer Name", gedaechtnis: "Anders merken", ausarbeitung: "Ergänzen" };
-const ART_TEXT = { projekt_neu: "Neues Projekt", gedaechtnis: "Gedächtnis", rueckfrage: "Rückfrage", ausarbeitung: "Ausarbeitung", zuordnung: "Zuordnung", aufgabe: "Aufgabe" };
+const ART_TEXT = { projekt_neu: "Neues Projekt", gedaechtnis: "Memory", rueckfrage: "Frage", ausarbeitung: "Ausarbeitung", zuordnung: "Zuordnung", aufgabe: "Aufgabe" };
 
 export function Entscheidung({ e, mitVorgang = true, nachher }) {
   const [modus, setModus] = useState(e.art === "rueckfrage" ? "antwort" : null);
@@ -20,7 +20,7 @@ export function Entscheidung({ e, mitVorgang = true, nachher }) {
     try {
       await api("/entscheidungen/" + e.id, { methode: "POST", daten: { antwort, text: t } });
       if (antwort === "spaeter") toast("Zurückgestellt.");
-      else if (e.art === "rueckfrage") toast("Antwort ist beim Stab.");
+      else if (e.art === "rueckfrage") toast("Antwort ist beim Team.");
       else toast(antwort === "ja" ? "Erledigt." : "Abgelehnt.");
       setWeg(true);
       aktualisieren();
@@ -33,7 +33,7 @@ export function Entscheidung({ e, mitVorgang = true, nachher }) {
   return html`<div class=${"entscheidung " + e.art}>
     <div class="wer">
       <${Avatar} wer=${e.wer} name=${e.wer_name} g=${20} />
-      <span><b>${e.wer_name || "Stab"}</b> · ${ART_TEXT[e.art] || e.art}</span>
+      <span><b>${e.wer_name || "Team"}</b> · ${ART_TEXT[e.art] || e.art}</span>
       ${mitVorgang && e.vorgang_id && html`<a href=${"#/inbox/" + e.vorgang_id} style="color:inherit">aus „${(e.vorgang_titel || "Vorgang").slice(0, 60)}“</a>`}
       <span class="leise" style="margin-left:auto">${zeitText(e.erstellt)}</span>
     </div>
@@ -42,7 +42,7 @@ export function Entscheidung({ e, mitVorgang = true, nachher }) {
       <${Composer} platzhalter="Deine Antwort … (tippen oder diktieren)" erlaubeAnhang=${false} hinweis="" sendenText="Antworten"
         beimSenden=${(t) => antworten("ja", t)} entwurfKey=${"antwort:" + e.id} />
       <div class="knopfreihe" style="margin-top:6px">
-        <button class="btn klein" onClick=${() => bus.sende("talk-oeffnen", { kontext: e.vorgang_id ? { art: "vorgang", id: e.vorgang_id, titel: e.vorgang_titel } : null, text: "Lass uns über diese Rückfrage reden: " + e.frage })}><${Icon} n="talk" g=${14} />Im Gespräch klären</button>
+        <button class="btn klein" onClick=${() => bus.sende("talk-oeffnen", { kontext: e.vorgang_id ? { art: "vorgang", id: e.vorgang_id, titel: e.vorgang_titel } : null, text: "Lass uns über diese Frage reden: " + e.frage })}><${Icon} n="talk" g=${14} />Im Gespräch klären</button>
         <button class="btn klein geist" disabled=${laeuft} onClick=${() => antworten("nein")}>Nicht beantworten</button>
         <button class="btn klein geist" disabled=${laeuft} onClick=${() => antworten("spaeter")} style="margin-left:auto">Später</button>
       </div>`

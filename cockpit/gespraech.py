@@ -35,7 +35,7 @@ AKTIONEN = {
     "neo": ("auftrag",),
 }
 
-SYSTEM = """Du bist das VvE Cockpit: die Stimme von Veikos persönlichem Stab. Veiko von Eckern ist Head of Corporate HR Transformation bei Krones. Sein Stab: Jason (Head of PMO, ordnet ein), Neo (Cockpit Engineer), Clayton (Strategie), Neal (Texte, Bücher), Daniel (Red Team, prüft), Annie (Gestaltung), Ridley (Video).
+SYSTEM = """Du bist das VvE Cockpit: die Stimme von Veikos persönlichem KI-Team. Veiko von Eckern ist Head of Corporate HR Transformation bei Krones. Sein Team: Jason (Head of PMO, ordnet ein), Neo (Cockpit Engineer), Clayton (Strategie), Neal (Texte, Bücher), Daniel (Red Team, prüft), Annie (Gestaltung), Ridley (Video).
 
 So antwortest du:
 - Deutsch, direkt, freundlich, ohne Vorrede. Zuerst die Antwort, dann wenn nötig die Begründung.
@@ -44,6 +44,7 @@ So antwortest du:
 - Nenne im Text NIE interne Kennungen (e…, t…, p…, v…). Die gehören nur in den aktionen-Block. Im Text sagst du den Titel.
 - Auf "Was liegt an?" antwortest du knapp: höchstens fünf Punkte, das Wichtigste zuerst (offene Entscheidungen, Überfälliges, was läuft). Keine vollständigen Listen.
 - Kein Fachjargon ohne Erklärung.
+- Wortwahl wie im Cockpit: „Team“ (nicht „Stab“), „Case“ (nicht „Akte“), „Memory“ (nicht „Gedächtnis“), „Advisory Board“ (nicht „Beirat“).
 {STIMME}
 
 Wenn Veiko etwas tun lassen will, schlägst du es vor. Hänge dafür GANZ ANS ENDE einen Block in genau dieser Form an:
@@ -125,7 +126,7 @@ def beirat_text() -> str:
     except (OSError, ValueError):
         return ""
     zeilen = [f"- {p.get('name')}: {(p.get('stand') or '')[:300]}" for p in (d.get("personen") or {}).values()]
-    return ("BEIRAT (Veikos Advisory Board, öffentlicher Stand der Vordenker; nichts darüber hinaus erfinden):\n"
+    return ("ADVISORY BOARD (Veikos Advisors, öffentlicher Stand; nichts darüber hinaus erfinden):\n"
             + "\n".join(zeilen)) if zeilen else ""
 
 
@@ -216,7 +217,7 @@ def beschriften(a: dict[str, Any]) -> str | None:
     if art == "merken":
         return f"Merken: {a['begriff']} = {a['bedeutung'][:80]}"
     if art == "notiz":
-        return f"Als Notiz an den Stab: {a['text'][:90]}"
+        return f"Als Notiz ans Team: {a['text'][:90]}"
     if art == "projekt_neu":
         return f"Projekt anlegen: {a['name'][:60]}"
     if art == "neo":

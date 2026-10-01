@@ -96,7 +96,7 @@ function AufgabeZeile({ t, nachher, mitProjekt }) {
         : html`<span style=${erledigt ? "text-decoration:line-through;color:var(--ink-3)" : ""} onDblClick=${() => setBearb(true)}>${t.titel}</span>`}
       <div class="leise klein">
         ${mitProjekt && (t.projekt_name ? html`<a href=${"#/projects/" + t.projekt_id} style="color:inherit">${t.projekt_name}</a>` : "ohne Projekt")}
-        ${t.quelle === "stab" ? html`${mitProjekt ? " · " : ""}vom Stab${t.vorgang_id ? html` (<a href=${"#/inbox/" + t.vorgang_id} style="color:inherit">Akte</a>)` : ""}` : ""}
+        ${t.quelle === "stab" ? html`${mitProjekt ? " · " : ""}vom Team${t.vorgang_id ? html` (<a href=${"#/inbox/" + t.vorgang_id} style="color:inherit">Case</a>)` : ""}` : ""}
       </div>
     </div>
     <input type="date" class="eingabe" style="width:auto;min-height:30px;padding:2px 6px;font-size:12px" value=${t.faellig || ""} aria-label="Fällig am"
@@ -216,11 +216,11 @@ function Projekt({ id, reiter }) {
       </section>
       <div>
         <section class="karte"><div class="karte-kopf"><h3>Ziel</h3></div>
-          <textarea class="eingabe" rows="2" placeholder="Ein Satz: Was soll mit diesem Projekt erreicht werden? Hilft dem Stab beim Einordnen." value=${p.ziel || ""}
+          <textarea class="eingabe" rows="2" placeholder="Ein Satz: Was soll mit diesem Projekt erreicht werden? Hilft dem Team beim Einordnen." value=${p.ziel || ""}
             onBlur=${(e) => { if (e.target.value !== (p.ziel || "")) aendern({ ziel: e.target.value }, "Ziel gespeichert."); }}></textarea></section>
         <section class="karte"><div class="karte-kopf"><h3>Neueste Ergebnisse</h3></div>
           ${d.ergebnisse.length ? d.ergebnisse.slice(0, 4).map((r) => html`<${ErgebnisZeile} key=${r.id} r=${r} />`) : html`<${Leer}>Noch keine. „Ausarbeiten lassen“ gibt einer Rolle einen Auftrag.</${Leer}>`}</section>
-        <section class="karte"><div class="karte-kopf"><h3>Jüngste Akten</h3></div>
+        <section class="karte"><div class="karte-kopf"><h3>Jüngste Cases</h3></div>
           ${d.vorgaenge.length ? d.vorgaenge.slice(0, 5).map((v) => html`<div class="zeile" key=${v.id}><div class="haupt-text"><a href=${"#/inbox/" + v.id} style="color:inherit">${v.titel}</a></div><${StandPill} stand=${v.stand} /></div>`)
             : html`<${Leer}>Noch keine.</${Leer}>`}</section>
       </div>
@@ -239,7 +239,7 @@ function Projekt({ id, reiter }) {
       : html`<${Leer} titel="Noch keine Ergebnisse.">Mit „Ausarbeiten lassen“ bekommt eine Rolle einen Auftrag. Das Ergebnis landet hier, geprüft von Daniel.</${Leer}>`}</section>`}
     ${tab === "verlauf" && html`<section class="karte">${d.vorgaenge.length ? d.vorgaenge.map((v) => html`<div class="zeile" key=${v.id}>
         <div class="haupt-text"><a href=${"#/inbox/" + v.id} style="color:inherit"><b>${v.titel}</b></a><div class="leise klein">${v.einordnung || ""}</div></div>
-        <${StandPill} stand=${v.stand} /><span class="neben">${zeitText(v.geaendert)}</span></div>`) : html`<${Leer} titel="Noch keine Akten zu diesem Projekt." />`}</section>`}
+        <${StandPill} stand=${v.stand} /><span class="neben">${zeitText(v.geaendert)}</span></div>`) : html`<${Leer} titel="Noch keine Cases zu diesem Projekt." />`}</section>`}
     ${tab === "dateien" && html`<section class="karte"
         onDragOver=${(e) => e.preventDefault()} onDrop=${(e) => { e.preventDefault(); hoch([...e.dataTransfer.files]); }}>
       <div class="karte-kopf"><h3>Dateien</h3><button class="btn klein rechts" onClick=${() => datei.current.click()}><${Icon} n="plus" g=${14} />Hochladen</button>
@@ -274,7 +274,7 @@ export function ErgebnisAnsicht({ id, zu }) {
       ${e.form === "praesentation" && html`<a class="btn" href=${"/api/ergebnisse/" + e.id + "/datei?format=pptx"} download><${Icon} n="download" g=${15} />PowerPoint</a>`}
       <button class="btn" onClick=${async () => { if (await kopieren(e.inhalt)) toast("Kopiert."); }}><${Icon} n="kopie" g=${15} />Kopieren</button>
       <button class="btn" onClick=${() => { zu(); bus.sende("talk-oeffnen", { kontext: { art: "ergebnis", id: e.id, titel: e.titel } }); }}><${Icon} n="talk" g=${15} />Besprechen</button>
-      ${e.vorgang_id && html`<a class="btn" href=${"#/inbox/" + e.vorgang_id} onClick=${zu}>Zur Akte</a>`}
+      ${e.vorgang_id && html`<a class="btn" href=${"#/inbox/" + e.vorgang_id} onClick=${zu}>Zum Case</a>`}
       <button class="btn primaer" onClick=${zu}>Schließen</button>`}>
     <div class="knopfreihe" style="margin-bottom:10px">
       <${Avatar} wer=${e.rolle} name=${e.wer_name} g=${24} /><b>${e.wer_name}</b><span class="leise klein">${e.form} · ${e.modell} · ${zeitText(e.erstellt)}</span>
@@ -305,8 +305,8 @@ export function NotizAnsicht({ id, zu }) {
     try { const r = await api(`/notizen/${id}/an-stab`, { methode: "POST" }); toast("Jason ordnet die Notiz ein."); zu(); navigiere("/inbox/" + r.vorgang_id); } catch (e) { fehlerMelden(e); }
   }
   return html`<${Modal} titel=${n.titel || "Notiz"} zu=${zu} fuss=${html`
-      ${n.vorgaenge && n.vorgaenge.length ? html`<a class="btn" href=${"#/inbox/" + n.vorgaenge[0].id} onClick=${zu}>Zur Akte</a>`
-        : html`<button class="btn" onClick=${anStab}><${Icon} n="team" g=${15} />Vom Stab bearbeiten lassen</button>`}
+      ${n.vorgaenge && n.vorgaenge.length ? html`<a class="btn" href=${"#/inbox/" + n.vorgaenge[0].id} onClick=${zu}>Zum Case</a>`
+        : html`<button class="btn" onClick=${anStab}><${Icon} n="team" g=${15} />Vom Team bearbeiten lassen</button>`}
       <button class="btn primaer" onClick=${zu}>Schließen</button>`}>
     <div class="knopfreihe" style="margin-bottom:10px">
       <span class="leise klein">${n.quelle === "plaud" ? "Plaud" : "Notiz"} · ${n.datum || zeitText(n.erstellt)}</span>

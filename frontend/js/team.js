@@ -1,10 +1,10 @@
-// TEAM -- der Stab: wer ist da, womit rechnet er, was hat er zuletzt getan.
-// Dazu das Gedaechtnis (was der Stab ueber Veiko weiss) und die
-// Vertrauensstufen (was der Stab ohne Rueckfrage tun darf).
+// TEAM -- Veikos KI-Team: wer ist da, womit rechnet er, was hat er zuletzt getan.
+// Dazu Memory (was das Team ueber Veiko weiss) und Freigaben (was das Team
+// ohne Nachfrage tun darf). Das Advisory Board hat einen eigenen Bereich (board.js).
 import { html, useState, useEffect, Icon, Avatar, Leer, Modal, toast, fehlerMelden, aktualisieren, zeitText, useAbruf, navigiere, bus } from "./ui.js";
 import { api } from "./api.js";
 
-const TABS = [["mitglieder", "Mitglieder"], ["gedaechtnis", "Gedächtnis"], ["vertrauen", "Was der Stab darf"], ["beirat", "Beirat"]];
+const TABS = [["mitglieder", "Mitglieder"], ["gedaechtnis", "Memory"], ["vertrauen", "Freigaben"]];
 
 export function Team({ id }) {
   const [tab, setTab] = useState(id && TABS.some((t) => t[0] === id) ? id : "mitglieder");
@@ -14,7 +14,6 @@ export function Team({ id }) {
     ${tab === "mitglieder" && html`<${Mitglieder} />`}
     ${tab === "gedaechtnis" && html`<${Gedaechtnis} />`}
     ${tab === "vertrauen" && html`<${Vertrauen} />`}
-    ${tab === "beirat" && html`<${Beirat} />`}
   </div>`;
 }
 
@@ -42,7 +41,7 @@ function Mitglieder() {
             ${d.modelle.filter((x) => !x.includes("embed")).map((x) => html`<option value=${x}>${x}</option>`)}
           </select></div>
         <div class="knopfreihe">
-          <span class="leise klein">${m.heute ? `heute an ${m.heute} Akten` : "heute noch nichts"}${m.ergebnisse ? ` · ${m.ergebnisse} Ergebnisse` : ""}</span>
+          <span class="leise klein">${m.heute ? `heute an ${m.heute} Cases` : "heute noch nichts"}${m.ergebnisse ? ` · ${m.ergebnisse} Ergebnisse` : ""}</span>
           <span style="flex:1"></span>
           ${m.id === "cockpit" ? html`<a class="btn klein primaer" href="#/neo">Mit Neo arbeiten</a>`
             : html`<button class="btn klein" onClick=${() => setOffen(m.id)}>Details</button>`}
@@ -66,7 +65,7 @@ function MitgliedDetail({ id, zu, nachher }) {
       <div class="feld"><label for="md-auftrag">Auftrag (so arbeitet ${m.name})</label>
         <textarea id="md-auftrag" class="eingabe" rows="16" value=${auftrag} onInput=${(e) => setAuftrag(e.target.value)} style="font-size:13px"></textarea></div>
       <div><h4 style="margin-bottom:8px">Zuletzt</h4>
-        ${m.zuletzt.length ? m.zuletzt.map((z) => html`<div class="zeile"><div class="haupt-text"><a href=${"#/inbox/" + z.vorgang_id} onClick=${zu}>${z.titel || "Akte"}</a>
+        ${m.zuletzt.length ? m.zuletzt.map((z) => html`<div class="zeile"><div class="haupt-text"><a href=${"#/inbox/" + z.vorgang_id} onClick=${zu}>${z.titel || "Case"}</a>
           <div class="leise klein">${z.text.slice(0, 120)}</div></div><span class="neben">${zeitText(z.zeit)}</span></div>`) : html`<${Leer}>Noch nichts in der neuen Fassung.</${Leer}>`}
       </div>
     </div>
@@ -90,8 +89,8 @@ function Gedaechtnis() {
   }
   return html`<div class="raster zwei">
     <section class="karte">
-      <div class="karte-kopf"><h3>Was der Stab über dich weiß</h3><span class="pill">${d ? d.eintraege.length : "…"}</span></div>
-      ${!d ? html`<div class="lade">Lade …</div>` : !d.eintraege.length ? html`<${Leer} titel="Noch leer.">Der Stab schlägt Einträge vor, wenn er auf unbekannte Namen stößt. Du kannst auch selbst etwas eintragen.</${Leer}>`
+      <div class="karte-kopf"><h3>Was dein Team über dich weiß</h3><span class="pill">${d ? d.eintraege.length : "…"}</span></div>
+      ${!d ? html`<div class="lade">Lade …</div>` : !d.eintraege.length ? html`<${Leer} titel="Noch leer.">Dein Team schlägt Einträge vor, wenn er auf unbekannte Namen stößt. Du kannst auch selbst etwas eintragen.</${Leer}>`
         : d.eintraege.map((g) => bearb && bearb.id === g.id ? html`<div class="zeile" key=${g.id} style="flex-wrap:wrap">
             <input class="eingabe" style="flex:1;min-width:120px" value=${bearb.begriff} onInput=${(e) => setBearb({ ...bearb, begriff: e.target.value })} />
             <input class="eingabe" style="flex:2;min-width:160px" value=${bearb.bedeutung} onInput=${(e) => setBearb({ ...bearb, bedeutung: e.target.value })}
@@ -113,7 +112,7 @@ function Gedaechtnis() {
         <input id="gd-bed" class="eingabe" value=${neu.bedeutung} placeholder=${neu.art === "hoerfehler" ? "z. B. Krones" : "z. B. Brunhilde von Eckern, meine Mutter"} onInput=${(e) => setNeu({ ...neu, bedeutung: e.target.value })}
           onKeyDown=${(e) => { if (e.key === "Enter" && neu.begriff && neu.bedeutung) anlegen(); }} /></div>
       <button class="btn primaer" style="margin-top:10px" disabled=${!neu.begriff.trim() || !neu.bedeutung.trim()} onClick=${anlegen}>Merken</button>
-      <p class="leise klein" style="margin-top:12px">Jede Rolle bekommt diese Liste bei jeder Arbeit mit. Hörfehler werden korrigiert, bevor der Stab eine Notiz liest, und die Namen helfen Whisper schon beim Zuhören.</p>
+      <p class="leise klein" style="margin-top:12px">Jede Rolle bekommt diese Liste bei jeder Arbeit mit. Hörfehler werden korrigiert, bevor das Team eine Notiz liest, und die Namen helfen Whisper schon beim Zuhören.</p>
     </section>
   </div>`;
 }
@@ -123,7 +122,7 @@ const STUFEN = [
   ["aufgaben", "Aufgaben für dich aus einer Notiz anlegen", "Das, was bisher am verlässlichsten klappte"],
   ["ausarbeiten", "Ausarbeiten, wenn die Notiz es ausdrücklich verlangt", "Kostet nur Rechenzeit auf deinem Server"],
   ["projekt_neu", "Neue Projekte anlegen", "Ändert deinen Portfolio-Bestand"],
-  ["gedaechtnis", "Etwas ins Gedächtnis schreiben", "Ein falscher Eintrag verfälscht jede spätere Antwort"],
+  ["gedaechtnis", "Etwas ins Memory schreiben", "Ein falscher Eintrag verfälscht jede spätere Antwort"],
 ];
 
 function Vertrauen() {
@@ -134,17 +133,17 @@ function Vertrauen() {
   }
   return html`<div class="raster zwei">
     <section class="karte">
-      <div class="karte-kopf"><h3>Was der Stab ohne Rückfrage tun darf</h3></div>
+      <div class="karte-kopf"><h3>Was dein Team ohne Nachfrage tun darf</h3></div>
       ${STUFEN.map(([k, t, w]) => html`<div class="zeile" key=${k}>
         <div class="haupt-text"><b>${t}</b><div class="leise klein">${w}</div></div>
         <div class="segment"><button class=${d.vertrauen[k] === "selbst" ? "an" : ""} onClick=${() => setzen({ vertrauen: { [k]: "selbst" } })}>selbst, mit Rückgängig</button>
           <button class=${d.vertrauen[k] === "fragen" ? "an" : ""} onClick=${() => setzen({ vertrauen: { [k]: "fragen" } })}>erst fragen</button></div>
       </div>`)}
       <div class="zeile"><div class="haupt-text"><b>Cloud-Modelle, Mails verschicken</b><div class="leise klein">Kostet Geld oder geht nach außen</div></div><span class="pill gelb">immer fragen</span></div>
-      <div class="zeile"><div class="haupt-text"><b>Löschen, Code einspielen, Server ändern</b><div class="leise klein">Nur du, im Bereich System oder über Neo</div></div><span class="pill rot">nie vom Stab</span></div>
+      <div class="zeile"><div class="haupt-text"><b>Löschen, Code einspielen, Server ändern</b><div class="leise klein">Nur du, im Bereich System oder über Neo</div></div><span class="pill rot">nie vom Team</span></div>
     </section>
     <section class="karte">
-      <div class="karte-kopf"><h3>Stab in dieser Fassung</h3></div>
+      <div class="karte-kopf"><h3>Team in dieser Fassung</h3></div>
       <div class="zeile"><div class="haupt-text"><b>Neue Plaud-Notizen bearbeiten</b>
         <div class="leise klein">${d.stab_aktiv ? `an, für Notizen seit ${new Date(d.stab_ab * 1000).toLocaleString("de-DE")}` : "aus. Notizen kommen trotzdem herein, nur ohne Einordnung."}</div></div>
         <div class="segment"><button class=${d.stab_aktiv ? "an" : ""} onClick=${() => setzen({ stab_aktiv: true })}>an</button>
@@ -152,12 +151,4 @@ function Vertrauen() {
       <div class="hinweisbox" style="margin-top:12px">Das alte Cockpit läuft parallel weiter und bearbeitet dieselben Notizen mit seiner eigenen Pipeline. Beide schreiben in getrennte Ablagen, nichts wird überschrieben. Wenn du ganz umsteigst, schaltest du im alten Cockpit unter Setup Settings die automatische Verarbeitung aus.</div>
     </section>
   </div>`;
-}
-
-function Beirat() {
-  return html`<section class="karte">
-    <div class="karte-kopf"><h3>Advisory Board</h3></div>
-    <p>Dein Beirat (die Vordenker mit nächtlich aufgefrischtem Stand) läuft vorerst im alten Cockpit weiter. In dieser Fassung kannst du im Talk jederzeit fragen: „Was würde der Beirat dazu sagen?“</p>
-    <a class="btn" href="https://vveorgxais.tail4ca1ab.ts.net/" target="_blank" rel="noopener"><${Icon} n="extern" g=${15} />Altes Cockpit öffnen</a>
-  </section>`;
 }

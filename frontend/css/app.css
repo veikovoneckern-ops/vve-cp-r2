@@ -773,3 +773,59 @@ html.ki-arbeitet .logo-knopf{filter:drop-shadow(0 0 .6px rgba(0,0,0,.75)) drop-s
 .tipp.an{opacity:1;transform:none}
 /* Diktat: der Text erscheint beim Sprechen, das Feld ist so lange gesperrt. */
 .composer textarea.diktat{background:var(--violett-soft);color:var(--ink)}
+
+/* ------------------------------------------------ Advisory Board (board.js)
+   Links der Tisch, rechts das Gespraech. Jede Antwort ist in Sprechblasen je
+   Advisor geteilt; die Farbe des Avatars steht fuer die Gruppe. */
+.bd{display:grid;grid-template-columns:330px minmax(0,1fr);height:100%;min-height:0}
+.bd-tisch{border-right:1px solid var(--line);background:var(--surface);display:flex;flex-direction:column;min-height:0}
+.bd-tisch-kopf{padding:14px 14px 8px;display:flex;flex-direction:column;gap:2px}
+.bd-tisch-kopf h3{font-size:15px;display:flex;align-items:center;gap:8px}
+.bd-filter{display:flex;flex-wrap:wrap;gap:5px;padding:0 14px 10px;border-bottom:1px solid var(--line-2)}
+.bd-filter button{display:inline-flex;align-items:center;gap:5px;border:1px solid transparent;background:var(--knopf-grund);color:var(--ink-2);border-radius:99px;padding:3px 10px;font-size:12px;font-weight:600;cursor:pointer}
+.bd-filter button i{width:8px;height:8px;border-radius:50%}
+.bd-filter button.an{background:var(--fuell);color:var(--fuell-text)}
+.bd-personen{flex:1;overflow:auto;padding:8px;display:flex;flex-direction:column;gap:4px;min-height:0}
+.bd-person{display:flex;align-items:center;gap:4px;border-radius:10px;padding:4px;border:1px solid transparent;opacity:.62;transition:opacity .15s,background .15s}
+.bd-person.am{opacity:1;background:var(--surface-2)}
+.bd-person.einzel{border-color:var(--violett)}
+.bd-person:hover{opacity:1}
+.bd-person-haupt{flex:1;min-width:0;display:flex;align-items:center;gap:10px;background:none;border:0;padding:2px;cursor:pointer;text-align:left;color:inherit}
+.bd-person-haupt span{display:flex;flex-direction:column;min-width:0}
+.bd-person-haupt b{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bd-person-haupt small{font-size:11px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bd-sitz,.bd-1zu1{width:30px;height:30px;border-radius:8px;border:0;background:var(--knopf-grund);color:var(--ink-3);display:grid;place-items:center;cursor:pointer;flex:none}
+.bd-sitz.an{background:var(--fuell);color:var(--fuell-text)}
+.bd-1zu1:hover,.bd-sitz:hover{color:var(--ink)}
+.bd-ava{display:inline-grid;place-items:center;border-radius:50%;color:#fff;font-weight:750;flex:none;letter-spacing:.02em;box-shadow:0 0 0 2px var(--surface)}
+.bd-ava.board{width:32px;height:32px;background:var(--fuell);color:var(--fuell-text)}
+.bd-stapel{display:inline-flex}
+.bd-stapel .bd-ava+.bd-ava{margin-left:-8px}
+.bd-stapel.gross .bd-ava+.bd-ava{margin-left:-12px}
+.bd-gespraech{display:flex;flex-direction:column;min-width:0;min-height:0}
+.bd-kopf{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.bd-modus{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-2)}
+.bd-kopf .luecke{flex:1}
+.bd-auswahl{width:auto;max-width:220px;min-height:32px;padding:4px 8px;font-size:12.5px}
+.bd-verlauf{flex:1;overflow:auto;padding:18px 20px;display:flex;flex-direction:column;gap:14px;min-height:0}
+.bd-start{margin:auto;text-align:center;max-width:560px;color:var(--ink-3);display:flex;flex-direction:column;align-items:center;gap:12px}
+.bd-starter{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.bd-du{align-self:flex-end;max-width:72%;background:var(--steel-soft);color:var(--ink);border-radius:14px 14px 4px 14px;padding:10px 14px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px}
+.bd-antwort{display:flex;flex-direction:column;gap:10px;max-width:880px}
+.bd-beitrag{display:flex;gap:10px;align-items:flex-start}
+.bd-blase{background:var(--surface);border:1px solid var(--line);border-radius:4px 14px 14px 14px;padding:9px 14px;min-width:0;flex:1;font-size:14px}
+.bd-blase>b{display:block;font-size:12.5px;margin-bottom:2px}
+.bd-denkt{display:flex;align-items:center;gap:10px;color:var(--ink-3);font-size:13px}
+.bd-denkt .bd-stapel{animation:bd-puls 1.4s ease-in-out infinite}
+@keyframes bd-puls{50%{opacity:.45}}
+.bd-eingabe{padding:10px 16px 14px;border-top:1px solid var(--line)}
+.bd-profil-kopf{display:flex;gap:14px;align-items:flex-start}
+.bd-liste{margin:0;padding-left:18px;font-size:13px}
+.bd-liste li{margin:3px 0}
+.bd-quellen{display:flex;flex-direction:column;gap:3px;margin-top:8px;font-size:12px}
+.bd-quellen a{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:900px){
+  .bd{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
+  .bd-tisch{border-right:0;border-bottom:1px solid var(--line);max-height:38vh}
+  .bd-du{max-width:88%}
+}

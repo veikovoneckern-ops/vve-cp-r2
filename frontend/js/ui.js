@@ -26,6 +26,7 @@ const PFADE = {
   talk: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3",
   griff: "M9 5.5h.01M15 5.5h.01M9 12h.01M15 12h.01M9 18.5h.01M15 18.5h.01",
   kalender: "M7 3v3M17 3v3M4 8h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z",
+  board: "M12 4a2.2 2.2 0 1 0 0 4.4A2.2 2.2 0 0 0 12 4zM5 9.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM19 9.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 20a5 5 0 0 1 10 0M8.5 13.5h7",
   chat: "M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.6A8 8 0 1 1 21 12z",
   mic: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3M8.5 21h7",
   plus: "M12 5v14M5 12h14",
@@ -240,7 +241,7 @@ export function StandPill({ stand }) {
 
 export const ROLLEN_NAME = { pmo: "Jason", cockpit: "Neo", stratege: "Clayton", buch: "Neal", kritiker: "Daniel",
   designer: "Annie", video: "Ridley", du: "Du", system: "Cockpit" };
-export const rolleName = (id) => ROLLEN_NAME[id] || id || "Stab";
+export const rolleName = (id) => ROLLEN_NAME[id] || id || "Team";
 
 export const ROLLEN_WAHL =[["stratege", "Clayton · Strategie, Konzepte"], ["buch", "Neal · Texte, Artikel, Bücher"],
   ["designer", "Annie · Gestaltung, Bild-Prompts"], ["video", "Ridley · Video, Storyboard"], ["pmo", "Jason · Planung, Überblick"]];

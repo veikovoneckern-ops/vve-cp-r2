@@ -20,7 +20,7 @@ function Gesundheit({ g, neo }) {
       ${syncAlt ? html`<b>Plaud-Abruf hängt</b> seit ${zeitText(g.sync).replace("vor ", "")}`
         : html`Plaud: letzte Notiz ${g.letzte_datei ? zeitText(g.letzte_datei) : "unbekannt"}`}</span>
     <span><i class=${"punkt" + (!g.stab_aktiv ? " gelb" : g.letzter_fehler ? " gelb" : "")}></i>
-      ${!g.stab_aktiv ? "Stab ausgeschaltet" : g.letzter_lauf ? `Stab: letzter Durchgang ${zeitText(g.letzter_lauf)}` : "Stab startet …"}</span>
+      ${!g.stab_aktiv ? "Team pausiert" : g.letzter_lauf ? `Team: letzter Durchgang ${zeitText(g.letzter_lauf)}` : "Team startet …"}</span>
     ${laeuft && html`<span><i class="punkt lila"></i>${rolleName(laeuft.wer)} ${laeuft.was}</span>`}
     ${neo && neo.length > 0 && html`<span><i class="punkt lila"></i><a href=${"#/neo/" + neo[0].gespraech_id}>Neo arbeitet</a> seit ${zeitText(neo[0].seit).replace("vor ", "")}</span>`}
     ${g.letzter_fehler && html`<span class="leise" title=${g.letzter_fehler}>Letzter Fehler: ${g.letzter_fehler.slice(0, 70)}</span>`}
@@ -43,7 +43,7 @@ export function Briefing({ lage }) {
     <div class="gruss">
       <div><h2>${gruss()}, Veiko.</h2>
         <div class="leise">${ents.length ? `${ents.length} ${ents.length === 1 ? "Entscheidung wartet" : "Entscheidungen warten"} auf dich.` : "Nichts wartet auf dich."}
-          ${lage.erledigt.length ? ` Der Stab hat ${lage.erledigt.length} Dinge erledigt.` : ""}</div></div>
+          ${lage.erledigt.length ? ` Dein Team hat ${lage.erledigt.length} Dinge erledigt.` : ""}</div></div>
       <span style="flex:1"></span>
       <div class="knopfreihe">
         <button class="btn" onClick=${() => bus.sende("erfassen")}><${Icon} n="plus" g=${15} />Capture</button>
@@ -58,10 +58,10 @@ export function Briefing({ lage }) {
             ${ents.length > 0 && html`<button class="btn klein rechts" onClick=${() => bus.sende("talk-oeffnen", { durchgehen: true })} title="Das Cockpit liest jede Entscheidung vor, du antwortest mit ja, nein, später oder frei">
               <${Icon} n="play" g=${13} />Per Stimme durchgehen</button>`}</div>
           ${ents.length ? ents.map((e) => html`<${Entscheidung} key=${e.id} e=${e} />`)
-            : html`<${Leer} titel="Alles entschieden.">Neue Vorschläge des Stabs erscheinen hier.</${Leer}>`}
+            : html`<${Leer} titel="Alles entschieden.">Neue Vorschläge deines Teams erscheinen hier.</${Leer}>`}
         </section>
         <section class="karte">
-          <div class="karte-kopf"><h3>Der Stab hat erledigt</h3><span class="leise klein">letzte drei Tage · jede Änderung lässt sich zurücknehmen</span></div>
+          <div class="karte-kopf"><h3>Dein Team hat erledigt</h3><span class="leise klein">letzte drei Tage · jede Änderung lässt sich zurücknehmen</span></div>
           ${lage.erledigt.length ? lage.erledigt.map((x) => html`<div class="zeile" key=${x.protokoll_id}>
               <${Avatar} wer=${x.wer} name=${x.wer_name} g=${22} />
               <div class="haupt-text">${x.vorgang_id ? html`<a href=${"#/inbox/" + x.vorgang_id} style="color:inherit;text-decoration:none">${x.text}</a>` : x.text}</div>
@@ -94,7 +94,7 @@ export function Briefing({ lage }) {
             <button class="check" onClick=${() => erledigen(t)} aria-label=${"Erledigt: " + t.titel} title="Erledigt"></button>
             <div class="haupt-text">${t.titel}
               <div class="leise klein">${t.projekt_name ? html`<span class="punkt" style=${"background:" + (t.projekt_farbe || "#999") + ";width:7px;height:7px;margin-right:5px"}></span>${t.projekt_name}` : "ohne Projekt"}
-              ${t.quelle === "stab" ? " · vom Stab" : ""}</div></div>
+              ${t.quelle === "stab" ? " · vom Team" : ""}</div></div>
             ${t.faellig && html`<span class="neben">${datumText(t.faellig)}</span>`}
           </div>`) : html`<${Leer}>Keine offenen Aufgaben.</${Leer}>`}
         </section>

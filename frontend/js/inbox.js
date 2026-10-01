@@ -50,7 +50,7 @@ export function Inbox({ id }) {
       </div>
     </aside>
     ${id ? html`<${Akte} key=${id} id=${id} nachher=${laden} />`
-      : html`<div class="akte"><${Leer} titel="Wähle links eine Akte.">Jede Notiz, jeder Auftrag aus dem Talk und alles aus Capture landet hier, mit allem, was der Stab dazu getan hat.</${Leer}></div>`}
+      : html`<div class="akte"><${Leer} titel="Wähle links einen Case.">Jede Notiz, jeder Auftrag aus dem Talk und alles aus Capture landet hier, mit allem, was dein Team dazu getan hat.</${Leer}></div>`}
   </div>`;
 }
 
@@ -69,7 +69,7 @@ function Akte({ id, nachher }) {
   }, [d && d.vorgang.stand, d && d.vorgang.titel]);
 
   if (fehler) return html`<div class="akte"><div class="fehlerbox">${fehler.message}</div></div>`;
-  if (!d) return html`<div class="akte"><div class="lade">Lade Akte …</div></div>`;
+  if (!d) return html`<div class="akte"><div class="lade">Lade Case …</div></div>`;
   const v = d.vorgang;
   const offen = d.entscheidungen.filter((e) => e.stand === "offen");
 
@@ -126,7 +126,7 @@ function Akte({ id, nachher }) {
     ${d.laeuft && html`<div class="hinweisbox" style="margin-bottom:12px;background:var(--violett-soft);border-color:transparent">
       <b>${rolleName(d.laeuft.wer)}</b> ${d.laeuft.was} … (seit ${zeitText(d.laeuft.seit).replace("vor ", "")})</div>`}
     ${v.versuche >= 3 && !abgeschlossen && html`<div class="fehlerbox" style="margin-bottom:12px;display:flex;gap:10px;align-items:center">
-      <span style="flex:1">Der Stab ist hier dreimal gescheitert. Den Grund siehst du unten im Verlauf.</span>
+      <span style="flex:1">Das Team ist hier dreimal gescheitert. Den Grund siehst du unten im Verlauf.</span>
       <button class="btn klein" onClick=${() => aktion("nochmal")}>Noch einmal versuchen</button></div>`}
 
     ${offen.length > 0 && html`<section class="karte" style="margin-bottom:12px">
@@ -143,14 +143,14 @@ function Akte({ id, nachher }) {
       </section>
       <aside>
         ${d.protokoll.length > 0 && html`<section class="karte">
-          <div class="karte-kopf"><h3>Vom Stab eingetragen</h3></div>
+          <div class="karte-kopf"><h3>Vom Team eingetragen</h3></div>
           ${d.protokoll.map((p) => html`<div class="zeile" key=${p.id}>
             <div class="haupt-text" style=${p.rueckgaengig ? "text-decoration:line-through;color:var(--ink-4)" : ""}>${p.label}</div>
             ${!p.rueckgaengig && html`<button class="btn klein geist" onClick=${() => rueckgaengig(p.id)} title="Zurücknehmen"><${Icon} n="undo" g=${14} /></button>`}
           </div>`)}
         </section>`}
         ${d.aufgaben.length > 0 && html`<section class="karte">
-          <div class="karte-kopf"><h3>Aufgaben aus dieser Akte</h3></div>
+          <div class="karte-kopf"><h3>Aufgaben aus diesem Case</h3></div>
           ${d.aufgaben.filter((t) => !t.archiviert).map((t) => html`<div class="zeile" key=${t.id}>
             <button class=${"check" + (t.status === "erledigt" ? " an" : "")} onClick=${() => aufgabeUmschalten(t)} aria-label="Erledigt umschalten">${t.status === "erledigt" ? html`<${Icon} n="check" g=${14} w=${3} />` : ""}</button>
             <div class="haupt-text" style=${t.status === "erledigt" ? "text-decoration:line-through;color:var(--ink-3)" : ""}>${t.titel}</div>
@@ -165,7 +165,7 @@ function Akte({ id, nachher }) {
         <section class="karte">
           <div class="karte-kopf"><h3>Weitere Schritte</h3></div>
           <div class="knopfreihe">
-            ${d.notiz && html`<button class="btn klein" onClick=${() => aktion("neu_einordnen")} title="Jason ordnet die Notiz noch einmal ein, mit dem aktuellen Gedächtnis">
+            ${d.notiz && html`<button class="btn klein" onClick=${() => aktion("neu_einordnen")} title="Jason ordnet die Notiz noch einmal ein, mit dem aktuellen Memory">
               <${Icon} n="neu_laden" g=${14} />Neu einordnen</button>`}
             ${v.projekt_id && html`<a class="btn klein" href=${"#/projects/" + v.projekt_id}><${Icon} n="projects" g=${14} />Zum Projekt</a>`}
           </div>
@@ -212,7 +212,7 @@ export function Ausarbeiten({ v, projektId, zu, fertig }) {
         const r = await api("/erfassen", { methode: "POST", daten: { text: auftrag, projekt_id: projektId } });
         await api(`/vorgaenge/${r.vorgang_id}/ausarbeiten`, { methode: "POST", daten: { rolle, form, auftrag, recherche } });
       }
-      toast("Auftrag ist raus. Das Ergebnis erscheint in der Akte, Daniel prüft es vorher.");
+      toast("Auftrag ist raus. Das Ergebnis erscheint im Case, Daniel prüft es vorher.");
       aktualisieren(); fertig && fertig();
     } catch (e) { fehlerMelden(e); setLaeuft(false); }
   }

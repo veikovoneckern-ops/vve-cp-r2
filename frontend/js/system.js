@@ -19,7 +19,7 @@ export function System({ konto, thema }) {
     try {
       const r = await api("/system/abgleich", { methode: "POST" });
       const n = r.neu; const summe = Object.values(n).reduce((a, b) => a + b, 0);
-      toast(summe ? `Übernommen: ${n.projekte} Projekte, ${n.aufgaben} Aufgaben, ${n.notizen + n.plaud} Notizen, ${n.vorgaenge} Akten.` : "Nichts Neues im alten Cockpit.");
+      toast(summe ? `Übernommen: ${n.projekte} Projekte, ${n.aufgaben} Aufgaben, ${n.notizen + n.plaud} Notizen, ${n.vorgaenge} Cases.` : "Nichts Neues im alten Cockpit.");
       laden(); aktualisieren();
     } catch (x) { fehlerMelden(x); }
     setLaeuft("");
@@ -33,14 +33,14 @@ export function System({ konto, thema }) {
       <button class="btn klein" onClick=${() => bus.sende("server-sektion", true)}><${Icon} n="runter" g=${12} />Aufklappen</button>
     </div>
     ${d && html`<div class="raster-gleich drei">
-      <section class="karte"><div class="karte-kopf"><h3>Stab-Pipeline</h3></div>
-        <${Wert} name="Stab" wert=${g.stab_aktiv ? "an" : "aus"} />
+      <section class="karte"><div class="karte-kopf"><h3>Team-Pipeline</h3></div>
+        <${Wert} name="Team" wert=${g.stab_aktiv ? "an" : "aus"} />
         <${Wert} name="Letzter Durchgang" wert=${g.letzter_lauf ? zeitText(g.letzter_lauf) : "noch keiner"} />
         <${Wert} name="Gerade" wert=${g.laeuft ? g.laeuft.was : "nichts"} />
         <${Wert} name="Plaud-Abruf" wert=${g.sync ? zeitText(g.sync) : "unbekannt"} warn=${g.sync && Date.now() / 1000 - g.sync > 1800} />
         <${Wert} name="Letzte Notiz" wert=${g.letzte_datei ? zeitText(g.letzte_datei) : "unbekannt"} />
         ${g.letzter_fehler && html`<div class="fehlerbox" style="margin-top:8px">${g.letzter_fehler}</div>`}
-        <div class="knopfreihe karte-fuss"><button class="btn klein" onClick=${async () => { await api("/system/durchgang", { methode: "POST" }); toast("Stab-Durchgang angestoßen."); }}><${Icon} n="play" g=${13} />Jetzt einen Durchgang</button></div>
+        <div class="knopfreihe karte-fuss"><button class="btn klein" onClick=${async () => { await api("/system/durchgang", { methode: "POST" }); toast("Team-Durchgang angestoßen."); }}><${Icon} n="play" g=${13} />Jetzt einen Durchgang</button></div>
       </section>
       <section class="karte"><div class="karte-kopf"><h3>Daten</h3></div>
         ${Object.entries(d.db).map(([k, v]) => html`<${Wert} name=${k[0].toUpperCase() + k.slice(1)} wert=${v} />`)}

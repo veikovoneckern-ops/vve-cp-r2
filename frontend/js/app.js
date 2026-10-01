@@ -11,6 +11,7 @@ import { Team } from "./team.js";
 import { System } from "./system.js";
 import { Neo } from "./neo.js";
 import { Talk } from "./talk.js";
+import { Board } from "./board.js";
 import { Logo, CockpitLeiste, ServerKaesten, SprechKnopf, kopfAbruf } from "./kopf.js";
 import { ServerSektion } from "./server.js";
 
@@ -19,8 +20,9 @@ const BEREICHE = [
   { id: "inbox", titel: "Inbox", icon: "inbox", unter: "Alles, was hereinkommt" },
   { id: "projects", titel: "Projects", icon: "projects", unter: "Vorhaben, Aufgaben, Ergebnisse" },
   { id: "neo", titel: "Neo", icon: "neo", unter: "Cockpit Engineer", neo: true },
-  { id: "team", titel: "Team", icon: "team", unter: "Dein Stab" },
-  { id: "system", titel: "System", icon: "system", unter: "Stab, Daten, Einstellungen" },
+  { id: "team", titel: "Team", icon: "team", unter: "Dein KI-Team" },
+  { id: "board", titel: "Advisory Board", kurz: "Board", icon: "board", unter: "Deine Advisors" },
+  { id: "system", titel: "System", icon: "system", unter: "Team-Pipeline, Daten, Einstellungen" },
 ];
 
 function route() {
@@ -89,21 +91,21 @@ function Erfassen({ zu }) {
   async function senden(text, anhaenge) {
     try {
       const r = await api("/erfassen", { methode: "POST", daten: { text, anhaenge, projekt_id: projekt || null } });
-      toast("An den Stab übergeben. Jason ordnet es gleich ein.", { aktion: { text: "Ansehen", fn: () => navigiere("/inbox/" + r.vorgang_id) } });
+      toast("Ans Team übergeben. Jason ordnet es gleich ein.", { aktion: { text: "Ansehen", fn: () => navigiere("/inbox/" + r.vorgang_id) } });
       bus.sende("aktualisieren");
       zu();
       return true;
     } catch (e) { fehlerMelden(e); return false; }
   }
-  return html`<${Modal} titel="Capture: etwas an den Stab geben" zu=${zu}>
+  return html`<${Modal} titel="Capture: etwas ans Team geben" zu=${zu}>
     <p class="leise" style="margin-bottom:12px">Wie eine Plaud-Notiz: Jason ordnet ein, legt Aufgaben an und fragt nach, wenn etwas unklar ist. Du kannst tippen, diktieren oder Dateien anhängen.</p>
     <div class="feld" style="margin-bottom:10px"><label for="erf-projekt">Projekt (optional, sonst entscheidet Jason)</label>
       <select id="erf-projekt" class="eingabe" value=${projekt} onChange=${(e) => setProjekt(e.target.value)}>
         <option value="">Jason soll zuordnen</option>
         ${projekte.map((p) => html`<option value=${p.id}>${p.name}</option>`)}
       </select></div>
-    <${Composer} platzhalter="Was soll der Stab wissen oder tun?" beimSenden=${senden} autofokus=${true} zeilen=${4}
-      projektId=${projekt} entwurfKey="erfassen" sendenText="An den Stab" />
+    <${Composer} platzhalter="Was soll dein Team wissen oder tun?" beimSenden=${senden} autofokus=${true} zeilen=${4}
+      projektId=${projekt} entwurfKey="erfassen" sendenText="Ans Team" />
   <//>`;
 }
 
@@ -191,7 +193,7 @@ function App() {
   const offen = lage ? lage.entscheidungen.length : 0;
   const neoLaeuft = lage && lage.neo_laeuft && lage.neo_laeuft.length > 0;
   const zahl = (b) => b.id === "inbox" && offen ? html`<span class="zahl">${offen}</span>` : b.neo && neoLaeuft ? html`<span class="zahl ruhig">arbeitet</span>` : null;
-  const voll = r.bereich === "inbox" || r.bereich === "neo";
+  const voll = r.bereich === "inbox" || r.bereich === "neo" || r.bereich === "board";
   // Im Projekt steht oben der Projektname (wie im alten Cockpit "BVE / Projekt-Detail").
   const imProjekt = r.bereich === "projects" && r.id && !r.id.startsWith("_") && kontext && kontext.art === "projekt";
   const titel = imProjekt ? kontext.titel : bereich.titel;
@@ -207,7 +209,7 @@ function App() {
   return html`<div class=${"schale" + (talk ? " mit-talk" : "")}>
     <nav class="rail" aria-label="Bereiche">
       <div class="marke"><${Logo} gross=${true} /></div>
-      <button class="erfassen-knopf" onClick=${() => setErfassen(true)} title="Etwas an den Stab geben"><${Icon} n="plus" g=${17} w=${2.4} />Capture</button>
+      <button class="erfassen-knopf" onClick=${() => setErfassen(true)} title="Etwas ans Team geben"><${Icon} n="plus" g=${17} w=${2.4} />Capture</button>
       <div class="nav">
         ${BEREICHE.slice(0, 3).map((b) => html`<a href=${"#/" + b.id} class=${r.bereich === b.id ? "an" : ""}><${Icon} n=${b.icon} />${b.titel}${zahl(b)}</a>`)}
         <div class="nav-trenner"></div>
@@ -243,12 +245,13 @@ function App() {
         ${r.bereich === "team" && html`<${Team} id=${r.id} />`}
         ${r.bereich === "system" && html`<${System} konto=${konto} thema=${thema} />`}
         ${r.bereich === "neo" && html`<${Neo} id=${r.id} />`}
+        ${r.bereich === "board" && html`<${Board} id=${r.id} />`}
       </main>
     </div>
     ${talk && html`<${Talk} zu=${() => setTalk(false)} kontext=${kontext} setKontext=${setKontext} start=${talkStart} />`}
     <nav class="unten-nav" aria-label="Bereiche">
       ${BEREICHE.filter((b) => b.id !== "system").map((b) => html`<a href=${"#/" + b.id} class=${(r.bereich === b.id ? "an " : "") + (b.neo ? "neo-nav" : "")}>
-        <${Icon} n=${b.icon} g=${20} />${b.titel}${b.id === "inbox" && offen ? html`<span class="zahl">${offen}</span>` : null}</a>`)}
+        <${Icon} n=${b.icon} g=${20} />${b.kurz || b.titel}${b.id === "inbox" && offen ? html`<span class="zahl">${offen}</span>` : null}</a>`)}
       <a href="#/system" class=${r.bereich === "system" ? "an" : ""}><${Icon} n="system" g=${20} />System</a>
     </nav>
     ${!talk && html`<button class="talk-fab" onClick=${() => setTalk(true)} aria-label="Talk öffnen"><${Icon} n="talk" g=${24} /></button>`}

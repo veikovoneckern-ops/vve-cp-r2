@@ -185,7 +185,7 @@ function Auftrag({ a }) {
 
 // ------------------------------------------------------------ Software-Schaubild
 const ZEITGEBER = { "vvec-plaud-sync.timer": "holt Plaud-Notizen", "vvec-vorgang.timer": "Vorgänge des alten Cockpits",
-  "vvec-board.timer": "frischt den Beirat auf", "vvec-suche-index.timer": "Suchindex des alten Cockpits",
+  "vvec-board.timer": "frischt das Advisory Board auf", "vvec-suche-index.timer": "Suchindex des alten Cockpits",
   "vvec-sicherung-inhalt.timer": "sichert den Inhalt nach OneDrive", "vvec-sicherung-server.timer": "sichert den Server nach OneDrive",
   "vvec-backup.timer": "restic, bewusst nicht eingerichtet" };
 
@@ -232,7 +232,7 @@ function Software({ s, sys, auftrag, starten }) {
       <${SwZ} st=${sich.fail2ban ? (sich.fail2ban.aktiv ? "ok" : "warnung") : "unbekannt"} name="fail2ban" marke=${sich.fail2ban ? (sich.fail2ban.gesperrt || []).length + " gesperrt" : "?"} satz=${`SSH-Fehlversuche 24 h: ${sich.ssh_fehlgeschlagen_24h ?? "?"}`} />
       <${SwZ} st=${s.health ? (s.health.automatik_angehalten ? "warnung" : "ok") : "unbekannt"} name="WatchDog" marke=${s.health ? `Notfall ab ${s.health.schwelle_c} °C` : "?"} satz=${s.health ? (s.health.automatik_angehalten ? "angehalten: ein Mensch muss hinsehen" : "wacht über die Grafikkarten") : "nicht gemeldet"} />` ],
     [ "Diese Fassung", "", sys ? html`
-      <${SwZ} st=${sys.stab.stab_aktiv ? "ok" : "warnung"} name="Stab" marke=${sys.stab.stab_aktiv ? "an" : "aus"} satz=${sys.stab.letzter_lauf ? "letzter Durchgang " + zeitText(sys.stab.letzter_lauf) : "noch kein Durchgang"} />
+      <${SwZ} st=${sys.stab.stab_aktiv ? "ok" : "warnung"} name="Team" marke=${sys.stab.stab_aktiv ? "an" : "aus"} satz=${sys.stab.letzter_lauf ? "letzter Durchgang " + zeitText(sys.stab.letzter_lauf) : "noch kein Durchgang"} />
       <${SwZ} st=${sys.stab.sync && Date.now() / 1000 - sys.stab.sync > 1800 ? "warnung" : "ok"} name="Plaud-Abruf" marke=${sys.stab.sync ? zeitText(sys.stab.sync) : "?"} satz=${sys.stab.letzte_datei ? "letzte Notiz " + zeitText(sys.stab.letzte_datei) : ""} />
       <${SwZ} st=${sys.stab.letzter_fehler ? "warnung" : "ok"} name="Letzter Fehler" satz=${sys.stab.letzter_fehler || "keiner"} />` : html`<div class="leise klein">wird geholt …</div>` ],
     [ "Was auf der Platte liegt", s.disk_gb ? Math.round(s.disk_gb.free) + " GB frei" : "", html`
@@ -357,7 +357,7 @@ export function ServerSektion({ zu, gesundheit }) {
         <${Kachel} titel="Modelle" neben=${det && det.modelle ? det.modelle.length + "" : ""}><${Modelle} liste=${det && det.modelle} neueste=${det && det.ollama_neueste} s=${s} /></${Kachel}>
         <${Kachel} titel="Eigener Bestand">${sys ? Object.entries(sys.db).map(([n, w]) => html`<${Zeile} name=${n[0].toUpperCase() + n.slice(1)} wert=${w} />`) : html`<div class="leise klein">…</div>`}</${Kachel}>
         <${Kachel} titel="Websuche">${sys ? html`<${Zeile} name="SearXNG" wert=${sys.websuche && sys.websuche.erreichbar ? "erreichbar" : "nicht erreichbar"} s=${sys.websuche && sys.websuche.erreichbar ? "" : "kritisch"} />
-          <p class="leise klein sv-fuss">Die eigene Suchmaschine. Der Stab recherchiert darüber; Google sieht davon nichts.</p>` : html`<div class="leise klein">…</div>`}</${Kachel}>
+          <p class="leise klein sv-fuss">Die eigene Suchmaschine. Dein Team recherchiert darüber; Google sieht davon nichts.</p>` : html`<div class="leise klein">…</div>`}</${Kachel}>
         <${Kachel} titel="Stimme">${sys ? html`<${Zeile} name="Spracherkennung (Whisper)" wert=${sys.stimme.whisper ? "bereit" : sys.stimme.grund} s=${sys.stimme.whisper ? "" : "kritisch"} />
           ${sys.stimme.whisper && html`<${Zeile} name="Modell" wert=${sys.stimme.modell + (sys.stimme.geladen.length ? " · " + sys.stimme.geladen.join(", ") : "")} />`}
           <${Zeile} name="Mikrofon im Browser" wert=${window.isSecureContext ? "möglich" : "nur über https"} s=${window.isSecureContext ? "" : "warnung"} />` : html`<div class="leise klein">…</div>`}</${Kachel}>

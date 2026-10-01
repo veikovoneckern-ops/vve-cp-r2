@@ -136,7 +136,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
       else {
         const neo = r.ergebnisse.find((x) => x.neo_gespraech);
         const vg = r.ergebnisse.find((x) => x.vorgang_id);
-        toast(neo ? "Neo arbeitet daran." : vg ? "Ist beim Stab. Das Ergebnis erscheint in der Inbox." : "Erledigt.",
+        toast(neo ? "Neo arbeitet daran." : vg ? "Ist beim Team. Das Ergebnis erscheint in der Inbox." : "Erledigt.",
           neo ? { aktion: { text: "Zu Neo", fn: () => navigiere("/neo/" + neo.neo_gespraech) } }
             : vg ? { aktion: { text: "Ansehen", fn: () => navigiere("/inbox/" + vg.vorgang_id) } } : {});
       }
@@ -272,7 +272,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
         try {
           await api("/entscheidungen/" + e.id, { methode: "POST", daten: { antwort, text } });
           erledigt += antwort === "spaeter" ? 0 : 1;
-          const q = { ja: e.art === "rueckfrage" ? "Antwort ist beim Stab." : "Erledigt.", nein: "Abgelehnt.", spaeter: "Später." }[antwort];
+          const q = { ja: e.art === "rueckfrage" ? "Antwort ist beim Team." : "Erledigt.", nein: "Abgelehnt.", spaeter: "Später." }[antwort];
           systemZeile(q);
           await sprechen(q);
         } catch (x) { systemZeile("Ging nicht: " + x.message); await sprechen("Das ging leider nicht."); }
@@ -320,7 +320,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
       ${lauf && html`<div class="talk-blase ck">${lauf.text ? html`<${Md} text=${lauf.text} />` : html`<span class="leise">Denke nach …</span>`}</div>`}
     </div>
     <div class="talk-eingabe">
-      <${Composer} platzhalter=${kontext ? "Frag zu „" + (kontext.titel || "").slice(0, 40) + "“ …" : "Frag oder beauftrage den Stab … („ja“ bestätigt den letzten Vorschlag)"}
+      <${Composer} platzhalter=${kontext ? "Frag zu „" + (kontext.titel || "").slice(0, 40) + "“ …" : "Frag oder beauftrage dein Team … („ja“ bestätigt den letzten Vorschlag)"}
         beimSenden=${(t, a) => eingabe(t, a, false).then(() => true)} laeuft=${!!lauf}
         beimStoppen=${() => abbruch.current && abbruch.current.abort()} entwurfKey="talk" hinweis="" />
     </div>

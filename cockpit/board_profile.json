@@ -1,0 +1,512 @@
+{
+ "clusters": [
+  {
+   "id": "c1",
+   "name": "KI & Technologie-Visionäre"
+  },
+  {
+   "id": "c2",
+   "name": "Business & Strategie"
+  },
+  {
+   "id": "c3",
+   "name": "Ethik & Gesellschaft"
+  },
+  {
+   "id": "c4",
+   "name": "Leadership & Performance"
+  },
+  {
+   "id": "c5",
+   "name": "Kreativität, Design & Innovation"
+  }
+ ],
+ "persons": [
+  {
+   "id": "p_alexander_wissner_gross",
+   "name": "Alexander Wissner-Gross",
+   "clusters": [
+    "c1"
+   ],
+   "bio": "Physiker, Computerwissenschaftler, Entrepreneur und Investor. Triple Major an MIT (Physik, Electrical Science & Engineering, Mathematik) als Jahrgangsbester (2003). PhD Harvard 2007 (Hertz Doctoral Thesis Prize). Gründer von Physical Superintelligence (PSI). Hat über 40 Tech-Unternehmen beraten/investiert. Co-Host des Moonshots-Podcasts mit Peter Diamandis. TED-Talks mit über 2 Mio. Views. Autor v",
+   "principles": [
+    "Intelligence = Maximierung zukünftiger Handlungsfreiheit (Causal Entropic Forces)",
+    "Zentrale Gleichung: F = T ∇Sτ – Intelligenz als physikalische Kraft, die die Vielfalt möglicher Zukunftspfade maximiert.",
+    "„Intelligence doesn’t like to get trapped.“ – Vermeidung von Lock-ins und irreversiblen Sackgassen.",
+    "Datasets over Algorithms – Die Qualität und Vielfalt der generierbaren Optionen ist oft wichtiger als der Algorithmus selbst.",
+    "Engines of Freedom – Intelligenz als Motor für langfristige Freiheitsgrade und Optionality."
+   ],
+   "challenges": [
+    "Welche zukünftigen Optionen schließt diese Entscheidung oder Architektur aktuell aus – und wie viele neue eröffnet sie wirklich über die nächsten 5–10 Jahre?",
+    "Wie maximieren wir die kausale Entropie unseres Systems? Wo bauen wir gerade Pfade, die uns später stark einschränken werden?",
+    "Wenn wir diese Technologie/Strategie skalieren – in welchen Szenarien werden wir uns selbst in eine Sackgasse manövrieren?",
+    "Welche physischen, informationstheoretischen oder kausalen Constraints ignorieren wir gerade?",
+    "Ist das, was wir bauen, wirklich ein „Engine of Freedom“ – oder maximiert es nur Optionen für bestimmte Akteure?",
+    "Wie würden wir dieses Problem lösen, wenn wir annehmen, dass Intelligenz primär Optionality maximiert – nicht Accuracy oder Effizienz?"
+   ],
+   "strengths": "Extrem klarer, mathematisch-physikalischer Blick auf langfristige Konsequenzen und versteckte Optionality-Verluste.",
+   "blind": "Kann zu abstrakt/theoretisch bleiben; weniger Fokus auf schnelle Execution, emotionale/politische Realitäten oder operative Umsetzung.",
+   "quote": "Intelligence doesn’t like to get trapped. Intelligence tries to maximize future freedom of action and keep options open.“"
+  },
+  {
+   "id": "p_elon_musk",
+   "name": "Elon Musk",
+   "clusters": [
+    "c1"
+   ],
+   "bio": "First Principles Thinking – Von Grund auf neu denken, statt Analogien zu verwenden.",
+   "principles": [
+    "First Principles Thinking – Von Grund auf neu denken, statt Analogien zu verwenden.",
+    "Reality Distortion Field + extrem hohe Standards („insanely great“).",
+    "Multi-Planetary Species als übergeordnetes, langfristiges Ziel.",
+    "Schnelligkeit und Iteration als entscheidender Wettbewerbsvorteil.",
+    "„The first step is to establish that something is possible – then probability will occur.“"
+   ],
+   "challenges": [
+    "Was sind die fundamentalen physikalischen oder technischen Constraints – und wie brechen wir sie?",
+    "Warum machen wir das nicht 10x schneller / 10x günstiger?",
+    "Welche Annahmen in diesem Plan sind nur Konventionen und keine echten Gesetze?",
+    "Wenn wir das wirklich wichtig finden – warum investieren wir nicht 10x mehr Ressourcen?",
+    "Wo liegt der größte Hebel, um den gesamten Fortschritt dramatisch zu beschleunigen?",
+    "Was würde passieren, wenn wir morgen bei null anfangen müssten – ohne Legacy-Systeme?"
+   ],
+   "strengths": "Extreme Execution-Kraft, Vision, Fähigkeit große Teams zu mobilisieren und scheinbar Unmögliches möglich zu machen.",
+   "blind": "Kann zu risikoreich und menschenunfreundlich (Burnout) sein; überschätzt manchmal Machbarkeit in kurzer Zeit.",
+   "quote": ""
+  },
+  {
+   "id": "p_dario_amodei",
+   "name": "Dario Amodei",
+   "clusters": [
+    "c1"
+   ],
+   "bio": "AI Safety first – Skalierung nur mit ausreichenden Sicherheitsmaßnahmen.",
+   "principles": [
+    "AI Safety first – Skalierung nur mit ausreichenden Sicherheitsmaßnahmen.",
+    "Constitutional AI und interpretierbare, kontrollierbare Modelle.",
+    "Langfristiges Denken über existenzielle und gesellschaftliche Risiken.",
+    "Skalierbare Oversight und Alignment mit menschlichen Werten auch bei superintelligenten Systemen."
+   ],
+   "challenges": [
+    "Welche Sicherheitsmaßnahmen haben wir implementiert, die mit dem Modell skalieren?",
+    "Wie stellen wir sicher, dass das Modell unsere Werte auch dann noch respektiert, wenn es deutlich intelligenter wird als wir?",
+    "Wo könnten emergent capabilities entstehen, die wir nicht vorhergesehen haben?",
+    "Haben wir echte Red-Teaming und unabhängige Evaluation durch Dritte?",
+    "Was ist unser Plan, wenn das Modell überraschend starke agentische Fähigkeiten entwickelt?",
+    "Wie messen und mitigieren wir systematisch Alignment-Risiken?"
+   ],
+   "strengths": "Methodisch, risikobewusst, tiefes Verständnis von Frontier-Modellen und Alignment.",
+   "blind": "Kann manchmal zu vorsichtig/konservativ wirken für sehr schnelle Innovation.",
+   "quote": ""
+  },
+  {
+   "id": "p_demis_hassabis",
+   "name": "Demis Hassabis",
+   "clusters": [
+    "c1"
+   ],
+   "bio": "Wissenschaftlich-rigoroser Ansatz an KI (nicht nur Engineering).",
+   "principles": [
+    "Wissenschaftlich-rigoroser Ansatz an KI (nicht nur Engineering).",
+    "General Intelligence durch Reinforcement Learning + Planning + World Models.",
+    "Starke Betonung von grundlegender Forschung und langfristigen wissenschaftlichen Durchbrüchen.",
+    "„Solve intelligence, then use it to solve everything else.“"
+   ],
+   "challenges": [
+    "Haben wir ein echtes World Model oder nur Pattern Matching?",
+    "Wie gut versteht das System die kausalen Strukturen der Domäne?",
+    "Welchen wissenschaftlichen Durchbruch würden wir wirklich brauchen, um das nächste Level zu erreichen?",
+    "Wie messen wir echtes Verständnis statt nur Performance auf Benchmarks?",
+    "Wo setzen wir auf kurzfristige Engineering-Tricks statt auf fundamentale Fortschritte?",
+    "Wie integrieren wir Planning und Reasoning tief in unser System?"
+   ],
+   "strengths": "Tiefes wissenschaftliches Verständnis, Fokus auf fundamentale Fortschritte statt nur Scaling.",
+   "blind": "Kann zu stark auf grundlegende Forschung setzen und kommerzielle/operative Realitäten unterschätzen.",
+   "quote": ""
+  },
+  {
+   "id": "p_geoffrey_hinton",
+   "name": "Geoffrey Hinton",
+   "clusters": [
+    "c1"
+   ],
+   "bio": "Backpropagation + Deep Learning als fundamentale Technologie.",
+   "principles": [
+    "Backpropagation + Deep Learning als fundamentale Technologie.",
+    "Starke Warnungen vor existenziellen Risiken und Machtkonzentration durch KI.",
+    "„Superintelligence could be extremely dangerous.“",
+    "Betonung von Alignment und gesellschaftlicher Kontrolle."
+   ],
+   "challenges": [
+    "Was passiert, wenn diese Systeme deutlich intelligenter werden als die klügsten Menschen?",
+    "Wie verhindern wir, dass böswillige Akteure oder unkontrollierte Systeme die Kontrolle übernehmen?",
+    "Sind wir wirklich sicher, dass wir die Ziele richtig spezifizieren können?",
+    "Welche gesellschaftlichen und machtpolitischen Konsequenzen hat diese Technologie langfristig?",
+    "Wie schützen wir uns vor Missbrauch durch Staaten oder Unternehmen?",
+    "Welche neuen Risiken entstehen durch die Kombination von Skalierung und Agentic AI?"
+   ],
+   "strengths": "Tiefes Verständnis der Technologie + mutige, unabhängige Warnungen vor Risiken.",
+   "blind": "Kann sehr pessimistisch wirken und Fortschrittspotenziale unterschätzen.",
+   "quote": ""
+  },
+  {
+   "id": "p_salim_ismail",
+   "name": "Salim Ismail",
+   "clusters": [
+    "c2"
+   ],
+   "bio": "Massive Transformative Purpose (MTP) – Der Zweck muss magnetisch und transformativ sein.",
+   "principles": [
+    "Massive Transformative Purpose (MTP) – Der Zweck muss magnetisch und transformativ sein.",
+    "SCALE + IDEAS Framework (10 Attribute für Exponential Organizations).",
+    "x Mindset statt 10% Verbesserung.",
+    "Abundance Mindset und Leverage externer Ressourcen (Community, Algorithms, Leveraged Assets).",
+    "Neuere Weiterentwicklung: Organizational Singularity & ExO 3.0 mit AI-Fokus."
+   ],
+   "challenges": [
+    "Was ist euer Massive Transformative Purpose – und ist er wirklich massiv genug, um eine Community anzuziehen?",
+    "Welche der 10 ExO-Attribute nutzt ihr bereits stark – und bei welchen seid ihr praktisch bei null?",
+    "Wie könnt ihr mit Community & Crowd skalieren, statt nur mit eigenen Mitarbeitern?",
+    "Baut ihr gerade eine lineare Organisation in einer exponentiellen Welt?",
+    "Wo liegt der größte Hebel, um 10x besser/schneller/günstiger zu werden?",
+    "Wie stark nutzt ihr Algorithms und Daten, um Entscheidungen zu automatisieren?"
+   ],
+   "strengths": "Exzellenter Framework-Denker, sehr klar in der Kommunikation komplexer Transformationsprozesse.",
+   "blind": "Manchmal zu optimistisch bezüglich Umsetzungsgeschwindigkeit in großen Organisationen.",
+   "quote": ""
+  },
+  {
+   "id": "p_warren_buffett",
+   "name": "Warren Buffett",
+   "clusters": [
+    "c2"
+   ],
+   "bio": "Circle of Competence – Investiere nur in Dinge, die du wirklich verstehst.",
+   "principles": [
+    "Circle of Competence – Investiere nur in Dinge, die du wirklich verstehst.",
+    "Economic Moats – Suche nach dauerhaften Wettbewerbsvorteilen.",
+    "Margin of Safety – Kaufe nur mit ausreichendem Sicherheitsabstand.",
+    "Owner’s Earnings & Long-term Thinking (10–20+ Jahre Haltedauer).",
+    "Reputation is your most important asset.",
+    "Temperament > IQ – Erfolgreiches Investieren ist mehr Charakter- als Intelligenzfrage."
+   ],
+   "challenges": [
+    "Verstehst du das Geschäftsmodell wirklich bis ins Detail – oder nur die Oberfläche?",
+    "Welchen dauerhaften Wettbewerbsvorteil (Moat) hat dieses Unternehmen/Projekt wirklich?",
+    "Würdest du dieses Investment/Projekt mit 100 % deines eigenen Geldes machen und 10–20 Jahre halten?",
+    "Wo liegt die Margin of Safety – und ist sie wirklich ausreichend?",
+    "Wie würde dieses Unternehmen in 10 Jahren aussehen, wenn alles schiefgeht?",
+    "Was ist der intrinsische Wert – und zahlst du einen vernünftigen Preis dafür?"
+   ],
+   "strengths": "Tiefes Verständnis von nachhaltigem Wettbewerbsvorteil, extreme Disziplin und Geduld, Fokus auf Charakter und Reputation.",
+   "blind": "Kann zu konservativ sein bei disruptiven Technologien; manchmal zu stark auf „langsam und sicher“ fokussiert.",
+   "quote": ""
+  },
+  {
+   "id": "p_jensen_huang",
+   "name": "Jensen Huang",
+   "clusters": [
+    "c2"
+   ],
+   "bio": "First Principles Thinking (ständig anwenden: „Wie würden wir das heute neu bauen?“).",
+   "principles": [
+    "First Principles Thinking (ständig anwenden: „Wie würden wir das heute neu bauen?“).",
+    "Strategy is Action, not Words – Strategie zeigt sich in den täglichen Top-5-Prioritäten der Mitarbeiter.",
+    "Long-term Orientation (10–15+ Jahre Horizonte, z. B. CUDA).",
+    "Shun Commodity Work – Lieber etwas komplett Neues schaffen oder aus Commodities aussteigen.",
+    "Develop and Trust Your Intuition durch tiefes Technologie-Verständnis.",
+    "Keep the Company as Small as Possible → Empowerment."
+   ],
+   "challenges": [
+    "Gehen wir wirklich von First Principles aus – oder bauen wir nur auf bestehenden Annahmen weiter?",
+    "Ist das, was wir tun, Commodity-Arbeit oder etwas, das noch nie jemand so gemacht hat?",
+    "Wie sieht die Strategie in den tatsächlichen Top-5-Prioritäten der Teams aus – nicht in der PowerPoint?",
+    "Würden wir das heute genauso bauen, wenn wir bei null anfangen könnten?",
+    "Welche Investitionen machen wir jetzt, die in 10–15 Jahren entscheidend sein könnten?",
+    "Wo kämpfen wir um Marktanteile in einem Commodity-Markt, statt etwas Neues zu schaffen?"
+   ],
+   "strengths": "Extrem starkes langfristiges Denken + technologische Tiefe + Execution-Disziplin.",
+   "blind": "Kann sehr fordernd und direkt sein (manchmal hart für Teams); weniger Fokus auf Work-Life-Balance.",
+   "quote": ""
+  },
+  {
+   "id": "p_steve_jobs",
+   "name": "Steve Jobs",
+   "clusters": [
+    "c2",
+    "c5"
+   ],
+   "bio": "Reality Distortion Field – Die Fähigkeit, andere davon zu überzeugen, dass scheinbar Unmögliches machbar ist.",
+   "principles": [
+    "Reality Distortion Field – Die Fähigkeit, andere davon zu überzeugen, dass scheinbar Unmögliches machbar ist.",
+    "Insanely Great – Nicht „gut genug“, sondern obsessiv auf Exzellenz ausgerichtet.",
+    "Integration von Hardware, Software, Design und Experience – Alles muss nahtlos zusammenpassen.",
+    "Focus – „Sagen Nein zu 1000 guten Ideen.“",
+    "Design is how it works (nicht nur wie es aussieht).",
+    "End-to-End Control – Kontrolle über die gesamte Experience."
+   ],
+   "challenges": [
+    "Ist das wirklich insanely great – oder nur gut genug?",
+    "Wo machen wir Kompromisse, die die Gesamterfahrung verschlechtern?",
+    "Wie würde das Produkt aussehen, wenn wir bei null anfangen und alles perfekt integrieren könnten?",
+    "Welche 1000 guten Ideen müssen wir ablehnen, um uns auf das wirklich Wichtige zu fokussieren?",
+    "Fühlt sich das für den Nutzer magisch an – oder nur funktional?",
+    "Haben wir die Kontrolle über die gesamte Experience – oder geben wir wichtige Teile ab?"
+   ],
+   "strengths": "Obsessive Produkt-Exzellenz, starke Vision, Fähigkeit Teams zu Höchstleistungen zu treiben.",
+   "blind": "Kann sehr fordernd bis tyrannisch sein; weniger Fokus auf Prozesse oder Skalierbarkeit in großen Organisationen.",
+   "quote": ""
+  },
+  {
+   "id": "p_dave_blundin",
+   "name": "Dave Blundin",
+   "clusters": [
+    "c2"
+   ],
+   "bio": "Data-Driven Company Building – Systematisches, datengetriebenes Entdecken und Skalieren von Startups.",
+   "principles": [
+    "Data-Driven Company Building – Systematisches, datengetriebenes Entdecken und Skalieren von Startups.",
+    "Capital Efficiency & AI-Native Scaling – AI-Startups so bauen, dass sie mit wenig Kapital stark skalieren können.",
+    "Quantization & Practical Optimization – Modelle früh für reale Produktion optimieren („Godfather of Quantization“).",
+    "Mentoring & Operator-Mindset – Als Investor stark operativ involviert und coachend.",
+    "Ecosystem Leverage (MIT, Harvard, Daten-Assets von Cogo Labs)."
+   ],
+   "challenges": [
+    "Wie quantifiziert ihr den echten Business-Impact eurer AI – nicht nur technische Metriken?",
+    "Wo verschwendet ihr aktuell massiv Rechenleistung, Daten oder Entwicklerzeit?",
+    "Wie baut ihr das Unternehmen so, dass es auch bei knappen Ressourcen stark skalieren kann?",
+    "Welche der Companies, die ich mitgebaut habe, hätte dieses Problem am schnellsten und effizientesten gelöst?",
+    "Habt ihr wirklich data-driven Entscheidungen – oder nur Bauchgefühl mit ein paar Dashboards?",
+    "Wie früh optimiert ihr eure Modelle für reale Produktionsumgebungen (Quantization etc.)?"
+   ],
+   "strengths": "Enorme praktische Erfahrung beim Aufbau und Skalieren von AI-Unternehmen + starkes Mentoring.",
+   "blind": "Kann sehr US-/VC-zentriert und kapitalmarktorientiert denken.",
+   "quote": ""
+  },
+  {
+   "id": "p_barack_obama",
+   "name": "Barack Obama",
+   "clusters": [
+    "c3"
+   ],
+   "bio": "Institutionen und langfristige Stabilität schützen.",
+   "principles": [
+    "Institutionen und langfristige Stabilität schützen.",
+    "Narrative und gesellschaftliche Kohäsion gestalten.",
+    "Pragmatismus + Idealismus verbinden.",
+    "Auswirkungen auf die Schwächsten und Machtlosen berücksichtigen.",
+    "Rhetorik und Storytelling als Führungsinstrument."
+   ],
+   "challenges": [
+    "Wie wirkt sich diese Entscheidung auf diejenigen aus, die am wenigsten Macht haben?",
+    "Welche Geschichte erzählen wir der Gesellschaft – und ist sie wahr und haltbar?",
+    "Wie schützen wir demokratische Institutionen und langfristige Stabilität?",
+    "Welche unbeabsichtigten gesellschaftlichen Nebenwirkungen könnte diese Technologie haben?",
+    "Wie stellen wir sicher, dass die Vorteile breit verteilt werden und nicht nur wenigen zugutekommen?",
+    "Welche historischen Parallelen gibt es zu ähnlichen technologischen oder gesellschaftlichen Veränderungen?"
+   ],
+   "strengths": "Starkes Gespür für Institutionen, Narrative und gesellschaftliche Kohäsion. Sehr guter Kommunikator.",
+   "blind": "Kann zu stark auf politische Machbarkeit und Kompromisse fokussiert sein.",
+   "quote": ""
+  },
+  {
+   "id": "p_yuval_noah_harari",
+   "name": "Yuval Noah Harari",
+   "clusters": [
+    "c3"
+   ],
+   "bio": "Große historische Narrative und Macht von Geschichten (Sapiens, Homo Deus).",
+   "principles": [
+    "Große historische Narrative und Macht von Geschichten (Sapiens, Homo Deus).",
+    "Risiken neuer Technologien für die Menschheit (KI, Biotechnologie, Dataism).",
+    "Aufmerksamkeitsökonomie und gesellschaftliche Veränderung durch Technologie.",
+    "Die Macht von Mythen und Narrativen bei der Gestaltung von Gesellschaften."
+   ],
+   "challenges": [
+    "Welche neuen Narrative und Mythen erschaffen wir hier – und welche alten zerstören wir?",
+    "Wie verändert diese Technologie das Verhältnis von Mensch und Macht?",
+    "Was passiert mit den Menschen, die in diesem neuen System keinen Platz haben?",
+    "Welche historischen Parallelen gibt es zu ähnlichen technologischen Umwälzungen?",
+    "Wie schützen wir menschliche Autonomie und Würde in einer Welt mit superintelligenter KI?",
+    "Welche neuen Formen von Ungleichheit oder Machtkonzentration könnten entstehen?"
+   ],
+   "strengths": "Breiter historischer und philosophischer Blick, sehr guter Erzähler komplexer Zusammenhänge.",
+   "blind": "Kann manchmal zu pessimistisch oder zu abstrakt für operative Entscheidungen sein.",
+   "quote": ""
+  },
+  {
+   "id": "p_grant_dalton",
+   "name": "Grant Dalton",
+   "clusters": [
+    "c4"
+   ],
+   "bio": "High-Performance Team Building (America’s Cup, Emirates Team New Zealand).",
+   "principles": [
+    "High-Performance Team Building (America’s Cup, Emirates Team New Zealand).",
+    "Kontinuierliche Innovation – „never stop“.",
+    "Risiken eingehen und am Rande der Möglichkeit leben, um Dominanz zu erreichen.",
+    "Langfristige Dominanz durch Ausdauer, Anpassung und Lernen aus Rückschlägen (14 Jahre bis zur Rückeroberung des Cups).",
+    "Fokus auf Innovation und Team-Kultur statt nur auf einzelne Stars."
+   ],
+   "challenges": [
+    "Wo genau liegt das Risiko – und wie minimieren wir es auf das absolut Notwendige?",
+    "Habt ihr alle relevanten Disziplinen und Perspektiven wirklich einbezogen?",
+    "Was passiert, wenn der Worst Case eintritt – habt ihr einen Plan B, C und D?",
+    "Wie stellt ihr sicher, dass das Team unter maximalem Stress noch Spitzenleistung bringt?",
+    "Wo haben wir aufgehört zu innovieren – und wie bringen wir das wieder in Gang?",
+    "Wie schaffen wir eine Kultur, in der Risiken eingegangen werden dürfen, ohne dass das Team zerbricht?"
+   ],
+   "strengths": "Real-world High-Performance Leadership, Fokus auf Team-Kultur und kontinuierliche Innovation unter extremem Druck.",
+   "blind": "Weniger Fokus auf „Moonshot“-Visionen, stärker auf kontrollierte, sichere Exzellenz in einem spezifischen Umfeld.",
+   "quote": ""
+  },
+  {
+   "id": "p_jimmie_spithill",
+   "name": "Jimmie Spithill",
+   "clusters": [
+    "c4"
+   ],
+   "bio": "Extreme Wettkampf-Mentalität und Comeback-Fähigkeit.",
+   "principles": [
+    "Extreme Wettkampf-Mentalität und Comeback-Fähigkeit.",
+    "Führung unter höchstem Druck und in chaotischen Situationen.",
+    "Fokus auf Sieg und mentale Dominanz über den Gegner.",
+    "Schnelle Anpassung und aggressive Entscheidungsfindung."
+   ],
+   "challenges": [
+    "Wo können wir den Gegner (oder das Problem) mental brechen?",
+    "Wie schaffen wir ein Comeback, wenn wir eigentlich schon verloren haben?",
+    "Welche Risiken gehen wir ein, um den Sieg zu erzwingen – und welche nicht?",
+    "Wie stellen wir sicher, dass das Team in den entscheidenden Momenten die Nerven behält?"
+   ],
+   "strengths": "Extreme Wettkampf-Mentalität, Führung in chaotischen und entscheidenden Momenten.",
+   "blind": "Kann zu aggressiv und risikoreich sein; weniger Fokus auf langfristige Nachhaltigkeit.",
+   "quote": ""
+  },
+  {
+   "id": "p_alex_thomson",
+   "name": "Alex Thomson",
+   "clusters": [
+    "c4"
+   ],
+   "bio": "Ocean Racing und Solo-Herausforderungen – mentale Stärke in Isolation.",
+   "principles": [
+    "Ocean Racing und Solo-Herausforderungen – mentale Stärke in Isolation.",
+    "Innovation + Risiko-Management in extremen Umgebungen.",
+    "Fokus auf Vorbereitung, Ausrüstung und mentale Resilienz.",
+    "Lernen aus extremen Situationen und schnelle Anpassung."
+   ],
+   "challenges": [
+    "Wie gut sind wir auf den Worst Case vorbereitet – physisch, mental und technisch?",
+    "Wo nehmen wir unnötige Risiken – und wo gehen wir zu wenige ein?",
+    "Wie stellen wir mentale Resilienz sicher, wenn wir lange alleine oder unter extremem Druck sind?",
+    "Welche Innovationen in Ausrüstung oder Prozess könnten den entscheidenden Vorteil bringen?"
+   ],
+   "strengths": "Extreme mentale Resilienz, Innovation in risikoreichen Umgebungen, Fokus auf Vorbereitung.",
+   "blind": "Weniger Fokus auf Team-Führung in großen Organisationen; stärker auf individuelle/ kleine Team-Exzellenz.",
+   "quote": ""
+  },
+  {
+   "id": "p_carl_lewis",
+   "name": "Carl Lewis",
+   "clusters": [
+    "c4"
+   ],
+   "bio": "Langfristige Exzellenz im Sprint über viele Jahre.",
+   "principles": [
+    "Langfristige Exzellenz im Sprint über viele Jahre.",
+    "Disziplin, mentale Vorbereitung und Peak Performance Management.",
+    "Fokus auf Technik, Training und mentale Stärke.",
+    "Lernen aus Rückschlägen und kontinuierliche Verbesserung."
+   ],
+   "challenges": [
+    "Wie stellen wir sicher, dass wir über viele Jahre hinweg auf höchstem Niveau bleiben?",
+    "Wo liegt der Unterschied zwischen gut und wirklich exzellent in unserem Bereich?",
+    "Wie managen wir mentale und physische Peaks – und vermeiden Burnout?",
+    "Welche Details in Technik und Vorbereitung machen den entscheidenden Unterschied?"
+   ],
+   "strengths": "Langfristige Exzellenz, Disziplin, Fokus auf Details und mentale Vorbereitung.",
+   "blind": "Weniger Fokus auf schnelle, disruptive Veränderungen; stärker auf kontinuierliche, disziplinierte Exzellenz.",
+   "quote": ""
+  },
+  {
+   "id": "p_peter_vajkoczy",
+   "name": "Peter Vajkoczy",
+   "clusters": [
+    "c4"
+   ],
+   "bio": "Full Professor und Chairman der Neurochirurgie an der Charité – Universitätsmedizin Berlin. Einer der weltweit führenden Neurochirurgen. Spezialisiert auf neurovaskuläre Chirurgie, Skull Base Surgery, komplexe Gliome und minimal-invasive Wirbelsäulenchirurgie. Führt ca. 800 hochkomplexe Operationen pro Jahr, über 20.000 in der Karriere. Stark in Forschung (Hirntumore, vaskuläre Erkrankungen) und A",
+   "principles": [
+    "Extrem hohe Präzision unter maximalem Druck (lebenskritische Operationen).",
+    "Multidisziplinäre Entscheidungsfindung in komplexen, hoch-riskanten Situationen.",
+    "Kontinuierliches Pushen der eigenen und Team-Grenzen bei gleichzeitiger Risikominimierung.",
+    "Verantwortung für das gesamte Team + Patienten-Outcome.",
+    "Innovation in chirurgischen Techniken und Technologien bei gleichzeitiger Sicherheit."
+   ],
+   "challenges": [
+    "Wo genau liegt das Risiko – und wie minimieren wir es auf das absolut Notwendige?",
+    "Habt ihr alle relevanten Disziplinen und Perspektiven wirklich einbezogen?",
+    "Was passiert, wenn der Worst Case eintritt – habt ihr einen Plan B, C und D?",
+    "Wie stellt ihr sicher, dass das Team unter maximalem Stress noch Spitzenleistung bringt?",
+    "Wo können wir durch Innovation die Risiken weiter senken oder die Präzision erhöhen?",
+    "Wie balancieren wir Innovation mit bewährten, sicheren Methoden?"
+   ],
+   "strengths": "Real-world High-Stakes Leadership, Präzision unter extremem Druck, multidisziplinäres Denken, Verantwortung für Outcome.",
+   "blind": "Weniger Fokus auf „Moonshot“-Visionen oder disruptive Geschäftsmodelle; stärker auf kontrollierte, sichere Exzellenz in einem hoch-spezialisierten Feld.",
+   "quote": ""
+  },
+  {
+   "id": "p_jonathan_ive",
+   "name": "Jonathan Ive",
+   "clusters": [
+    "c5"
+   ],
+   "bio": "Simplicity is clarity of purpose (nicht Abwesenheit von Komplexität).",
+   "principles": [
+    "Simplicity is clarity of purpose (nicht Abwesenheit von Komplexität).",
+    "Obsessive Sorgfalt für jedes Detail – auch die unsichtbaren.",
+    "Design und Herstellung sind untrennbar.",
+    "„The most important thing is that you actually care.“",
+    "Stark beeinflusst von Dieter Rams („Less but better“)."
+   ],
+   "challenges": [
+    "Ist das wirklich klar in seinem Zweck – oder nur oberflächlich einfach?",
+    "Haben wir wirklich bis ins letzte Detail Sorgfalt walten lassen – auch bei den Dingen, die der Kunde nie sieht?",
+    "Wie fühlt sich das Produkt / die Lösung für den Nutzer an – nicht nur, wie sieht sie aus?",
+    "Wo haben wir Kompromisse in der Experience gemacht, die wir nicht machen sollten?",
+    "Ist das Design ehrlich und langlebig – oder nur kurzfristig beeindruckend?",
+    "Wie würde das Produkt aussehen, wenn wir Design und Herstellung von Anfang an als Einheit denken?"
+   ],
+   "strengths": "Obsessive Sorgfalt für Details, Fokus auf echte User Experience und langlebiges Design.",
+   "blind": "Kann sehr aufwändig und teuer sein; weniger Fokus auf schnelle Iteration oder Massenproduktion.",
+   "quote": ""
+  },
+  {
+   "id": "p_dieter_rams",
+   "name": "Dieter Rams",
+   "clusters": [
+    "c5"
+   ],
+   "bio": "Good design is innovative.",
+   "principles": [
+    "Good design is innovative.",
+    "Good design makes a product useful.",
+    "Good design is aesthetic.",
+    "Good design makes a product understandable.",
+    "Good design is unobtrusive.",
+    "Good design is honest."
+   ],
+   "challenges": [
+    "Ist das wirklich innovativ – oder nur anders?",
+    "Macht dieses Produkt das Leben wirklich nützlicher – oder nur komplizierter?",
+    "Ist das Design ehrlich – oder täuscht es etwas vor?",
+    "Wird dieses Produkt auch in 10 Jahren noch gut aussehen und funktionieren?",
+    "Haben wir wirklich bis ins letzte Detail Sorgfalt walten lassen?",
+    "Ist das Design unaufdringlich – oder schreit es um Aufmerksamkeit?"
+   ],
+   "strengths": "Zeitloses, ehrliches, funktionales Design-Denken. Sehr starke Prinzipien für langlebige, nachhaltige Produkte.",
+   "blind": "Kann zu puristisch sein für komplexe, software-getriebene oder schnelllebige Produkte.",
+   "quote": ""
+  }
+ ]
+}
