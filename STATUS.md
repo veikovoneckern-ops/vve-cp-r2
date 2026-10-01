@@ -1,5 +1,16 @@
 # Stand der neuen Fassung
 
+## 01.10.2026, nachts (4) — Aufbau im Einzelnen, Notabschaltung, Modelle aktuell halten, Bilder im Gespräch
+
+| Gewünscht | Umgesetzt |
+|---|---|
+| Aufbau anklicken wie im alten Cockpit | Mini-PC, jede Karte und die Steckdosen öffnen ein Detailfenster. Neu gegenüber dem alten: **je Karte, was darauf läuft** (`systeminfo.karten()`: nvidia-smi je Karte + Kommandozeile des Prozesses → Ollama-Modell über Ollamas Manifeste, ComfyUI, Whisper des alten/neuen Cockpits) |
+| Notabschaltung 1:1 | Kill Switch und Safety Shutdown & Reboot stoßen den **WatchDog** an (`vve-health`, Repo `vve-cp`) -- der Ablauf steht nur dort. Dafür liest der WatchDog jetzt einen zweiten Briefkasten `~/vve-health/notfall-anfrage.json` (ausgeliefert 01.10., `vve-cp` cf72e03). Texte der Rückfragen wie im alten Cockpit. Übernimmt der WatchDog eine Anfrage nicht binnen 40 s, steht das rot da. Gruppe „WatchDog“ in der Server-Sektion: Temperaturen, Notabschaltung, letzter Notfall, Selbstheilung |
+| Modelle aktuell halten | `modellkatalog.py`: Rangfolge je Aufgabe (aus dem alten Cockpit), Ausschau nach kommenden Generationen, und neu: **gleicher Name, neue Gewichte** (Vergleich der Modelldatei mit Ollama) -- fand sofort gemma4:e4b. Vorschläge in den Empfehlungen mit „Laden“ samt Fortschritt; geladen über Ollamas Schnittstelle |
+| Bild/Visualisierung im Gespräch | Talk-Aktionen `bild` (ComfyUI, Vorlagen aus dem alten Cockpit: Z-Image Turbo als Vorgabe, Qwen-Image für Text im Bild, FLUX.2 nur auf ausdrücklichen Wunsch) und `visualisierung` (lokales Modell zeichnet ein SVG ohne Skript). Laufen sofort los; Vorschaukarte im Gespräch mit Fortschritt, Groß und Download (`medien.py`) |
+
+Geprüft (Testinstanz mit eigenem WatchDog-Ordner, damit nichts den echten erreicht): Detailfenster mit echten Werten; Notfall-Anfrage landet als Datei, unbekannte Art abgelehnt, Abbrechen löst nichts aus; WatchDog-Briefkasten isoliert geprüft und ausgeliefert. Bild (Z-Image) und Visualisierung (9 s) über Talk erzeugt, Download liefert die Datei. Nicht ausgelöst: die echte Notabschaltung.
+
 ## 01.10.2026, nachts (3) — Board-Auswahl, Enter überall, Aufzählungen, Spracherkennung
 
 | Gemeldet | Ursache | Behoben, und wo sonst geprüft |

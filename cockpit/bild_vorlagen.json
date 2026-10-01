@@ -1,0 +1,729 @@
+[
+ {
+  "id": "z-image",
+  "name": "Z-Image Turbo",
+  "art": "bild",
+  "modell": "z_image_turbo_bf16.safetensors",
+  "quelle": "Z-Image-Turbo-Bias",
+  "knoten": {
+   "prompt": "67",
+   "negativ": "71",
+   "groesse": "68",
+   "seed": "70",
+   "speichern": "9",
+   "seedFeld": "seed"
+  },
+  "groesseAuch": [],
+  "vorgabe": {
+   "breite": 1024,
+   "hoehe": 1024,
+   "laenge": null
+  },
+  "graph": {
+   "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+     "images": [
+      "65",
+      0
+     ],
+     "filename_prefix": "ComfyUI"
+    },
+    "_meta": {
+     "title": "SaveImage"
+    }
+   },
+   "62": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "qwen_3_4b.safetensors",
+     "type": "lumina2",
+     "device": "default"
+    },
+    "_meta": {
+     "title": "CLIPLoader"
+    }
+   },
+   "63": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "ae.safetensors"
+    },
+    "_meta": {
+     "title": "VAELoader"
+    }
+   },
+   "65": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "70",
+      0
+     ],
+     "vae": [
+      "63",
+      0
+     ]
+    },
+    "_meta": {
+     "title": "VAEDecode"
+    }
+   },
+   "66": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "z_image_turbo_bf16.safetensors",
+     "weight_dtype": "default"
+    },
+    "_meta": {
+     "title": "UNETLoader"
+    }
+   },
+   "67": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+     "clip": [
+      "62",
+      0
+     ],
+     "text": ""
+    },
+    "_meta": {
+     "title": "CLIPTextEncode"
+    }
+   },
+   "68": {
+    "class_type": "EmptySD3LatentImage",
+    "inputs": {
+     "width": 1024,
+     "height": 1024,
+     "batch_size": 1
+    },
+    "_meta": {
+     "title": "EmptySD3LatentImage"
+    }
+   },
+   "69": {
+    "class_type": "ModelSamplingAuraFlow",
+    "inputs": {
+     "model": [
+      "66",
+      0
+     ],
+     "shift": 3
+    },
+    "_meta": {
+     "title": "ModelSamplingAuraFlow"
+    }
+   },
+   "70": {
+    "class_type": "KSampler",
+    "inputs": {
+     "model": [
+      "69",
+      0
+     ],
+     "positive": [
+      "67",
+      0
+     ],
+     "negative": [
+      "71",
+      0
+     ],
+     "latent_image": [
+      "68",
+      0
+     ],
+     "seed": 42,
+     "steps": 8,
+     "cfg": 1,
+     "sampler_name": "res_multistep",
+     "scheduler": "simple",
+     "denoise": 1
+    },
+    "_meta": {
+     "title": "KSampler"
+    }
+   },
+   "71": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+     "clip": [
+      "62",
+      0
+     ],
+     "text": "low quality, bad anatomy, extra digits, missing digits, extra limbs, missing limbs"
+    },
+    "_meta": {
+     "title": "CLIPTextEncode"
+    }
+   }
+  }
+ },
+ {
+  "id": "qwen",
+  "name": "Qwen-Image",
+  "art": "bild",
+  "modell": "qwen_image_2512_fp8_e4m3fn.safetensors",
+  "quelle": "Qwen-Image-Turbo",
+  "knoten": {
+   "prompt": "76:6",
+   "negativ": "76:7",
+   "groesse": "76:58",
+   "seed": "76:3",
+   "speichern": "60",
+   "seedFeld": "seed"
+  },
+  "groesseAuch": [],
+  "vorgabe": {
+   "breite": 1328,
+   "hoehe": 1328,
+   "laenge": null
+  },
+  "graph": {
+   "60": {
+    "class_type": "SaveImage",
+    "inputs": {
+     "images": [
+      "76:8",
+      0
+     ],
+     "filename_prefix": "Qwen-Image"
+    },
+    "_meta": {
+     "title": "SaveImage"
+    }
+   },
+   "76:39": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "qwen_image_vae.safetensors"
+    },
+    "_meta": {
+     "title": "VAELoader"
+    }
+   },
+   "76:38": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+     "type": "qwen_image",
+     "device": "default"
+    },
+    "_meta": {
+     "title": "CLIPLoader"
+    }
+   },
+   "76:58": {
+    "class_type": "EmptySD3LatentImage",
+    "inputs": {
+     "width": 1328,
+     "height": 1328,
+     "batch_size": 1
+    },
+    "_meta": {
+     "title": "EmptySD3LatentImage"
+    }
+   },
+   "76:66": {
+    "class_type": "ModelSamplingAuraFlow",
+    "inputs": {
+     "model": [
+      "76:78",
+      0
+     ],
+     "shift": 3.1000000000000005
+    },
+    "_meta": {
+     "title": "ModelSamplingAuraFlow"
+    }
+   },
+   "76:37": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "qwen_image_2512_fp8_e4m3fn.safetensors",
+     "weight_dtype": "default"
+    },
+    "_meta": {
+     "title": "UNETLoader"
+    }
+   },
+   "76:6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+     "clip": [
+      "76:38",
+      0
+     ],
+     "text": ""
+    },
+    "_meta": {
+     "title": "CLIP Text Encode (Positive Prompt)"
+    }
+   },
+   "76:7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+     "clip": [
+      "76:38",
+      0
+     ],
+     "text": ""
+    },
+    "_meta": {
+     "title": "CLIP Text Encode (Negative Prompt)"
+    }
+   },
+   "76:8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "76:3",
+      0
+     ],
+     "vae": [
+      "76:39",
+      0
+     ]
+    },
+    "_meta": {
+     "title": "VAEDecode"
+    }
+   },
+   "76:73": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "76:37",
+      0
+     ],
+     "lora_name": "Qwen-Image-Lightning-8steps-V1.0.safetensors",
+     "strength_model": 1
+    },
+    "_meta": {
+     "title": "LoraLoaderModelOnly"
+    }
+   },
+   "76:3": {
+    "class_type": "KSampler",
+    "inputs": {
+     "model": [
+      "76:66",
+      0
+     ],
+     "positive": [
+      "76:6",
+      0
+     ],
+     "negative": [
+      "76:7",
+      0
+     ],
+     "latent_image": [
+      "76:58",
+      0
+     ],
+     "seed": 1105065180857816,
+     "steps": [
+      "76:82",
+      0
+     ],
+     "cfg": [
+      "76:83",
+      0
+     ],
+     "sampler_name": "euler",
+     "scheduler": "simple",
+     "denoise": 1
+    },
+    "_meta": {
+     "title": "KSampler"
+    }
+   },
+   "76:78": {
+    "class_type": "ComfySwitchNode",
+    "inputs": {
+     "on_false": [
+      "76:37",
+      0
+     ],
+     "on_true": [
+      "76:73",
+      0
+     ],
+     "switch": [
+      "76:86",
+      0
+     ]
+    },
+    "_meta": {
+     "title": "Switch (Model)"
+    }
+   },
+   "76:79": {
+    "class_type": "PrimitiveInt",
+    "inputs": {
+     "value": 8
+    },
+    "_meta": {
+     "title": "Steps"
+    }
+   },
+   "76:81": {
+    "class_type": "PrimitiveFloat",
+    "inputs": {
+     "value": 1
+    },
+    "_meta": {
+     "title": "CFG"
+    }
+   },
+   "76:82": {
+    "class_type": "ComfySwitchNode",
+    "inputs": {
+     "on_false": [
+      "76:84",
+      0
+     ],
+     "on_true": [
+      "76:79",
+      0
+     ],
+     "switch": [
+      "76:86",
+      0
+     ]
+    },
+    "_meta": {
+     "title": "Switch (Steps)"
+    }
+   },
+   "76:83": {
+    "class_type": "ComfySwitchNode",
+    "inputs": {
+     "on_false": [
+      "76:85",
+      0
+     ],
+     "on_true": [
+      "76:81",
+      0
+     ],
+     "switch": [
+      "76:86",
+      0
+     ]
+    },
+    "_meta": {
+     "title": "Switch (CFG)"
+    }
+   },
+   "76:84": {
+    "class_type": "PrimitiveInt",
+    "inputs": {
+     "value": 20
+    },
+    "_meta": {
+     "title": "Steps"
+    }
+   },
+   "76:85": {
+    "class_type": "PrimitiveFloat",
+    "inputs": {
+     "value": 4
+    },
+    "_meta": {
+     "title": "CFG"
+    }
+   },
+   "76:86": {
+    "class_type": "PrimitiveBoolean",
+    "inputs": {
+     "value": true
+    },
+    "_meta": {
+     "title": "Enable Lightning LoRA"
+    }
+   }
+  }
+ },
+ {
+  "id": "flux2",
+  "name": "FLUX.2 dev",
+  "art": "bild",
+  "modell": "flux2_dev_fp8mixed.safetensors",
+  "quelle": "FLUX2-BASIS",
+  "knoten": {
+   "prompt": "98:6",
+   "negativ": null,
+   "groesse": "98:47",
+   "seed": "98:25",
+   "speichern": "9",
+   "seedFeld": "noise_seed"
+  },
+  "groesseAuch": [
+   "98:48"
+  ],
+  "vorgabe": {
+   "breite": 1024,
+   "hoehe": 1024,
+   "laenge": null
+  },
+  "graph": {
+   "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+     "images": [
+      "98:8",
+      0
+     ],
+     "filename_prefix": "Flux2_dev"
+    },
+    "_meta": {
+     "title": "SaveImage"
+    }
+   },
+   "98:22": {
+    "class_type": "BasicGuider",
+    "inputs": {
+     "model": [
+      "98:102",
+      0
+     ],
+     "conditioning": [
+      "98:26",
+      0
+     ]
+    },
+    "_meta": {
+     "title": "BasicGuider"
+    }
+   },
+   "98:26": {
+    "class_type": "FluxGuidance",
+    "inputs": {
+     "conditioning": [
+      "98:6",
+      0
+     ],
+     "guidance": 4
+    },
+    "_meta": {
+     "title": "FluxGuidance"
+    }
+   },
+   "98:16": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+     "sampler_name": "euler"
+    },
+    "_meta": {
+     "title": "KSamplerSelect"
+    }
+   },
+   "98:10": {
+    "class_type": "VAELoader",
+    "inputs": {
+     "vae_name": "flux2-vae.safetensors"
+    },
+    "_meta": {
+     "title": "VAELoader"
+    }
+   },
+   "98:13": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+     "noise": [
+      "98:25",
+      0
+     ],
+     "guider": [
+      "98:22",
+      0
+     ],
+     "sampler": [
+      "98:16",
+      0
+     ],
+     "sigmas": [
+      "98:48",
+      0
+     ],
+     "latent_image": [
+      "98:47",
+      0
+     ]
+    },
+    "_meta": {
+     "title": "SamplerCustomAdvanced"
+    }
+   },
+   "98:8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+     "samples": [
+      "98:13",
+      0
+     ],
+     "vae": [
+      "98:10",
+      0
+     ]
+    },
+    "_meta": {
+     "title": "VAEDecode"
+    }
+   },
+   "98:38": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+     "clip_name": "mistral_3_small_flux2_fp8.safetensors",
+     "type": "flux2",
+     "device": "default"
+    },
+    "_meta": {
+     "title": "CLIPLoader"
+    }
+   },
+   "98:48": {
+    "class_type": "Flux2Scheduler",
+    "inputs": {
+     "steps": [
+      "98:103",
+      0
+     ],
+     "width": 1024,
+     "height": 1024
+    },
+    "_meta": {
+     "title": "Flux2Scheduler"
+    }
+   },
+   "98:47": {
+    "class_type": "EmptyFlux2LatentImage",
+    "inputs": {
+     "width": 1024,
+     "height": 1024,
+     "batch_size": 1
+    },
+    "_meta": {
+     "title": "EmptyFlux2LatentImage"
+    }
+   },
+   "98:25": {
+    "class_type": "RandomNoise",
+    "inputs": {
+     "noise_seed": 810330053602551
+    },
+    "_meta": {
+     "title": "RandomNoise"
+    }
+   },
+   "98:6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+     "clip": [
+      "98:38",
+      0
+     ],
+     "text": ""
+    },
+    "_meta": {
+     "title": "CLIP Text Encode (Positive Prompt)"
+    }
+   },
+   "98:101": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+     "model": [
+      "98:12",
+      0
+     ],
+     "lora_name": "Flux_2-Turbo-LoRA_comfyui.safetensors",
+     "strength_model": 1
+    },
+    "_meta": {
+     "title": "LoraLoaderModelOnly"
+    }
+   },
+   "98:102": {
+    "class_type": "ComfySwitchNode",
+    "inputs": {
+     "on_false": [
+      "98:12",
+      0
+     ],
+     "on_true": [
+      "98:101",
+      0
+     ],
+     "switch": [
+      "98:104",
+      0
+     ]
+    },
+    "_meta": {
+     "title": "Switch(model)"
+    }
+   },
+   "98:100": {
+    "class_type": "PrimitiveInt",
+    "inputs": {
+     "value": 20
+    },
+    "_meta": {
+     "title": "Steps"
+    }
+   },
+   "98:99": {
+    "class_type": "PrimitiveInt",
+    "inputs": {
+     "value": 8
+    },
+    "_meta": {
+     "title": "Steps"
+    }
+   },
+   "98:103": {
+    "class_type": "ComfySwitchNode",
+    "inputs": {
+     "on_false": [
+      "98:100",
+      0
+     ],
+     "on_true": [
+      "98:99",
+      0
+     ],
+     "switch": [
+      "98:104",
+      0
+     ]
+    },
+    "_meta": {
+     "title": "Switch(steps)"
+    }
+   },
+   "98:104": {
+    "class_type": "PrimitiveBoolean",
+    "inputs": {
+     "value": false
+    },
+    "_meta": {
+     "title": "Enable Turbo LoRA"
+    }
+   },
+   "98:12": {
+    "class_type": "UNETLoader",
+    "inputs": {
+     "unet_name": "flux2_dev_fp8mixed.safetensors",
+     "weight_dtype": "default"
+    },
+    "_meta": {
+     "title": "UNETLoader"
+    }
+   }
+  }
+ }
+]

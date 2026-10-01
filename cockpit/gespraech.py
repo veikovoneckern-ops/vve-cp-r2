@@ -28,6 +28,8 @@ AKTIONEN = {
     "aufgabe_erledigt": ("aufgabe_id",),
     "aufgabe_aendern": ("aufgabe_id",),
     "zeigen": ("ziel",),
+    "bild": ("prompt",),
+    "visualisierung": ("beschreibung",),
     "ausarbeiten": ("auftrag",),
     "merken": ("begriff", "bedeutung"),
     "notiz": ("text",),
@@ -58,6 +60,8 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"aufgabe_erledigt","aufgabe_id":"t…"}
 - {"aktion":"aufgabe_aendern","aufgabe_id":"t…","titel":"neuer Titel oder weglassen","faellig":"JJJJ-MM-TT oder weglassen","status":"offen|erledigt oder weglassen"}
 - {"aktion":"zeigen","ziel":"ueberblick|aufgaben|zeitplan|struktur|notizen|ergebnisse|verlauf|dateien","projekt_id":"p…"} -- öffnet eine Ansicht des Projekts sofort, ohne Rückfrage (ändert nichts)
+- {"aktion":"bild","prompt":"ausführliche Bildbeschreibung auf ENGLISCH (Motiv, Stil, Licht, Perspektive)","titel":"kurzer deutscher Titel","format":"quadrat|quer|hoch","vorlage":"z-image"} -- erzeugt ein Bild auf dem eigenen Server. Vorlage IMMER z-image (etwa 15 Sekunden), auch für fotorealistische Bilder; qwen nur, wenn lesbarer Text im Bild stehen soll; flux2 nur, wenn Veiko ausdrücklich höchste Qualität verlangt (dauert mehrere Minuten). Läuft sofort.
+- {"aktion":"visualisierung","beschreibung":"was dargestellt werden soll, mit allen Inhalten (Schritte, Begriffe, Zahlen) auf Deutsch","titel":"kurzer Titel"} -- zeichnet ein Schaubild (Ablauf, Mindmap, Diagramm, Vergleich). Läuft sofort.
 - {"aktion":"zeigen","ziel":"board|briefing|inbox|projects|team|neo|system"} -- öffnet einen Bereich des Cockpits sofort. Will Veiko „mit dem Advisory Board sprechen“: ziel board. Stellt er dabei schon eine Frage ans Board, gib sie als "frage" mit -- das Board antwortet dann selbst, du antwortest nicht an seiner Stelle.
 - {"aktion":"ausarbeiten","rolle":"stratege|buch|designer|video","form":"text|aufstellung|konzept|dokument|webseite|praesentation","auftrag":"…","recherche":"Suchanfrage oder null","vorgang_id":"v… oder null","projekt_id":"p… oder null"}
 - {"aktion":"merken","art":"person|organisation|begriff|hoerfehler","begriff":"…","bedeutung":"…"}
@@ -66,6 +70,7 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"neo","auftrag":"was Neo am Cockpit oder Server tun soll"}
 Schlage nur vor, was Veiko erkennbar will. Ohne Handlungswunsch kein Block.
 WICHTIG: Du selbst führst NICHTS aus. Schreib nie „ich mache das“, „ich korrigiere“, „ich merke mir“ oder „erledigt“. Sag in einem Satz, was du vorschlägst, und schließ mit der Frage „Soll ich das so machen?“. Ausgeführt wird erst, wenn Veiko bestätigt; das Cockpit meldet es dann selbst.
+AUSNAHME bild und visualisierung: die laufen sofort los, das Ergebnis erscheint gleich im Gespräch zum Ansehen und Herunterladen. Sag nur kurz „Ich erstelle dir das Bild, es erscheint gleich hier.“ bzw. „… die Visualisierung …“ -- keine Frage. Beziehen sie sich auf das Gespräch oder KONTEXT, nimm dessen Inhalte in prompt bzw. beschreibung auf.
 AUSNAHME zeigen: das öffnet nur eine Ansicht und passiert sofort. Dann KEINE Frage, sondern ein kurzer Satz wie „Ich öffne dir das Advisory Board.“ Reichst du eine Frage ans Board weiter, sag „Ich gebe deine Frage ans Advisory Board weiter.“ und antworte nicht selbst an seiner Stelle.
 Wenn Veiko eine offene Entscheidung bestätigt oder ablehnt, gehört genau EINE passende entscheiden-Aktion in den Block, nicht mehr.
 aufgabe_erledigt nur, wenn Veiko sagt, dass er etwas erledigt hat. Überfällig heißt nicht erledigt.
@@ -215,6 +220,10 @@ def beschriften(a: dict[str, Any]) -> str | None:
         if a.get("status") in ("offen", "erledigt") and a["status"] != t["status"]:
             was.append("Status " + a["status"])
         return f"Aufgabe „{t['titel'][:60]}“ ändern: " + ", ".join(was) if was else None
+    if art == "bild":
+        return f"Bild: {(a.get('titel') or a['prompt'])[:80]}"
+    if art == "visualisierung":
+        return f"Visualisierung: {(a.get('titel') or a['beschreibung'])[:80]}"
     if art == "zeigen":
         name = ZIELE.get(a.get("ziel")) or BEREICHE.get(a.get("ziel"))
         return name and f"Zeigen: {name}"
@@ -354,12 +363,20 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     # "Zeigen" aendert nichts -- das Cockpit fuehrt es sofort aus, ohne Knopf.
     zeigen = [v for v in vorschlaege if v["aktion"] == "zeigen" and (v.get("projekt_id") or v.get("ziel") in BEREICHE)]
     vorschlaege = [v for v in vorschlaege if v["aktion"] != "zeigen"]
+    # Bilder und Visualisierungen kosten nur Rechenzeit: sofort starten, Ergebnis im Gespraech.
+    from . import medien
+    medien_jobs = []
+    for v in [v for v in vorschlaege if v["aktion"] in ("bild", "visualisierung")][:2]:
+        j = (medien.bild_starten(str(v["prompt"])[:1500], str(v.get("titel") or ""), str(v.get("vorlage") or "z-image"), str(v.get("format") or "quadrat"))
+             if v["aktion"] == "bild" else medien.visualisierung_starten(str(v["beschreibung"])[:4000], str(v.get("titel") or "")))
+        medien_jobs.append({"id": j["id"], "art": j["art"], "titel": j["titel"]})
+    vorschlaege = [v for v in vorschlaege if v["aktion"] not in ("bild", "visualisierung")]
     if llm.fremdschrift(sichtbar):
         sichtbar = llm.FREMDSCHRIFT.sub("", sichtbar)
     mid = db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",
-                        (gid, "assistent", sichtbar, json.dumps({"vorschlaege": vorschlaege, "modell": modell}, ensure_ascii=False), time.time()))
+                        (gid, "assistent", sichtbar, json.dumps({"vorschlaege": vorschlaege, "modell": modell, "medien": medien_jobs}, ensure_ascii=False), time.time()))
     db.ausfuehren("UPDATE gespraeche SET geaendert=? WHERE id=?", (time.time(), gid))
-    yield {"typ": "fertig", "text": sichtbar, "vorschlaege": vorschlaege, "nachricht_id": mid, "modell": modell,
+    yield {"typ": "fertig", "text": sichtbar, "vorschlaege": vorschlaege, "nachricht_id": mid, "modell": modell, "medien": medien_jobs,
            "zeigen": [{"ziel": v["ziel"], "projekt_id": v.get("projekt_id") if v.get("ziel") in ZIELE else None,
                        "frage": str(v.get("frage") or "")[:2000] or None} for v in zeigen[:1]]}
 

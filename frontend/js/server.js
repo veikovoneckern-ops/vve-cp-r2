@@ -13,7 +13,7 @@
 //
 // Alles aus Live-Daten. Was nicht gemeldet wird, steht als "nicht gemeldet"
 // da -- ein grauer Punkt ist ehrlicher als ein geratener gruener.
-import { html, useState, useEffect, Icon, Leer, toast, fehlerMelden, zeitText, kopieren } from "./ui.js";
+import { html, useState, useEffect, Icon, Leer, Modal, toast, fehlerMelden, zeitText, kopieren } from "./ui.js";
 import { api } from "./api.js";
 import { useKopf, ampel, ledFarbe } from "./kopf.js";
 
@@ -58,7 +58,7 @@ const zustand = (ok, schlecht) => (ok ? "ok" : schlecht ? "warnung" : "unbekannt
 // ------------------------------------------------------------ Aufbau
 function farbeTemp(t, warn, krit) { return t >= krit ? "var(--signal)" : t >= warn ? "var(--amber)" : "var(--sea)"; }
 
-function Aufbau({ s }) {
+function Aufbau({ s, beiKlick }) {
   if (!s) return html`<${Leer}>Der Status-Dienst antwortet nicht.</${Leer}>`;
   const t = s.temps_c || {};
   const g = gpus(s);
@@ -100,14 +100,21 @@ function Aufbau({ s }) {
     <path d="M150 286 V256" class="sb-strom" /><path d="M580 286 V266 H736 V75 H730 M736 199 H730" class="sb-strom" />
     ${dose(10, p.server, "Steckdose Server")}
     ${dose(450, p.dock, "Steckdose Docks")}
+    ${beiKlick && html`<g class="sb-treffer">
+      <rect x="10" y="20" width="300" height="236" rx="10" role="button" tabindex="0" aria-label="Mini-PC im Einzelnen" onClick=${() => beiKlick("minipc")}><title>Mini-PC: was läuft, Messwerte</title></rect>
+      ${g.slice(0, 2).map((k, i) => html`<rect x="430" y=${20 + i * 124} width="300" height="110" rx="10" role="button" tabindex="0" aria-label=${"Grafikkarte " + (i + 1) + " im Einzelnen"} onClick=${() => beiKlick("gpu:" + i)}><title>Karte ${i + 1}: was darauf läuft</title></rect>`)}
+      <rect x="10" y="286" width="280" height="50" rx="10" role="button" tabindex="0" aria-label="Strom im Einzelnen" onClick=${() => beiKlick("strom")}><title>Steckdosen und Notabschaltung</title></rect>
+      <rect x="450" y="286" width="280" height="50" rx="10" role="button" tabindex="0" aria-label="Strom im Einzelnen" onClick=${() => beiKlick("strom")}><title>Steckdosen und Notabschaltung</title></rect>
+    </g>`}
   </svg></div>`;
 }
 
 // ------------------------------------------------------------ Updates, Empfehlungen, Sicherungen
 const STUFE = { einspielen: ["gruen", "einspielen"], nicht: ["", "nicht einspielen"], achtung: ["rot", "Achtung"], info: ["blau", "Hinweis"] };
 
-function Empfehlung({ e, auftrag, starten }) {
+function Empfehlung({ e, auftrag, starten, laden, modellLaden }) {
   const [frage, setFrage] = useState(false);
+  if (e.aktion && e.aktion.art === "modell") return html`<${ModellEmpfehlung} e=${e} l=${(laden || {})[e.aktion.name]} modellLaden=${modellLaden} />`;
   const [st, label] = STUFE[e.stufe] || ["", e.stufe];
   const laeuft = auftrag && auftrag.laeuft;
   return html`<div class=${"empf " + e.stufe}>
@@ -121,6 +128,21 @@ function Empfehlung({ e, auftrag, starten }) {
           <button class="btn klein gefahr voll" onClick=${() => { setFrage(false); starten(e.aktion.art); }}>Ja, ${e.aktion.text.toLowerCase()}</button>
           <button class="btn klein geist" onClick=${() => setFrage(false)}>Abbrechen</button></div>`
       : html`<div><button class="btn klein gefahr" disabled=${laeuft} onClick=${() => setFrage(true)}>${laeuft ? "läuft schon ein Auftrag" : e.aktion.text}</button></div>`)}
+  </div>`;
+}
+
+// Modell laden: kein Eingriff ins System (nur ein Download ueber Ollama), deshalb
+// ohne Rueckfrage und nicht rot -- aber mit sichtbarem Fortschritt, denn 20 GB
+// sind eine halbe Stunde Stille.
+function ModellEmpfehlung({ e, l, modellLaden }) {
+  return html`<div class="empf einspielen">
+    <div class="empf-kopf"><span class="pill gruen">Modell</span></div>
+    <b>${e.titel}</b>
+    <p class="leise klein empf-text" title=${e.warum}>${e.warum}</p>
+    ${l && l.stand === "laeuft" ? html`<div class="sv-bzeile"><div class="sv-zeile"><span>${l.schritt || "lädt"}</span><b>${l.prozent || 0} %${l.gb ? " von " + l.gb + " GB" : ""}</b></div><${Balken} p=${l.prozent || 0} warn=${101} krit=${101} /></div>`
+      : l && l.stand === "fertig" ? html`<div class="leise klein">Geladen. Im Team kannst du es jetzt einer Rolle zuweisen.</div>`
+      : html`<div>${l && l.stand === "fehler" ? html`<div class="fehlerbox" style="margin-bottom:6px">${l.fehler}</div>` : ""}
+          <button class="btn klein primaer" onClick=${() => modellLaden(e.aktion.name)}><${Icon} n="download" g=${13} />${e.aktion.text}</button></div>`}
   </div>`;
 }
 
@@ -304,10 +326,150 @@ function RtxLed({ s }) {
     <p class="leise klein sv-fuss">Dieselbe Farbe trägt das Logo oben links, solange lokal gerechnet wird.</p>`;
 }
 
+
+// ------------------------------------------------------------ Aufbau im Einzelnen
+// Klick auf den Mini-PC, eine Karte oder eine Steckdose im Schaubild (wie im
+// alten Cockpit). Liest denselben Stand wie das Schaubild -- keine zweite
+// Abfrage. Anders als dort steht je Karte, WAS auf ihr laeuft: nvidia-smi je
+// Karte plus Kommandozeile des Prozesses (systeminfo.karten()).
+function Vital({ name, wert, s }) {
+  return html`<div class=${"det-vital " + (s || "")}><b>${wert ?? "—"}</b><span>${name}</span></div>`;
+}
+const stufeWert = (w, warn, krit) => (w == null ? "" : w >= krit ? "kritisch" : w >= warn ? "warnung" : "");
+
+function DetailMinipc({ s, karten }) {
+  const t = s.temps_c || {}, m = s.memory_mb || {}, d = s.disk_gb || {}, c = s.cpu || {}, n = s.network || {}, h = s.host || {};
+  const funk = String(n.interface || "").startsWith("wl");
+  return html`
+    <div class="det-vitals">
+      <${Vital} name="CPU" wert=${t.cpu != null ? t.cpu + " °C" : null} s=${stufeWert(t.cpu, 80, 88)} />
+      <${Vital} name="Arbeitsspeicher" wert=${m.total ? Math.round(m.used / m.total * 100) + " %" : null} s=${m.total ? stufeWert(m.used / m.total * 100, 80, 92) : ""} />
+      <${Vital} name="NVMe frei" wert=${d.total ? Math.round(d.free) + " GB" : null} s=${d.total ? stufeWert(d.used / d.total * 100, 80, 92) : ""} />
+      <${Vital} name="Last (1 min)" wert=${h.load ? (+h.load[0]).toFixed(2) : null} />
+    </div>
+    <h5 class="det-abschnitt">System</h5>
+    <${Zeile} name="Prozessor" wert=${(c.model || "?") + (c.cores ? " · " + c.cores + " Threads" : "")} />
+    <${Zeile} name="Taktregelung · Energieprofil" wert=${[c.governor, c.power_profile].filter(Boolean).join(" · ") || null} />
+    <${Zeile} name="Arbeitsspeicher" wert=${m.total ? `${(m.used / 1024).toFixed(1)} / ${(m.total / 1024).toFixed(0)} GB` : null} />
+    <${Zeile} name="NVMe" wert=${d.total ? `${Math.round(d.free)} von ${Math.round(d.total)} GB frei${t.nvme != null ? " · " + t.nvme + " °C" : ""}` : null} />
+    <${Zeile} name="Netz" wert=${n.interface ? `${funk ? "WLAN" : "LAN"} · ${n.interface}${funk && n.wlan ? ` · ${n.wlan.ssid} · ${n.wlan.signal_dbm} dBm · ${n.wlan.bitrate_mbit} Mbit/s` : ""}` : null} s=${funk ? "warnung" : ""} />
+    <${Zeile} name="Adressen" wert=${`LAN ${n.lan_ip || "?"} · Tailnet ${n.tailscale_ip || "?"}`} />
+    <${Zeile} name="Läuft seit" wert=${h.uptime ? h.uptime.replace("up ", "") : null} />
+    <${Zeile} name="Lüfterdrehzahl" wert=${(s.fans && s.fans.note) ? "nicht verfügbar (der Mini-PC meldet sie nicht)" : null} />
+    <h5 class="det-abschnitt">Was gerade läuft</h5>
+    ${Object.entries(s.services || {}).map(([k, v]) => html`<${Zeile} name=${k} wert=${v} s=${/active|running/i.test(v) ? "" : "kritisch"} />`)}
+    ${(s.docker || []).map((x) => { const [nm, st] = String(x).split("|"); return html`<${Zeile} name=${nm + " (Container)"} wert=${st} s=${/^Up/.test(st || "") ? "" : "kritisch"} />`; })}
+    <h5 class="det-abschnitt">Geladene Sprachmodelle</h5>
+    ${(s.ollama_laeuft || []).length ? s.ollama_laeuft.map((x) => html`<${Zeile} name=${x.name} wert=${`${x.groesse} · ${x.prozessor}${x.kontext ? " · Kontext " + x.kontext : ""}`} />`)
+      : html`<p class="leise klein">Gerade ist kein Modell geladen.</p>`}
+    <p class="leise klein" style="margin-top:6px">Auf welcher Karte sie liegen, steht im Fenster der jeweiligen Karte.</p>`;
+}
+
+function DetailKarte({ s, i, karten }) {
+  const k = gpus(s)[i];
+  const kk = (karten || []).find((x) => x.index === i);
+  if (!k) return html`<div class="fehlerbox">Diese Karte lässt sich gerade nicht auslesen.</div>`;
+  const vp = k.belegt / (k.gesamt || 1) * 100;
+  return html`
+    <div class="det-vitals">
+      <${Vital} name="Temperatur" wert=${k.temp + " °C"} s=${stufeWert(k.temp, 75, 85)} />
+      <${Vital} name="Auslastung" wert=${k.last + " %"} />
+      <${Vital} name="Leistung" wert=${Math.round(k.watt) + " W"} />
+      <${Vital} name="Lüfter" wert=${k.luefter || null} />
+    </div>
+    <h5 class="det-abschnitt">Grafikspeicher</h5>
+    <${BalkenZeile} name="Belegt" wert=${`${(k.belegt / 1024).toFixed(1)} / ${(k.gesamt / 1024).toFixed(0)} GB (${Math.round(vp)} %)`} p=${vp} warn=${75} krit=${90} />
+    <h5 class="det-abschnitt">Was auf dieser Karte läuft</h5>
+    ${!kk ? html`<p class="leise klein">nvidia-smi meldet gerade keine Prozessliste.</p>`
+      : kk.prozesse.length ? kk.prozesse.map((p) => html`<${Zeile} name=${p.was + (p.kontext ? " · Kontext " + p.kontext : "")} wert=${(p.mib / 1024).toFixed(1) + " GB"} />`)
+      : html`<p class="leise klein">Nichts. Die Karte ist frei.</p>`}
+    ${kk && kk.prozesse.some((p) => p.art === "ollama") && html`<p class="leise klein" style="margin-top:6px">Ein großes Modell verteilt Ollama auf beide Karten; dann steht es in beiden Fenstern mit seinem jeweiligen Anteil.</p>`}
+    <h5 class="det-abschnitt">Verbindung</h5>
+    <${Zeile} name="Gehäuse" wert=${"MINISFORUM DEG1 · Dock " + (i + 1)} />
+    <${Zeile} name="Anschluss" wert=${i === 0 ? "OCuLink" : "SSD-Steckplatz (M.2)"} />`;
+}
+
+function DetailStrom({ s, wd, notfall }) {
+  const p = s.power || {};
+  return html`
+    ${[["Server", p.server], ["Docks", p.dock]].map(([n, d]) => html`<h5 class="det-abschnitt">Steckdose ${n}</h5>
+      ${d ? html`<div class="det-vitals">
+          <${Vital} name="Leistung" wert=${Math.round(d.watt) + " W"} />
+          <${Vital} name="Spannung" wert=${Math.round(d.volt) + " V"} s=${d.volt < 210 || d.volt > 250 ? "warnung" : ""} />
+          <${Vital} name="Dose" wert=${d.temp_c + " °C"} s=${stufeWert(d.temp_c, 60, 72)} />
+          <${Vital} name="Zähler" wert=${d.kwh != null ? d.kwh.toFixed(1) + " kWh" : null} />
+        </div><${Zeile} name="Adresse" wert=${d.host} />` : html`<p class="leise klein">Keine Messung.</p>`}`)}
+    <p class="leise klein" style="margin-top:6px">Der Shelly regelt ab 70 °C ab und schaltet bei 80 °C aus; gewarnt wird ab 60 °C.</p>
+    <h5 class="det-abschnitt">Notabschaltung</h5>
+    <${WatchDogKnoepfe} wd=${wd} notfall=${notfall} />`;
+}
+
+function AufbauDetail({ teil, s, karten, wd, notfall, zu }) {
+  const i = teil.startsWith("gpu:") ? +teil.split(":")[1] : null;
+  const titel = teil === "minipc" ? "Mini-PC · MINISFORUM AI X1 Pro" : teil === "strom" ? "Strom und Notabschaltung"
+    : `Grafikkarte ${i + 1}${gpus(s)[i] ? " · " + gpus(s)[i].name.replace("NVIDIA GeForce ", "") : ""}`;
+  return html`<${Modal} titel=${titel} zu=${zu} breit=${true}>
+    ${teil === "minipc" && html`<${DetailMinipc} s=${s} karten=${karten} />`}
+    ${i != null && html`<${DetailKarte} s=${s} i=${i} karten=${karten} />`}
+    ${teil === "strom" && html`<${DetailStrom} s=${s} wd=${wd} notfall=${notfall} />`}
+  <//>`;
+}
+
+// ------------------------------------------------------------ WatchDog
+// Die Knoepfe stoßen den WatchDog-Dienst an (systeminfo.notfall_anfordern); der
+// Ablauf selbst steht nur dort. Texte der Rueckfragen wie im alten Cockpit.
+const NOTFALL = {
+  kill: { knopf: "Kill Switch", frage: "Wirklich sofort ALLES ausschalten?",
+    text: "Dock- UND Server-Steckdose gehen sofort aus, ohne Abkühlpause. Es gibt KEINEN automatischen Wiederanlauf: der Server bleibt aus, bis du die Steckdosen von Hand (Shelly-App) wieder einschaltest. Das Cockpit ist danach nicht mehr erreichbar.",
+    ja: "Ja, sofort alles ausschalten" },
+  neustart: { knopf: "Safety Shutdown & Reboot", frage: "Safety Shutdown & Reboot jetzt starten?",
+    text: "Schaltet die Stromversorgung der Grafikkarten ab, kühlt 90 Sekunden ab, schaltet sie wieder ein und trennt danach kurz die Server-Steckdose selbst (automatischer Wiederanlauf nach 15 Sekunden). Derselbe Ablauf wie bei einem echten automatischen Notfall. Einige Minuten sind ComfyUI, die lokalen Modelle und das Cockpit nicht erreichbar. Klappt der Wiederanlauf nicht, hilft nur die Shelly-App.",
+    ja: "Ja, Ablauf starten" },
+};
+
+function WatchDogKnoepfe({ wd, notfall }) {
+  const [frage, setFrage] = useState(null);
+  const offen = wd && wd.anfrage_offen;
+  const seit = offen && wd.anfrage ? Math.round(Date.now() / 1000 - wd.anfrage.angefordert_um) : 0;
+  return html`<div class="det-notfall">
+    <p class="leise klein">Automatische Notfall-Erkennung: <b>${!wd || !wd.bekannt ? "Stand unbekannt" : wd.automatik_angehalten ? "AUS, angehalten nach wiederholtem Notfall" : wd.auto_an ? "an" : "aus (nur Beobachtung)"}</b>${wd && wd.schwelle_c ? ` · Notfallschwelle ${wd.schwelle_c} °C` : ""}.</p>
+    ${offen && html`<div class=${seit > 40 ? "fehlerbox" : "hinweisbox"}>${seit > 40
+      ? `Die Anfrage liegt seit ${seit} s, der WatchDog hat sie nicht übernommen. Läuft vve-health in der aktuellen Fassung (mit dem Briefkasten für dieses Cockpit)?`
+      : "Anfrage gestellt. Der WatchDog übernimmt innerhalb von 15 Sekunden."}</div>`}
+    ${frage ? html`<div class="det-frage"><b>${NOTFALL[frage].frage}</b><p>${NOTFALL[frage].text}</p>
+        <div class="knopfreihe"><button class="btn gefahr voll" onClick=${() => { const a = frage; setFrage(null); notfall(a); }}>${NOTFALL[frage].ja}</button>
+          <button class="btn geist" onClick=${() => setFrage(null)}>Abbrechen</button></div></div>`
+      : html`<div class="knopfreihe">
+          <button class="btn gefahr" onClick=${() => setFrage("kill")} title="Dock und Server sofort aus, kein Wiederanlauf">${NOTFALL.kill.knopf}</button>
+          <button class="btn gefahr" onClick=${() => setFrage("neustart")} title="Sicherer Ablauf wie bei einem Notfall, mit Wiederanlauf">${NOTFALL.neustart.knopf}</button></div>`}
+  </div>`;
+}
+
+function WatchDogGruppe({ wd, notfall, s }) {
+  if (!wd) return null;
+  const nf = wd.notfall;
+  return html`
+    <${Kachel} titel="Grafikkarten-Temperatur" neben=${wd.bekannt && wd.alter_sek != null ? `Messung vor ${wd.alter_sek} s` : ""}>
+      ${wd.bekannt ? (wd.gpu_temps || []).map((g) => html`<${BalkenZeile} name=${"Karte " + (g.index + 1)} wert=${g.temp_c + " °C"} p=${g.temp_c / (wd.schwelle_c || 90) * 100} warn=${85} krit=${95} />`)
+        : html`<div class="fehlerbox">Der WatchDog meldet nichts. Läuft vve-health?</div>`}
+      <p class="leise klein sv-fuss">Ab ${wd.schwelle_c || 90} °C greift der Notfallablauf von selbst.</p>
+    </${Kachel}>
+    <${Kachel} titel="Notabschaltung"><${WatchDogKnoepfe} wd=${wd} notfall=${notfall} /></${Kachel}>
+    <${Kachel} titel="Letzter Notfall">${nf ? html`
+        <${Zeile} name="Wann" wert=${zeitText(nf.zeit)} />
+        <${Zeile} name="Grund" wert=${nf.grund} />
+        <${Zeile} name="Aktion" wert=${{ "dock-strom-aus": "Dock-Strom aus", "dock-strom-an-server-steckdosenzyklus": "Dock aus/an, Server-Steckdosenzyklus", "kill-switch": "Kill Switch", "dock-strom-aus-automatik-gestoppt": "Dock aus, Automatik angehalten" }[nf.aktion] || nf.aktion} s=${nf.wiederholt ? "kritisch" : ""} />
+        ${(nf.temps || []).length > 0 && html`<${Zeile} name="Temperaturen damals" wert=${nf.temps.map((x) => x[1] + " °C").join(" · ")} />`}`
+      : html`<p class="leise klein">Noch keiner.</p>`}</${Kachel}>
+    <${Kachel} titel="Selbstheilung">${(wd.reparaturen || []).length ? wd.reparaturen.map((r) => html`<${Zeile} name=${r} wert="" />`)
+      : html`<p class="leise klein">Ollama, Caddy und ComfyUI antworten. Fällt einer aus, startet der WatchDog ihn von selbst neu.</p>`}</${Kachel}>`;
+}
+
 // ------------------------------------------------------------ Die Sektion
 export function ServerSektion({ zu, gesundheit }) {
   const [det, setDet] = useState(null);
   const [sys, setSys] = useState(null);
+  const [teil, setTeil] = useState(null);          // Detailfenster: minipc | gpu:0 | gpu:1 | strom
   const k = useKopf();
   const detLaden = (frisch) => api("/system/details" + (frisch ? "?frisch=1" : "")).then(setDet).catch(fehlerMelden);
   const sysLaden = () => api("/system").then(setSys).catch(() => {});
@@ -325,6 +487,31 @@ export function ServerSektion({ zu, gesundheit }) {
     }, 2500);
     return () => clearInterval(i);
   }, [det && det.auftrag && det.auftrag.laeuft]);
+  // Modell laden: Fortschritt alle 2 s, solange etwas laeuft.
+  async function modellLaden(name) {
+    try {
+      const l = await api("/system/modell-laden", { methode: "POST", daten: { name } });
+      setDet((x) => ({ ...x, laden: { ...(x.laden || {}), [name]: l } }));
+      toast(name + " wird geladen. Den Fortschritt siehst du in der Empfehlung.");
+    } catch (e) { fehlerMelden(e); }
+  }
+  useEffect(() => {
+    const laeuft = det && Object.values(det.laden || {}).some((l) => l.stand === "laeuft");
+    if (!laeuft) return;
+    const i = setInterval(async () => {
+      try { const r = await api("/system/modell-laden"); setDet((x) => ({ ...x, laden: r.laden })); if (!Object.values(r.laden).some((l) => l.stand === "laeuft")) detLaden(false); } catch (e) { /* weiter */ }
+    }, 2000);
+    return () => clearInterval(i);
+  }, [det && Object.values(det.laden || {}).some((l) => l.stand === "laeuft")]);
+  async function notfall(art) {
+    try {
+      await api("/system/notfall", { methode: "POST", daten: { art } });
+      toast(art === "kill" ? "Kill Switch angefordert. Der WatchDog greift innerhalb von 15 Sekunden ein." : "Safety Shutdown & Reboot angefordert. Der WatchDog greift innerhalb von 15 Sekunden ein.");
+      const holen = async () => { try { const w = await api("/system/watchdog"); setDet((x) => ({ ...x, watchdog: w })); } catch (e) { /* Server geht gerade aus */ } };
+      holen(); setTimeout(holen, 5000); setTimeout(holen, 20000); setTimeout(holen, 45000);
+    } catch (e) { fehlerMelden(e); }
+  }
+
   async function starten(art) {
     const MELDUNG = { neustart: "Server startet neu. In ein bis zwei Minuten ist er wieder da.", updates: "Updates werden eingespielt. Den Fortschritt siehst du oben.",
       "ollama-neustart": "Ollama startet neu.", "caddy-neustart": "Caddy startet neu." };
@@ -342,13 +529,13 @@ export function ServerSektion({ zu, gesundheit }) {
       </div>
       <${Auftrag} a=${det && det.auftrag} />
       <div class="sv-reihe">
-        <${Kachel} titel="Aufbau"><${Aufbau} s=${s} /></${Kachel}>
+        <${Kachel} titel="Aufbau" neben="Bauteil anklicken für Einzelheiten"><${Aufbau} s=${s} beiKlick=${setTeil} /></${Kachel}>
         <${Kachel} titel="Updates, Empfehlungen und Sicherungen">
           <div class="sv-zwei"><${UpdatesBlock} u=${det && det.updates} s=${s} auftrag=${det && det.auftrag} starten=${starten} neuPruefen=${() => detLaden(true)} />
             <${SicherungenBlock} sich=${det && det.sicherungen} /></div>
           <h5 class="sv-empf-titel">Empfehlungen</h5>
           ${!det ? html`<div class="leise klein">Prüfe …</div>` : det.empfehlungen.length
-            ? html`<div class="empf-raster">${det.empfehlungen.map((x, i) => html`<${Empfehlung} key=${i} e=${x} auftrag=${det.auftrag} starten=${starten} />`)}</div>`
+            ? html`<div class="empf-raster">${det.empfehlungen.map((x, i) => html`<${Empfehlung} key=${i} e=${x} auftrag=${det.auftrag} starten=${starten} laden=${det.laden} modellLaden=${modellLaden} />`)}</div>`
             : html`<div class="leise klein">Nichts zu tun: keine Updates offen, alle Dienste laufen, Sicherungen frisch.</div>`}
         </${Kachel}>
       </div>
@@ -362,6 +549,8 @@ export function ServerSektion({ zu, gesundheit }) {
           ${sys.stimme.whisper && html`<${Zeile} name="Modell" wert=${sys.stimme.modell + (sys.stimme.geladen.length ? " · " + sys.stimme.geladen.join(", ") : "")} />`}
           <${Zeile} name="Mikrofon im Browser" wert=${window.isSecureContext ? "möglich" : "nur über https"} s=${window.isSecureContext ? "" : "warnung"} />` : html`<div class="leise klein">…</div>`}</${Kachel}>
       </${Gruppe}>
+      ${det && det.watchdog && html`<${Gruppe} titel="WatchDog" unter="Wacht über Temperaturen und Dienste, schaltet im Notfall ab">
+        <${WatchDogGruppe} wd=${det.watchdog} notfall=${notfall} s=${s} /></${Gruppe}>`}
       <${Gruppe} titel="Was die Maschine meldet" unter="Messwerte, hier ist nichts zu tun, solange nichts rot ist">
         <${Kachel} titel="Temperaturen" neben=${s && s.temps_c && s.temps_c.cpu != null ? Math.round(s.temps_c.cpu) + " °C CPU" : ""}>${s ? html`<${Temperaturen} s=${s} />` : "…"}</${Kachel}>
         <${Kachel} titel="Auslastung" neben=${s && s.host && s.host.uptime ? "seit " + s.host.uptime.replace("up ", "") : ""}>${s ? html`<${Auslastung} s=${s} />` : "…"}</${Kachel}>
@@ -369,5 +558,6 @@ export function ServerSektion({ zu, gesundheit }) {
         <${Kachel} titel="RTX-LED">${s ? html`<${RtxLed} s=${s} />` : "…"}</${Kachel}>
       </${Gruppe}>
     </div>
+    ${teil && s && html`<${AufbauDetail} teil=${teil} s=${s} karten=${det && det.karten} wd=${det && det.watchdog} notfall=${notfall} zu=${() => setTeil(null)} />`}
   </div>`;
 }

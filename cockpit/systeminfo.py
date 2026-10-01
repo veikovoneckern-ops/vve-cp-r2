@@ -273,8 +273,25 @@ async def gesamt(frisch: bool = False) -> dict[str, Any]:
     upd = await asyncio.to_thread(updates, frisch)
     neu = await ollama_neueste()
     sich = sicherungen()
+    from . import modellkatalog
+    try:
+        katalog = await modellkatalog.pruefen(frisch)
+    except Exception:  # noqa: BLE001 -- ohne Netz zur Registry bleibt der Rest der Seite heil
+        katalog = None
+    e = empfehlungen(s, upd, neu, sich, stab.gesundheit()) + modellkatalog.vorschlaege(katalog, _vram_gesamt(s))
     return {"status": s, "updates": upd, "ollama_neueste": neu, "sicherungen": sich, "modelle": modelle(s),
-            "empfehlungen": empfehlungen(s, upd, neu, sich, stab.gesundheit()), "auftrag": AUFTRAG}
+            "empfehlungen": e, "auftrag": AUFTRAG, "laden": modellkatalog.LADEN,
+            "katalog_stand": katalog and katalog.get("zeit"), "karten": await asyncio.to_thread(karten),
+            "watchdog": watchdog()}
+
+
+def _vram_gesamt(s: dict[str, Any] | None) -> float:
+    gb = 0.0
+    for z in str((s or {}).get("gpu_nvidia") or "").strip().splitlines():
+        t = [x.strip() for x in z.split(",")]
+        if len(t) > 4:
+            gb += (float(re.sub(r"[^\d.]", "", t[4]) or 0)) / 1024
+    return gb or 48.0
 
 
 # ------------------------------------------------------------ Kopfzeile
@@ -323,6 +340,11 @@ async def kopf() -> dict[str, Any]:
     ges = stab.gesundheit()
     if upd is not None:
         e = empfehlungen(s, upd, _gemerkt("ollama_neu", 6 * 3600), sich or None, ges)
+        try:   # nur der gemerkte Katalogstand -- die Kopfzeile fragt nie selbst die Registry
+            from . import modellkatalog
+            e += modellkatalog.vorschlaege(json.loads(modellkatalog.DATEI.read_text(encoding="utf-8")), _vram_gesamt(s))
+        except (OSError, ValueError):
+            pass
         out["empfehlungen"] = {"achtung": sum(1 for x in e if x["stufe"] == "achtung"),
                                "einspielen": sum(1 for x in e if x["stufe"] == "einspielen"),
                                "titel": [x["titel"] for x in e if x["stufe"] in ("achtung", "einspielen")][:5]}
@@ -351,3 +373,115 @@ async def kopf() -> dict[str, Any]:
         "geladen": [str(x).split("|")[0] for x in (s.get("ollama_running") or [])],
     })
     return out
+
+
+# ------------------------------------------------------------ Was laeuft auf welcher Karte
+# vve-status meldet die Prozesse nur fuer beide Karten zusammen (das alte Cockpit
+# sagte deshalb ehrlich "nicht nach Karte getrennt"). nvidia-smi kann es je Karte;
+# ueber die Kommandozeile des Prozesses erkennen wir, WAS es ist: ein
+# llama-server traegt die Modelldatei (-> Ollama-Modell ueber die Manifeste),
+# ComfyUI startet main.py mit Port 8188, Whisper laeuft in einem der Cockpits.
+OLLAMA_MANIFESTE = Path("/usr/share/ollama/.ollama/models/manifests/registry.ollama.ai/library")
+
+
+def _blob_namen() -> dict[str, str]:
+    g = _gemerkt("blob_namen", 600)
+    if g is not None:
+        return g
+    namen: dict[str, str] = {}
+    try:
+        for f in OLLAMA_MANIFESTE.glob("*/*"):
+            try:
+                for l in json.loads(f.read_text(encoding="utf-8")).get("layers") or []:
+                    if str(l.get("mediaType", "")).endswith(".model"):
+                        namen[l["digest"].replace(":", "-")] = f"{f.parent.name}:{f.name}"
+            except (OSError, ValueError, KeyError):
+                continue
+    except OSError:
+        pass
+    return _merken("blob_namen", namen)
+
+
+def _was_ist(pid: int, name: str) -> dict[str, Any]:
+    import os
+    try:
+        cmd = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode("utf-8", "replace")
+    except OSError:
+        cmd = name
+    if "llama-server" in cmd or "ollama" in cmd:
+        m = re.search(r"blobs/(sha256-[0-9a-f]+)", cmd)
+        ctx = re.search(r"\s-c\s+(\d+)", cmd)
+        modell = _blob_namen().get(m.group(1)) if m else None
+        return {"art": "ollama", "was": f"Ollama · {modell}" if modell else "Ollama (Modell unbekannt)", "modell": modell,
+                "kontext": int(ctx.group(1)) if ctx else None}
+    if "8188" in cmd or "ComfyUI" in cmd or "main.py" in cmd:
+        return {"art": "comfy", "was": "ComfyUI (Bilder und Video)"}
+    try:
+        cwd = os.readlink(f"/proc/{pid}/cwd")
+    except OSError:
+        cwd = ""
+    # Whisper rechnet im Prozess des jeweiligen Cockpits (faster-whisper auf der Karte).
+    if pid == os.getpid() or ("server.py" in cmd and "vve-cp-r2" in (cwd + cmd)):
+        return {"art": "whisper", "was": "Spracherkennung (Whisper) · neues Cockpit"}
+    if "vvec_backend" in cmd or "uvicorn" in cmd or "/opt/vvec" in (cwd + cmd):
+        return {"art": "whisper", "was": "Spracherkennung (Whisper) · altes Cockpit"}
+    return {"art": "anderes", "was": name.rsplit("/", 1)[-1]}
+
+
+def karten() -> list[dict[str, Any]]:
+    busse = {}
+    for z in _lauf(["nvidia-smi", "--query-gpu=index,pci.bus_id,name", "--format=csv,noheader"]).splitlines():
+        t = [x.strip() for x in z.split(",")]
+        if len(t) >= 2:
+            busse[t[1]] = {"index": int(t[0]), "name": t[2] if len(t) > 2 else "", "prozesse": []}
+    for z in _lauf(["nvidia-smi", "--query-compute-apps=gpu_bus_id,pid,process_name,used_memory",
+                    "--format=csv,noheader,nounits"]).splitlines():
+        t = [x.strip() for x in z.split(",")]
+        if len(t) < 4 or t[0] not in busse:
+            continue
+        try:
+            pid, mib = int(t[1]), int(float(t[3]))
+        except ValueError:
+            continue
+        busse[t[0]]["prozesse"].append({"pid": pid, "mib": mib, **_was_ist(pid, t[2])})
+    return sorted(busse.values(), key=lambda k: k["index"])
+
+
+# ------------------------------------------------------------ Notabschaltung (ueber den WatchDog)
+# Es gibt genau EINE Notabschaltung: den WatchDog-Dienst vve-health (Repo vve-cp,
+# dienste/vve-health.py). Diese Fassung legt nur eine Anfrage in seinen
+# Briefkasten -- eine ART, nie einen Befehl. Der Ablauf (Kill Switch: Dock und
+# Server sofort aus, ohne Wiederanlauf; Safety Shutdown & Reboot: Dock aus,
+# 90 s abkuehlen, Dock an, Server-Steckdose mit selbsttaetigem Wiederanlauf)
+# steht nur dort. Eine zweite Kopie hier waere die gefaehrlichste Doppelung
+# dieses ganzen Systems.
+NOTFALL_ARTEN = ("kill", "neustart")
+
+
+def notfall_anfordern(art: str) -> dict[str, Any]:
+    from .konfig import HEALTH_DIR
+    if art not in NOTFALL_ARTEN:
+        raise ValueError("Unbekannte Art")
+    if not HEALTH_DIR.is_dir():
+        raise RuntimeError(f"WatchDog-Ordner {HEALTH_DIR} fehlt -- laeuft vve-health?")
+    ziel = HEALTH_DIR / "notfall-anfrage.json"
+    tmp = ziel.with_suffix(".tmp")
+    jetzt = time.time()
+    tmp.write_text(json.dumps({"angefordert_um": jetzt, "art": art}), encoding="utf-8")
+    tmp.replace(ziel)
+    return {"ok": True, "angefordert_um": jetzt}
+
+
+def watchdog() -> dict[str, Any]:
+    from .konfig import HEALTH_DIR
+    try:
+        st = json.loads((HEALTH_DIR / "health-status.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"bekannt": False}
+    try:
+        anfrage = json.loads((HEALTH_DIR / "notfall-anfrage.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        anfrage = None
+    offen = bool(anfrage and float(anfrage.get("angefordert_um") or 0) > float(st.get("letzte_anfrage_verarbeitet") or 0))
+    return {"bekannt": True, **st, "alter_sek": round(time.time() - float(st.get("zeit") or 0)),
+            "anfrage_offen": offen, "anfrage": anfrage}

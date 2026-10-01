@@ -849,3 +849,28 @@ html.ki-arbeitet .logo-knopf{filter:drop-shadow(0 0 .6px rgba(0,0,0,.75)) drop-s
 .avatar,.bd-ava{display:inline-grid!important;place-items:center!important;flex-direction:row!important;line-height:1!important;text-align:center;padding:0!important}
 /* Board neben offenem Talk: der Tisch gibt Breite ab, damit das Gespraech lesbar bleibt. */
 @media (max-width:1600px){.schale.mit-talk .bd{grid-template-columns:250px minmax(0,1fr)}.schale.mit-talk .bd-person-haupt>.bd-name small{display:none}}
+
+/* ------------------------------------------------ Aufbau anklickbar, Detailfenster, WatchDog */
+.sb-treffer rect{fill:transparent;cursor:pointer;stroke:transparent;stroke-width:2;transition:stroke .12s,fill .12s}
+.sb-treffer rect:hover,.sb-treffer rect:focus-visible{stroke:var(--steel);fill:color-mix(in srgb,var(--steel) 7%,transparent);outline:none}
+.det-vitals{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:6px}
+.det-vital{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:10px 6px;border-radius:10px;background:var(--knopf-grund);text-align:center;min-height:62px}
+.det-vital b{font-size:18px;font-weight:750;font-variant-numeric:tabular-nums}
+.det-vital span{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+.det-vital.warnung b{color:var(--amber)} .det-vital.kritisch b{color:var(--signal)}
+.det-abschnitt{font-size:11.5px;font-weight:750;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);margin:16px 0 4px}
+.det-notfall{display:flex;flex-direction:column;gap:10px}
+.det-frage{border:1.5px solid var(--rot);border-radius:10px;padding:12px 14px;background:color-mix(in srgb,var(--rot) 7%,transparent)}
+.det-frage b{color:var(--rot)}
+.det-frage p{font-size:13px;margin:6px 0 10px}
+@media (max-width:600px){.det-vitals{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* ------------------------------------------------ Bilder und Visualisierungen im Gespraech */
+.medien-karte{margin-top:8px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface)}
+.medien-karte img{display:block;width:100%;height:auto;max-height:420px;object-fit:contain;background:#fff}
+.medien-karte .fehlerbox{margin:0;border-radius:0}
+.medien-fuss{display:flex;align-items:center;gap:8px;justify-content:space-between;padding:8px 10px;flex-wrap:wrap}
+.medien-fuss b{font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 120px}
+.medien-platz{aspect-ratio:4/3;display:grid;place-items:center;background:linear-gradient(110deg,var(--surface-2) 30%,var(--knopf-grund) 50%,var(--surface-2) 70%);background-size:300% 100%;animation:medien-schimmer 1.6s linear infinite}
+.medien-dreh{width:34px;height:34px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--violett);animation:dreh .9s linear infinite}
+@keyframes medien-schimmer{to{background-position:-150% 0}}

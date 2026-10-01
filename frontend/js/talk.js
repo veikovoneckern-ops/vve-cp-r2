@@ -31,6 +31,40 @@ const reinigen = (t) => String(t || "").trim().replace(/[.!?,]+$/, "").trim();
 const istJa = (t) => t.split(/\s+/).length <= 10 && JA_WORT.test(t) && !NEIN_WORT.test(t);
 const istNein = (t) => t.split(/\s+/).length <= 5 && NEIN_WORT.test(t) && !JA_WORT.test(t.replace(/\bnein\b/i, ""));
 
+// Bild oder Visualisierung aus dem Gespraech: Fortschritt, dann Vorschau mit
+// Grossansicht und Download. Fragt den Stand ab, bis es fertig ist -- auch nach
+// einem Neuladen, denn das Ergebnis liegt auf dem Server (medien.py).
+function MedienKarte({ m }) {
+  const [s, setS] = useState({ stand: "laeuft" });
+  const [jetzt, setJetzt] = useState(Date.now());
+  useEffect(() => {
+    let aus = false;
+    const holen = async () => {
+      try { const d = await api("/medien/" + m.id); if (aus) return; setS(d); if (d.stand === "laeuft") setTimeout(holen, 1500); }
+      catch (e) { if (!aus) setS({ stand: "fehler", fehler: "Nicht mehr vorhanden (der Dienst wurde neu gestartet, bevor es fertig war)." }); }
+    };
+    holen();
+    const i = setInterval(() => setJetzt(Date.now()), 1000);
+    return () => { aus = true; clearInterval(i); };
+  }, [m.id]);
+  const was = m.art === "bild" ? "Bild" : "Visualisierung";
+  if (s.stand === "laeuft") {
+    const sek = s.start ? Math.round(jetzt / 1000 - s.start) : null;
+    return html`<div class="medien-karte laeuft"><div class="medien-platz"><span class="medien-dreh"></span></div>
+      <div class="medien-fuss"><b>${m.titel}</b><span class="leise klein">${was} entsteht${sek != null ? " · " + sek + " s" : ""} …</span></div></div>`;
+  }
+  if (s.stand === "fehler") return html`<div class="medien-karte"><div class="fehlerbox">${was} ging nicht: ${s.fehler}</div></div>`;
+  const url = "/api/medien/datei/" + s.datei;
+  return html`<div class="medien-karte">
+    <a href=${url} target="_blank" rel="noopener" title="Groß ansehen"><img src=${url} alt=${m.titel} loading="lazy" /></a>
+    <div class="medien-fuss"><b>${m.titel}</b>
+      <span class="knopfreihe">
+        <a class="btn klein" href=${url} target="_blank" rel="noopener" title="In neuem Tab groß ansehen"><${Icon} n="voll" g=${13} />Groß</a>
+        <a class="btn klein primaer" href=${url + "?download=1"} download title=${"Herunterladen (" + (s.datei.endsWith(".svg") ? "SVG" : "PNG") + ")"}><${Icon} n="download" g=${13} />Download</a>
+      </span></div>
+  </div>`;
+}
+
 function StimmeKreis({ zustand, pegel, text, beiKlick }) {
   const TXT = { bereit: "Antippen und sprechen", hoert: "Ich höre zu …", erkennt: "Verstehe …", denkt: "Denke nach …", spricht: "Spreche …" };
   // Kompakt (Veiko, 01.10.: der grosse Kreis war zu gross und seine Wellen
@@ -93,7 +127,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
 
   function zuAnzeige(m) {
     const d = m.daten || {};
-    return { id: m.id, rolle: m.rolle === "du" ? "du" : "ck", text: m.rolle === "du" ? (d.anzeige ?? m.text) : m.text, vorschlaege: d.vorschlaege || [] };
+    return { id: m.id, rolle: m.rolle === "du" ? "du" : "ck", text: m.rolle === "du" ? (d.anzeige ?? m.text) : m.text, vorschlaege: d.vorschlaege || [], medien: d.medien || [] };
   }
 
   async function senden(text, anhaenge, stimme) {
@@ -119,7 +153,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
     laufRef.current = false;
     setLauf(null);
     if (fertig) {
-      setMsgs((m) => [...m, { id: fertig.nachricht_id, rolle: "ck", text: fertig.text, vorschlaege: fertig.vorschlaege }]);
+      setMsgs((m) => [...m, { id: fertig.nachricht_id, rolle: "ck", text: fertig.text, vorschlaege: fertig.vorschlaege, medien: fertig.medien || [] }]);
       // "Zeig mir …": aendert nichts, deshalb sofort und ohne Knopf.
       const z = (fertig.zeigen || [])[0];
       if (z && z.projekt_id) navigiere("/projects/" + z.projekt_id + (z.ziel && z.ziel !== "ueberblick" ? "/" + z.ziel : ""));
@@ -321,6 +355,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
             </div>`)}
             ${m.vorschlaege && m.vorschlaege.filter((v) => !v.erledigt).length > 1 && html`<button class="btn klein" style="margin-top:6px"
               onClick=${() => ausfuehren(m.id, m.vorschlaege.map((v, i) => (v.erledigt ? -1 : i)).filter((i) => i >= 0))}>Alle ausführen</button>`}
+            ${(m.medien || []).map((x) => html`<${MedienKarte} key=${x.id} m=${x} />`)}
             ${typeof m.id === "number" && html`<button class="btn klein geist" style="margin-top:4px" title="Vorlesen" onClick=${() => vorlesen(m.text).catch((e) => toast(e.message, { fehler: true }))}><${Icon} n="play" g=${12} />Vorlesen</button>`}
           </div>`)}
       ${lauf && html`<div class="talk-blase ck">${lauf.text ? html`<${Md} text=${lauf.text} />` : html`<span class="leise">Denke nach …</span>`}</div>`}

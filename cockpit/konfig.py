@@ -51,5 +51,12 @@ MODELL_NEO = os.environ.get("VVEC_NEO_MODELL", "qwen3-coder-neo:30b")
 STAB_TAKT_SEK = int(os.environ.get("VVEC_STAB_TAKT", "120"))
 COOKIE_SICHER = os.environ.get("VVEC_COOKIE_SICHER", "true").strip().lower() == "true"
 
-for _d in (DATEN, UPLOADS, ERGEBNIS_DIR, VORSCHAU_DIR):
+# Bilder und Visualisierungen aus dem Gespraech (medien.py).
+MEDIEN_DIR = DATEN / "medien"
+COMFY = os.environ.get("VVEC_COMFY", "http://127.0.0.1:8188").rstrip("/")
+# Der WatchDog (vve-health, laeuft als vveadmin wie diese Fassung) liest Notfall-
+# Anfragen auch aus seinem eigenen Ordner -- dorthin schreibt diese Fassung.
+HEALTH_DIR = Path(os.environ.get("VVEC_HEALTH_DIR", "~/vve-health")).expanduser()
+
+for _d in (DATEN, UPLOADS, ERGEBNIS_DIR, VORSCHAU_DIR, MEDIEN_DIR):
     _d.mkdir(parents=True, exist_ok=True)

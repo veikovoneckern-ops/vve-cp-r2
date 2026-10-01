@@ -953,6 +953,67 @@ async def system_auftrag(request: Request):
     return {"ok": True}
 
 
+@router.post("/system/notfall")
+async def system_notfall(request: Request):
+    """Kill Switch / Safety Shutdown & Reboot -- nur eine Anfrage an den WatchDog."""
+    from . import systeminfo
+    d = await _koerper(request)
+    try:
+        return systeminfo.notfall_anfordern(str(d.get("art") or ""))
+    except ValueError:
+        raise HTTPException(400, "Art muss kill oder neustart sein")
+    except (RuntimeError, OSError) as e:
+        raise HTTPException(503, str(e))
+
+
+@router.get("/system/watchdog")
+async def system_watchdog():
+    from . import systeminfo
+    return systeminfo.watchdog()
+
+
+@router.post("/system/modell-laden")
+async def system_modell_laden(request: Request):
+    import re as _re
+    from . import modellkatalog
+    d = await _koerper(request)
+    name = str(d.get("name") or "").strip().lower()
+    if not _re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,39}:[a-z0-9][a-z0-9._-]{0,39}", name):
+        raise HTTPException(400, "Modellname muss familie:ausgabe sein")
+    return modellkatalog.laden_starten(name)
+
+
+@router.get("/system/modell-laden")
+async def system_modell_laden_stand():
+    from . import modellkatalog
+    return {"laden": modellkatalog.LADEN}
+
+
+# ================================================================ Bilder und Visualisierungen aus dem Gespraech
+@router.get("/medien/{jid}")
+async def medien_stand(jid: str):
+    from . import medien
+    s = medien.stand(jid)
+    if not s:
+        raise HTTPException(404, "Unbekannt")
+    return s
+
+
+@router.get("/medien/datei/{name}")
+async def medien_datei(name: str, download: int = 0):
+    import re as _re
+    from .konfig import MEDIEN_DIR
+    if not _re.fullmatch(r"m[0-9a-f]{10}\.(png|svg)", name):
+        raise HTTPException(404, "Unbekannt")
+    p = MEDIEN_DIR / name
+    if not p.is_file():
+        raise HTTPException(404, "Unbekannt")
+    kopf = {"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'", "X-Content-Type-Options": "nosniff"}
+    if download:
+        return FileResponse(p, filename=("Bild-" if name.endswith(".png") else "Visualisierung-") + name, headers=kopf)
+    return FileResponse(p, headers=kopf)
+
+
 @router.get("/system/auftrag")
 async def system_auftrag_stand():
     from . import systeminfo
