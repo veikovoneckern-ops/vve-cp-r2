@@ -2,3 +2,11 @@ fastapi==0.115.6
 uvicorn==0.34.0
 httpx==0.28.1
 python-multipart==0.0.20
+# Spracherkennung im eigenen Prozess. cuBLAS/cuDNN als Pip-Pakete, weil
+# ctranslate2 sie nicht selbst mitbringt (Lehre aus dem alten dialog.py).
+faster-whisper==1.2.1
+# PyAV 19 hat open(metadata_errors=...) entfernt, faster-whisper 1.2.1 ruft es noch.
+# Dieselbe Fassung wie im Backend des alten Cockpits.
+av==18.1.0
+nvidia-cublas-cu12
+nvidia-cudnn-cu12==9.*

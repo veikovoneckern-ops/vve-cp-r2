@@ -1,0 +1,360 @@
+"""
+NEO -- der Cockpit Engineer, mit echten Werkzeugen auf dem Server.
+
+Der Werkzeugkreislauf stammt aus Iteration 1 dieses Repos (archiv/iteration-1)
+und hat sich dort bewaehrt: Neo liest, schreibt und fuehrt Befehle als
+vveadmin aus, sofort, ohne Rueckfrage (Veikos ausdruecklicher Wunsch vom
+09.09.2026). Eine kleine Sperrliste bleibt.
+
+Neu gegenueber Iteration 1:
+  - GESPRAECHE BLEIBEN. Jede Nachricht und jeder Arbeitsschritt steht in der
+    Datenbank (Befund B7: im alten Cockpit verschwanden 10 von 14 Gespraechen).
+  - EIN AUFTRAG LAEUFT WEITER, auch wenn der Browser die Seite wechselt oder
+    die Verbindung abreisst. Der Browser holt sich die Ereignisse per
+    Nachfrage ab (long polling), statt an einem offenen Strom zu haengen.
+  - ABBRECHEN geht jederzeit; was bis dahin getan wurde, bleibt sichtbar.
+  - VORSCHAU: Neo kann eine Seite in die Vorschau-Spalte legen.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import re
+import time
+from pathlib import Path
+from typing import Any
+
+from . import db, llm
+from .konfig import MODELL_NEO, UPLOADS, VORSCHAU_DIR, WURZEL
+
+MAX_SCHRITTE = 40
+BEFEHL_TIMEOUT = 180
+VOLLE_SCHRITTE = 10
+NUM_CTX = 65536
+
+GESPERRT = tuple(str(Path(p).expanduser()) for p in (
+    "/etc", "/boot", "/sys", "/proc", "/root", "~/.ssh", "/opt/vvec", "/srv/www", "/var/lib/vvec"))
+BEFEHL_GESPERRT = re.compile("|".join([
+    r"\brm\s+-[a-z]*r[a-z]*f[a-z]*\s+/(\s|$)", r"\brm\s+-[a-z]*r[a-z]*f[a-z]*\s+(/home|~)\b",
+    r"\bmkfs(\.\w+)?\b", r"\bdd\s+.*of=/dev/", r"\b(shutdown|poweroff|halt|reboot)\b",
+]), re.I)
+
+WERKZEUGE = [
+    {"name": "datei_lesen", "description": "Liest eine Datei (absoluter Pfad oder relativ zum Repo der neuen Fassung ~/vve-cp-r2). Lange Dateien mit 'ab_zeile' abschnittsweise.",
+     "parameters": {"type": "object", "properties": {"pfad": {"type": "string"}, "ab_zeile": {"type": "integer"}}, "required": ["pfad"]}},
+    {"name": "suche", "description": "Sucht rekursiv nach Text in einem Ordner (grep). Vorgabe: Repo der neuen Fassung.",
+     "parameters": {"type": "object", "properties": {"text": {"type": "string"}, "ordner": {"type": "string"}}, "required": ["text"]}},
+    {"name": "datei_schreiben", "description": "Schreibt sofort die VOLLSTAENDIGE neue Fassung einer Datei. Erst lesen, dann ersetzen. Gesperrt: Systempfade, /opt/vvec, /srv/www, /var/lib/vvec.",
+     "parameters": {"type": "object", "properties": {"pfad": {"type": "string"}, "inhalt": {"type": "string"}, "begruendung": {"type": "string"}}, "required": ["pfad", "inhalt"]}},
+    {"name": "befehl_ausfuehren", "description": "Fuehrt einen Shell-Befehl als vveadmin aus (kein sudo-Passwort). Sofort, ohne Rueckfrage, Zeitlimit 180 s. Verkette mit && statt vieler Einzelaufrufe.",
+     "parameters": {"type": "object", "properties": {"befehl": {"type": "string"}, "arbeitsverzeichnis": {"type": "string"}}, "required": ["befehl"]}},
+    {"name": "vorschau_zeigen", "description": "Zeigt eine HTML-Datei in Veikos Vorschau-Spalte. Die Datei muss unter ~/vve-cp-r2/daten/vorschau/ liegen (z. B. daten/vorschau/entwurf/index.html).",
+     "parameters": {"type": "object", "properties": {"pfad": {"type": "string"}}, "required": ["pfad"]}},
+]
+
+
+def _pfad(p: str) -> Path:
+    x = Path(str(p).strip()).expanduser()
+    if not x.is_absolute():
+        x = WURZEL / x
+    return x.resolve()
+
+
+def _gesperrt(p: Path) -> bool:
+    s = str(p)
+    return any(s == g or s.startswith(g.rstrip("/") + "/") for g in GESPERRT)
+
+
+def _kurz(eingabe: dict[str, Any]) -> str:
+    teile = []
+    for k, v in eingabe.items():
+        if k == "inhalt":
+            teile.append(f"inhalt=({len(str(v))} Zeichen)")
+            continue
+        t = str(v).replace("\n", " ")
+        teile.append(f"{k}={t[:70]}{'…' if len(t) > 70 else ''}")
+    return ", ".join(teile)
+
+
+async def werkzeug(name: str, e: dict[str, Any], lauf: dict[str, Any]) -> str:
+    if name == "datei_lesen":
+        try:
+            z = _pfad(e.get("pfad", ""))
+            zeilen = z.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError as f:
+            return f"Fehler: {f}"
+        ab = max(int(e.get("ab_zeile") or 1), 1)
+        stueck = zeilen[ab - 1: ab - 1 + 600]
+        text = "\n".join(f"{ab + i}\t{z_}" for i, z_ in enumerate(stueck))
+        if ab - 1 + 600 < len(zeilen):
+            text += f"\n... [Datei hat {len(zeilen)} Zeilen -- weiter mit ab_zeile={ab + 600}]"
+        return text[:20000] or "(leer)"
+    if name == "suche":
+        ordner = _pfad(e.get("ordner") or str(WURZEL))
+        return await _shell(["grep", "-rnI", "--exclude-dir=.git", "--exclude-dir=.venv", "--exclude-dir=node_modules",
+                             "-m", "5", e.get("text", ""), str(ordner)], None, liste=True, kappen=6000)
+    if name == "datei_schreiben":
+        if e.get("inhalt") is None:
+            return "Fehler: 'inhalt' fehlt -- schick die vollstaendige Datei."
+        z = _pfad(e.get("pfad", ""))
+        if _gesperrt(z):
+            return f"Fehler: '{z}' ist gesperrt. Release 1 aenderst du ueber das Repo vve-cp, nicht in der laufenden Auslieferung."
+        try:
+            z.parent.mkdir(parents=True, exist_ok=True)
+            z.write_text(str(e["inhalt"]), encoding="utf-8")
+        except OSError as f:
+            return f"Fehler beim Schreiben: {f}"
+        lauf["dateien"].append({"pfad": str(z), "begruendung": e.get("begruendung") or ""})
+        return f"Geschrieben: {z} ({len(str(e['inhalt']))} Zeichen)"
+    if name == "befehl_ausfuehren":
+        befehl = str(e.get("befehl") or "").strip()
+        if not befehl:
+            return "Fehler: 'befehl' fehlt."
+        if BEFEHL_GESPERRT.search(befehl):
+            return "Fehler: Dieser Befehl ist gesperrt (Neustart/Abschalten, Formatieren, rekursives Loeschen von / oder ~)."
+        cwd = _pfad(e.get("arbeitsverzeichnis") or str(WURZEL))
+        if not cwd.is_dir():
+            return f"Fehler: Arbeitsverzeichnis {cwd} gibt es nicht."
+        return await _shell(befehl, str(cwd))
+    if name == "vorschau_zeigen":
+        z = _pfad(e.get("pfad", ""))
+        try:
+            rel = z.relative_to(VORSCHAU_DIR.resolve())
+        except ValueError:
+            return f"Fehler: Die Vorschau zeigt nur Dateien unter {VORSCHAU_DIR}. Leg die Seite dort ab."
+        if not z.is_file():
+            return f"Fehler: {z} gibt es nicht."
+        url = "/api/neo/vorschau/" + str(rel).replace("\\", "/")
+        lauf["vorschau"] = url
+        await lauf["schlange"].put({"typ": "vorschau", "url": url})
+        return f"Vorschau gezeigt: {url}"
+    return f"Fehler: unbekanntes Werkzeug {name}"
+
+
+async def _shell(befehl: Any, cwd: str | None, liste: bool = False, kappen: int = 8000) -> str:
+    try:
+        if liste:
+            p = await asyncio.create_subprocess_exec(*befehl, cwd=cwd, stdout=asyncio.subprocess.PIPE,
+                                                     stderr=asyncio.subprocess.STDOUT)
+        else:
+            p = await asyncio.create_subprocess_shell(befehl, cwd=cwd, stdout=asyncio.subprocess.PIPE,
+                                                      stderr=asyncio.subprocess.STDOUT, executable="/bin/bash")
+    except OSError as f:
+        return f"Fehler beim Starten: {f}"
+    try:
+        out, _ = await asyncio.wait_for(p.communicate(), timeout=BEFEHL_TIMEOUT)
+    except asyncio.TimeoutError:
+        p.kill()
+        return f"Fehler: lief laenger als {BEFEHL_TIMEOUT} s und wurde abgebrochen."
+    text = out.decode("utf-8", "replace")
+    if len(text) > kappen:
+        text = text[:kappen] + "\n... [gekuerzt]"
+    return (f"Exit-Code {p.returncode}\n" if not liste else "") + (text.strip() or "(keine Ausgabe)")
+
+
+def _kontext_text() -> str:
+    datei = WURZEL / "NEO-KONTEXT.md"
+    try:
+        return datei.read_text(encoding="utf-8")
+    except OSError:
+        return "Du bist Neo, Cockpit Engineer in Veikos Stab."
+
+
+def system_text() -> str:
+    from .stab import gedaechtnis_text
+    return (_kontext_text() +
+            f"\n\n## Was über Veiko bekannt ist\n{gedaechtnis_text()}\n\n"
+            "## Wie du arbeitest\n"
+            "Sieh nach, bevor du etwas behauptest -- nicht raten. datei_schreiben und befehl_ausfuehren wirken SOFORT. "
+            "Lies eine Datei, bevor du sie ersetzt. Verkette Befehle mit && statt vieler Einzelaufrufe. "
+            f"Bis zu {MAX_SCHRITTE} Werkzeugaufrufe je Auftrag. Nur die letzten {VOLLE_SCHRITTE} Werkzeugergebnisse bleiben dir in voller Länge.\n"
+            "Wenn du fertig bist, antworte Veiko auf Deutsch: zuerst in ein bis zwei Sätzen das Ergebnis, dann was du konkret "
+            "getan hast (Dateien, Befehle), dann was er prüfen sollte. Kein Fachbegriff ohne kurze Erklärung. "
+            "Schick ihn nie zu Handarbeit, die du selbst erledigen kannst.")
+
+
+def _gekuerzt(verlauf: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    tool_idx = [i for i, m in enumerate(verlauf) if m.get("role") == "tool"]
+    alt = set(tool_idx[:-VOLLE_SCHRITTE]) if len(tool_idx) > VOLLE_SCHRITTE else set()
+    out = []
+    for i, m in enumerate(verlauf):
+        if i in alt and len(m.get("content", "")) > 500:
+            m = {**m, "content": m["content"][:500] + "\n... [aus einem älteren Schritt gekürzt]"}
+        out.append(m)
+    return out
+
+
+def _vorgeschichte(gid: str, grenze: int = 14) -> list[dict[str, Any]]:
+    msgs = db.alle("SELECT rolle, text, daten FROM nachrichten WHERE gespraech_id=? ORDER BY id DESC LIMIT ?", (gid, grenze))
+    out = []
+    for m in reversed(msgs):
+        if m["rolle"] == "du":
+            out.append({"role": "user", "content": m["text"]})
+        elif m["rolle"] == "neo":
+            schritte = (m.get("daten") or {}).get("schritte") or []
+            zus = ("\n\n[Deine Arbeitsschritte damals: " + "; ".join(s.get("name", "") + "(" + s.get("kurz", "")[:60] + ")" for s in schritte[:15]) + "]") if schritte else ""
+            out.append({"role": "assistant", "content": (m["text"] or "")[:6000] + zus})
+    return out
+
+
+# ---------------------------------------------------------------- Auftraege
+JOBS: dict[str, dict[str, Any]] = {}
+
+
+def laufender_job(gid: str) -> str | None:
+    for jid, j in JOBS.items():
+        if j["gespraech_id"] == gid and not j["fertig"]:
+            return jid
+    return None
+
+
+async def _kern(gid: str, modell: str, lauf: dict[str, Any]) -> None:
+    schlange: asyncio.Queue = lauf["schlange"]
+    verlauf = _vorgeschichte(gid)
+    system = system_text()
+    letzter_text = ""
+    try:
+        for _ in range(MAX_SCHRITTE):
+            antwort = await llm.chat_mit_werkzeugen(modell, system, _gekuerzt(verlauf),
+                                                    [{"type": "function", "function": w} for w in WERKZEUGE],
+                                                    num_ctx=NUM_CTX)
+            text = (antwort.get("content") or "").strip()
+            aufrufe = antwort.get("tool_calls") or []
+            if not text and not aufrufe:
+                antwort = await llm.chat_mit_werkzeugen(modell, system, _gekuerzt(verlauf),
+                                                        [{"type": "function", "function": w} for w in WERKZEUGE],
+                                                        num_ctx=NUM_CTX)
+                text = (antwort.get("content") or "").strip()
+                aufrufe = antwort.get("tool_calls") or []
+                if not text and not aufrufe:
+                    letzter_text = (letzter_text + "\n\n" if letzter_text else "") + "Das Modell hat auf diesen Schritt nichts geliefert (zweimal versucht)."
+                    break
+            verlauf.append({"role": "assistant", "content": text,
+                            **({"tool_calls": aufrufe} if aufrufe else {})})
+            if text:
+                letzter_text = text
+                if aufrufe:
+                    await schlange.put({"typ": "zwischen", "text": text})
+            if not aufrufe:
+                break
+            for a in aufrufe:
+                fn = a.get("function") or {}
+                name = fn.get("name") or ""
+                eingabe = fn.get("arguments")
+                if isinstance(eingabe, str):
+                    try:
+                        eingabe = json.loads(eingabe)
+                    except ValueError:
+                        eingabe = {}
+                eingabe = eingabe if isinstance(eingabe, dict) else {}
+                await schlange.put({"typ": "schritt_start", "name": name, "kurz": _kurz(eingabe)})
+                ergebnis = await werkzeug(name, eingabe, lauf)
+                schritt = {"name": name, "kurz": _kurz(eingabe), "ergebnis": ergebnis[:2500], "zeit": time.time()}
+                lauf["schritte"].append(schritt)
+                await schlange.put({"typ": "schritt", **schritt})
+                verlauf.append({"role": "tool", "content": ergebnis})
+        else:
+            letzter_text += f"\n\nIch habe die Grenze von {MAX_SCHRITTE} Arbeitsschritten erreicht. Sag mir, ob ich weitermachen soll."
+    except asyncio.CancelledError:
+        letzter_text = (letzter_text + "\n\n" if letzter_text else "") + "Abgebrochen."
+        _abschliessen(gid, lauf, letzter_text, modell, abgebrochen=True)
+        await schlange.put({"typ": "fertig", "text": letzter_text})
+        raise
+    except llm.ModellFehler as f:
+        letzter_text = (letzter_text + "\n\n" if letzter_text else "") + f"Das lokale Modell hat nicht geliefert: {f}"
+    _abschliessen(gid, lauf, letzter_text, modell)
+    await schlange.put({"typ": "fertig", "text": letzter_text})
+
+
+def _abschliessen(gid: str, lauf: dict[str, Any], text: str, modell: str, abgebrochen: bool = False) -> None:
+    if lauf.get("gespeichert"):
+        return
+    lauf["gespeichert"] = True
+    db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",
+                  (gid, "neo", text or "(keine Antwort)", json.dumps({
+                      "schritte": lauf["schritte"], "dateien": lauf["dateien"], "vorschau": lauf.get("vorschau"),
+                      "modell": modell, "dauer": round(time.time() - lauf["start"]), "abgebrochen": abgebrochen,
+                  }, ensure_ascii=False), time.time()))
+    db.ausfuehren("UPDATE gespraeche SET geaendert=? WHERE id=?", (time.time(), gid))
+
+
+async def senden(gid: str, text: str, anhaenge: list[str]) -> str:
+    if laufender_job(gid):
+        raise ValueError("Neo arbeitet in diesem Gespräch noch. Warte oder brich ab.")
+    voll = text
+    namen = []
+    for did in anhaenge or []:
+        d = db.holen("dateien", did)
+        if not d:
+            continue
+        namen.append(d["name"])
+        voll += f"\n\n[Angehängt: {d['name']} -- liegt unter {d['pfad']}]"
+        if d.get("text"):
+            voll += f"\nInhalt:\n{d['text'][:20000]}"
+    db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",
+                  (gid, "du", voll, json.dumps({"anzeige": text, "anhaenge": namen}, ensure_ascii=False), time.time()))
+    g = db.holen("gespraeche", gid)
+    if g and (not g.get("titel") or g["titel"] == "Neues Gespräch"):
+        db.ausfuehren("UPDATE gespraeche SET titel=? WHERE id=?", (text.strip().splitlines()[0][:70] if text.strip() else "Gespräch", gid))
+    team = db.holen("team", "cockpit") or {}
+    modell = await llm.modell_waehlen(team.get("modell"), MODELL_NEO, "qwen3-coder:30b", "qwen3.6:27b")
+    if not modell:
+        raise ValueError("Für Neo ist kein lokales Modell installiert.")
+    jid = db.neue_id("j")
+    lauf = {"schlange": asyncio.Queue(), "schritte": [], "dateien": [], "start": time.time()}
+    job = {"gespraech_id": gid, "ereignisse": [], "fertig": False, "start": time.time(), "modell": modell,
+           "lauf": lauf, "neu": asyncio.Event()}
+
+    async def sammler():
+        while True:
+            e = await lauf["schlange"].get()
+            job["ereignisse"].append(e)
+            job["neu"].set()
+            if e.get("typ") == "fertig":
+                job["fertig"] = True
+                job["neu"].set()
+                break
+
+    async def ausfuehren():
+        try:
+            await _kern(gid, modell, lauf)
+        except asyncio.CancelledError:
+            pass
+        except Exception as f:  # noqa: BLE001 -- nie einen Auftrag ohne Abschluss haengen lassen
+            _abschliessen(gid, lauf, f"Fehler im Ablauf: {f}", modell)
+            await lauf["schlange"].put({"typ": "fertig", "text": f"Fehler im Ablauf: {f}"})
+
+    job["sammler"] = asyncio.create_task(sammler())
+    job["task"] = asyncio.create_task(ausfuehren())
+    JOBS[jid] = job
+    # alte, fertige Auftraege nach einer Stunde vergessen
+    for alt in [k for k, j in JOBS.items() if j["fertig"] and time.time() - j["start"] > 3600]:
+        JOBS.pop(alt, None)
+    return jid
+
+
+async def ereignisse(jid: str, ab: int, warten: float = 20) -> dict[str, Any]:
+    job = JOBS.get(jid)
+    if not job:
+        return {"unbekannt": True, "fertig": True, "ereignisse": [], "naechste": ab}
+    if len(job["ereignisse"]) <= ab and not job["fertig"]:
+        job["neu"].clear()
+        try:
+            await asyncio.wait_for(job["neu"].wait(), timeout=warten)
+        except asyncio.TimeoutError:
+            pass
+    ev = job["ereignisse"][ab:]
+    return {"ereignisse": ev, "naechste": ab + len(ev), "fertig": job["fertig"], "modell": job["modell"],
+            "start": job["start"]}
+
+
+def abbrechen(jid: str) -> bool:
+    job = JOBS.get(jid)
+    if not job or job["fertig"]:
+        return False
+    job["task"].cancel()
+    return True
+
+
+def upload_pfad(name: str) -> Path:
+    return UPLOADS / name

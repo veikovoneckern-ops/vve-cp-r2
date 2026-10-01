@@ -1,9 +1,9 @@
 .venv/
 __pycache__/
 *.pyc
-daten/einstellungen.json
-daten/journal.json
-daten/letzter-besuch.json
-daten/benutzer.json
+nohup.out
+# Laufzeitbestand -- liegt nur auf dem Server, nie im Repo
+daten/*
+!daten/hinweis.txt
 
 .claude/settings.local.json

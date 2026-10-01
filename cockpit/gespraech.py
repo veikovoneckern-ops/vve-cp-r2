@@ -1,0 +1,315 @@
+"""
+TALK -- ein Gespraech, ueberall, das weiss, worauf Veiko gerade schaut.
+
+Ersetzt die 13 Gespraechsflaechen des alten Cockpits (Befund B1). Jede kannte
+etwas anderes; dieses hier bekommt immer dieselbe Lage (offene
+Entscheidungen, was laeuft, was erledigt ist) plus den Kontext der Ansicht.
+
+Aendern tut das Gespraech NICHTS still. Es haengt Vorschlaege als
+```aktionen-Block an; das Cockpit zeigt sie mit einem Knopf, und erst der
+Klick (oder ein gesprochenes "ja") fuehrt sie aus. Eine Positivliste, kein
+Function-Calling -- dieselbe Haltung wie im alten dialog.py, weil lokale
+Modelle Werkzeugaufrufe unzuverlaessig liefern.
+"""
+from __future__ import annotations
+
+import json
+import re
+import time
+from typing import Any, AsyncIterator
+
+from . import db, llm, stab
+from .konfig import MODELL_TALK
+
+AKTIONEN = {
+    "entscheiden": ("entscheidung_id", "antwort"),
+    "antworten": ("entscheidung_id", "text"),
+    "aufgabe_neu": ("titel",),
+    "aufgabe_erledigt": ("aufgabe_id",),
+    "ausarbeiten": ("auftrag",),
+    "merken": ("begriff", "bedeutung"),
+    "notiz": ("text",),
+    "projekt_neu": ("name",),
+    "neo": ("auftrag",),
+}
+
+SYSTEM = """Du bist das VvE Cockpit: die Stimme von Veikos persönlichem Stab. Veiko von Eckern ist Head of Corporate HR Transformation bei Krones. Sein Stab: Jason (Head of PMO, ordnet ein), Neo (Cockpit Engineer), Clayton (Strategie), Neal (Texte, Bücher), Daniel (Red Team, prüft), Annie (Gestaltung), Ridley (Video).
+
+So antwortest du:
+- Deutsch, direkt, freundlich, ohne Vorrede. Zuerst die Antwort, dann wenn nötig die Begründung.
+- Erfinde nichts. Du kennst nur, was unten in LAGE und KONTEXT steht. Wenn etwas fehlt, sag es.
+- Nenne, wer gearbeitet hat, aber nur, wenn es in LAGE oder KONTEXT steht. Schreib niemandem eine Arbeit zu, die dort nicht vorkommt.
+- Nenne im Text NIE interne Kennungen (e…, t…, p…, v…). Die gehören nur in den aktionen-Block. Im Text sagst du den Titel.
+- Auf "Was liegt an?" antwortest du knapp: höchstens fünf Punkte, das Wichtigste zuerst (offene Entscheidungen, Überfälliges, was läuft). Keine vollständigen Listen.
+- Kein Fachjargon ohne Erklärung.
+{STIMME}
+
+Wenn Veiko etwas tun lassen will, schlägst du es vor. Hänge dafür GANZ ANS ENDE einen Block in genau dieser Form an:
+```aktionen
+[{"aktion": "...", ...}]
+```
+Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
+- {"aktion":"entscheiden","entscheidung_id":"e…","antwort":"ja|nein","text":"optional, z. B. anderer Projektname"}
+- {"aktion":"antworten","entscheidung_id":"e…","text":"Veikos Antwort auf eine Rückfrage"}
+- {"aktion":"aufgabe_neu","titel":"…","projekt_id":"p… oder null","faellig":"JJJJ-MM-TT oder null"}
+- {"aktion":"aufgabe_erledigt","aufgabe_id":"t…"}
+- {"aktion":"ausarbeiten","rolle":"stratege|buch|designer|video","form":"text|aufstellung|konzept|webseite|praesentation","auftrag":"…","recherche":"Suchanfrage oder null","vorgang_id":"v… oder null","projekt_id":"p… oder null"}
+- {"aktion":"merken","art":"person|organisation|begriff|hoerfehler","begriff":"…","bedeutung":"…"}
+- {"aktion":"notiz","text":"…","projekt_id":"p… oder null"}
+- {"aktion":"projekt_neu","name":"…"}
+- {"aktion":"neo","auftrag":"was Neo am Cockpit oder Server tun soll"}
+Schlage nur vor, was Veiko erkennbar will. Ohne Handlungswunsch kein Block. Sag im Text in einem Satz, was du vorschlägst; ausgeführt wird erst nach seiner Bestätigung.
+
+Arbeitsweisen auf Zuruf: "Brainstorming" = viele unterschiedliche Ideen, nummeriert, dann die drei stärksten mit Begründung. "ExO-Bewertung" = anhand des veröffentlichten ExO-Rahmens (MTP, SCALE, IDEAS) einschätzen, ehrlich mit Lücken."""
+
+STIMME_ZUSATZ = "- Die Antwort wird VORGELESEN: höchstens vier kurze Sätze, keine Tabellen, keine Aufzählungszeichen, keine Markdown-Zeichen."
+
+
+def _zeit(ts: float | None) -> str:
+    if not ts:
+        return "?"
+    d = time.time() - ts
+    if d < 3600:
+        return f"vor {int(d // 60)} Min."
+    if d < 86400:
+        return f"vor {int(d // 3600)} Std."
+    return time.strftime("%d.%m.", time.localtime(ts))
+
+
+def lage_text() -> str:
+    teile = []
+    ents = db.alle("SELECT e.*, v.titel AS vtitel FROM entscheidungen e LEFT JOIN vorgaenge v ON v.id=e.vorgang_id "
+                   "WHERE e.stand='offen' ORDER BY e.erstellt LIMIT 15")
+    if ents:
+        teile.append("OFFENE ENTSCHEIDUNGEN:\n" + "\n".join(
+            f"- {e['id']} [{e['art']}] von {stab.rollen_name(e['wer'])}: {e['frage']}" +
+            (f" (Vorgang: {e['vtitel']})" if e.get("vtitel") else "") for e in ents))
+    else:
+        teile.append("OFFENE ENTSCHEIDUNGEN: keine")
+    lauf = db.alle("SELECT id, titel, auftrag FROM vorgaenge WHERE stand='in_arbeit' LIMIT 5")
+    if lauf:
+        teile.append("IN ARBEIT:\n" + "\n".join(f"- {v['id']}: {v['titel']}" for v in lauf))
+    erl = db.alle("SELECT id, titel, einordnung, geaendert FROM vorgaenge WHERE stand='fertig' AND quelle!='alt' "
+                  "ORDER BY geaendert DESC LIMIT 6")
+    if erl:
+        teile.append("ZULETZT VOM STAB ERLEDIGT:\n" + "\n".join(
+            f"- {v['id']}: {v['titel']} ({_zeit(v['geaendert'])}) {v['einordnung'][:120]}" for v in erl))
+    auf = db.alle("SELECT a.id, a.titel, a.faellig, p.name FROM aufgaben a LEFT JOIN projekte p ON p.id=a.projekt_id "
+                  "WHERE a.status!='erledigt' AND a.archiviert=0 ORDER BY (a.faellig='' OR a.faellig IS NULL), a.faellig, a.prio, a.erstellt DESC LIMIT 12")
+    if auf:
+        teile.append("OFFENE AUFGABEN:\n" + "\n".join(
+            f"- {a['id']}: {a['titel']}" + (f" [{a['name']}]" if a.get("name") else "") +
+            (f" fällig {a['faellig']}" if a.get("faellig") else "") for a in auf))
+    teile.append("PROJEKTE:\n" + stab.projektliste_text())
+    teile.append("GEDÄCHTNIS:\n" + stab.gedaechtnis_text())
+    return "\n\n".join(teile)
+
+
+def beirat_text() -> str:
+    """Der Beirat des alten Cockpits (nachts aufgefrischt, board.py) -- nur lesen."""
+    from .konfig import ALT_DATEN
+    try:
+        d = json.loads((ALT_DATEN / "board-stand.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    zeilen = [f"- {p.get('name')}: {(p.get('stand') or '')[:300]}" for p in (d.get("personen") or {}).values()]
+    return ("BEIRAT (Veikos Advisory Board, öffentlicher Stand der Vordenker; nichts darüber hinaus erfinden):\n"
+            + "\n".join(zeilen)) if zeilen else ""
+
+
+def kontext_text(k: dict[str, Any] | None) -> str:
+    if not k or not k.get("id"):
+        return ""
+    art, kid = k.get("art"), k.get("id")
+    if art == "vorgang":
+        v = db.holen("vorgaenge", kid)
+        if not v:
+            return ""
+        ev = db.alle("SELECT wer, art, text FROM ereignisse WHERE vorgang_id=? ORDER BY id", (kid,))
+        verlauf = "\n".join(f"- {stab.rollen_name(e['wer'])} ({e['art']}): {e['text'][:700]}" for e in ev)
+        return f"VEIKO SCHAUT GERADE AUF DEN VORGANG {kid}: {v['titel']} (Stand: {v['stand']})\nVerlauf:\n{verlauf}"
+    if art == "projekt":
+        p = db.holen("projekte", kid)
+        if not p:
+            return ""
+        auf = db.alle("SELECT id, titel, status FROM aufgaben WHERE projekt_id=? AND archiviert=0 ORDER BY status, erstellt DESC LIMIT 30", (kid,))
+        erg = db.alle("SELECT id, titel, form FROM ergebnisse WHERE projekt_id=? ORDER BY erstellt DESC LIMIT 8", (kid,))
+        notiz = db.alle("SELECT titel, kurz, text FROM notizen WHERE projekt_id=? ORDER BY erstellt DESC LIMIT 5", (kid,))
+        return (f"VEIKO SCHAUT GERADE AUF DAS PROJEKT {kid}: {p['name']}" + (f" -- Ziel: {p['ziel']}" if p.get("ziel") else "") +
+                "\nAufgaben:\n" + "\n".join(f"- {a['id']} [{a['status']}] {a['titel']}" for a in auf) +
+                ("\nErgebnisse:\n" + "\n".join(f"- {e['titel']} ({e['form']})" for e in erg) if erg else "") +
+                ("\nJüngste Notizen:\n" + "\n".join(f"- {(n['kurz'] or n['text'] or '')[:200]}" for n in notiz) if notiz else ""))
+    if art == "ergebnis":
+        e = db.holen("ergebnisse", kid)
+        if e:
+            return f"VEIKO LIEST GERADE DAS ERGEBNIS „{e['titel']}“ von {stab.rollen_name(e['rolle'])}:\n{(e['inhalt'] or '')[:8000]}"
+    return ""
+
+
+def vorschlaege_aus(text: str) -> tuple[str, list[dict[str, Any]]]:
+    m = re.search(r"```aktionen\s*(.*?)(```|$)", text, re.S)
+    if not m:
+        return text.strip(), []
+    roh = llm.json_aus(m.group(1))
+    sichtbar = text[:m.start()].strip()
+    liste = roh if isinstance(roh, list) else ([roh] if isinstance(roh, dict) else [])
+    gut = []
+    for a in liste[:6]:
+        if not isinstance(a, dict) or a.get("aktion") not in AKTIONEN:
+            continue
+        if any(not a.get(f) for f in AKTIONEN[a["aktion"]]):
+            continue
+        a["label"] = beschriften(a)
+        if a["label"]:
+            gut.append(a)
+    return sichtbar, gut
+
+
+def beschriften(a: dict[str, Any]) -> str | None:
+    art = a["aktion"]
+    if art in ("entscheiden", "antworten"):
+        e = db.holen("entscheidungen", a["entscheidung_id"])
+        if not e or e["stand"] != "offen":
+            return None
+        if art == "antworten":
+            return f"Antwort geben: „{str(a['text'])[:80]}“"
+        return ("Ja: " if a.get("antwort") == "ja" else "Nein: ") + e["frage"][:90]
+    if art == "aufgabe_neu":
+        p = db.holen("projekte", a.get("projekt_id") or "") if a.get("projekt_id") else None
+        return f"Aufgabe anlegen: {a['titel'][:90]}" + (f" ({p['name']})" if p else "")
+    if art == "aufgabe_erledigt":
+        t = db.holen("aufgaben", a["aufgabe_id"])
+        return f"Als erledigt markieren: {t['titel'][:90]}" if t else None
+    if art == "ausarbeiten":
+        return f"{stab.rollen_name(a.get('rolle') or 'stratege')} ausarbeiten lassen: {a['auftrag'][:90]}"
+    if art == "merken":
+        return f"Merken: {a['begriff']} = {a['bedeutung'][:80]}"
+    if art == "notiz":
+        return f"Als Notiz an den Stab: {a['text'][:90]}"
+    if art == "projekt_neu":
+        return f"Projekt anlegen: {a['name'][:60]}"
+    if art == "neo":
+        return f"Neo beauftragen: {a['auftrag'][:90]}"
+    return None
+
+
+async def ausfuehren(a: dict[str, Any]) -> dict[str, Any]:
+    art = a["aktion"]
+    if art == "entscheiden":
+        return stab.entscheiden(a["entscheidung_id"], "ja" if a.get("antwort") == "ja" else "nein", a.get("text") or "")
+    if art == "antworten":
+        return stab.entscheiden(a["entscheidung_id"], "ja", a["text"])
+    if art == "aufgabe_neu":
+        pid = stab.projekt_finden(a.get("projekt_id"))
+        db.anlegen("aufgaben", {"id": db.neue_id("t"), "titel": a["titel"][:200], "projekt_id": pid,
+                                "status": "offen", "prio": 2, "faellig": a.get("faellig") or "", "quelle": "du",
+                                "erstellt": time.time(), "geaendert": time.time()})
+        return {"ok": True}
+    if art == "aufgabe_erledigt":
+        db.aendern("aufgaben", a["aufgabe_id"], {"status": "erledigt", "geaendert": time.time()})
+        return {"ok": True}
+    if art == "ausarbeiten":
+        vid = a.get("vorgang_id") if db.holen("vorgaenge", a.get("vorgang_id") or "") else None
+        if not vid:
+            v = stab.aus_text(a["auftrag"], quelle="gespraech", projekt_id=stab.projekt_finden(a.get("projekt_id")),
+                              titel=a["auftrag"][:80])
+            vid = v["id"]
+            db.ausfuehren("UPDATE vorgaenge SET stand='eingeordnet' WHERE id=?", (vid,))
+        stab.auftrag_setzen(vid, {"rolle": a.get("rolle"), "form": a.get("form"), "auftrag": a["auftrag"],
+                                  "recherche": a.get("recherche")})
+        stab.wecken()
+        return {"ok": True, "vorgang_id": vid}
+    if art == "merken":
+        db.anlegen("gedaechtnis", {"id": db.neue_id("g"), "art": a.get("art") or "begriff", "begriff": a["begriff"][:80],
+                                   "bedeutung": a["bedeutung"][:200], "bestaetigt": 1, "quelle": "talk", "erstellt": time.time()})
+        return {"ok": True}
+    if art == "notiz":
+        v = stab.aus_text(a["text"], quelle="gespraech", projekt_id=stab.projekt_finden(a.get("projekt_id")))
+        stab.wecken()
+        return {"ok": True, "vorgang_id": v["id"]}
+    if art == "projekt_neu":
+        pid = db.neue_id("p")
+        db.anlegen("projekte", {"id": pid, "name": a["name"][:80], "farbe": "#6D4AE0", "status": "aktiv",
+                                "start": time.strftime("%Y-%m-%d"), "fruehere_namen": [], "sortierung": 999,
+                                "erstellt": time.time(), "geaendert": time.time(), "quelle": "du"})
+        return {"ok": True, "projekt_id": pid}
+    if art == "neo":
+        from . import neo
+        gid = db.neue_id("g")
+        db.einfuegen("gespraeche", {"id": gid, "art": "neo", "titel": a["auftrag"][:70], "erstellt": time.time(),
+                                    "geaendert": time.time()})
+        jid = await neo.senden(gid, a["auftrag"], [])
+        return {"ok": True, "neo_gespraech": gid, "job": jid}
+    return {"ok": False, "grund": "unbekannte Aktion"}
+
+
+def gespraech_holen_oder_anlegen(gid: str | None, kontext: dict | None) -> str:
+    if gid and db.holen("gespraeche", gid):
+        return gid
+    gid = db.neue_id("g")
+    db.einfuegen("gespraeche", {"id": gid, "art": "talk", "titel": "Gespräch", "kontext": kontext or {},
+                                "erstellt": time.time(), "geaendert": time.time()})
+    return gid
+
+
+async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str], stimme: bool) -> AsyncIterator[dict]:
+    voll = text
+    for did in anhaenge or []:
+        d = db.holen("dateien", did)
+        if d and d.get("text"):
+            voll += f"\n\n[Angehängt: {d['name']}]\n{d['text'][:15000]}"
+        elif d:
+            voll += f"\n\n[Angehängt: {d['name']} -- Inhalt nicht lesbar]"
+    db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",
+                  (gid, "du", voll, json.dumps({"anzeige": text, "kontext": kontext or {}}, ensure_ascii=False), time.time()))
+    if db.wert("SELECT titel FROM gespraeche WHERE id=?", (gid,)) == "Gespräch":
+        db.ausfuehren("UPDATE gespraeche SET titel=? WHERE id=?", (text[:60] or "Gespräch", gid))
+    verlauf = []
+    for m in reversed(db.alle("SELECT rolle, text FROM nachrichten WHERE gespraech_id=? ORDER BY id DESC LIMIT 12", (gid,))):
+        verlauf.append({"role": "user" if m["rolle"] == "du" else "assistant", "content": m["text"]})
+    system = (SYSTEM.replace("{STIMME}", STIMME_ZUSATZ if stimme else "") +
+              f"\n\nHEUTE: {time.strftime('%A, %d.%m.%Y %H:%M')}\n\nLAGE:\n{lage_text()}\n\n{kontext_text(kontext)}")
+    if re.search(r"beirat|board|vordenker", text, re.I):
+        system += "\n\n" + beirat_text()
+    modell = await llm.modell_waehlen(MODELL_TALK, "qwen3.6:27b", "qwen3:30b-a3b", "llama3.3:70b")
+    if not modell:
+        yield {"typ": "fehler", "text": "Kein lokales Modell für das Gespräch installiert."}
+        return
+    gesamt = ""
+    try:
+        async for t in llm.strom(modell, system, verlauf, temperatur=0.4, denken=False, num_ctx=24576):
+            gesamt += t
+            if "```aktionen" not in gesamt:
+                yield {"typ": "text", "t": t}
+    except llm.ModellFehler as f:
+        yield {"typ": "fehler", "text": str(f)}
+        return
+    sichtbar, vorschlaege = vorschlaege_aus(gesamt)
+    if llm.fremdschrift(sichtbar):
+        sichtbar = llm.FREMDSCHRIFT.sub("", sichtbar)
+    mid = db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",
+                        (gid, "assistent", sichtbar, json.dumps({"vorschlaege": vorschlaege, "modell": modell}, ensure_ascii=False), time.time()))
+    db.ausfuehren("UPDATE gespraeche SET geaendert=? WHERE id=?", (time.time(), gid))
+    yield {"typ": "fertig", "text": sichtbar, "vorschlaege": vorschlaege, "nachricht_id": mid, "modell": modell}
+
+
+async def vorschlaege_ausfuehren(nachricht_id: int, indizes: list[int]) -> list[dict[str, Any]]:
+    m = db.eine("SELECT * FROM nachrichten WHERE id=?", (nachricht_id,))
+    if not m:
+        return [{"ok": False, "grund": "Nachricht nicht gefunden"}]
+    daten = m.get("daten") or {}
+    vs = daten.get("vorschlaege") or []
+    ergebnisse = []
+    for i in indizes:
+        if i < 0 or i >= len(vs) or vs[i].get("erledigt"):
+            continue
+        try:
+            r = await ausfuehren(vs[i])
+        except Exception as f:  # noqa: BLE001
+            r = {"ok": False, "grund": str(f)}
+        vs[i]["erledigt"] = bool(r.get("ok"))
+        vs[i]["ergebnis"] = r
+        ergebnisse.append(r)
+    daten["vorschlaege"] = vs
+    db.ausfuehren("UPDATE nachrichten SET daten=? WHERE id=?", (json.dumps(daten, ensure_ascii=False), nachricht_id))
+    return ergebnisse
