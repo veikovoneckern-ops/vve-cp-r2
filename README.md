@@ -6,7 +6,15 @@ Warum es sie gibt und wie sie gedacht ist: [KONZEPT.md](KONZEPT.md). Was gebaut 
 
 ## Adresse
 
-`https://vveorgxais.tail4ca1ab.ts.net:8443` — nur im Tailnet, HTTPS kommt von Tailscale Serve (nötig fürs Mikrofon). Anmeldung mit den Zugangsdaten aus `daten/benutzer.json`.
+Jetzt: `http://100.65.221.106:8790` (nur im Tailnet). Anmeldung mit den Zugangsdaten aus `daten/benutzer.json` (dieselben wie bisher in Release 2).
+
+Für das Mikrofon braucht der Browser https. Das richtet einmalig ein Befehl mit sudo ein:
+
+```bash
+sudo tailscale serve --bg --https=8443 http://100.65.221.106:8790
+```
+
+Danach: `https://vveorgxais.tail4ca1ab.ts.net:8443`. Die bisherige Adresse des alten Cockpits (Port 443) bleibt davon unberührt; `tailscale serve status` zeigt beide.
 
 ## Aufbau
 
@@ -41,13 +49,14 @@ systemctl --user restart vve-cp-r2
 journalctl --user -u vve-cp-r2 -n 50
 ```
 
-Einmalig eingerichtet: `tailscale serve --bg --https=8443 http://127.0.0.1:8790` und `loginctl enable-linger vveadmin`.
+Einmalig eingerichtet: `loginctl enable-linger vveadmin` (Dienst läuft ohne Anmeldung). Offen: der `tailscale serve`-Befehl oben.
 
 Umgebung (`~/.config/vve-cp-r2.env`), alles optional:
 
 | Variable | Vorgabe | Bedeutung |
 |---|---|---|
-| `VVEC_PORT` | 8790 | Port des Dienstes (nur 127.0.0.1) |
+| `VVEC_HOST` | 127.0.0.1 | Adresse; auf dem Server steht die Tailnet-Adresse 100.65.221.106 |
+| `VVEC_PORT` | 8790 | Port des Dienstes |
 | `VVEC_MODELL_STAB` | llama3.3:70b | Jason, wenn im Team nichts eingetragen ist |
 | `VVEC_MODELL_ARBEIT` | qwen3.8:27b | Fachrollen und Daniel |
 | `VVEC_MODELL_TALK` | qwen3.8:27b | Talk |

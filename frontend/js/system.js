@@ -70,6 +70,10 @@ export function System({ konto, thema }) {
       <section class="karte"><div class="karte-kopf"><h3>Stimme</h3></div>
         <${Wert} name="Spracherkennung (Whisper)" wert=${d.stimme.whisper ? `bereit · Modell ${d.stimme.modell}${d.stimme.geladen.length ? " · geladen auf " + d.stimme.geladen.join(", ") : ""}` : d.stimme.grund} warn=${!d.stimme.whisper} />
         <${Wert} name="Mikrofon im Browser" wert=${window.isSecureContext ? "möglich (sichere Verbindung)" : "nicht möglich: Seite nicht über https geöffnet"} warn=${!window.isSecureContext} />
+        ${!window.isSecureContext && html`<div class="hinweisbox" style="margin-top:8px">
+          Der Browser gibt das Mikrofon nur über https frei. Einmal auf dem Server ausführen (fragt nach deinem Passwort):
+          <pre class="mono klein" style="white-space:pre-wrap;margin:6px 0">sudo tailscale serve --bg --https=8443 http://100.65.221.106:8790</pre>
+          Danach öffnest du das Cockpit unter <b>https://vveorgxais.tail4ca1ab.ts.net:8443</b>. Erfolg erkennst du daran, dass hier „möglich“ steht.</div>`}
       </section>
       <section class="karte"><div class="karte-kopf"><h3>Daten dieser Fassung</h3></div>
         ${Object.entries(d.db).map(([k, v]) => html`<${Wert} name=${k[0].toUpperCase() + k.slice(1)} wert=${v} />`)}

@@ -34,7 +34,8 @@ Veiko ist kein Entwickler von Beruf. Erklären ohne Jargon, eine Empfehlung stat
 ```
 
 Im Browser prüfen: per SSH-Tunnel auf `localhost` (der eingebaute Browser scheitert an der Tailnet-Adresse):
-`ssh -N -L 8790:127.0.0.1:8790 vveki`, dann `http://localhost:8790`.
+`ssh -N -L 8790:100.65.221.106:8790 vveki`, dann `http://localhost:8790` (der Dienst lauscht auf der Tailnet-Adresse).
+Für Tests ohne echte Daten: eine zweite Instanz mit `VVEC_PORT=8791 VVEC_NEU_DATEN=<leeres Verzeichnis>` und einem Testkonto; danach Verzeichnis löschen. Prozesse nie per `pkill -f` über den Namen beenden (trifft die eigene SSH-Sitzung), sondern über den Port (`ss -ltnp`).
 
 ## Ausliefern
 

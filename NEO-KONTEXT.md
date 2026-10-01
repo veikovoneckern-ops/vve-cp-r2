@@ -11,8 +11,8 @@ Dienste: Ollama (127.0.0.1:11434), ComfyUI (Docker, 8188), SearXNG (8888), Piper
 ## Zwei Cockpits, parallel
 
 **Die neue Fassung (in der du gerade arbeitest)** liegt in `~/vve-cp-r2` (GitHub `veikovoneckern-ops/vve-cp-r2`).
-- `server.py` startet FastAPI auf 127.0.0.1:8790, als User-Dienst `vve-cp-r2.service` (`systemctl --user restart vve-cp-r2`).
-- Erreichbar unter `https://vveorgxais.tail4ca1ab.ts.net:8443` (Tailscale Serve, nur im Tailnet).
+- `server.py` startet FastAPI auf der Tailnet-Adresse 100.65.221.106:8790 (Einstellung `VVEC_HOST` in `~/.config/vve-cp-r2.env`), als User-Dienst `vve-cp-r2.service` (`systemctl --user restart vve-cp-r2`).
+- Erreichbar unter `http://100.65.221.106:8790`. Für https (nötig fürs Mikrofon) muss Veiko einmal `sudo tailscale serve --bg --https=8443 http://100.65.221.106:8790` ausführen; danach `https://vveorgxais.tail4ca1ab.ts.net:8443`. Du hast dafür kein sudo.
 - `cockpit/`: `db.py` (SQLite unter `daten/cockpit.sqlite`), `stab.py` (Jason ordnet ein, Rollen arbeiten aus, Daniel prüft), `gespraech.py` (Talk), `neo.py` (du), `api.py` (alle Endpunkte), `importer.py` (liest das alte Cockpit, schreibt es nie).
 - `frontend/`: ES-Module ohne Bauschritt, Preact + htm aus `frontend/vendor/`. Je Bereich eine Datei unter `frontend/js/` (briefing, inbox, projects, team, system, neo, talk, composer).
 - Nach einer Änderung an Python-Dateien: `systemctl --user restart vve-cp-r2`. Frontend-Dateien wirken nach einem Neuladen im Browser.

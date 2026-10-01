@@ -11,7 +11,7 @@ function typWaehlen() {
 }
 
 export function mikrofonGrund() {
-  if (!window.isSecureContext) return "Das Mikrofon geht nur über eine sichere Verbindung (https). Öffne das Cockpit über seine https-Adresse.";
+  if (!window.isSecureContext) return "Das Mikrofon geht nur über https. Wie du das einmalig einrichtest, steht unter System → Stimme.";
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return "Dieser Browser gibt kein Mikrofon frei.";
   if (typWaehlen() === null) return "Dieser Browser kann nicht aufnehmen.";
   return "";
