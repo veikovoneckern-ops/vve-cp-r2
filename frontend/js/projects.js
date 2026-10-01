@@ -233,7 +233,7 @@ function Projekt({ id, reiter }) {
       ${!d.aufgaben.length && html`<${Leer} titel="Noch keine Aufgaben." />`}
     </section>`}
     ${tab === "zeitplan" && html`<${Zeitplan} projekt=${p} aufgaben=${d.aufgaben} laden=${laden} />`}
-    ${tab === "struktur" && html`<${Struktur} aufgaben=${d.aufgaben} laden=${laden} />`}
+    ${tab === "struktur" && html`<${Struktur} projekt=${p} aufgaben=${d.aufgaben} laden=${laden} />`}
     ${tab === "notizen" && html`<${NotizListe} projektId=${id} />`}
     ${tab === "ergebnisse" && html`<section class="karte">${d.ergebnisse.length ? d.ergebnisse.map((r) => html`<${ErgebnisZeile} key=${r.id} r=${r} />`)
       : html`<${Leer} titel="Noch keine Ergebnisse.">Mit „Ausarbeiten lassen“ bekommt eine Rolle einen Auftrag. Das Ergebnis landet hier, geprüft von Daniel.</${Leer}>`}</section>`}

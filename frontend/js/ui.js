@@ -25,6 +25,7 @@ const PFADE = {
   neo: "M4 6l6 6-6 6M12 18h8",
   talk: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3",
   griff: "M9 5.5h.01M15 5.5h.01M9 12h.01M15 12h.01M9 18.5h.01M15 18.5h.01",
+  kalender: "M7 3v3M17 3v3M4 8h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z",
   chat: "M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.6A8 8 0 1 1 21 12z",
   mic: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3M8.5 21h7",
   plus: "M12 5v14M5 12h14",
@@ -245,3 +246,47 @@ export const ROLLEN_WAHL =[["stratege", "Clayton · Strategie, Konzepte"], ["buc
   ["designer", "Annie · Gestaltung, Bild-Prompts"], ["video", "Ridley · Video, Storyboard"], ["pmo", "Jason · Planung, Überblick"]];
 export const FORM_WAHL = [["dokument", "Dokument (Word)"], ["text", "Text"], ["aufstellung", "Aufstellung / Liste"], ["konzept", "Konzept"],
   ["praesentation", "Präsentation"], ["webseite", "Webseite"]];
+
+// ------------------------------------------------------------ Hinweise beim Ueberfahren
+// Ein Baustein fuer das ganze Cockpit (Veiko, 01.10.: "beim Drueberfahren die
+// Funktion einblenden"). Jedes Element mit title bekommt denselben Hinweis im
+// Cockpit-Stil, schnell (300 ms) statt nach der Browser-Sekunde. Der title wird
+// dabei nach data-tipp verschoben, sonst erschiene zusaetzlich die graue
+// Browser-Box. Wer neue Knoepfe baut, gibt ihnen einen title -- mehr nicht.
+let tippEl = null, tippZiel = null, tippTimer = null;
+export function tippsEinrichten() {
+  if (tippEl) return;
+  tippEl = document.createElement("div");
+  tippEl.className = "tipp";
+  tippEl.setAttribute("role", "tooltip");
+  document.body.appendChild(tippEl);
+  const weg = () => { clearTimeout(tippTimer); tippZiel = null; tippEl.classList.remove("an"); };
+  document.addEventListener("pointerover", (e) => {
+    if (e.pointerType === "touch") return; // auf dem Telefon gibt es kein Ueberfahren
+    const el = e.target.closest && e.target.closest("[title],[data-tipp]");
+    if (!el || el === tippZiel) return;
+    if (el.hasAttribute("title")) {
+      const t = el.getAttribute("title");
+      if (t) { el.dataset.tipp = t; if (!el.hasAttribute("aria-label") && el.matches("button,a")) el.setAttribute("aria-label", t); }
+      el.removeAttribute("title");
+    }
+    const text = el.dataset.tipp;
+    weg();
+    if (!text) return;
+    tippZiel = el;
+    tippTimer = setTimeout(() => {
+      if (tippZiel !== el || !el.isConnected) return;
+      tippEl.textContent = text;
+      tippEl.classList.add("an");
+      const b = el.getBoundingClientRect(), t = tippEl.getBoundingClientRect();
+      let x = b.left + b.width / 2 - t.width / 2;
+      x = Math.max(8, Math.min(x, innerWidth - t.width - 8));
+      let y = b.bottom + 8;
+      if (y + t.height > innerHeight - 8) y = b.top - t.height - 8;
+      tippEl.style.left = x + "px"; tippEl.style.top = y + "px";
+    }, 300);
+  });
+  document.addEventListener("pointerout", (e) => { if (tippZiel && !tippZiel.contains(e.relatedTarget)) weg(); });
+  document.addEventListener("pointerdown", weg, true);
+  document.addEventListener("scroll", weg, true);
+}

@@ -409,9 +409,16 @@ async def aufgabe_neu(request: Request):
     d = await _koerper(request)
     _pflicht(d, "titel")
     tid = db.neue_id("t")
+    # Unteraufgabe direkt aus der Struktur-Ansicht: Eltern nur aus demselben Projekt.
+    eltern = db.holen("aufgaben", d.get("eltern_id") or "") if d.get("eltern_id") else None
+    if eltern and eltern["projekt_id"] != (d.get("projekt_id") or None):
+        eltern = None
+    sortierung = (db.wert("SELECT MAX(sortierung) FROM aufgaben WHERE eltern_id IS ? AND projekt_id IS ?",
+                          (eltern["id"] if eltern else None, d.get("projekt_id") or None)) or 0) + 10
     db.anlegen("aufgaben", {"id": tid, "titel": d["titel"].strip()[:300], "projekt_id": d.get("projekt_id") or None,
                             "status": "offen", "prio": int(d.get("prio") or 2), "faellig": d.get("faellig") or "",
-                            "notiz": d.get("notiz") or "", "quelle": "du", "erstellt": time.time(), "geaendert": time.time()})
+                            "notiz": d.get("notiz") or "", "quelle": "du", "erstellt": time.time(), "geaendert": time.time(),
+                            "eltern_id": eltern["id"] if eltern else None, "sortierung": sortierung})
     return db.holen("aufgaben", tid)
 
 

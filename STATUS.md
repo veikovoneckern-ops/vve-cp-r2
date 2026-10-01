@@ -1,5 +1,18 @@
 # Stand der neuen Fassung
 
+## 01.10.2026, nachts — Struktur wie im alten Cockpit, Neo mit Bildern, Diktat zum Mitlesen, Knöpfe
+
+| Gemeldet / gewünscht | Ursache / Umsetzung |
+|---|---|
+| Struktur wie im alten Cockpit | Projekt links als farbige Wurzel, Aufgaben rechts als Baum, Linien in Projektfarbe. Ziehen am ganzen Knoten; ungültige Ziele (unter sich selbst) werden schon beim Ziehen rot. Neu: + am Knoten legt eine Unteraufgabe an, + am Projekt eine Aufgabe, Doppelklick benennt um, Termin am Knoten, Fortschritt je Ast („2/5“), alles auf/zu. `POST /aufgaben` nimmt `eltern_id` |
+| Neo nahm das angehängte Logo nicht | Er hatte kein Werkzeug für Binärdateien und hat den Dateinamen nur eingetragen, nie kopiert; die Seite zeigte ein leeres Bild, Neo meldete „erledigt“. Jetzt: Werkzeug `datei_kopieren`; ein Bild-Anhang sagt Neo genau, was zu tun ist; `vorschau_zeigen` meldet „NICHT FERTIG“, wenn die Seite auf fehlende Dateien verweist; Neos Auftrag nennt, wo das Cockpit-Logo liegt. Geprüft mit echtem Modell: kopiert, geschrieben, gezeigt |
+| Diktat zum Mitlesen | `diktieren()` in `stimme.js`: Aufnahme an Sprechpausen in Stücke geteilt; fertige Stücke werden fest erkannt, das laufende alle 1,5 s vorläufig (eigener Whisper, kein Google). Geprüft mit eingespeistem Piper-Ton: erster Text nach 2,8 s, am Ende wortgenau |
+| Keine weißen Knöpfe | Normale Knöpfe auf getönter Fläche (`--knopf-grund`), Hauptknöpfe im Dunkelmodus Schiefergrau statt hell |
+| Sprechen ohne Beschriftung | Nur das Mikrofon (violett); Zustand und Bedeutung im Hinweis |
+| Hinweis beim Überfahren | `tippsEinrichten()` in `ui.js`: jedes Element mit `title` bekommt denselben Hinweis im Cockpit-Stil nach 0,3 s; der graue Browser-Hinweis entfällt |
+
+Doppelter Weg entfernt: „+ Aufgabe“ über dem Baum (dasselbe wie + am Projektknoten).
+
 ## 01.10.2026, spät — Kopfzeile und Server-Sektion wie im alten Cockpit, Projektansichten, Sprechen im Projekt
 
 | Gewünscht | Umgesetzt |

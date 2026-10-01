@@ -3,7 +3,7 @@
 // Umschalt+Enter = neue Zeile. Dazu Ziehen-und-Fallenlassen und Einfuegen.
 import { html, useState, useRef, useEffect, Icon, toast } from "./ui.js";
 import { hochladen } from "./api.js";
-import { aufnehmen, erkennen, mikrofonGrund } from "./stimme.js";
+import { diktieren, mikrofonGrund } from "./stimme.js";
 
 function groesse(b) { return b > 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1024)) + " KB"; }
 
@@ -12,7 +12,8 @@ export function Composer({ platzhalter = "Schreib oder sprich …", beimSenden, 
   hinweis = "Enter senden · Umschalt+Enter neue Zeile", sendenText = "Senden", feldRef }) {
   const [text, setText] = useState(() => { try { return entwurfKey ? sessionStorage.getItem("entwurf:" + entwurfKey) || "" : ""; } catch (e) { return ""; } });
   const [anh, setAnh] = useState([]);
-  const [aufnahme, setAufnahme] = useState(null); // {start, ctl}
+  const [aufnahme, setAufnahme] = useState(null); // {start, ctl, basis}
+  const [vorlaeufig, setVorlaeufig] = useState("");
   const [erkenne, setErkenne] = useState(false);
   const [ziehen, setZiehen] = useState(false);
   const [jetzt, setJetzt] = useState(Date.now());
@@ -56,33 +57,38 @@ export function Composer({ platzhalter = "Schreib oder sprich …", beimSenden, 
     if (ok !== false) { setText(""); setAnh([]); }
   }
 
+  // Diktat mit Mitlesen: fester Text steht sofort im Feld, der gerade gesprochene
+  // Satz erscheint vorlaeufig dahinter (stimme.js, diktieren()).
   async function mikro() {
     if (aufnahme) {
-      const blob = await aufnahme.ctl.stopp();
-      setAufnahme(null);
       setErkenne(true);
-      try {
-        const d = await erkennen(blob);
-        if (d.text) {
-          setText((alt) => (alt && !alt.endsWith(" ") && !alt.endsWith("\n") ? alt + " " : alt) + d.text);
-          setTimeout(() => ta.current && ta.current.focus(), 0);
-        } else toast(d.hinweis || "Nichts verstanden.");
-      } catch (e) { toast(e.message, { fehler: true }); }
+      let fertig = "";
+      try { fertig = await aufnahme.ctl.stopp(); } catch (e) { toast(e.message, { fehler: true }); }
+      setText(aufnahme.basis + fertig);
+      setVorlaeufig("");
+      if (!fertig) toast("Nichts verstanden. War das Mikrofon stumm?");
+      setAufnahme(null);
       setErkenne(false);
+      setTimeout(() => ta.current && ta.current.focus(), 0);
       return;
     }
     const grund = mikrofonGrund();
     if (grund) { toast(grund, { fehler: true }); return; }
+    const basis = text && !text.endsWith(" ") && !text.endsWith("\n") ? text + " " : text;
     try {
-      const ctl = await aufnehmen();
-      setAufnahme({ start: Date.now(), ctl });
+      const ctl = await diktieren({ beiText: (fest, vor) => { setText(basis + fest); setVorlaeufig(vor); } });
+      setAufnahme({ start: Date.now(), ctl, basis });
     } catch (e) { toast(e.message, { fehler: true }); }
   }
+  // Wird das Feld geschlossen, waehrend diktiert wird: Mikrofon freigeben.
+  const aufnahmeRef = useRef(null);
+  aufnahmeRef.current = aufnahme;
+  useEffect(() => () => { if (aufnahmeRef.current) aufnahmeRef.current.ctl.abbrechen(); }, []);
 
   const sek = aufnahme ? Math.floor((jetzt - aufnahme.start) / 1000) : 0;
   let info = "";
-  if (aufnahme) info = `Aufnahme läuft · ${Math.floor(sek / 60)}:${String(sek % 60).padStart(2, "0")} · zum Beenden tippen`;
-  else if (erkenne) info = "Erkenne Sprache …";
+  if (aufnahme) info = `Diktat läuft · ${Math.floor(sek / 60)}:${String(sek % 60).padStart(2, "0")} · zum Beenden tippen`;
+  else if (erkenne) info = "Letzter Satz wird erkannt …";
   else if (laedt) info = "Lade hoch …";
 
   return html`<div class=${"composer" + (ziehen ? " ziehen" : "")}
@@ -98,7 +104,8 @@ export function Composer({ platzhalter = "Schreib oder sprich …", beimSenden, 
           : html`<span class="leise">${a.stand === "fehler" ? "Fehler" : groesse(a.groesse)}</span>`}
         <button type="button" aria-label="Anhang entfernen" onClick=${() => setAnh((x) => x.filter((y) => y.id !== a.id))}><${Icon} n="x" g=${13} /></button>
       </span>`)}</div>`}
-    <textarea ref=${ta} rows=${zeilen} value=${text} placeholder=${platzhalter} aria-label=${platzhalter}
+    <textarea ref=${ta} rows=${zeilen} value=${aufnahme && vorlaeufig ? text + (text && !text.endsWith(" ") ? " " : "") + vorlaeufig + " …" : text}
+      class=${aufnahme ? "diktat" : ""} readOnly=${!!aufnahme} placeholder=${aufnahme ? "Sprich einfach, der Text erscheint hier …" : platzhalter} aria-label=${platzhalter}
       onInput=${(e) => setText(e.target.value)}
       onPaste=${(e) => { const f = [...(e.clipboardData?.files || [])]; if (erlaubeAnhang && f.length) { e.preventDefault(); dateienDazu(f); } }}
       onKeyDown=${(e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); senden(); } }}></textarea>
@@ -107,7 +114,7 @@ export function Composer({ platzhalter = "Schreib oder sprich …", beimSenden, 
         onClick=${() => datei.current.click()}><${Icon} n="plus" g=${19} /></button>
         <input ref=${datei} type="file" multiple hidden onChange=${(e) => { const l = [...e.target.files]; e.target.value = ""; dateienDazu(l); }} />`}
       ${erlaubeMic && html`<button type="button" class=${"sym" + (aufnahme ? " aufnahme" : erkenne ? " denkt" : "")}
-        title=${aufnahme ? "Aufnahme beenden" : "Diktieren"} aria-label=${aufnahme ? "Aufnahme beenden" : "Diktieren"} aria-pressed=${!!aufnahme}
+        title=${aufnahme ? "Diktat beenden" : "Diktieren (der Text erscheint beim Sprechen)"} aria-label=${aufnahme ? "Diktat beenden" : "Diktieren"} aria-pressed=${!!aufnahme}
         onClick=${mikro} disabled=${erkenne}><${Icon} n=${aufnahme ? "stopp" : "mic"} g=${18} /></button>`}
       <span class="info">${info}</span>
       ${laeuft && beimStoppen

@@ -95,54 +95,99 @@ export function Zeitplan({ projekt, aufgaben, laden }) {
 }
 
 // ------------------------------------------------------------ Struktur
-// Mitte einer Aufgabe = als Unteraufgabe anhaengen, oberes/unteres Viertel =
-// davor/danach einsortieren, freie Flaeche darunter = oberste Ebene. Wie im
-// alten Cockpit; die Pruefung auf Zyklen macht der Server.
-export function Struktur({ aufgaben, laden }) {
+// Wie im alten Cockpit: das Projekt links als Wurzel, die Aufgaben rechts als
+// Baum mit Verbindungslinien in der Projektfarbe. Ziehen am Knoten:
+//   Mitte einer Aufgabe      = als Unteraufgabe anhaengen
+//   oberer / unterer Rand    = davor / danach einsortieren
+//   aufs Projekt oder frei   = oberste Ebene
+// Ungueltige Ziele (der Knoten selbst oder einer seiner Nachfahren) werden schon
+// beim Ziehen rot; der Server prueft trotzdem noch einmal.
+// Dazu, was beim Strukturieren hilft: + am Knoten legt eine Unteraufgabe an,
+// + am Projekt eine Aufgabe, Doppelklick benennt um, Termin direkt am Knoten,
+// Fortschritt je Ast, alles auf- oder zuklappen.
+const ST = { W: 300, H: 42, GAP: 10, EIN: 28, ROOT_W: 210, ROOT_H: 66, X: 300 };
+
+export function Struktur({ projekt, aufgaben, laden }) {
   const [zu, setZu] = useState(() => new Set());
-  const [zug, setZug] = useState(null); // { id, x, y, ziel, wo }
+  const [zug, setZug] = useState(null);       // { id, titel, x, y, ziel, wo }
+  const [neu, setNeu] = useState(null);       // id der Eltern-Aufgabe oder "wurzel"
+  const [neuText, setNeuText] = useState("");
+  const [umben, setUmben] = useState(null);   // { id, text }
   const zugRef = useRef(null);
-  const liste = useRef(null);
+  const flaeche = useRef(null);
   const sichtbar = aufgaben.filter((t) => !t.archiviert);
+  const farbe = projekt.farbe || "var(--steel)";
+
+  const kinderVon = {};
+  sichtbar.forEach((t) => { if (t.eltern_id) (kinderVon[t.eltern_id] = kinderVon[t.eltern_id] || []).push(t); });
+  const nachfahren = (id) => { const s = new Set(); const geh = (x) => (kinderVon[x] || []).forEach((k) => { s.add(k.id); geh(k.id); }); geh(id); return s; };
+  const fortschritt = (id) => { const n = [...nachfahren(id)].map((k) => sichtbar.find((t) => t.id === k)); return [n.filter((t) => t && t.status === "erledigt").length, n.length]; };
+
   const zeilen = baum(sichtbar)(zu);
+  const tiefe = zeilen.reduce((m, z) => Math.max(m, z.tiefe), 0);
+  // Platz fuer das Eingabefeld "neue Unteraufgabe" direkt unter seinem Eltern-Knoten.
+  const pos = {}; let y = 20;
+  const reihen = [];
+  zeilen.forEach((z) => {
+    pos[z.t.id] = { x: ST.X + z.tiefe * ST.EIN, y };
+    reihen.push({ ...z, x: pos[z.t.id].x, y });
+    y += ST.H + ST.GAP;
+    if (neu === z.t.id) y += ST.H + ST.GAP;
+  });
+  const neuWurzelY = y;
+  if (neu === "wurzel") y += ST.H + ST.GAP;
+  const hoehe = Math.max(y + 10, ST.ROOT_H + 60);
+  const breite = ST.X + tiefe * ST.EIN + ST.W + 60;
+  const rootY = Math.max(20, Math.min(hoehe / 2 - ST.ROOT_H / 2, 140));
+  const rootMitte = rootY + ST.ROOT_H / 2;
+
+  const linien = reihen.map((r) => {
+    const my = r.y + ST.H / 2;
+    if (!r.t.eltern_id || !pos[r.t.eltern_id]) {
+      const sx = 20 + ST.ROOT_W, mx = sx + (r.x - sx) / 2;
+      return html`<path d=${`M${sx} ${rootMitte} H${mx} V${my} H${r.x}`} />`;
+    }
+    const p = pos[r.t.eltern_id];
+    return html`<path d=${`M${p.x + 14} ${p.y + ST.H} V${my} H${r.x}`} />`;
+  });
 
   function zielFinden(x, y, eigene) {
     const el = document.elementFromPoint(x, y);
-    const zeile = el && el.closest("[data-st-id]");
-    if (zeile && liste.current.contains(zeile)) {
-      const id = zeile.dataset.stId;
-      if (id === eigene) return null;
-      const b = zeile.getBoundingClientRect();
+    if (!el || !flaeche.current || !flaeche.current.contains(el)) return null;
+    const knoten = el.closest("[data-st-id]");
+    if (knoten) {
+      const id = knoten.dataset.stId;
+      if (id === eigene || nachfahren(eigene).has(id)) return { ziel: id, wo: "ungueltig" };
+      const b = knoten.getBoundingClientRect();
       const r = (y - b.top) / b.height;
       return { ziel: id, wo: r < 0.28 ? "davor" : r > 0.72 ? "danach" : "darunter" };
     }
-    if (el && el.closest(".st-frei")) return { ziel: null, wo: "oben" };
-    return null;
+    return { ziel: null, wo: "oben" };
   }
 
   function runter(e, t) {
     if (e.button !== undefined && e.button !== 0) return;
+    if (e.target.closest("button,input,.st-termin")) return; // Knoepfe bleiben Knoepfe
     const start = { x: e.clientX, y: e.clientY };
     let aktiv = false;
     const zieh = (ev) => {
       if (!aktiv && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 6) return; // Klick, kein Ziehen
       aktiv = true;
       ev.preventDefault();
-      // Am Rand des sichtbaren Bereichs mitscrollen -- sonst laege bei langen
-      // Listen das Ziel (oder die freie Flaeche) unerreichbar unter dem Rand.
-      const rolle = liste.current && liste.current.closest(".inhalt");
-      if (rolle) {
-        const b = rolle.getBoundingClientRect();
-        if (ev.clientY > b.bottom - 50) rolle.scrollTop += 14;
-        else if (ev.clientY < b.top + 50) rolle.scrollTop -= 14;
+      // Am Rand mitscrollen -- sonst laege das Ziel bei grossen Baeumen unerreichbar.
+      const r = flaeche.current && flaeche.current.parentElement;
+      if (r) {
+        const b = r.getBoundingClientRect();
+        if (ev.clientY > b.bottom - 40) r.scrollTop += 14; else if (ev.clientY < b.top + 40) r.scrollTop -= 14;
+        if (ev.clientX > b.right - 40) r.scrollLeft += 14; else if (ev.clientX < b.left + 40) r.scrollLeft -= 14;
       }
-      const z ={ id: t.id, titel: t.titel, x: ev.clientX, y: ev.clientY, ...(zielFinden(ev.clientX, ev.clientY, t.id) || { ziel: undefined, wo: null }) };
+      const z = { id: t.id, titel: t.titel, x: ev.clientX, y: ev.clientY, ...(zielFinden(ev.clientX, ev.clientY, t.id) || { ziel: undefined, wo: null }) };
       zugRef.current = z; setZug(z);
     };
     const los = async () => {
       removeEventListener("pointermove", zieh); removeEventListener("pointerup", los); removeEventListener("pointercancel", los);
       const z = zugRef.current; zugRef.current = null; setZug(null);
-      if (!aktiv || !z || !z.wo) return;
+      if (!aktiv || !z || !z.wo || z.wo === "ungueltig") return;
       try {
         await api(`/aufgaben/${t.id}/verschieben`, { methode: "POST", daten: { ziel_id: z.ziel, wo: z.wo } });
         if (z.wo === "darunter") setZu((s) => { const n = new Set(s); n.delete(z.ziel); return n; });
@@ -154,27 +199,81 @@ export function Struktur({ aufgaben, laden }) {
   }
 
   const umklappen = (id) => setZu((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const allesZu = () => setZu(new Set(Object.keys(kinderVon)));
+  async function anlegen() {
+    const titel = neuText.trim();
+    if (!titel) { setNeu(null); return; }
+    try {
+      await api("/aufgaben", { methode: "POST", daten: { titel, projekt_id: projekt.id, eltern_id: neu === "wurzel" ? null : neu } });
+      if (neu !== "wurzel") setZu((s) => { const n = new Set(s); n.delete(neu); return n; });
+      setNeuText(""); laden(); aktualisieren();
+    } catch (x) { fehlerMelden(x); }
+  }
+  async function umbenennen() {
+    const u = umben; setUmben(null);
+    const t = sichtbar.find((x) => x.id === u.id);
+    if (u.text.trim() && t && u.text.trim() !== t.titel) await setzen(u.id, { titel: u.text.trim() }, laden);
+  }
+  const neuFeld = (x, y) => html`<div class="st-neu" style=${`left:${x}px;top:${y}px;width:${ST.W}px;height:${ST.H}px`}>
+    <input autofocus value=${neuText} placeholder=${neu === "wurzel" ? "Neue Aufgabe … (Enter)" : "Neue Unteraufgabe … (Enter)"}
+      onInput=${(e) => setNeuText(e.target.value)} onKeyDown=${(e) => { if (e.key === "Enter") anlegen(); if (e.key === "Escape") { setNeu(null); setNeuText(""); } }}
+      onBlur=${() => { if (!neuText.trim()) setNeu(null); }} aria-label="Titel der neuen Aufgabe" /></div>`;
+
+  const offen = sichtbar.filter((t) => t.status !== "erledigt").length;
+  const hz = heute();
 
   return html`<section class="karte st">
-    <div class="st-hinweis"><${Icon} n="liste" g=${13} /> Am Griff ziehen (Maus oder Finger): auf die <b>Mitte</b> einer Aufgabe = als Unteraufgabe ·
-      an den <b>oberen oder unteren Rand</b> = davor oder danach · in die <b>freie Fläche</b> unten = oberste Ebene. Unteraufgaben wandern mit.</div>
-    <div class="st-liste" ref=${liste}>
-      ${zeilen.map(({ t, tiefe, kinder }) => {
-        const erl = t.status === "erledigt";
-        const hier = zug && zug.ziel === t.id ? " ziel-" + zug.wo : "";
-        return html`<div class=${"st-zeile" + hier + (zug && zug.id === t.id ? " zieht" : "")} data-st-id=${t.id} key=${t.id} style=${`--tiefe:${tiefe}`}>
-          <span class="st-griff" onPointerDown=${(e) => runter(e, t)} title="Ziehen zum Verschieben" aria-label=${"Verschieben: " + t.titel}><${Icon} n="griff" g=${14} /></span>
-          ${kinder ? html`<button class=${"st-pfeil" + (zu.has(t.id) ? " zu" : "")} onClick=${() => umklappen(t.id)} aria-label=${zu.has(t.id) ? "Zweig aufklappen" : "Zweig zuklappen"}><${Icon} n="runter" g=${13} /></button>` : html`<span class="st-pfeil leer"></span>`}
-          <button class=${"check" + (erl ? " an" : "")} onClick=${() => setzen(t.id, { status: erl ? "offen" : "erledigt" }, laden)} aria-label=${(erl ? "Wieder öffnen: " : "Erledigt: ") + t.titel}>
-            ${erl ? html`<${Icon} n="check" g=${13} w=${3} />` : ""}</button>
-          <span class=${"st-titel" + (erl ? " erledigt" : "")}>${t.titel}${zu.has(t.id) && kinder ? html` <span class="pill">+${kinder}</span>` : ""}</span>
-          ${t.faellig && html`<span class="neben">${kurz(t.faellig)}</span>`}
-        </div>`;
-      })}
-      <div class=${"st-frei" + (zug && zug.wo === "oben" ? " ziel-oben" : "")}>${zug ? "Hier loslassen: oberste Ebene" : ""}</div>
+    <div class="st-kopf">
+      <div class="st-hinweis"><${Icon} n="griff" g=${13} /> <b>Ziehen</b> (Maus und Finger): auf die <b>Mitte</b> einer Aufgabe = als Unteraufgabe ·
+        an den <b>oberen oder unteren Rand</b> = davor oder danach · aufs <b>Projekt</b> oder in die <b>freie Fläche</b> = oberste Ebene.
+        Unteraufgaben wandern mit; was nicht geht, wird rot.</div>
+      <div class="knopfreihe">
+        <button class="btn klein geist" onClick=${() => setZu(new Set())} title="Alle Zweige aufklappen">Alles auf</button>
+        <button class="btn klein geist" onClick=${allesZu} title="Alle Zweige zuklappen">Alles zu</button>
+      </div>
     </div>
-    ${!zeilen.length && html`<${Leer} titel="Noch keine Aufgaben." />`}
-    ${zug && zug.wo !== undefined && html`<div class="st-geist" style=${`left:${zug.x + 12}px;top:${zug.y + 8}px`}>${zug.titel}
-      <small>${{ davor: "davor einsortieren", danach: "danach einsortieren", darunter: "als Unteraufgabe", oben: "oberste Ebene" }[zug.wo] || "…"}</small></div>`}
+    <div class="st-rahmen">
+      <div class=${"st-flaeche" + (zug && zug.wo === "oben" ? " ziel-oben" : "")} ref=${flaeche} style=${`width:${breite}px;height:${hoehe}px`}>
+        <svg class="st-linien" width=${breite} height=${hoehe} style=${`--st-farbe:${farbe}`} aria-hidden="true">${linien}</svg>
+        <div class="st-wurzel" data-st-wurzel="1" style=${`left:20px;top:${rootY}px;width:${ST.ROOT_W}px;height:${ST.ROOT_H}px;--st-farbe:${farbe}`}>
+          <b>${projekt.name}</b><span>${offen} offen · ${sichtbar.length - offen} erledigt</span>
+          <button class="st-akt" onClick=${() => { setNeu("wurzel"); setNeuText(""); }} title="Neue Aufgabe" aria-label="Neue Aufgabe"><${Icon} n="plus" g=${13} /></button>
+        </div>
+        ${reihen.map(({ t, x, y, kinder }) => {
+          const erl = t.status === "erledigt";
+          const ueber = !erl && t.faellig && zuDatum(t.faellig) < hz;
+          const [f, n] = kinder ? fortschritt(t.id) : [0, 0];
+          const ziel = zug && zug.ziel === t.id ? " ziel-" + zug.wo : "";
+          return html`<div key=${t.id} data-st-id=${t.id} onPointerDown=${(e) => runter(e, t)}
+              class=${"st-knoten" + (erl ? " erledigt" : "") + (ueber ? " ueber" : "") + ziel + (zug && zug.id === t.id ? " zieht" : "")}
+              style=${`left:${x}px;top:${y}px;width:${ST.W}px;height:${ST.H}px;--st-farbe:${farbe}`}
+              >
+            ${kinder ? html`<button class=${"st-zweig" + (zu.has(t.id) ? " zu" : "")} onClick=${() => umklappen(t.id)}
+              title=${zu.has(t.id) ? `Zweig aufklappen (${kinder})` : "Zweig zuklappen"} aria-label=${zu.has(t.id) ? "Zweig aufklappen" : "Zweig zuklappen"}><${Icon} n="runter" g=${11} w=${2.4} /></button>` : ""}
+            <button class=${"st-ck" + (erl ? " an" : "")} onClick=${() => setzen(t.id, { status: erl ? "offen" : "erledigt" }, laden)}
+              title=${erl ? "Wieder öffnen" : "Als erledigt markieren"} aria-label=${(erl ? "Wieder öffnen: " : "Erledigt: ") + t.titel}>${erl ? html`<${Icon} n="check" g=${10} w=${3} />` : ""}</button>
+            ${umben && umben.id === t.id
+              ? html`<input class="st-umben" autofocus value=${umben.text} onInput=${(e) => setUmben({ id: t.id, text: e.target.value })}
+                  onKeyDown=${(e) => { if (e.key === "Enter") umbenennen(); if (e.key === "Escape") setUmben(null); }} onBlur=${umbenennen} aria-label="Neuer Titel" />`
+              : html`<span class="st-tt" onDblClick=${() => setUmben({ id: t.id, text: t.titel })}>${t.titel}</span>`}
+            ${kinder ? html`<span class=${"st-zahl" + (f === n ? " fertig" : "")} title=${`${f} von ${n} Unteraufgaben erledigt`}>${f}/${n}</span>` : ""}
+            <label class=${"st-termin" + (t.faellig ? "" : " leer")} title=${t.faellig ? "Fällig am " + kurz(t.faellig) + " · ändern" : "Termin setzen"}>
+              ${t.faellig ? kurz(t.faellig) : html`<${Icon} n="kalender" g=${12} />`}
+              <input type="date" value=${t.faellig || ""} onChange=${(e) => setzen(t.id, { faellig: e.target.value }, laden)} aria-label=${"Fällig: " + t.titel} /></label>
+            <span class="st-akte">
+              <button class="st-akt" onClick=${() => { setNeu(t.id); setNeuText(""); }} title="Unteraufgabe anlegen" aria-label="Unteraufgabe anlegen"><${Icon} n="plus" g=${12} /></button>
+              <button class="st-akt" onClick=${() => setUmben({ id: t.id, text: t.titel })} title="Umbenennen" aria-label="Umbenennen"><${Icon} n="stift" g=${12} /></button>
+              <button class="st-akt" onClick=${async () => { try { await api("/aufgaben/" + t.id, { methode: "DELETE" }); laden(); aktualisieren(); } catch (x) { fehlerMelden(x); } }}
+                title="Archivieren (lässt sich zurückholen)" aria-label="Archivieren"><${Icon} n="archiv" g=${12} /></button>
+            </span>
+          </div>`;
+        })}
+        ${neu && neu !== "wurzel" && pos[neu] && neuFeld(pos[neu].x + ST.EIN, pos[neu].y + ST.H + ST.GAP)}
+        ${neu === "wurzel" && neuFeld(ST.X, neuWurzelY)}
+        ${!reihen.length && neu !== "wurzel" && html`<div class="st-leer" style=${`left:${ST.X}px;top:${rootY + 12}px`}>Noch keine Aufgaben. Mit + am Projekt anlegen.</div>`}
+      </div>
+    </div>
+    ${zug && zug.wo !== undefined && html`<div class=${"st-geist" + (zug.wo === "ungueltig" ? " ungueltig" : "")} style=${`left:${zug.x + 12}px;top:${zug.y + 8}px`}>${zug.titel}
+      <small>${{ davor: "davor einsortieren", danach: "danach einsortieren", darunter: "als Unteraufgabe", oben: "oberste Ebene", ungueltig: "geht nicht: unter sich selbst" }[zug.wo] || "…"}</small></div>`}
   </section>`;
 }

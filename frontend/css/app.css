@@ -17,6 +17,8 @@
      bleibt Bedeutung vorbehalten: Gruen = bestaetigen, Rot = veraendert das System,
      Violett nur als Akzent beim Sprechen. */
   --fuell:#1E2A36; --fuell-hover:#33404D; --fuell-text:#FFFFFF;
+  /* Normale Knoepfe: getoente Flaeche statt Weiss (Veiko, 01.10.: "Buttons mit weissem Hintergrund gefallen mir nicht"). */
+  --knopf-grund:#E3E8EF; --knopf-grund-hover:#D5DCE5;
   --fuell-gruen:#0B7A62; --fuell-lila:#1E2A36;
   --ja-grund:#E3F3EC; --ja-rand:#9FD2BE; --ja-text:#0A6650;
   --sea:#0E9377; --sea-soft:#E4F4EF;
@@ -46,7 +48,7 @@
   --matrix:#00c853; --matrix-kopf:#7dffad; --neo-du:#7FB3E3;
   --chrome:#121211; --chrome-2:#151413; --chrome-line:#383632; --chrome-ink:#faf9f6; --chrome-ink-3:#a6a399;
   --hover:rgba(255,255,255,.07);
-  --fuell:#E9E6DF; --fuell-hover:#FFFFFF; --fuell-text:#141412; --fuell-lila:#E9E6DF;
+  --fuell:#3E4956; --fuell-hover:#4B5765; --fuell-text:#FFFFFF; --fuell-lila:#3E4956; --knopf-grund:#2C2C2A; --knopf-grund-hover:#383835;
   --ja-grund:#15302a; --ja-rand:#2f6b59; --ja-text:#7fe0bf;
   --sh-1:0 1px 2px rgba(0,0,0,.35); --sh-2:0 6px 18px rgba(0,0,0,.45); --sh-3:0 22px 60px rgba(0,0,0,.6);
   color-scheme:dark }}
@@ -60,7 +62,7 @@
   --matrix:#00c853; --matrix-kopf:#7dffad; --neo-du:#7FB3E3;
   --chrome:#121211; --chrome-2:#151413; --chrome-line:#383632; --chrome-ink:#faf9f6; --chrome-ink-3:#a6a399;
   --hover:rgba(255,255,255,.07);
-  --fuell:#E9E6DF; --fuell-hover:#FFFFFF; --fuell-text:#141412; --fuell-lila:#E9E6DF;
+  --fuell:#3E4956; --fuell-hover:#4B5765; --fuell-text:#FFFFFF; --fuell-lila:#3E4956; --knopf-grund:#2C2C2A; --knopf-grund-hover:#383835;
   --ja-grund:#15302a; --ja-rand:#2f6b59; --ja-text:#7fe0bf;
   --sh-1:0 1px 2px rgba(0,0,0,.35); --sh-2:0 6px 18px rgba(0,0,0,.45); --sh-3:0 22px 60px rgba(0,0,0,.6);
   color-scheme:dark }
@@ -117,8 +119,8 @@ p{margin:0 0 8px}
 .seite{max-width:1240px;margin:0 auto}
 
 /* ------------------------------------------------ Bausteine */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);border-radius:7px;padding:6px 12px;font-weight:600;font-size:13px;cursor:pointer;min-height:34px;white-space:nowrap;text-decoration:none}
-.btn:hover{background:var(--surface-2);color:var(--ink);border-color:var(--ink-4)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid transparent;background:var(--knopf-grund);color:var(--ink-2);border-radius:7px;padding:6px 12px;font-weight:600;font-size:13px;cursor:pointer;min-height:34px;white-space:nowrap;text-decoration:none}
+.btn:hover{background:var(--knopf-grund-hover);color:var(--ink)}
 .btn:disabled{opacity:.5;cursor:default}
 .btn.primaer{background:var(--fuell);border-color:var(--fuell);color:var(--fuell-text)}
 .btn.ja{background:var(--ja-grund);border-color:var(--ja-rand);color:var(--ja-text)}
@@ -164,9 +166,9 @@ p{margin:0 0 8px}
 .eingabe,select.eingabe,textarea.eingabe{border:1px solid var(--line);background:var(--surface);border-radius:7px;padding:7px 10px;min-height:36px;width:100%}
 textarea.eingabe{resize:vertical;line-height:1.45}
 .eingabe:focus{border-color:var(--steel);outline:none;box-shadow:0 0 0 3px var(--steel-soft)}
-.segment{display:inline-flex;background:var(--surface-2);border:1px solid var(--line);border-radius:9px;padding:3px;gap:2px;flex-wrap:wrap}
+.segment{display:inline-flex;background:transparent;border:1px solid var(--line);border-radius:9px;padding:3px;gap:2px;flex-wrap:wrap}
 .segment button{background:none;border:0;padding:6px 12px;border-radius:7px;cursor:pointer;font-weight:600;color:var(--ink-3);min-height:32px;white-space:nowrap}
-.segment button.an{background:var(--surface);color:var(--ink);box-shadow:var(--sh-1)}
+.segment button.an{background:var(--knopf-grund);color:var(--ink)}
 .segment button .zahl{font-size:11px;color:var(--ink-4);margin-left:4px}
 .tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:14px;overflow-x:auto;scrollbar-width:none}
 .tabs button{background:none;border:0;border-bottom:2px solid transparent;padding:9px 12px;font-weight:650;color:var(--ink-3);cursor:pointer;white-space:nowrap;min-height:40px}
@@ -531,7 +533,7 @@ html.ki-arbeitet .logo-knopf{filter:drop-shadow(0 0 .6px rgba(0,0,0,.75)) drop-s
 .kopf-titel h1{font-size:18px;font-weight:750;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
 .kopf-titel span{font-family:var(--mono);font-size:11.5px;color:var(--chrome-ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
 /* Cockpit-Leiste: EIN Rahmen, Abschnitte durch Striche getrennt (wie .course im alten). */
-.kopf-leiste{display:flex;align-items:stretch;height:var(--kasten);border:1px solid var(--chrome-line);border-radius:9px;background:var(--chrome-2);overflow:hidden;flex:none}
+.kopf-leiste{display:flex;align-items:stretch;height:var(--kasten);border:1px solid var(--chrome-line);border-radius:9px;background:var(--knopf-grund);overflow:hidden;flex:none}
 .kopf-leiste>*{display:flex;flex-direction:column;justify-content:center;align-items:center;padding:0 14px;min-width:92px;border-left:1px solid var(--chrome-line);color:inherit;text-decoration:none;white-space:nowrap}
 .kopf-leiste>*:first-child{border-left:0}
 .kopf-leiste b{font-size:13.5px;font-weight:650;color:var(--chrome-ink);line-height:1.2;display:inline-flex;align-items:center;gap:3px;font-variant-numeric:tabular-nums}
@@ -542,7 +544,7 @@ html.ki-arbeitet .logo-knopf{filter:drop-shadow(0 0 .6px rgba(0,0,0,.75)) drop-s
 /* Server-Kaesten: Farbe nur fuer die Ausnahme, Normalwerte in Textfarbe. */
 .kopf-server{display:flex;align-items:center;gap:7px;height:var(--kasten);background:none;border:0;padding:0;cursor:pointer;flex:0 1 auto;min-width:0;color:inherit}
 .kopf-kaesten{display:flex;gap:7px;height:100%;min-width:0;overflow:hidden}
-.kopf-kaesten>span{display:flex;flex-direction:column;justify-content:center;align-items:center;flex:none;min-width:62px;padding:0 12px;border-radius:9px;background:var(--chrome-2);border:1px solid var(--chrome-line);white-space:nowrap}
+.kopf-kaesten>span{display:flex;flex-direction:column;justify-content:center;align-items:center;flex:none;min-width:62px;padding:0 12px;border-radius:9px;background:var(--knopf-grund);border:1px solid transparent;white-space:nowrap}
 .kopf-kaesten b{font-size:13.5px;font-weight:650;line-height:1.2;color:var(--chrome-ink);font-variant-numeric:tabular-nums}
 .kopf-kaesten span>span{font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--chrome-ink-3);font-weight:600;line-height:1.3}
 .kopf-kaesten .warnung b{color:var(--amber)} .kopf-kaesten .kritisch b{color:var(--signal)}
@@ -558,7 +560,7 @@ html.ki-arbeitet .logo-knopf{filter:drop-shadow(0 0 .6px rgba(0,0,0,.75)) drop-s
 @media (max-width:1250px){.kopf-leiste>*:nth-child(2){display:none}}
 @media (max-width:1100px){.kopf-leiste,.kopf-trenner{display:none}}
 .kopf-knoepfe{display:flex;align-items:center;gap:8px;flex:none}
-.kopf-icon{display:grid;place-items:center;width:var(--kasten);height:var(--kasten);border-radius:10px;border:1px solid var(--chrome-line);background:var(--chrome-2);color:var(--chrome-ink-3);cursor:pointer}
+.kopf-icon{display:grid;place-items:center;width:var(--kasten);height:var(--kasten);border-radius:10px;border:1px solid transparent;background:var(--knopf-grund);color:var(--chrome-ink-3);cursor:pointer}
 .kopf-icon:hover{color:var(--chrome-ink);border-color:var(--ink-4)}
 .kopf-icon.an{color:var(--violett);border-color:var(--violett);background:var(--violett-soft)}
 .suche-wrap{position:relative}
@@ -569,12 +571,11 @@ html.ki-arbeitet .logo-knopf{filter:drop-shadow(0 0 .6px rgba(0,0,0,.75)) drop-s
 /* ------------------------------------------------ Sprechen (zentral im Kopf)
    Ein Klick: Talk geht auf und hoert zu. Graphit wie die Hauptknoepfe; Violett
    nur als Akzent am Mikrofon und solange das Gespraech laeuft. */
-.sprech-knopf{display:inline-flex;align-items:center;gap:9px;flex:none;height:var(--kasten);background:var(--fuell);color:var(--fuell-text);border:0;border-radius:11px;padding:0 15px 0 7px;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap}
-.sprech-knopf:hover{background:var(--fuell-hover)}
-.sprech-knopf .sk-symbol{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;background:#6A4BD6;color:#fff;flex:none}
-.sprech-knopf.an{background:var(--violett-soft);color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--violett)}
-.sprech-knopf.an.hoert .sk-symbol{background:#B4322A;animation:sk-puls 1.4s ease-in-out infinite}
-.sprech-knopf.an.denkt .sk-symbol,.sprech-knopf.an.erkennt .sk-symbol{animation:sk-puls 1s ease-in-out infinite}
+.sprech-knopf{display:grid;place-items:center;flex:none;width:var(--kasten);height:var(--kasten);background:#6A4BD6;color:#fff;border:0;border-radius:11px;cursor:pointer;padding:0}
+.sprech-knopf:hover{background:#7B5CE6}
+.sprech-knopf.an{background:var(--violett-soft);color:var(--violett);box-shadow:inset 0 0 0 1.5px var(--violett)}
+.sprech-knopf.an.hoert{background:#B4322A;color:#fff;box-shadow:none;animation:sk-puls 1.4s ease-in-out infinite}
+.sprech-knopf.an.denkt,.sprech-knopf.an.erkennt{animation:sk-puls 1s ease-in-out infinite}
 /* Puls nach INNEN -- nichts ragt ueber den Knopf. */
 @keyframes sk-puls{0%,100%{box-shadow:inset 0 0 0 0 rgba(255,255,255,0)}50%{box-shadow:inset 0 0 0 4px rgba(255,255,255,.35)}}
 .kopf-logo{align-items:center}
@@ -671,8 +672,6 @@ html.ki-arbeitet .logo-knopf{filter:drop-shadow(0 0 .6px rgba(0,0,0,.75)) drop-s
   .kopf-kaesten,.kopf-pfeil{display:none}
   .kopf-ampel{display:block;width:12px;height:12px}
   .kopf-server{width:30px;justify-content:center}
-  .sprech-knopf{padding:0 5px}
-  .sprech-knopf .sk-text{display:none}
   .kopf-icon{width:40px;height:40px}
   .server-sektion{bottom:calc(60px + env(safe-area-inset-bottom,0px))}
 }
@@ -710,28 +709,67 @@ html.ki-arbeitet .logo-knopf{filter:drop-shadow(0 0 .6px rgba(0,0,0,.75)) drop-s
 .zp-ohne-zeile input{border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:2px 5px;font-size:12px;min-height:28px}
 @media (max-width:900px){.zp-kopf,.zp-zeile{grid-template-columns:minmax(0,1fr) minmax(0,1.4fr)}.zp-daten,.zp-kopf .zp-daten{display:none}}
 
-/* ------------------------------------------------ Projekt: Struktur (Baum, Ziehen)
-   Einrueckung je Ebene ueber --tiefe; die Zielmarke zeigt, wo die Aufgabe landet:
-   Strich oben/unten = davor/danach, Rahmen = als Unteraufgabe. */
-.st-hinweis{font-size:12px;color:var(--ink-3);margin-bottom:10px;display:flex;gap:6px;align-items:baseline;flex-wrap:wrap}
-.st-liste{display:flex;flex-direction:column;position:relative}
-.st-zeile{position:relative;display:flex;align-items:center;gap:8px;padding:5px 8px 5px calc(6px + var(--tiefe) * 24px);min-height:40px;border-radius:8px;border:1px solid transparent}
-.st-zeile:hover{background:var(--surface-2)}
-.st-zeile::before{content:"";position:absolute;left:calc(var(--tiefe) * 24px - 8px);top:0;bottom:50%;width:10px;border-left:1.5px solid var(--line);border-bottom:1.5px solid var(--line);border-bottom-left-radius:6px;display:var(--linie,block)}
-.st-zeile[style*="--tiefe:0"]::before{display:none}
-.st-griff{display:grid;place-items:center;width:22px;height:30px;color:var(--ink-4);cursor:grab;touch-action:none;flex:none;border-radius:6px}
-.st-griff:hover{color:var(--ink-2);background:var(--hover)}
-.st-pfeil{display:grid;place-items:center;width:22px;height:22px;border:0;background:none;color:var(--ink-3);cursor:pointer;flex:none;border-radius:5px;transition:transform .15s}
-.st-pfeil.zu{transform:rotate(-90deg)}
-.st-pfeil.leer{cursor:default}
-.st-titel{flex:1;min-width:0;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.st-titel.erledigt{text-decoration:line-through;color:var(--ink-3)}
-.st-zeile.zieht{opacity:.4}
-.st-zeile.ziel-darunter{border-color:var(--steel);background:var(--steel-soft)}
-.st-zeile.ziel-davor{box-shadow:inset 0 2px 0 var(--steel)}
-.st-zeile.ziel-danach{box-shadow:inset 0 -2px 0 var(--steel)}
-.st-frei{min-height:44px;margin-top:6px;border:1.5px dashed transparent;border-radius:8px;display:grid;place-items:center;font-size:12px;color:var(--ink-3)}
-.st-liste:has(.zieht) .st-frei{border-color:var(--line)}
-.st-frei.ziel-oben{border-color:var(--steel);background:var(--steel-soft);color:var(--steel)}
+/* ------------------------------------------------ Projekt: Struktur (wie im alten Cockpit)
+   Projekt links als Wurzel, Aufgaben rechts als Baum; Linien in der Projektfarbe.
+   Zielmarken: Strich oben/unten = davor/danach, Rahmen = als Unteraufgabe,
+   rot = geht nicht. Aktionen erscheinen beim Ueberfahren, auf dem Telefon immer. */
+.st-kopf{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;margin-bottom:10px}
+.st-hinweis{font-size:12px;color:var(--ink-3);flex:1 1 420px;min-width:0}
+.st-rahmen{overflow:auto;max-height:calc(100vh - 300px);min-height:220px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2)}
+.st-flaeche{position:relative;min-width:100%}
+.st-flaeche.ziel-oben{outline:2px dashed var(--steel);outline-offset:-4px;border-radius:10px;background:var(--steel-soft)}
+.st-linien{position:absolute;left:0;top:0;pointer-events:none}
+.st-linien path{fill:none;stroke:var(--st-farbe);stroke-width:1.5;opacity:.55}
+.st-wurzel{position:absolute;z-index:2;border-radius:12px;padding:10px 14px;color:#fff;display:flex;flex-direction:column;justify-content:center;
+  background:linear-gradient(135deg,color-mix(in srgb,var(--st-farbe) 85%,#fff 0%),color-mix(in srgb,var(--st-farbe) 55%,#0b1826));box-shadow:var(--sh-2)}
+.st-wurzel b{font-size:14px;font-weight:750;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.st-wurzel span{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;opacity:.9;margin-top:3px}
+.st-wurzel .st-akt{position:absolute;top:6px;right:6px;background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.35);color:#fff}
+.st-knoten{position:absolute;z-index:2;display:flex;align-items:center;gap:8px;padding:0 10px 0 12px;border-radius:10px;
+  background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--st-farbe);cursor:grab;touch-action:none;user-select:none;transition:box-shadow .12s,border-color .12s}
+.st-knoten:hover{box-shadow:var(--sh-2)}
+.st-knoten.erledigt{opacity:.6}
+.st-knoten.erledigt .st-tt{text-decoration:line-through;color:var(--ink-3)}
+.st-knoten.ueber{border-left-color:var(--signal)}
+.st-knoten.zieht{opacity:.35}
+.st-knoten.ziel-darunter{outline:2px dashed var(--steel);outline-offset:2px;background:var(--steel-soft)}
+.st-knoten.ziel-davor{box-shadow:0 -3px 0 var(--steel)}
+.st-knoten.ziel-danach{box-shadow:0 3px 0 var(--steel)}
+.st-knoten.ziel-ungueltig{outline:2px dashed var(--signal);outline-offset:2px;cursor:not-allowed}
+.st-zweig{position:absolute;left:-10px;top:50%;transform:translateY(-50%);width:19px;height:19px;border-radius:50%;border:1px solid var(--line);background:var(--surface);color:var(--ink-3);display:grid;place-items:center;cursor:pointer;padding:0}
+.st-zweig svg{transition:transform .15s}
+.st-zweig.zu svg{transform:rotate(-90deg)}
+.st-zweig:hover{color:var(--steel);border-color:var(--steel)}
+.st-ck{width:17px;height:17px;border-radius:5px;border:1.5px solid var(--ink-4);background:transparent;flex:none;display:grid;place-items:center;color:#fff;cursor:pointer;padding:0}
+.st-ck.an{background:var(--sea);border-color:var(--sea)}
+.st-tt{flex:1;min-width:0;font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.st-umben{flex:1;min-width:0;font-size:12.5px;border:1px solid var(--steel);border-radius:6px;padding:3px 6px;background:var(--surface)}
+.st-zahl{font-size:10.5px;font-weight:700;color:var(--steel);background:var(--steel-soft);border-radius:99px;padding:1px 7px;flex:none;font-variant-numeric:tabular-nums}
+.st-zahl.fertig{color:var(--sea);background:var(--sea-soft)}
+.st-termin{position:relative;flex:none;font-size:11px;color:var(--ink-3);font-variant-numeric:tabular-nums;cursor:pointer;display:inline-flex;align-items:center;padding:2px 4px;border-radius:5px}
+.st-termin:hover{background:var(--hover);color:var(--ink)}
+.st-termin input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.st-knoten.ueber .st-termin{color:var(--signal);font-weight:700}
+.st-termin.leer{opacity:0}
+.st-knoten:hover .st-termin.leer{opacity:1}
+.st-akte{display:none;gap:3px;flex:none}
+.st-knoten:hover .st-akte{display:flex}
+.st-akt{width:24px;height:24px;border-radius:6px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-2);display:grid;place-items:center;cursor:pointer;padding:0}
+.st-akt:hover{border-color:var(--steel);color:var(--steel)}
+.st-neu{position:absolute;z-index:3}
+.st-neu input{width:100%;height:100%;border:1.5px dashed var(--steel);border-radius:10px;padding:0 12px;background:var(--surface);font-size:12.5px}
+.st-leer{position:absolute;font-size:13px;color:var(--ink-3);padding-top:10px}
 .st-geist{position:fixed;z-index:200;pointer-events:none;background:var(--surface);border:1px solid var(--steel);border-radius:8px;padding:6px 10px;font-size:13px;box-shadow:var(--sh-3);max-width:320px}
 .st-geist small{display:block;color:var(--steel);font-size:11px;font-weight:650}
+.st-geist.ungueltig{border-color:var(--signal)} .st-geist.ungueltig small{color:var(--signal)}
+@media (pointer:coarse){.st-akte{display:flex}.st-termin.leer{opacity:1}}
+
+
+/* ------------------------------------------------ Hinweise beim Ueberfahren (ui.js, tippsEinrichten) */
+.tipp{position:fixed;z-index:500;pointer-events:none;max-width:300px;padding:6px 10px;border-radius:8px;font-size:12px;line-height:1.4;
+  background:#1E2A36;color:#fff;box-shadow:var(--sh-2);opacity:0;transform:translateY(-2px);transition:opacity .12s,transform .12s;white-space:pre-line;left:-999px;top:-999px}
+:root[data-theme="dark"] .tipp{background:#3E4956}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .tipp{background:#3E4956}}
+.tipp.an{opacity:1;transform:none}
+/* Diktat: der Text erscheint beim Sprechen, das Feld ist so lange gesperrt. */
+.composer textarea.diktat{background:var(--violett-soft);color:var(--ink)}

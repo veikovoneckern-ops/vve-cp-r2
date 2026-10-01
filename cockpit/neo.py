@@ -46,6 +46,8 @@ WERKZEUGE = [
      "parameters": {"type": "object", "properties": {"text": {"type": "string"}, "ordner": {"type": "string"}}, "required": ["text"]}},
     {"name": "datei_schreiben", "description": "Schreibt sofort die VOLLSTAENDIGE neue Fassung einer Datei. Erst lesen, dann ersetzen. Gesperrt: Systempfade, /opt/vvec, /srv/www, /var/lib/vvec.",
      "parameters": {"type": "object", "properties": {"pfad": {"type": "string"}, "inhalt": {"type": "string"}, "begruendung": {"type": "string"}}, "required": ["pfad", "inhalt"]}},
+    {"name": "datei_kopieren", "description": "Kopiert eine Datei unveraendert, auch Bilder, PDFs und andere Binaerdateien (datei_schreiben kann nur Text). Typisch: ein angehaengtes Bild in den Ordner einer Vorschau-Seite, damit die Seite es zeigen kann. Zielname ohne Leerzeichen waehlen.",
+     "parameters": {"type": "object", "properties": {"von": {"type": "string"}, "nach": {"type": "string"}}, "required": ["von", "nach"]}},
     {"name": "befehl_ausfuehren", "description": "Fuehrt einen Shell-Befehl als vveadmin aus (kein sudo-Passwort). Sofort, ohne Rueckfrage, Zeitlimit 180 s. Verkette mit && statt vieler Einzelaufrufe.",
      "parameters": {"type": "object", "properties": {"befehl": {"type": "string"}, "arbeitsverzeichnis": {"type": "string"}}, "required": ["befehl"]}},
     {"name": "vorschau_zeigen", "description": "Zeigt eine HTML-Datei in Veikos Vorschau-Spalte. Die Datei muss unter ~/vve-cp-r2/daten/vorschau/ liegen (z. B. daten/vorschau/entwurf/index.html). Erst mit datei_schreiben anlegen, dann zeigen.",
@@ -71,6 +73,26 @@ def _pfad(p: str) -> Path:
 def _gesperrt(p: Path) -> bool:
     s = str(p)
     return any(s == g or s.startswith(g.rstrip("/") + "/") for g in GESPERRT)
+
+
+_VERWEIS = re.compile(r"""(?:src|href)\s*=\s*["']([^"'#?]+)|url\(\s*["']?([^"')#?]+)""", re.I)
+
+
+def _fehlende_verweise(seite: Path) -> list[str]:
+    """Relative Verweise einer HTML-Seite (Bilder, CSS, Skripte), die es neben ihr nicht gibt."""
+    from urllib.parse import unquote
+    try:
+        html = seite.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    fehlt = []
+    for m in _VERWEIS.finditer(html):
+        ref = (m.group(1) or m.group(2) or "").strip()
+        if not ref or re.match(r"^(https?:|data:|mailto:|tel:|javascript:|/|//)", ref, re.I):
+            continue
+        if not (seite.parent / unquote(ref)).exists() and ref not in fehlt:
+            fehlt.append(ref)
+    return fehlt[:8]
 
 
 def _kurz(eingabe: dict[str, Any]) -> str:
@@ -114,6 +136,22 @@ async def werkzeug(name: str, e: dict[str, Any], lauf: dict[str, Any]) -> str:
             return f"Fehler beim Schreiben: {f}"
         lauf["dateien"].append({"pfad": str(z), "begruendung": e.get("begruendung") or ""})
         return f"Geschrieben: {z} ({len(str(e['inhalt']))} Zeichen)"
+    if name == "datei_kopieren":
+        von, nach = _pfad(e.get("von", "")), _pfad(e.get("nach", ""))
+        if _gesperrt(nach):
+            return f"Fehler: '{nach}' ist gesperrt."
+        if not von.is_file():
+            return f"Fehler: {von} gibt es nicht."
+        if nach.is_dir() or str(e.get("nach", "")).endswith("/"):
+            nach = nach / von.name.replace(" ", "-")
+        try:
+            import shutil
+            nach.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(von, nach)
+        except OSError as f:
+            return f"Fehler beim Kopieren: {f}"
+        lauf["dateien"].append({"pfad": str(nach), "begruendung": e.get("begruendung") or "kopiert"})
+        return f"Kopiert: {von} -> {nach} ({nach.stat().st_size // 1024 + 1} KB)"
     if name == "befehl_ausfuehren":
         befehl = str(e.get("befehl") or "").strip()
         if not befehl:
@@ -152,6 +190,13 @@ async def werkzeug(name: str, e: dict[str, Any], lauf: dict[str, Any]) -> str:
         url = "/api/neo/vorschau/" + str(rel).replace("\\", "/")
         lauf["vorschau"] = url
         await lauf["schlange"].put({"typ": "vorschau", "url": url})
+        fehlt = _fehlende_verweise(z)
+        if fehlt:
+            # Lehre vom 01.10.2026: Neo trug den Namen eines angehaengten Logos ein,
+            # ohne es in den Ordner zu kopieren -- die Seite zeigte ein leeres Bild,
+            # und Neo meldete "erledigt". Jetzt bekommt er das als Fehler zurueck.
+            return (f"Vorschau gezeigt: {url}\nNICHT FERTIG: Die Seite verweist auf Dateien, die im Ordner {z.parent} fehlen: "
+                    + ", ".join(fehlt) + ". Kopiere sie mit datei_kopieren dorthin (oder korrigiere den Verweis) und zeig die Seite erneut.")
         return f"Vorschau gezeigt: {url}"
     if name == "dokument_erstellen":
         from . import dokumente
@@ -218,11 +263,16 @@ def system_text() -> str:
             "(format docx oder pptx). Angehängte Unterlagen liest du vorher mit datei_lesen (Pfad steht in der Nachricht).\n"
             f"- Etwas zum Ansehen (Seite, Entwurf, Übersicht): datei_schreiben nach {VORSCHAU_DIR}/<name>/index.html, dann vorschau_zeigen "
             "mit genau diesem Pfad. vorschau_zeigen ist ein Werkzeug wie jedes andere -- du rufst es selbst auf, Veiko muss nichts tun.\n"
+            "- Bilder und andere Dateien für eine Seite: mit datei_kopieren in den Ordner der Seite legen und relativ einbinden. "
+            "Meldet vorschau_zeigen „NICHT FERTIG“, fehlt etwas -- beheben und erneut zeigen, erst dann ist es fertig.\n"
+            f"- „Mein Logo“ / „das Logo vom Cockpit“: {WURZEL}/frontend/bilder/logo-maske.png (schwarzer Ring auf transparentem Grund, "
+            f"198×120) und {WURZEL}/frontend/bilder/favicon.png (der rote Ring). Hängt Veiko eine Datei an, nimm die.\n"
             "- Etwas am Server oder Cockpit prüfen oder ändern: befehl_ausfuehren, datei_lesen, datei_schreiben.\n"
             "\n## Ehrlichkeit\n"
             "Etwas ist erst getan, wenn du das Werkzeug dafür aufgerufen hast und es ohne Fehler zurückkam. "
             "Schreib NIE „ich habe … erstellt“, wenn du in diesem Auftrag kein Werkzeug dafür benutzt hast. "
-            "Wenn etwas scheitert, sag das und warum.\n"
+            "Wenn etwas scheitert, sag das und warum. Beschreib nur, was die Werkzeugergebnisse belegen -- "
+            "nicht, was du vorhattest (wer „dein Logo“ schreibt, muss die Datei kopiert haben).\n"
             "\nWenn du fertig bist, antworte Veiko auf Deutsch: zuerst in ein bis zwei Sätzen das Ergebnis, dann was du konkret "
             "getan hast (Dateien, Befehle), dann was er prüfen sollte. Kein Fachbegriff ohne kurze Erklärung. "
             "Schick ihn nie zu Handarbeit, die du selbst erledigen kannst.")
@@ -391,6 +441,12 @@ async def senden(gid: str, text: str, anhaenge: list[str]) -> str:
             continue
         namen.append(d["name"])
         voll += f"\n\n[Angehängt: {d['name']} -- liegt unter {d['pfad']}]"
+        if re.search(r"\.(png|jpe?g|gif|svg|webp|ico)$", d["name"], re.I):
+            # Neo kann Bilder nicht ansehen, aber verwenden -- und genau das ging schief.
+            sauber = re.sub(r"[^\w.-]+", "-", d["name"]).strip("-").lower()
+            voll += (f"\nDas ist ein BILD. Du kannst es nicht ansehen, aber verwenden: Soll es auf eine Seite, kopiere es mit "
+                     f"datei_kopieren in den Ordner der Seite (z. B. nach {VORSCHAU_DIR}/<name>/{sauber}) und binde es dort "
+                     f"relativ ein (<img src=\"{sauber}\">). Ein Verweis auf den Upload-Pfad funktioniert in der Vorschau NICHT.")
         if d.get("text"):
             voll += f"\nInhalt:\n{d['text'][:20000]}"
     db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",

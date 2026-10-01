@@ -151,6 +151,8 @@ export function ServerKaesten({ offen, umschalten, gesundheit }) {
 }
 
 // Der zentrale Knopf: ein Klick, und das Gespraech laeuft. Der Zustand kommt vom Talk.
+// Nur das Mikrofon, ohne Beschriftung (Veiko: "es reicht das Mikrofonsymbol");
+// was er tut, steht im Hinweis beim Ueberfahren.
 export function SprechKnopf() {
   const [zustand, setZustand] = useState(null);
   useEffect(() => bus.an("dialog-zustand", setZustand), []);
@@ -158,8 +160,8 @@ export function SprechKnopf() {
   const an = !!zustand;
   return html`<button class=${"sprech-knopf" + (an ? " an " + zustand : "")} aria-pressed=${an}
     onClick=${() => bus.sende(an ? "dialog-ende" : "dialog-start")}
-    title=${an ? "Gespräch beenden (oder sag „Dialog beenden“)" : "Mit dem Cockpit sprechen"}>
-    <span class="sk-symbol"><${Icon} n="mic" g=${16} w=${2.1} /></span>
-    <span class="sk-text">${an ? TXT[zustand] || "Im Gespräch" : "Sprechen"}</span>
+    title=${an ? (TXT[zustand] || "Im Gespräch") + " · Klicken oder „Dialog beenden“ sagen zum Beenden" : "Mit dem Cockpit sprechen"}
+    aria-label=${an ? "Gespräch beenden" : "Mit dem Cockpit sprechen"}>
+    <${Icon} n="mic" g=${19} w=${2.1} />
   </button>`;
 }
