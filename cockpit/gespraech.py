@@ -87,7 +87,7 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"visualisierung","beschreibung":"was dargestellt werden soll, mit allen Inhalten (Schritte, Begriffe, Zahlen) auf Deutsch","titel":"kurzer Titel"} -- zeichnet ein Schaubild (Ablauf, Mindmap, Diagramm, Vergleich). Läuft sofort.
 - {"aktion":"zeigen","ziel":"board|briefing|inbox|projects|team|neo|system|watchdog|brainstrom|exo"} -- öffnet einen Bereich des Cockpits sofort. Will Veiko „mit dem Advisory Board sprechen“: ziel board. Stellt er dabei schon eine Frage ans Board, gib sie als "frage" mit -- das Board antwortet dann selbst, du antwortest nicht an seiner Stelle.
 - {"aktion":"ausarbeiten","rolle":"stratege|buch|designer|video","form":"text|aufstellung|konzept|dokument|webseite|praesentation","auftrag":"…","recherche":"Suchanfrage oder null","vorgang_id":"v… oder null","projekt_id":"p… oder null"}
-- {"aktion":"merken","art":"person|organisation|begriff|hoerfehler","begriff":"…","bedeutung":"…"}
+- {"aktion":"merken","art":"person|organisation|begriff|hoerfehler|aussprache","begriff":"…","bedeutung":"…"} -- aussprache: wie das Cockpit ein (meist englisches) Wort VORLESEN soll, in deutscher Lautschrift, z. B. begriff "Slides", bedeutung "Slaids".
 - {"aktion":"notiz","text":"…","projekt_id":"p… oder null"}
 - {"aktion":"projekt_neu","name":"…"}
 - {"aktion":"neo","auftrag":"was Neo am Cockpit oder Server tun soll"}

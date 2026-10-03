@@ -36,10 +36,17 @@ PIPER_STIMME = os.environ.get("VVEC_PIPER_STIMME", "kerstin")
 SEARX = os.environ.get("VVEC_SEARX", "http://127.0.0.1:8888").rstrip("/")
 STATUS_URL = os.environ.get("VVEC_STATUS_URL", "http://127.0.0.1:9099").rstrip("/")
 ALT_BACKEND = os.environ.get("VVEC_ALT_BACKEND", "http://127.0.0.1:8770").rstrip("/")
+# Cockpit-Token des alten Backends -- NUR fuer dessen Wartungsdienst (Ollama-Update
+# laeuft dort als root; vveadmin hat dafuer kein sudo). Einmal von Veiko in
+# ~/.config/vve-cp-r2.env eingetragen, sonst leer: dann steht dort der Einrichtungsbefehl.
+ALT_TOKEN = os.environ.get("VVEC_ALT_TOKEN", "").strip()
 # Adresse des alten Cockpits, fuer Links aus dem Bereich System dorthin.
 ALT_COCKPIT_URL = os.environ.get("VVEC_ALT_COCKPIT_URL", "https://vveorgxais.tail4ca1ab.ts.net/")
 
-WHISPER_MODELL = os.environ.get("VVEC_WHISPER_MODELL", "small")
+# large-v3-turbo statt small (03.10.2026): small hoerte englische Woerter im deutschen
+# Satz ("Briefing", "Use Case") oft falsch. Turbo ist auf der Karte kaum langsamer
+# und braucht rund 1,6 GB VRAM. Laedt es nicht, faellt stimme.py auf medium/small zurueck.
+WHISPER_MODELL = os.environ.get("VVEC_WHISPER_MODELL", "large-v3-turbo")
 WHISPER_GERAET = os.environ.get("VVEC_WHISPER_GERAET", "cuda")
 
 # Vorgaben fuer Modelle, falls im Team nichts eingetragen ist.

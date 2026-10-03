@@ -54,12 +54,56 @@ def _cuda_vorladen() -> None:
                     pass
 
 
+_geladen_als: dict[str, str] = {}
+
+
 def _laden(geraet: str):
     if geraet == "cuda":
         _cuda_vorladen()
     from faster_whisper import WhisperModel  # erst hier: ohne Paket laeuft der Rest weiter
     typ = "float16" if geraet == "cuda" else "int8"
-    return WhisperModel(WHISPER_MODELL, device=geraet, compute_type=typ)
+    # Nur was schon auf der Platte liegt (local_files_only): das erste Herunterladen
+    # von large-v3-turbo dauerte ueber WLAN mehrere Minuten -- so lange darf keine
+    # Spracheingabe haengen. Fehlt das gewuenschte Modell, nimmt Whisper das beste
+    # vorhandene und laedt das gewuenschte im Hintergrund nach.
+    letzter: Exception | None = None
+    for name in dict.fromkeys([WHISPER_MODELL, "medium", "small"]):
+        try:
+            m = WhisperModel(name, device=geraet, compute_type=typ, local_files_only=True)
+            _geladen_als[geraet] = name
+            if name != WHISPER_MODELL:
+                _nachladen_starten()
+            return m
+        except Exception as e:  # noqa: BLE001
+            letzter = e
+    try:
+        m = WhisperModel("small", device=geraet, compute_type=typ)  # gar nichts da: das kleinste holen
+        _geladen_als[geraet] = "small"
+        _nachladen_starten()
+        return m
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(f"Kein Whisper-Modell ladbar: {e or letzter}") from e
+
+
+_nachladen = {"laeuft": False}
+
+
+def _nachladen_starten() -> None:
+    if _nachladen["laeuft"]:
+        return
+    _nachladen["laeuft"] = True
+
+    def lauf():
+        try:
+            from faster_whisper.utils import download_model
+            download_model(WHISPER_MODELL)
+            with _mlock:
+                _modelle.clear()  # naechste Erkennung laedt das bessere Modell
+        except Exception:  # noqa: BLE001 -- dann bleibt es beim vorhandenen
+            pass
+        finally:
+            _nachladen["laeuft"] = False
+    threading.Thread(target=lauf, daemon=True).start()
 
 
 def _modell(geraet: str):
@@ -72,7 +116,8 @@ def _modell(geraet: str):
 def verfuegbar() -> dict[str, Any]:
     try:
         import faster_whisper  # noqa: F401
-        return {"whisper": True, "modell": WHISPER_MODELL, "geladen": list(_modelle)}
+        return {"whisper": True, "modell": WHISPER_MODELL,
+                "geladen": [f"{g} ({_geladen_als.get(g, '?')})" for g in _modelle]}
     except ImportError:
         return {"whisper": False, "grund": "faster-whisper ist in dieser Python-Umgebung nicht installiert."}
 
@@ -124,8 +169,53 @@ async def hoeren(roh: bytes, vorlage: str = "") -> dict[str, Any]:
             "hinweis": "" if text else "Nichts verstanden. War die Aufnahme still?"}
 
 
+# ------------------------------------------------------------ Aussprache
+# Piper spricht mit einer DEUTSCHEN Stimme und liest jedes Wort nach deutschen
+# Regeln: "Team" wird "Te-am", "Briefing" wird "Brie-fing" (Veiko, 03.10.).
+# Deshalb werden englische Woerter vor dem Vorlesen in deutsche Lautschrift
+# umgeschrieben. Nur fuers Ohr -- der Text im Gespraech bleibt unveraendert.
+# Ergaenzen geht ohne Code: Memory-Eintraege der Art "aussprache"
+# (Begriff = wie es geschrieben wird, Bedeutung = wie es klingen soll),
+# auch per Talk ("merk dir: Slides spricht man Slaids").
+AUSSPRACHE = {
+    "Advisory Board": "Äd-weisori Bord", "Kill Switch": "Kill-Switsch", "Safety Shutdown": "Säifti Schatt-daun",
+    "Use Cases": "Jus Käises", "Use Case": "Jus Käis", "Red Team": "Redd Tiem", "Head of": "Hedd of",
+    "Creative Director": "Kri-äitiw Dairektor", "Video Producer": "Video Produhsser", "Cockpit Engineer": "Cockpit Endschinier",
+    "Teams": "Tiems", "Team": "Tiem", "Board": "Bord", "Briefing": "Brieefing", "Inbox": "Inn-Box", "Capture": "Käptscher",
+    "Cases": "Käises", "Case": "Käis", "Memory": "Memmori", "Talk": "Tohk", "Projects": "Prodschekts",
+    "WatchDog": "Wotsch-Dogg", "BrainStrom": "Bräin-Strom", "Brainstorming": "Bräin-storming", "ExO": "Ex-O",
+    "Shutdown": "Schatt-daun", "Reboot": "Ribuht", "Safety": "Säifti", "Updates": "Ap-däits", "Update": "Ap-däit",
+    "Downloads": "Daun-louds", "Download": "Daun-loud", "Upload": "Ap-loud", "Workshops": "Wörk-schopps", "Workshop": "Wörk-schopp",
+    "Meetings": "Mietings", "Meeting": "Mieting", "Feedback": "Fied-bäck", "Deadline": "Dedd-lein", "Masterclass": "Master-klahs",
+    "Engineer": "Endschinier", "Leadership": "Lieder-schipp", "Lead": "Lied", "Business": "Bisness", "Learning": "Lörning",
+    "Story": "Stori", "Chat": "Tschätt", "Strategy": "Strätedschi", "Publishing": "Pablisching", "Workflow": "Wörk-flou",
+    "Tools": "Tuhls", "Tool": "Tuhl", "Slides": "Slaids", "Keynote": "Kie-nout", "Pitch": "Pitsch", "Server": "Sörver",
+    "Software": "Soft-wär", "Hardware": "Hard-wär", "online": "onn-lein", "offline": "off-lein", "E-Mail": "I-Mäil",
+    "Mail": "Mäil", "okay": "o-käi", "Shelly": "Schelli", "PMO": "Pe Em O", "Jason": "Dschäisen", "Clayton": "Kläiten",
+    "Neal": "Niel", "Annie": "Änni", "Ridley": "Riddli", "Elon": "Ielonn", "Agent": "Äidschent", "Agents": "Äidschents",
+}
+
+
+def aussprache(text: str) -> str:
+    import re
+    eintraege = dict(AUSSPRACHE)
+    try:
+        from . import db
+        for g in db.alle("SELECT begriff, bedeutung FROM gedaechtnis WHERE art='aussprache' AND bestaetigt=1"):
+            if g["begriff"] and g["bedeutung"]:
+                eintraege[g["begriff"]] = g["bedeutung"]
+    except Exception:  # noqa: BLE001 -- ohne Memory gilt die feste Liste
+        pass
+    # EIN Durchgang, laengere zuerst ("Advisory Board" vor "Board") -- nacheinander
+    # ersetzt koennte eine Lautschrift selbst noch einmal ersetzt werden.
+    klein = {k.lower(): v for k, v in eintraege.items()}
+    muster = re.compile(r"(?<![\wÄÖÜäöüß-])(" + "|".join(re.escape(w) for w in sorted(eintraege, key=len, reverse=True)) +
+                        r")(?![\wÄÖÜäöüß])", re.IGNORECASE)
+    return muster.sub(lambda m: klein.get(m.group(1).lower(), m.group(1)), text)
+
+
 async def sprechen(text: str) -> bytes:
-    text = (text or "").strip()[:4000]
+    text = aussprache((text or "").strip()[:4000])
     async with httpx.AsyncClient(timeout=60) as c:
         r = await c.post(f"{PIPER}/v1/audio/speech",
                          json={"model": "tts-1", "input": text, "voice": PIPER_STIMME, "response_format": "mp3"})

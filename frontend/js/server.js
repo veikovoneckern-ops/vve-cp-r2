@@ -124,7 +124,7 @@ function Empfehlung({ e, auftrag, starten, laden, modellLaden }) {
     ${e.befehl && html`<div class="befehl"><pre>${e.befehl}</pre>
       <button class="btn klein geist icon" title="Befehl kopieren" aria-label="Befehl kopieren" onClick=${async () => { if (await kopieren(e.befehl)) toast("Befehl kopiert. Im Terminal auf dem Server einfügen."); }}><${Icon} n="kopie" g=${13} /></button></div>`}
     ${e.aktion && (frage
-      ? html`<div class="knopfreihe"><span class="klein">${e.aktion.art === "neustart" ? "Wirklich neu starten? Alles bricht kurz ab." : "Jetzt einspielen?"}</span>
+      ? html`<div class="knopfreihe"><span class="klein">${e.aktion.art === "neustart" ? "Wirklich neu starten? Alles bricht kurz ab." : e.aktion.art === "ollama-update" ? "Lokale Modelle sind einige Minuten weg. Jetzt einspielen?" : "Jetzt einspielen?"}</span>
           <button class="btn klein gefahr voll" onClick=${() => { setFrage(false); starten(e.aktion.art); }}>Ja, ${e.aktion.text.toLowerCase()}</button>
           <button class="btn klein geist" onClick=${() => setFrage(false)}>Abbrechen</button></div>`
       : html`<div><button class="btn klein gefahr" disabled=${laeuft} onClick=${() => setFrage(true)}>${laeuft ? "läuft schon ein Auftrag" : e.aktion.text}</button></div>`)}
@@ -196,7 +196,7 @@ function SicherungenBlock({ sich }) {
 
 export function Auftrag({ a }) {
   if (!a || (!a.laeuft && !a.ende)) return null;
-  const titel = { updates: "Updates einspielen", neustart: "Neustart", "ollama-neustart": "Ollama neu starten", "caddy-neustart": "Caddy neu starten" }[a.art] || "Auftrag";
+  const titel = { updates: "Updates einspielen", neustart: "Neustart", "ollama-neustart": "Ollama neu starten", "caddy-neustart": "Caddy neu starten", "ollama-update": "Ollama aktualisieren" }[a.art] || "Auftrag";
   return html`<section class="sv-kachel sv-voll" style="margin-bottom:12px">
     <div class="sv-kachel-kopf"><h4>${titel}</h4>
       ${a.laeuft ? html`<span class="pill lila">läuft seit ${zeitText(a.start).replace("vor ", "")}</span>`
@@ -493,7 +493,8 @@ export function useDetails({ mitSystem = true } = {}) {
 
   async function starten(art) {
     const MELDUNG = { neustart: "Server startet neu. In ein bis zwei Minuten ist er wieder da.", updates: "Updates werden eingespielt. Den Fortschritt siehst du oben.",
-      "ollama-neustart": "Ollama startet neu.", "caddy-neustart": "Caddy startet neu." };
+      "ollama-neustart": "Ollama startet neu.", "caddy-neustart": "Caddy startet neu.",
+      "ollama-update": "Ollama wird aktualisiert. Den Fortschritt siehst du oben; lokale Modelle sind einige Minuten nicht erreichbar." };
     try { await api("/system/auftrag", { methode: "POST", daten: { art } }); toast(MELDUNG[art] || "Gestartet."); detLaden(false); } catch (e) { fehlerMelden(e); }
   }
   // Der WatchDog-Stand allein ist billig (eine Datei) -- fuer die WatchDog-Ansicht

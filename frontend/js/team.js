@@ -72,7 +72,7 @@ function MitgliedDetail({ id, zu, nachher }) {
   <//>`;
 }
 
-const ARTEN = [["person", "Person"], ["organisation", "Organisation"], ["begriff", "Begriff, Abkürzung"], ["hoerfehler", "Hörfehler (wird korrigiert)"]];
+const ARTEN = [["person", "Person"], ["organisation", "Organisation"], ["begriff", "Begriff, Abkürzung"], ["hoerfehler", "Hörfehler (wird korrigiert)"], ["aussprache", "Aussprache (so wird vorgelesen)"]];
 
 function Gedaechtnis() {
   const [d, laden] = useAbruf("/gedaechtnis", 0, []);
@@ -98,7 +98,7 @@ function Gedaechtnis() {
             <button class="btn ja klein" onClick=${speichern}>Speichern</button><button class="btn geist klein" onClick=${() => setBearb(null)}>Abbrechen</button></div>`
           : html`<div class="zeile" key=${g.id}>
             <span class="pill">${(ARTEN.find((a) => a[0] === g.art) || [0, g.art])[1].split(" ")[0]}</span>
-            <div class="haupt-text"><b>${g.begriff}</b> ${g.art === "hoerfehler" ? "→" : "="} ${g.bedeutung}</div>
+            <div class="haupt-text"><b>${g.begriff}</b> ${g.art === "hoerfehler" ? "→" : g.art === "aussprache" ? "🔊" : "="} ${g.bedeutung}</div>
             <button class="btn klein geist icon" aria-label="Bearbeiten" onClick=${() => setBearb({ ...g })}><${Icon} n="stift" g=${14} /></button>
             <button class="btn klein geist icon" aria-label="Vergessen" onClick=${() => loeschen(g)}><${Icon} n="x" g=${14} /></button></div>`)}
     </section>
@@ -106,9 +106,9 @@ function Gedaechtnis() {
       <div class="karte-kopf"><h3>Etwas eintragen</h3></div>
       <div class="feld"><label for="gd-art">Art</label><select id="gd-art" class="eingabe" value=${neu.art} onChange=${(e) => setNeu({ ...neu, art: e.target.value })}>
         ${ARTEN.map(([k, t]) => html`<option value=${k}>${t}</option>`)}</select></div>
-      <div class="feld" style="margin-top:8px"><label for="gd-b">${neu.art === "hoerfehler" ? "Was Whisper versteht" : "Begriff oder Name"}</label>
+      <div class="feld" style="margin-top:8px"><label for="gd-b">${neu.art === "hoerfehler" ? "Was Whisper versteht" : neu.art === "aussprache" ? "Wort, wie es geschrieben wird" : "Begriff oder Name"}</label>
         <input id="gd-b" class="eingabe" value=${neu.begriff} placeholder=${neu.art === "hoerfehler" ? "z. B. Kronis" : "z. B. Mutti"} onInput=${(e) => setNeu({ ...neu, begriff: e.target.value })} onKeyDown=${(e) => { if (e.key === "Enter" && neu.begriff && neu.bedeutung) anlegen(); }} /></div>
-      <div class="feld" style="margin-top:8px"><label for="gd-bed">${neu.art === "hoerfehler" ? "Was gemeint ist" : "Bedeutung"}</label>
+      <div class="feld" style="margin-top:8px"><label for="gd-bed">${neu.art === "hoerfehler" ? "Was gemeint ist" : neu.art === "aussprache" ? "So soll es klingen (deutsche Lautschrift, z. B. Slaids)" : "Bedeutung"}</label>
         <input id="gd-bed" class="eingabe" value=${neu.bedeutung} placeholder=${neu.art === "hoerfehler" ? "z. B. Krones" : "z. B. Brunhilde von Eckern, meine Mutter"} onInput=${(e) => setNeu({ ...neu, bedeutung: e.target.value })}
           onKeyDown=${(e) => { if (e.key === "Enter" && neu.begriff && neu.bedeutung) anlegen(); }} /></div>
       <button class="btn primaer" style="margin-top:10px" disabled=${!neu.begriff.trim() || !neu.bedeutung.trim()} onClick=${anlegen}>Merken</button>

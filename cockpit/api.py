@@ -1007,6 +1007,11 @@ async def system_auftrag(request: Request):
     from . import systeminfo
     d = await _koerper(request)
     art = str(d.get("art") or "")
+    if art == "ollama-update":
+        r = await systeminfo.ollama_update_starten()
+        if not r["ok"]:
+            raise HTTPException(409, r["grund"])
+        return r
     if art not in ("updates", "neustart", "ollama-neustart", "caddy-neustart"):
         raise HTTPException(400, "Unbekannter Auftrag")
     if not systeminfo.starten(art):

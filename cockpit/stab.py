@@ -102,14 +102,17 @@ def hoerfehler_korrigieren(text: str) -> str:
 
 def whisper_vorlage() -> str:
     """Namen fuer Whispers initial_prompt -- dann hoert es "Krones" statt "Kronis"."""
-    namen = [g["bedeutung"] if g["art"] == "hoerfehler" else g["begriff"]
-             for g in db.alle("SELECT art, begriff, bedeutung FROM gedaechtnis WHERE bestaetigt=1")]
-    namen += [p["name"] for p in db.alle("SELECT name FROM projekte WHERE status!='archiviert'")]
+    # Whisper nimmt etwa 220 Tokens Vorlage; was dahinter steht, wird abgeschnitten.
+    # Deshalb ZUERST die englischen Woerter des Cockpits und des Arbeitsalltags --
+    # die erkennt ein deutsch eingestelltes Whisper am schlechtesten
+    # ("Advisory Board", "Use Case"; Veiko, 01. und 03.10.).
+    namen = ["Advisory Board", "Briefing", "Inbox", "Capture", "Talk", "Case", "Memory", "Projects", "Team", "Neo",
+             "WatchDog", "BrainStrom", "ExO", "Kill Switch", "Dialog beenden", "Use Case", "Workshop", "Meeting",
+             "Masterclass", "Feedback", "Deadline", "Update", "Slides", "Prompt", "Leadership", "Learning"]
     namen += [t["name"] for t in db.alle("SELECT name FROM team")]  # "Neo" statt "Nioh"
-    # Die Woerter des Cockpits selbst und die Advisors -- sonst hoert Whisper bei
-    # "Advisory Board" irgendetwas (Veiko, 01.10.). Whisper nimmt etwa 220 Tokens
-    # Vorlage; was dahinter steht, wird abgeschnitten, also das Wichtigste zuerst.
-    namen += ["Advisory Board", "Board", "Briefing", "Inbox", "Capture", "Talk", "Case", "Memory", "Projects", "Dialog beenden"]
+    namen += [g["bedeutung"] if g["art"] == "hoerfehler" else g["begriff"]
+              for g in db.alle("SELECT art, begriff, bedeutung FROM gedaechtnis WHERE bestaetigt=1 AND art!='aussprache'")]
+    namen += [p["name"] for p in db.alle("SELECT name FROM projekte WHERE status!='archiviert'")]
     try:
         from .board import PROFILE
         namen += [p["name"] for p in PROFILE["persons"]]

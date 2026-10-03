@@ -175,9 +175,22 @@ def empfehlungen(s: dict[str, Any] | None, upd: dict[str, Any], ollama_neu: str 
                   "aktion": {"art": "neustart", "text": "Server neu starten"}})
     laufend = (s.get("versions") or {}).get("ollama", "")
     if ollama_neu and laufend and _fassung(ollama_neu) > _fassung(laufend):
-        e.append({"stufe": "einspielen", "titel": f"Ollama {ollama_neu} verfügbar (läuft: {laufend.replace('Ollama ', '')})",
-                  "warum": "Neuere Modelle lassen sich mit einer alten Fassung oft nicht laden. Lokale Modelle sind während des Updates einige Minuten nicht erreichbar. Braucht dein Passwort, deshalb als Befehl; am besten in tmux, damit ein Verbindungsabbruch nichts zerreißt.",
-                  "befehl": "tmux new -s ollama\ncurl -fsSL https://ollama.com/install.sh -o /tmp/ollama-install.sh && sudo sh /tmp/ollama-install.sh"})
+        from .konfig import ALT_TOKEN
+        titel = f"Ollama {ollama_neu} verfügbar (läuft: {laufend.replace('Ollama ', '')})"
+        if AUFTRAG.get("art") == "ollama-update" and AUFTRAG.get("laeuft"):
+            e.append({"stufe": "info", "titel": titel, "warum": "Das Update läuft gerade -- den Fortschritt siehst du oben im Auftrag."})
+        elif ALT_TOKEN:
+            e.append({"stufe": "einspielen", "titel": titel,
+                      "warum": "Neuere Modelle lassen sich mit einer alten Fassung oft nicht laden. Lokale Modelle sind während des Updates einige Minuten nicht erreichbar. "
+                               "Läuft über den Wartungsdienst des alten Cockpits als root -- unabhängig von dieser Seite.",
+                      "aktion": {"art": "ollama-update", "text": "Einspielen"}})
+        else:
+            # Ohne Token gibt es keinen Weg ohne Passwort. Statt des Updates selbst steht
+            # hier der EINMALIGE Schritt, nach dem es fuer immer per Knopf geht.
+            e.append({"stufe": "einspielen", "titel": titel,
+                      "warum": "Für den Knopf braucht diese Fassung einmal den Cockpit-Token des alten Backends (das Update läuft dort als root). "
+                               "Den Befehl einmal auf dem Server ausführen (fragt dein Passwort), danach steht hier „Einspielen“.",
+                      "befehl": "sudo grep '^COCKPIT_TOKEN=' /etc/vvec/secrets.env | sed 's/^COCKPIT_TOKEN=/VVEC_ALT_TOKEN=/' >> ~/.config/vve-cp-r2.env && chmod 600 ~/.config/vve-cp-r2.env && systemctl --user restart vve-cp-r2"})
     fw = ((s.get("firmware") or {}).get("fwupd") or {})
     for u in fw.get("updates") or []:
         sb_db = u.get("secure_boot_db")
@@ -265,6 +278,79 @@ def starten(art: str) -> bool:
         return False
     asyncio.create_task(_ausfuehren(befehle))
     return True
+
+
+# ------------------------------------------------------------ Ollama-Update (ueber das alte Cockpit)
+# Das Installationsskript braucht root. Es gibt dafuer schon EINEN erprobten Weg:
+# den Wartungsdienst des alten Cockpits (vvec-wartung.service, Art
+# "ollama-aktualisieren", seit 30.09. zweimal sauber gelaufen). Einen zweiten
+# root-Weg hier zu bauen waere eine zweite Stelle, an der Rechte falsch stehen
+# koennen. Diese Fassung stoesst ihn nur an (Token) und liest das Protokoll mit,
+# das der Lauf ohnehin lesbar ablegt (/var/lib/vvec/wartung/lauf, 644) -- sie
+# schreibt im alten Bestand nichts.
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def _protokoll_lesbar(roh: str) -> str:
+    # Das Skript malt Fortschrittsbalken mit \r -- je Zeile zaehlt nur der letzte Stand.
+    zeilen = [z.split("\r")[-1] for z in _ANSI.sub("", roh).split("\n")]
+    return "\n".join(z for z in zeilen if z.strip())[-8000:]
+
+
+async def ollama_update_starten() -> dict[str, Any]:
+    from .konfig import ALT_BACKEND, ALT_TOKEN
+    if AUFTRAG["laeuft"]:
+        return {"ok": False, "grund": "Es läuft schon ein Auftrag."}
+    if not ALT_TOKEN:
+        return {"ok": False, "grund": "Dafür fehlt einmalig der Cockpit-Token des alten Backends (siehe Befehl in der Empfehlung)."}
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.post(f"{ALT_BACKEND}/api/wartung/ollama", headers={"X-Cockpit-Token": ALT_TOKEN})
+    except httpx.HTTPError as f:
+        return {"ok": False, "grund": f"Das Backend des alten Cockpits antwortet nicht ({f.__class__.__name__})."}
+    if r.status_code == 401:
+        return {"ok": False, "grund": "Das alte Backend lehnt den Token ab. Steht in ~/.config/vve-cp-r2.env der aktuelle COCKPIT_TOKEN?"}
+    try:
+        d = r.json()
+    except ValueError:
+        d = {}
+    if d.get("darf_nicht"):
+        return {"ok": False, "grund": "Der Wartungsdienst des alten Cockpits ist nicht eingerichtet."}
+    start = time.time()
+    AUFTRAG.update(art="ollama-update", laeuft=True, rc=None, start=start, ende=None,
+                   log="Auftrag an den Wartungsdienst übergeben" + (" (lief schon)" if d.get("laeuft_bereits") else "") + " …\n")
+    asyncio.create_task(_ollama_folgen(start - (3600 if d.get("laeuft_bereits") else 10)))
+    return {"ok": True}
+
+
+async def _ollama_folgen(ab: float) -> None:
+    lauf_dir = ALT_DATEN / "wartung" / "lauf"
+    ende = time.time() + 3700
+    gefunden = None
+    while time.time() < ende:
+        await asyncio.sleep(3)
+        if not gefunden:
+            kandidaten = sorted((p for p in lauf_dir.glob("ollama-aktualisieren-*.stand") if p.stat().st_mtime >= ab),
+                                key=lambda p: p.stat().st_mtime)
+            if kandidaten:
+                gefunden = kandidaten[-1]
+            elif time.time() - ab > 90:
+                AUFTRAG.update(laeuft=False, rc=1, ende=time.time(),
+                               log=AUFTRAG["log"] + "Der Wartungsdienst hat den Auftrag nach 90 Sekunden noch nicht aufgegriffen.\n")
+                return
+            continue
+        try:
+            stand = gefunden.read_text(encoding="utf-8").strip()
+            AUFTRAG["log"] = _protokoll_lesbar(gefunden.with_suffix(".log").read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+        if stand.startswith(("done", "failed")):
+            teile = stand.split()
+            rc = int(teile[1]) if len(teile) > 1 and teile[1].lstrip("-").isdigit() else (0 if stand.startswith("done") else 1)
+            AUFTRAG.update(laeuft=False, rc=rc, ende=time.time())
+            _cache.pop("ollama_neu", None)
+            return
+    AUFTRAG.update(laeuft=False, rc=1, ende=time.time(), log=AUFTRAG["log"] + "\nKein Abschluss nach einer Stunde -- Stand unbekannt.\n")
 
 
 async def gesamt(frisch: bool = False) -> dict[str, Any]:
