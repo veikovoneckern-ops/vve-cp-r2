@@ -396,7 +396,9 @@ def _phase(log: str) -> str:
     letzte = zeilen[-1] if zeilen else ""
     if "Downloading" in letzte:
         return "download"
-    if any("Downloading" in z for z in zeilen):
+    # Nach dem Download kommen diese Zeilen. Auf "Downloading" weiter oben ist kein
+    # Verlass: das Protokoll wird auf sein Ende gekuerzt, die Zeile faellt heraus.
+    if any(w in z for z in zeilen for w in ("Downloading", "Adding", "Creating", "Enabling", "GPU", "complete")):
         return "einrichten"
     return "vorbereiten"
 
