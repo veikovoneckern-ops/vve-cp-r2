@@ -136,6 +136,16 @@ def _endung(roh: bytes) -> str:
     return ".webm"
 
 
+def _plappert_nach(text: str, vorlage: str) -> bool:
+    """Besteht die Erkennung fast nur aus Woertern der Hoerhilfe, in Listenform?"""
+    import re
+    woerter = re.findall(r"\w+", text.lower())
+    if len(woerter) < 3 or text.count(",") < 2:
+        return False
+    aus_vorlage = set(re.findall(r"\w+", vorlage.lower()))
+    return sum(w in aus_vorlage for w in woerter) / len(woerter) > 0.85
+
+
 def _erkennen(pfad: str, vorlage: str) -> tuple[str, str]:
     reihenfolge = [WHISPER_GERAET, "cpu"] if WHISPER_GERAET != "cpu" else ["cpu"]
     letzter: Exception | None = None
@@ -144,7 +154,13 @@ def _erkennen(pfad: str, vorlage: str) -> tuple[str, str]:
             m = _modell(geraet)
             segmente, _info = m.transcribe(pfad, language="de", vad_filter=True, beam_size=5,
                                            initial_prompt=vorlage or None)
-            return " ".join(s.text.strip() for s in segmente).strip(), geraet
+            text = " ".join(s.text.strip() for s in segmente).strip()
+            if vorlage and _plappert_nach(text, vorlage):
+                # Gemessen am 03.10.2026 mit medium: statt des Satzes kam nur die
+                # Hoerhilfe-Liste zurueck. Dann ohne Hoerhilfe noch einmal.
+                segmente, _info = m.transcribe(pfad, language="de", vad_filter=True, beam_size=5)
+                text = " ".join(s.text.strip() for s in segmente).strip()
+            return text, geraet
         except Exception as e:  # noqa: BLE001 -- jeder Fehler auf der Karte -> CPU versuchen
             letzter = e
             with _mlock:

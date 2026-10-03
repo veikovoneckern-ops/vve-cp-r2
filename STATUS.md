@@ -1,5 +1,13 @@
 # Stand der neuen Fassung
 
+## 03.10.2026 — Ollama-Update per Knopf, englische Wörter beim Sprechen
+
+| Gemeldet | Ursache | Behoben |
+|---|---|---|
+| „Einspielen“ beim Ollama-Update geht nicht | Es gab gar keinen Knopf, nur einen Befehl; das Update braucht root, vveadmin hat dafür kein sudo | Der erprobte root-Weg des alten Cockpits (`/api/wartung/ollama` → vvec-wartung.service) wird angestoßen, Fortschritt aus dessen Protokoll (`/var/lib/vvec/wartung/lauf`, nur gelesen). Braucht einmal `VVEC_ALT_TOKEN` in `~/.config/vve-cp-r2.env`; bis dahin steht genau dieser Einrichtungsbefehl in der Empfehlung |
+| Englische Wörter falsch erkannt | Whisper „small“ | large-v3-turbo (gemessen: alle Begriffe richtig, 0,2 s wie small); nur vorhandene Modelle werden sofort geladen, das bessere im Hintergrund nachgeladen; Hörhilfe mit englischen Begriffen zuerst; plappert Whisper die Hörhilfe nach (medium tat das), wird ohne sie erkannt |
+| Englische Wörter falsch ausgesprochen | Deutsche Piper-Stimme liest nach deutschen Regeln | Aussprache-Liste vor dem Vorlesen (Team → Tiem, Use Case → Jus Käis …); ergänzbar als Memory der Art „Aussprache“, auch per Talk. Gegenprobe: Whisper erkennt die vorgelesene Lautschrift wieder als die englischen Wörter |
+
 ## 01.10.2026, nachts (5) — WatchDog, BrainStrom, ExO, Matrix, Neo nachgeprüft, ein Ja reicht
 
 | Gewünscht / gemeldet | Umgesetzt |
