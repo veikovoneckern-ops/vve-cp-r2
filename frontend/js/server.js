@@ -201,8 +201,27 @@ export function Auftrag({ a }) {
     <div class="sv-kachel-kopf"><h4>${titel}</h4>
       ${a.laeuft ? html`<span class="pill lila">läuft seit ${zeitText(a.start).replace("vor ", "")}</span>`
         : a.rc === 0 ? html`<span class="pill gruen">fertig ${zeitText(a.ende)}</span>` : html`<span class="pill rot">fehlgeschlagen (rc ${a.rc})</span>`}</div>
+    ${a.fortschritt && html`<${Fortschritt} f=${a.fortschritt} laeuft=${a.laeuft} />`}
     <pre class="log">${a.log || "…"}</pre>
   </section>`;
+}
+
+// Fortschritt eines langen Auftrags (Ollama-Update). Der Prozentwert ist am
+// Netzverkehr geschaetzt (systeminfo._ollama_folgen) -- das steht dabei. Ohne
+// Wert laeuft ein Balken hin und her: Hauptsache, man sieht, dass etwas passiert.
+const PHASE = { wartet: "Wartet auf den Wartungsdienst …", vorbereiten: "Bereitet vor, die alte Fassung wird entfernt …",
+  download: "Lädt Ollama herunter", einrichten: "Richtet Ollama ein (Dienst, Grafikkarten) …", fertig: "Fertig", fehler: "Abgebrochen" };
+
+function Fortschritt({ f, laeuft }) {
+  const p = typeof f.prozent === "number" ? f.prozent : null;
+  const tempo = f.kbs != null ? (f.kbs >= 1024 ? (f.kbs / 1024).toFixed(1).replace(".", ",") + " MB/s" : f.kbs + " KB/s") : "";
+  const teile = [p != null ? p + " %" : "", f.mb != null ? (f.gesamt_mb ? `${f.mb} von ${f.gesamt_mb} MB` : `${f.mb} MB`) : "", f.phase === "download" ? tempo : ""].filter(Boolean);
+  return html`<div class="auftrag-fortschritt">
+    <div class="sv-zeile"><span><b>${PHASE[f.phase] || "Läuft …"}</b></span><b>${teile.join(" · ")}</b></div>
+    <div class=${"auftrag-balken" + (p == null && laeuft ? " unbestimmt" : "")}><i style=${p != null ? `width:${p}%` : ""}></i></div>
+    ${f.steht_seit > 30 ? html`<div class="hinweisbox klein" style="margin-top:6px">Der Download steht seit ${f.steht_seit} s. Meist ist das WLAN des Servers kurz weg; er läuft von selbst weiter, sobald es wieder da ist.</div>`
+      : f.phase === "download" && p != null ? html`<div class="leise klein">Geschätzt am Netzverkehr des Servers.</div>` : null}
+  </div>`;
 }
 
 // ------------------------------------------------------------ Software-Schaubild

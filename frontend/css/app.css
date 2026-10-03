@@ -965,3 +965,9 @@ html.ki-arbeitet .logo-knopf{filter:drop-shadow(0 0 .6px rgba(0,0,0,.75)) drop-s
 }
 /* Mit dem Matrix-Knopf wurde Neos Kopfzeile auf dem Telefon 16 px zu breit (gemessen bei 375). */
 @media (max-width:820px){.neo-kopf{gap:5px;padding:8px 10px}.neo-kopf select{max-width:104px}.neo-kopf .matrix-knopf{padding:3px 7px}}
+
+/* Fortschritt langer Auftraege (Ollama-Update) */
+.auftrag-fortschritt{margin-bottom:10px}
+.auftrag-balken{height:10px;border-radius:5px;background:var(--line);overflow:hidden;position:relative;margin-top:4px}
+.auftrag-balken i{position:absolute;left:0;top:0;bottom:0;background:var(--sea);border-radius:5px;transition:width .6s ease}
+.auftrag-balken.unbestimmt i{width:35%;animation:vf-hin 1.6s ease-in-out infinite}

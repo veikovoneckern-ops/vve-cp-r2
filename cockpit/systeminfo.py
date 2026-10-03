@@ -317,16 +317,97 @@ async def ollama_update_starten() -> dict[str, Any]:
     if d.get("darf_nicht"):
         return {"ok": False, "grund": "Der Wartungsdienst des alten Cockpits ist nicht eingerichtet."}
     start = time.time()
-    AUFTRAG.update(art="ollama-update", laeuft=True, rc=None, start=start, ende=None,
+    # Fortschritt (Veiko, 03.10.: "ich brauche eine klare Anzeige, Prozent oder Balken"):
+    # Das Skript schreibt waehrend des Downloads NICHTS ins Protokoll -- der Balken
+    # von curl kommt erst am Ende -- und der Zielordner ist beim Entpacken root-only.
+    # Messbar ist der Netzverkehr des Servers; verglichen mit der Dateigroesse bei
+    # GitHub ergibt das eine ehrliche Schaetzung. Startwerte liegen in einer Datei,
+    # damit ein Neustart dieses Dienstes die Anzeige nicht verliert.
+    ziel = await _ollama_paketgroesse()
+    plan = {"start": start, "netz_start": _netz_rx(), "ziel": ziel}
+    try:
+        _OLLAMA_PLAN.write_text(json.dumps(plan), encoding="utf-8")
+    except OSError:
+        pass
+    AUFTRAG.update(art="ollama-update", laeuft=True, rc=None, start=start, ende=None, fortschritt={"phase": "wartet"},
                    log="Auftrag an den Wartungsdienst übergeben" + (" (lief schon)" if d.get("laeuft_bereits") else "") + " …\n")
-    asyncio.create_task(_ollama_folgen(start - (3600 if d.get("laeuft_bereits") else 10)))
+    asyncio.create_task(_ollama_folgen(start - (3600 if d.get("laeuft_bereits") else 10), plan))
     return {"ok": True}
 
 
-async def _ollama_folgen(ab: float) -> None:
+def _ollama_plan_pfad():
+    from .konfig import DATEN
+    return DATEN / "ollama-update.json"
+
+
+_OLLAMA_PLAN = _ollama_plan_pfad()
+OLLAMA_PAKET = "https://ollama.com/download/ollama-linux-amd64.tar.zst"
+
+
+async def _ollama_paketgroesse() -> int | None:
+    """Groesse des Pakets, das install.sh laedt -- per Ein-Byte-Anfrage (Content-Range)."""
+    g = _gemerkt("ollama_groesse", 3600)
+    if g:
+        return g
+    try:
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True,
+                                     headers={"Range": "bytes=0-0", "User-Agent": "VvE-Cockpit"}) as c:
+            r = await c.get(OLLAMA_PAKET)
+        m = re.search(r"/(\d+)\s*$", r.headers.get("content-range", ""))
+        return _merken("ollama_groesse", int(m.group(1))) if m else None
+    except httpx.HTTPError:
+        return None
+
+
+def _netz_rx() -> int:
+    """Empfangene Bytes aller echten Netzanschluesse (LAN/WLAN, nicht Tailscale, Docker, lo)."""
+    summe = 0
+    try:
+        for z in Path("/proc/net/dev").read_text().splitlines()[2:]:
+            name, _, werte = z.partition(":")
+            if re.match(r"\s*(en|eth|wl)", name):
+                summe += int(werte.split()[0])
+    except (OSError, ValueError, IndexError):
+        pass
+    return summe
+
+
+def ollama_update_wiederaufnehmen() -> None:
+    """Nach einem Neustart dieses Dienstes: laeuft das Update noch, wieder mitlesen."""
+    if AUFTRAG["laeuft"]:
+        return
+    try:
+        plan = json.loads(_OLLAMA_PLAN.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    lauf_dir = ALT_DATEN / "wartung" / "lauf"
+    try:
+        neueste = max(lauf_dir.glob("ollama-aktualisieren-*.stand"), key=lambda p: p.stat().st_mtime)
+        if not neueste.read_text().startswith("running") or neueste.stat().st_mtime < plan["start"] - 60:
+            return
+    except (OSError, ValueError, KeyError):
+        return
+    AUFTRAG.update(art="ollama-update", laeuft=True, rc=None, start=plan["start"], ende=None, fortschritt={"phase": "download"}, log="")
+    asyncio.create_task(_ollama_folgen(plan["start"] - 10, plan))
+
+
+def _phase(log: str) -> str:
+    zeilen = [z for z in log.splitlines() if z.startswith(">>>")]
+    letzte = zeilen[-1] if zeilen else ""
+    if "Downloading" in letzte:
+        return "download"
+    if any("Downloading" in z for z in zeilen):
+        return "einrichten"
+    return "vorbereiten"
+
+
+async def _ollama_folgen(ab: float, plan: dict[str, Any] | None = None) -> None:
     lauf_dir = ALT_DATEN / "wartung" / "lauf"
     ende = time.time() + 3700
     gefunden = None
+    plan = plan or {}
+    letzte_probe: tuple[float, int] | None = None
+    langsam_seit: float | None = None
     while time.time() < ende:
         await asyncio.sleep(3)
         if not gefunden:
@@ -347,14 +428,42 @@ async def _ollama_folgen(ab: float) -> None:
         if stand.startswith(("done", "failed")):
             teile = stand.split()
             rc = int(teile[1]) if len(teile) > 1 and teile[1].lstrip("-").isdigit() else (0 if stand.startswith("done") else 1)
-            AUFTRAG.update(laeuft=False, rc=rc, ende=time.time())
+            AUFTRAG.update(laeuft=False, rc=rc, ende=time.time(),
+                           fortschritt={"phase": "fertig" if rc == 0 else "fehler", "prozent": 100 if rc == 0 else None})
             _cache.pop("ollama_neu", None)
+            try:
+                _OLLAMA_PLAN.unlink()
+            except OSError:
+                pass
             return
+        # Fortschritt aus dem Netzverkehr (siehe ollama_update_starten).
+        jetzt, rx = time.time(), _netz_rx()
+        kbs = None
+        if letzte_probe and jetzt > letzte_probe[0]:
+            kbs = max(0, (rx - letzte_probe[1]) / (jetzt - letzte_probe[0]) / 1024)
+        letzte_probe = (jetzt, rx)
+        phase = _phase(AUFTRAG["log"])
+        f: dict[str, Any] = {"phase": phase, "kbs": round(kbs) if kbs is not None else None}
+        if phase == "download":
+            geladen = max(0, rx - int(plan.get("netz_start") or rx))
+            f["mb"] = round(geladen / 1048576)
+            if plan.get("ziel"):
+                f["gesamt_mb"] = round(plan["ziel"] / 1048576)
+                f["prozent"] = min(99, int(geladen * 100 / plan["ziel"]))
+            if kbs is not None and kbs < 20:
+                langsam_seit = langsam_seit or jetzt
+                f["steht_seit"] = round(jetzt - langsam_seit)
+            else:
+                langsam_seit = None
+        elif phase == "einrichten":
+            f["prozent"] = 99 if plan.get("ziel") else None
+        AUFTRAG["fortschritt"] = f
     AUFTRAG.update(laeuft=False, rc=1, ende=time.time(), log=AUFTRAG["log"] + "\nKein Abschluss nach einer Stunde -- Stand unbekannt.\n")
 
 
 async def gesamt(frisch: bool = False) -> dict[str, Any]:
     from . import stab
+    ollama_update_wiederaufnehmen()
     s = await status()
     upd = await asyncio.to_thread(updates, frisch)
     neu = await ollama_neueste()

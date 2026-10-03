@@ -1083,6 +1083,7 @@ async def medien_datei(name: str, download: int = 0):
 @router.get("/system/auftrag")
 async def system_auftrag_stand():
     from . import systeminfo
+    systeminfo.ollama_update_wiederaufnehmen()
     a = dict(systeminfo.AUFTRAG)
     a["log"] = a.get("log", "")[-8000:]
     return a
