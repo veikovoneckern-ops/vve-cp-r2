@@ -124,7 +124,7 @@ function Empfehlung({ e, auftrag, starten, laden, modellLaden }) {
     ${e.befehl && html`<div class="befehl"><pre>${e.befehl}</pre>
       <button class="btn klein geist icon" title="Befehl kopieren" aria-label="Befehl kopieren" onClick=${async () => { if (await kopieren(e.befehl)) toast("Befehl kopiert. Im Terminal auf dem Server einfügen."); }}><${Icon} n="kopie" g=${13} /></button></div>`}
     ${e.aktion && (frage
-      ? html`<div class="knopfreihe"><span class="klein">${e.aktion.art === "neustart" ? "Wirklich neu starten? Alles bricht kurz ab." : e.aktion.art === "ollama-update" ? "Lokale Modelle sind einige Minuten weg. Jetzt einspielen?" : "Jetzt einspielen?"}</span>
+      ? html`<div class="knopfreihe"><span class="klein">${e.aktion.art === "neustart" ? "Wirklich neu starten? Alles bricht kurz ab." : e.aktion.art === "ollama-neustart" ? "Laufende Antworten brechen ab. Neu starten?" : e.aktion.art === "caddy-neustart" ? "Das alte Cockpit ist kurz weg. Neu starten?" : e.aktion.art === "ollama-update" ? "Lokale Modelle sind einige Minuten weg. Jetzt einspielen?" : "Jetzt einspielen?"}</span>
           <button class="btn klein gefahr voll" onClick=${() => { setFrage(false); starten(e.aktion.art); }}>Ja, ${e.aktion.text.toLowerCase()}</button>
           <button class="btn klein geist" onClick=${() => setFrage(false)}>Abbrechen</button></div>`
       : html`<div><button class="btn klein gefahr" disabled=${laeuft} onClick=${() => setFrage(true)}>${laeuft ? "läuft schon ein Auftrag" : e.aktion.text}</button></div>`)}
@@ -167,10 +167,10 @@ function UpdatesBlock({ u, s, auftrag, starten, neuPruefen }) {
       <${Zeile} name="Würde apt jetzt einspielen" wert=${ein.length} s=${ein.length ? "warnung" : ""} />
       <${Zeile} name="Gestaffelt zurückgehalten" wert=${gest.length} />
       <${Zeile} name="Neustart fällig" wert=${neustart ? "ja" : "nein"} s=${neustart ? "warnung" : ""} />
-      ${u.pakete.length > 0 && html`<details class="sv-pakete"><summary>Pakete im Einzelnen</summary>
+      ${u.pakete.length > 0 && html`<div class="sv-pakete">
         ${ein.map((p) => html`<${Paket} p=${p} />`)}
         ${gest.length > 0 && html`<div class="leise klein" style="margin:6px 0 2px">Gestaffelt (kommt von selbst, nicht erzwingen):</div>${gest.map((p) => html`<${Paket} p=${p} />`)}`}
-      </details>`}`}
+      </div>`}`}
     <div class="knopfreihe sv-aktionen">
       <button class="btn klein" onClick=${neuPruefen}><${Icon} n="neu_laden" g=${12} />Neu prüfen</button>
       ${ein.length > 0 && html`<${GefahrKnopf} text="Einspielen" frage="Jetzt einspielen?" art="updates" starten=${starten} auftrag=${auftrag} />`}
@@ -227,8 +227,12 @@ function Fortschritt({ f, laeuft }) {
 // ------------------------------------------------------------ Software-Schaubild
 const ZEITGEBER = { "vvec-plaud-sync.timer": "holt Plaud-Notizen", "vvec-vorgang.timer": "Vorgänge des alten Cockpits",
   "vvec-board.timer": "frischt das Advisory Board auf", "vvec-suche-index.timer": "Suchindex des alten Cockpits",
-  "vvec-sicherung-inhalt.timer": "sichert den Inhalt nach OneDrive", "vvec-sicherung-server.timer": "sichert den Server nach OneDrive",
-  "vvec-backup.timer": "restic, bewusst nicht eingerichtet" };
+  "vvec-sicherung-inhalt.timer": "sichert den Inhalt nach OneDrive", "vvec-sicherung-server.timer": "sichert den Server nach OneDrive" };
+// vvec-backup.timer (restic) meldet vve-status mit, er ist aber bewusst nicht
+// eingerichtet -- die Sicherung, die laeuft, sind die beiden OneDrive-Zeitgeber.
+// Unter "Was von selbst laeuft" stand er rot als "fehlt" und sah aus wie eine
+// Luecke, die es nicht gibt. Er wird deshalb gar nicht erst aufgefuehrt.
+const NICHT_ZEIGEN = new Set(["vvec-backup.timer"]);
 
 function container(s, muster) {
   const c = (s.docker || []).map((x) => { const [name, st] = String(x).split("|"); return { name, st: st || "", laeuft: /^Up/.test(st || "") }; });
@@ -261,7 +265,7 @@ function Software({ s, sys, auftrag, starten }) {
       <${SwZ} st=${zustand(c.tts && c.tts.laeuft, c.tts)} name="openedai-speech" marke="5050" satz=${c.tts ? "Piper · " + c.tts.st : "Container nicht gefunden"} />
       <${SwZ} st="ok" name="vve-status" marke="9099" satz="misst die Maschine, liefert dieses Bild" />
       <${SwZ} st=${zustand(altOk, sys && !altOk)} name="Backend altes Cockpit" marke="8770" satz=${sys ? (altOk ? "antwortet" : "antwortet nicht") : "nicht gemeldet"} />` ],
-    [ "Was von selbst läuft", "", Object.entries(s.timers || {}).map(([k, t]) => html`<${SwZ}
+    [ "Was von selbst läuft", "", Object.entries(s.timers || {}).filter(([k]) => !NICHT_ZEIGEN.has(k)).map(([k, t]) => html`<${SwZ}
         st=${!t.geladen ? "warnung" : t.aktiv === "active" ? "ok" : t.aktiv === "failed" ? "warnung" : "unbekannt"}
         name=${k.replace(/\.timer$/, "")} marke=${!t.geladen ? "fehlt" : t.naechster ? "nächster " + new Date(t.naechster * 1000).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : t.abstand ? "läuft ständig" : ""}
         satz=${(ZEITGEBER[k] || "") + (t.zuletzt ? " · zuletzt " + zeitText(t.zuletzt) : "")} />`) ],
@@ -541,25 +545,22 @@ export function AufbauReihe({ d, beiKlick }) {
 }
 
 // ------------------------------------------------------------ Die Sektion
-export function ServerSektion({ zu, gesundheit }) {
+// Steht fest auf der Seite System, immer aufgeklappt (Veiko, 04.10.: "ich
+// moechte sofort alles sehen"). Die Kaestchen in der Kopfzeile fuehren dorthin.
+// Kein Zuklappen, kein Escape -- es gibt nichts, was darueber laege.
+export function ServerSektion({ gesundheit }) {
   const d = useDetails();
   const { det, sys, detLaden, starten, notfall } = d;
   const [teil, setTeil] = useState(null);          // Detailfenster: minipc | gpu:0 | gpu:1 | strom
   const k = useKopf();
-  useEffect(() => {
-    const esc = (e) => { if (e.key === "Escape" && !document.querySelector(".modal-grund")) zu(); };
-    document.addEventListener("keydown", esc);
-    return () => document.removeEventListener("keydown", esc);
-  }, []);
   const s = det ? det.status : null;
   const [st, satz] = ampel(k, gesundheit);
-  return html`<div class="server-sektion" role="region" aria-label="Server">
+  return html`<div class="server-sektion eingebettet" role="region" aria-label="Server">
     <div class="sv-innen">
       <div class="sv-kopf"><i class=${"kopf-ampel " + st}></i>
         <b>${k && k.host ? k.host : "Server"}</b><span>${k && k.uptime ? "läuft seit " + k.uptime : ""}</span><span>· ${satz}</span>
         <span class="luecke"></span>
         <button class="btn klein" onClick=${() => detLaden(true)} title="apt und Fassungen frisch abfragen"><${Icon} n="neu_laden" g=${12} />Neu prüfen</button>
-        <button class="btn klein geist icon" onClick=${zu} aria-label="Server-Sektion zuklappen" title="Zuklappen (Esc)"><${Icon} n="x" g=${15} /></button>
       </div>
       <${Auftrag} a=${det && det.auftrag} />
       <${AufbauReihe} d=${d} beiKlick=${setTeil} />

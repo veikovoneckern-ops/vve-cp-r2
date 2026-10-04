@@ -142,8 +142,8 @@ export function ServerKaesten({ offen, umschalten, gesundheit }) {
   const k = useKopf();
   const v = serverKaesten(k);
   const [s, satz] = ampel(k, gesundheit);
-  return html`<button class=${"kopf-server" + (offen ? " offen" : "")} onClick=${umschalten} aria-expanded=${offen}
-      title=${(k && k.host ? `${k.host}${k.uptime ? " · läuft seit " + k.uptime : ""} · ` : "") + satz + "\nKlicken: Server-Sektion " + (offen ? "zuklappen" : "aufklappen")}>
+  return html`<button class=${"kopf-server" + (offen ? " offen" : "")} onClick=${umschalten} aria-current=${offen ? "page" : null}
+      title=${(k && k.host ? `${k.host}${k.uptime ? " · läuft seit " + k.uptime : ""} · ` : "") + satz + "\nKlicken: alles zum Server (Seite System)"}>
     <i class=${"kopf-ampel " + s} aria-hidden="true"></i>
     <span class="kopf-kaesten">${v.map((x) => html`<span class=${"p" + x.p + " " + x.s} title=${x.t}><b>${x.w}</b><span>${x.b}</span></span>`)}</span>
     <span class="kopf-pfeil"><${Icon} n="runter" g=${16} w=${2.2} /></span>

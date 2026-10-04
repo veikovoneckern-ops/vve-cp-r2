@@ -226,6 +226,16 @@ def empfehlungen(s: dict[str, Any] | None, upd: dict[str, Any], ollama_neu: str 
             continue
         if t.get("geladen") and t.get("aktiv") != "active":
             e.append({"stufe": "achtung", "titel": f"Zeitgeber {name} läuft nicht", "warum": f"Stand: {t.get('aktiv')}. Was er anstößt, passiert gerade nicht."})
+    # Neustart als Empfehlung nur, wenn der Dienst wirklich steht. Die Knoepfe
+    # an Ollama und Caddy im Software-Schaubild sind Werkzeuge fuer den Fall,
+    # dass etwas haengt, obwohl es "active" meldet -- keine Aufforderung.
+    for dienst, folge in (("ollama", "Lokale Modelle, Team und Neo antworten nicht."),
+                          ("caddy", "Das alte Cockpit ist nicht erreichbar.")):
+        stand = (s.get("services") or {}).get(dienst)
+        if stand and stand != "active":
+            e.append({"stufe": "achtung", "titel": f"{dienst.capitalize()} läuft nicht",
+                      "warum": f"Stand: {stand}. {folge}",
+                      "aktion": {"art": f"{dienst}-neustart", "text": f"{dienst.capitalize()} neu starten"}})
     for c in s.get("docker") or []:
         name, _, zustand = str(c).partition("|")
         if not zustand.startswith("Up"):

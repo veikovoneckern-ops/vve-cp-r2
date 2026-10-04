@@ -1,15 +1,17 @@
-// SYSTEM -- was zu DIESER Fassung gehoert: Stab-Pipeline, Daten, Einstellungen.
-// Alles ueber die Maschine (Aufbau, Updates, Dienste, Modelle, Messwerte) steht
-// in der Server-Sektion, die ueber die Kaestchen in der Kopfzeile aufklappt --
-// wie im alten Cockpit. Es gibt sie nur dort, nicht ein zweites Mal hier.
+// SYSTEM -- oben die Server-Sektion (Aufbau, Updates, Dienste, Modelle,
+// Messwerte), immer aufgeklappt; darunter, was zu DIESER Fassung gehoert:
+// Stab-Pipeline, Daten, Einstellungen. Die Kaestchen in der Kopfzeile fuehren
+// hierher -- ein Ort, ein Weg (vorher klappte die Sektion als Ebene ueber der
+// gerade offenen Ansicht auf und musste wieder zugeklappt werden).
 import { html, useState, useEffect, Icon, toast, fehlerMelden, aktualisieren, zeitText, useAbruf, bus } from "./ui.js";
 import { api } from "./api.js";
+import { ServerSektion } from "./server.js";
 
 function Wert({ name, wert, warn }) {
   return html`<div class="messwert"><span class="leise">${name}</span><b style=${warn ? "color:var(--signal)" : ""}>${wert ?? "nicht verfügbar"}</b></div>`;
 }
 
-export function System({ konto, thema }) {
+export function System({ konto, thema, gesundheit }) {
   const [d, laden] = useAbruf("/system", 30000, []);
   const [laeuft, setLaeuft] = useState("");
   useEffect(() => { bus.sende("talk-kontext", null); }, []);
@@ -28,10 +30,8 @@ export function System({ konto, thema }) {
   const e = d ? d.einstellungen || {} : {};
 
   return html`<div class="seite">
-    <div class="infobox" style="margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-      <span>Alles über die Maschine (Aufbau, Updates, Dienste, Modelle, Messwerte) steht in der <b>Server-Sektion</b>.</span>
-      <button class="btn klein" onClick=${() => bus.sende("server-sektion", true)}><${Icon} n="runter" g=${12} />Aufklappen</button>
-    </div>
+    <${ServerSektion} gesundheit=${gesundheit} />
+    <div class="sv-gruppe"><b>Diese Fassung</b><em>Team-Pipeline, Daten, Einstellungen</em></div>
     ${d && html`<div class="raster-gleich drei">
       <section class="karte"><div class="karte-kopf"><h3>Team-Pipeline</h3></div>
         <${Wert} name="Team" wert=${g.stab_aktiv ? "an" : "aus"} />

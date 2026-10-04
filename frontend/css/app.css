@@ -552,7 +552,7 @@ html.ki-arbeitet .logo-knopf{filter:drop-shadow(0 0 .6px rgba(0,0,0,.75)) drop-s
 .kopf-kaesten .warnung b{color:var(--amber)} .kopf-kaesten .kritisch b{color:var(--signal)}
 .kopf-server:hover .kopf-kaesten>span{border-color:var(--ink-4)}
 .kopf-pfeil{display:grid;place-items:center;width:26px;height:var(--kasten);color:var(--chrome-ink-3);transition:transform .18s;flex:none}
-.kopf-server.offen .kopf-pfeil{transform:rotate(180deg);color:var(--chrome-ink)}
+.kopf-server.offen .kopf-pfeil{color:var(--chrome-ink)}
 .kopf-ampel{width:9px;height:9px;border-radius:50%;background:var(--ink-4);flex:none;display:none}
 .kopf-ampel.ok{background:var(--sea)} .kopf-ampel.warnung{background:var(--amber)} .kopf-ampel.kritisch{background:var(--signal)}
 /* Was nicht passt, faellt nach Wichtigkeit weg (p3 zuerst). */
@@ -591,6 +591,9 @@ html.ki-arbeitet .logo-knopf{filter:drop-shadow(0 0 .6px rgba(0,0,0,.75)) drop-s
 .server-sektion{position:absolute;left:0;right:0;top:var(--topbar);bottom:0;z-index:30;overflow:auto;background:var(--bg);border-top:1px solid var(--chrome-line);animation:sv-auf .16s ease-out}
 @keyframes sv-auf{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
 .sv-innen{max-width:1600px;margin:0 auto;padding:16px 22px 40px}
+/* Auf der Seite System: im Fluss statt als Ebene ueber der Ansicht. */
+.server-sektion.eingebettet{position:static;z-index:auto;overflow:visible;background:none;border:0;animation:none}
+.server-sektion.eingebettet .sv-innen{max-width:none;padding:0 0 8px}
 .sv-kopf{display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:13px;color:var(--ink-3);flex-wrap:wrap}
 .sv-kopf b{color:var(--ink);font-size:15px}
 .sv-kopf .kopf-ampel{display:block}
