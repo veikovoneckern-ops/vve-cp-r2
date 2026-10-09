@@ -639,7 +639,17 @@ html.ki-arbeitet .logo-knopf{filter:drop-shadow(0 0 .6px rgba(0,0,0,.75)) drop-s
 .sv-paket{display:flex;gap:6px;align-items:baseline;padding:3px 0;border-bottom:1px solid var(--line-2);flex-wrap:wrap}
 .sv-paket .leise{font-size:11.5px;flex:1 1 160px;min-width:0}
 .sv-kachel .empf-raster{grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
-.sv-kachel .sb-wrap{flex:1;display:flex;align-items:center}
+.sv-kachel .sb-wrap{flex:1;display:flex;align-items:flex-start}
+/* Die Reihe Aufbau | Updates richtet sich nach dem AUFBAU, nicht nach der
+   laengeren Kachel daneben: contain:size nimmt der rechten Kachel ihre
+   Eigenhoehe, das Raster streckt sie auf die Hoehe des Schaubilds, und ihr
+   Inhalt scrollt darin. Vorher wuchs die Reihe mit Paketliste und
+   Empfehlungen, und das Schaubild stand mittig weit unter dem Bildrand.
+   Nur zweispaltig -- untereinander haette die Kachel sonst die Hoehe null. */
+@media (min-width:1101px){
+  .sv-reihe>.sv-folgt{contain:size;min-height:420px}
+  .sv-reihe>.sv-folgt>.sv-kachel-leib{overflow:auto;padding-right:4px}
+}
 /* Software-Schaubild: Punkt, Name, Marke, ein Satz. */
 .sw-z{display:flex;gap:9px;padding:6px 0;border-bottom:1px solid var(--line-2)}
 .sw-z:last-child{border-bottom:0}

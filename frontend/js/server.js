@@ -200,6 +200,7 @@ export function Auftrag({ a }) {
   return html`<section class="sv-kachel sv-voll" style="margin-bottom:12px">
     <div class="sv-kachel-kopf"><h4>${titel}</h4>
       ${a.laeuft ? html`<span class="pill lila">läuft seit ${zeitText(a.start).replace("vor ", "")}</span>`
+        : a.rc === 0 && a.gestoert && a.gestoert.length ? html`<span class="pill gelb" title=${"Nicht erreichbar: " + a.gestoert.join(", ")}>fertig ${zeitText(a.ende)} · ${a.gestoert.length === 1 ? "eine Quelle" : a.gestoert.length + " Quellen"} nicht erreichbar</span>`
         : a.rc === 0 ? html`<span class="pill gruen">fertig ${zeitText(a.ende)}</span>` : html`<span class="pill rot">fehlgeschlagen (rc ${a.rc})</span>`}</div>
     ${a.fortschritt && html`<${Fortschritt} f=${a.fortschritt} laeuft=${a.laeuft} />`}
     <pre class="log">${a.log || "…"}</pre>
@@ -533,7 +534,7 @@ export function AufbauReihe({ d, beiKlick }) {
   const s = det ? det.status : null;
   return html`<div class="sv-reihe">
     <${Kachel} titel="Aufbau" neben="Bauteil anklicken für Einzelheiten"><${Aufbau} s=${s} beiKlick=${beiKlick} /></${Kachel}>
-    <${Kachel} titel="Updates, Empfehlungen und Sicherungen">
+    <${Kachel} titel="Updates, Empfehlungen und Sicherungen" klasse="sv-folgt">
       <div class="sv-zwei"><${UpdatesBlock} u=${det && det.updates} s=${s} auftrag=${det && det.auftrag} starten=${starten} neuPruefen=${() => detLaden(true)} />
         <${SicherungenBlock} sich=${det && det.sicherungen} /></div>
       <h5 class="sv-empf-titel">Empfehlungen</h5>

@@ -251,7 +251,9 @@ AUFTRAG: dict[str, Any] = {"art": None, "laeuft": False, "log": "", "rc": None, 
 async def _ausfuehren(befehle: list[list[str]]) -> None:
     AUFTRAG.update(laeuft=True, log="", rc=None, start=time.time(), ende=None)
     rc = 0
+    gestoert: list[str] = []
     for b in befehle:
+        anfang = len(AUFTRAG["log"])
         AUFTRAG["log"] += f"$ {' '.join(b)}\n"
         try:
             p = await asyncio.create_subprocess_exec(*b, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
@@ -264,11 +266,29 @@ async def _ausfuehren(befehle: list[list[str]]) -> None:
         except OSError as f:
             AUFTRAG["log"] += f"Fehler: {f}\n"
             rc = 1
+        # apt-get update endet mit 100, sobald EINE Paketquelle nicht antwortet
+        # (09.10.2026: Cloudsmith, wo Caddy seine Pakete ablegt, meldete
+        # "402 Payment Required"). Die uebrigen Quellen sind dann trotzdem
+        # frisch; deswegen das ganze Einspielen abzubrechen hiesse, dass eine
+        # fremde Stoerung jedes Ubuntu-Update blockiert. Weiter geht es nur,
+        # wenn wirklich einzelne Quellen ("Err:") die Ursache sind -- ein
+        # Passwortproblem oder ein kaputtes apt bricht weiterhin ab.
+        teil = AUFTRAG["log"][anfang:]
+        if rc != 0 and b[-1] == "update" and "a password is required" not in teil:
+            gestoert = [z.split()[1] for z in teil.splitlines() if z.startswith("Err:") and len(z.split()) > 1]
+            if gestoert:
+                AUFTRAG["log"] += ("\nNicht erreichbar: " + ", ".join(gestoert) +
+                                   ". Die übrigen Quellen sind aktuell, eingespielt wird trotzdem.\n\n")
+                rc = 0
+                continue
         if rc != 0:
             if "a password is required" in AUFTRAG["log"]:
                 AUFTRAG["log"] += "\nsudo verlangt ein Passwort: dieser Befehl ist für vveadmin nicht ohne Passwort freigegeben.\n"
             break
-    AUFTRAG.update(laeuft=False, rc=rc, ende=time.time())
+    if rc == 0 and gestoert:
+        AUFTRAG["log"] += ("\nEingespielt. Hinweis: " + ", ".join(gestoert) + " war nicht erreichbar; "
+                           "Pakete aus dieser Quelle kommen beim nächsten Lauf, sobald sie wieder antwortet.\n")
+    AUFTRAG.update(laeuft=False, rc=rc, ende=time.time(), gestoert=gestoert)
     _cache.pop("updates", None)
 
 
