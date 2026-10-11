@@ -64,12 +64,26 @@ export function LeisteNav({ liste, aktiv, zahl, speichern }) {
   const start = useRef(null);
   const geradeGezogen = useRef(false);
   const nav = useRef(null);
+  const lauscher = useRef(null);
 
   function runter(e, b) {
     // Nur Maus und Stift: auf einem Tablet ist Wischen in der Leiste Scrollen.
     if (e.button !== 0 || e.pointerType === "touch") return;
     start.current = { id: b.id, x: e.clientX, y: e.clientY, pid: e.pointerId };
+    // Am FENSTER zuhoeren, nicht an der Knopfspalte: bei einer schnellen
+    // Bewegung kommt schon das erste pointermove neben der Spalte an (beim
+    // Pruefen: ueber der Leiste, dann ueber der Kopfzeile), und der Zug ging
+    // verloren, bevor er begann.
+    // Genau diese Funktionen merken: nach einem Neuzeichnen gaebe es neue mit
+    // gleichem Namen, und removeEventListener traefe die alten nicht.
+    lauscher.current = [["pointermove", bewegen], ["pointerup", hoch], ["pointercancel", abbrechen]];
+    lauscher.current.forEach(([t, f]) => addEventListener(t, f));
   }
+  function loesen() {
+    (lauscher.current || []).forEach(([t, f]) => removeEventListener(t, f));
+    lauscher.current = null;
+  }
+  function abbrechen() { loesen(); start.current = null; setZug(null); }
   function bewegen(e) {
     const s = start.current;
     if (!s) return;
@@ -94,6 +108,7 @@ export function LeisteNav({ liste, aktiv, zahl, speichern }) {
     setZug({ id: s.id, ordnung, oben: e.clientY < OBEN });
   }
   function hoch() {
+    loesen();
     const s = start.current;
     start.current = null;
     const z = zugRef.current;
@@ -113,14 +128,14 @@ export function LeisteNav({ liste, aktiv, zahl, speichern }) {
   function klick(e) { if (geradeGezogen.current) e.preventDefault(); }
 
   useEffect(() => {
-    const esc = (e) => { if (e.key === "Escape" && start.current) { start.current = null; setZug(null); } };
+    const esc = (e) => { if (e.key === "Escape" && start.current) abbrechen(); };
     document.addEventListener("keydown", esc);
     return () => document.removeEventListener("keydown", esc);
   }, []);
 
   const sicht = zug ? zug.ordnung.map((id) => liste.find((b) => b.id === id)) : liste;
   const gezogen = zug && liste.find((b) => b.id === zug.id);
-  return html`<div class="nav" ref=${nav} onPointerMove=${bewegen} onPointerUp=${hoch} onPointerCancel=${() => { start.current = null; setZug(null); }}>
+  return html`<div class="nav" ref=${nav}>
     ${sicht.map((b) => html`<a key=${b.id} data-id=${b.id} href=${"#/" + b.id}
         class=${(aktiv === b.id ? "an " : "") + (b.neo ? "neo-nav " : "") + (zug && zug.id === b.id ? "zieht" + (zug.oben ? " abloesen" : "") : "")}
         onPointerDown=${(e) => runter(e, b)} onClick=${klick} draggable="false"
