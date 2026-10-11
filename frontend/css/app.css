@@ -419,6 +419,13 @@ html.neo-vollbild .schale.mit-talk{grid-template-columns:minmax(0,1fr) var(--tal
   .unten-nav a.an{color:var(--steel)}
   .unten-nav a.neo-nav.an{color:var(--matrix)}
   .unten-nav a .zahl{position:absolute;top:2px;right:calc(50% - 22px);background:var(--signal);color:#fff;border-radius:99px;font-size:10px;padding:0 5px;line-height:16px}
+  .unten-nav>a,.unten-mehr{min-width:0}
+  .unten-mehr{display:none;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:2px;font:inherit;font-size:10.5px;font-weight:600;color:var(--chrome-ink-3);background:none;border:0;border-radius:8px;padding:6px 2px;min-height:48px;cursor:pointer}
+  .unten-mehr.an{color:var(--steel)}
+  .unten-blatt{position:fixed;left:8px;right:8px;bottom:calc(64px + env(safe-area-inset-bottom,0px));background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--sh-3);padding:6px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;z-index:61}
+  .unten-blatt a{display:flex;align-items:center;gap:10px;padding:12px;border-radius:9px;color:var(--ink);text-decoration:none;font-weight:600;font-size:14px;position:relative;min-height:48px}
+  .unten-blatt a.an{background:var(--steel-soft);color:var(--steel)}
+  .unten-blatt a .zahl{margin-left:auto;background:var(--signal);color:#fff;border-radius:99px;font-size:11px;padding:0 6px;line-height:18px}
   .talk-fab{display:grid;place-items:center;position:fixed;right:16px;bottom:calc(72px + env(safe-area-inset-bottom,0px));width:56px;height:56px;border-radius:50%;background:var(--fuell);color:var(--fuell-text);border:0;box-shadow:var(--sh-3);z-index:61;cursor:pointer}
   .topbar .suche-feld,.topbar .talk-auf{display:none}
   .nur-mobil{display:inline-flex!important}
@@ -505,8 +512,18 @@ html.neo-vollbild .schale.mit-talk{grid-template-columns:minmax(0,1fr) var(--tal
 @media (max-width:1800px){
   .schale.mit-talk .neo.mit-vorschau{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
   .schale.mit-talk .neo.mit-vorschau .neo-liste{display:none}
-  .schale.mit-talk .neo.mit-vorschau .neo-kopf .nur-mobil{display:inline-flex!important}
 }
+/* Die Ersatzknoepfe (Liste, neues Gespraech) stehen GENAU DANN im Kopf, wenn die
+   Gespraechsliste ausgeblendet ist -- dieselben drei Faelle wie oben und bei
+   1280/820. Vorher gab es sie nur auf dem Telefon und neben offenem Talk; bei
+   offener Vorschau zwischen 821 und 1280 Punkt (schmales oder hochkant
+   gestelltes Fenster) war "Neues Gespraech" gar nicht erreichbar.
+   Wer eine weitere Regel baut, die .neo-liste ausblendet, setzt hier dieselbe
+   Bedingung dazu. */
+.neo-ersatz{display:none!important}
+@media (max-width:1800px){.schale.mit-talk .neo.mit-vorschau .neo-ersatz{display:inline-flex!important}}
+@media (max-width:1280px){.neo.mit-vorschau .neo-ersatz{display:inline-flex!important}}
+@media (max-width:820px){.neo .neo-ersatz{display:inline-flex!important}}
 .neo-kopf{flex-wrap:nowrap}
 .neo-kopf h2{min-width:0;overflow:hidden}
 .neo-kopf h2>span{min-width:0}
@@ -996,3 +1013,6 @@ html.ki-arbeitet .logo-knopf{filter:drop-shadow(0 0 .6px rgba(0,0,0,.75)) drop-s
 .auftrag-balken{height:10px;border-radius:5px;background:var(--line);overflow:hidden;position:relative;margin-top:4px}
 .auftrag-balken i{position:absolute;left:0;top:0;bottom:0;background:var(--sea);border-radius:5px;transition:width .6s ease}
 .auftrag-balken.unbestimmt i{width:35%;animation:vf-hin 1.6s ease-in-out infinite}
+
+/* Untere Leiste: unter 560 Punkt passen keine zehn Bereiche -- vier plus "Mehr". */
+@media (max-width:559px){.unten-nav a.unten-ueber{display:none}.unten-nav .unten-mehr{display:flex}}

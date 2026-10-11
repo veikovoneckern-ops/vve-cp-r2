@@ -141,6 +141,27 @@ function Anmelden({ fertig, einrichten }) {
   </form></div>`;
 }
 
+// Untere Leiste auf dem Telefon. Zehn Bereiche passen nicht auf 390 Punkt --
+// gemessen waren nur sechs erreichbar, System gar nicht. Auf schmalen Geraeten
+// stehen deshalb die ersten vier (in Veikos Reihenfolge aus der linken Leiste)
+// plus "Mehr"; dahinter alle. Ab 560 Punkt passen alle zehn nebeneinander.
+const UNTEN_SICHTBAR = 4;
+function UntenNav({ liste, aktiv, offen }) {
+  const [mehr, setMehr] = useState(false);
+  useEffect(() => { setMehr(false); }, [aktiv]);
+  const zahl = (b) => (b.id === "inbox" && offen ? html`<span class="zahl">${offen}</span>` : null);
+  const verborgenAktiv = liste.slice(UNTEN_SICHTBAR).some((b) => b.id === aktiv);
+  return html`<nav class="unten-nav" aria-label="Bereiche">
+    ${liste.map((b, i) => html`<a href=${"#/" + b.id} class=${(aktiv === b.id ? "an " : "") + (b.neo ? "neo-nav " : "") + (i >= UNTEN_SICHTBAR ? "unten-ueber" : "")}>
+      <${Icon} n=${b.icon} g=${20} />${b.kurz || b.titel}${zahl(b)}</a>`)}
+    <button class=${"unten-mehr" + (verborgenAktiv || mehr ? " an" : "")} onClick=${() => setMehr(!mehr)} aria-expanded=${mehr}>
+      <${Icon} n="liste" g=${20} />Mehr</button>
+    ${mehr && html`<div class="unten-blatt" role="menu">
+      ${liste.slice(UNTEN_SICHTBAR).map((b) => html`<a role="menuitem" href=${"#/" + b.id} class=${aktiv === b.id ? "an" : ""}><${Icon} n=${b.icon} g=${18} />${b.titel}${zahl(b)}</a>`)}
+    </div>`}
+  </nav>`;
+}
+
 function App() {
   const [konto, setKonto] = useState(null);
   const [r, setR] = useState(route());
@@ -258,11 +279,7 @@ function App() {
       </main>
     </div>
     ${talk && html`<${Talk} zu=${() => setTalk(false)} kontext=${kontext} setKontext=${setKontext} start=${talkStart} />`}
-    ${!FENSTER && html`<nav class="unten-nav" aria-label="Bereiche">
-      ${BEREICHE.filter((b) => b.id !== "system").map((b) => html`<a href=${"#/" + b.id} class=${(r.bereich === b.id ? "an " : "") + (b.neo ? "neo-nav" : "")}>
-        <${Icon} n=${b.icon} g=${20} />${b.kurz || b.titel}${b.id === "inbox" && offen ? html`<span class="zahl">${offen}</span>` : null}</a>`)}
-      <a href="#/system" class=${r.bereich === "system" ? "an" : ""}><${Icon} n="system" g=${20} />System</a>
-    </nav>`}
+    ${!FENSTER && html`<${UntenNav} liste=${leiste} aktiv=${r.bereich} offen=${offen} />`}
     ${!talk && !FENSTER && html`<button class="talk-fab" onClick=${() => setTalk(true)} aria-label="Talk öffnen"><${Icon} n="talk" g=${24} /></button>`}
     ${anzeige && anzeige.art === "ergebnis" && html`<${ErgebnisAnsicht} id=${anzeige.id} zu=${() => setAnzeige(null)} />`}
     ${anzeige && anzeige.art === "notiz" && html`<${NotizAnsicht} id=${anzeige.id} zu=${() => setAnzeige(null)} />`}

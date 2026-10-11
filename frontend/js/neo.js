@@ -171,7 +171,8 @@ export function Neo({ id }) {
     </aside>
     <section class="neo-mitte">
       <div class="neo-kopf">
-        <button class="btn geist icon nur-mobil" onClick=${() => setListeOffen(!listeOffen)} aria-label="Gespräche zeigen"><${Icon} n="liste" /></button>
+        <button class="btn geist icon neo-ersatz" onClick=${() => setListeOffen(!listeOffen)} aria-label="Gespräche zeigen" title="Gespräche zeigen"><${Icon} n="liste" /></button>
+        <button class="btn geist icon neo-ersatz" onClick=${neuesGespraech} aria-label="Neues Gespräch" title="Neues Gespräch"><${Icon} n="neu" g=${15} /></button>
         <h2><${Icon} n="neo" g=${18} />
           ${titelBearb !== null ? html`<input class="eingabe" value=${titelBearb} autofocus onInput=${(e) => setTitelBearb(e.target.value)} onBlur=${titelSpeichern}
               onKeyDown=${(e) => { if (e.key === "Enter") titelSpeichern(); if (e.key === "Escape") setTitelBearb(null); }} />`
