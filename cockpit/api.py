@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import re
 import shutil
 import time
 from pathlib import Path
@@ -633,7 +634,7 @@ async def team_aendern(rid: str, request: Request):
 async def einstellungen():
     return {"vertrauen": stab.vertrauen(), "stab_aktiv": stab.stab_aktiv(),
             "stab_ab": db.einstellung("stab_ab"), "letzter_abgleich": db.einstellung("letzter_abgleich"),
-            "alt_cockpit": ALT_COCKPIT_URL}
+            "alt_cockpit": ALT_COCKPIT_URL, "leiste": db.einstellung("leiste", [])}
 
 
 @router.post("/einstellungen")
@@ -649,6 +650,12 @@ async def einstellungen_setzen(request: Request):
         db.einstellung_setzen("stab_aktiv", bool(d["stab_aktiv"]))
         if d["stab_aktiv"]:
             db.einstellung_setzen("stab_ab", time.time())
+    # Reihenfolge der linken Leiste: auf dem Server, damit sie auf jedem Geraet
+    # gleich ist. Nur kurze Kennungen; welche es gibt, weiss der Browser --
+    # Unbekanntes faellt dort beim Anzeigen heraus, Fehlendes haengt hinten an.
+    if "leiste" in d and isinstance(d["leiste"], list):
+        ids = [str(x) for x in d["leiste"] if isinstance(x, str) and re.fullmatch(r"[a-z0-9_-]{1,24}", x)]
+        db.einstellung_setzen("leiste", list(dict.fromkeys(ids))[:40])
     return await einstellungen()
 
 

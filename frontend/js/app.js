@@ -13,6 +13,7 @@ import { Neo } from "./neo.js";
 import { Talk } from "./talk.js";
 import { Board } from "./board.js";
 import { Logo, CockpitLeiste, ServerKaesten, SprechKnopf, kopfAbruf } from "./kopf.js";
+import { LeisteNav, useLeiste, FENSTER } from "./leiste.js";
 import { WatchDog } from "./watchdog.js";
 import { BrainStrom, ExO } from "./verfahren.js";
 
@@ -143,12 +144,14 @@ function Anmelden({ fertig, einrichten }) {
 function App() {
   const [konto, setKonto] = useState(null);
   const [r, setR] = useState(route());
-  const [talk, setTalk] = useState(() => { try { return localStorage.getItem("vvec_talk") === "1" && innerWidth > 1180; } catch (e) { return false; } });
+  // Im eigenen Fenster startet Talk zu: dort soll nur die eine Seite stehen.
+  const [talk, setTalk] = useState(() => { try { return !FENSTER && localStorage.getItem("vvec_talk") === "1" && innerWidth > 1180; } catch (e) { return false; } });
   const [talkStart, setTalkStart] = useState(null);
   const [kontext, setKontext] = useState(null);
   const [erfassen, setErfassen] = useState(false);
   const [lage, setLage] = useState(null);
   const [anzeige, setAnzeige] = useState(null);
+  const [leiste, leisteSpeichern] = useLeiste(BEREICHE, !!(konto && konto.angemeldet));
 
   const pruefen = () => api("/konto/ich").then(setKonto).catch(() => setKonto({ angemeldet: false, fehler: true }));
   useEffect(() => { pruefen(); }, []);
@@ -159,7 +162,9 @@ function App() {
     addEventListener("vvec-abgemeldet", ab);
     return () => { removeEventListener("hashchange", h); removeEventListener("vvec-abgemeldet", ab); };
   }, []);
-  useEffect(() => { try { localStorage.setItem("vvec_talk", talk ? "1" : "0"); } catch (e) { /* egal */ } }, [talk]);
+  // Das eigene Fenster schreibt den Talk-Zustand nicht zurueck -- sonst
+  // bestimmte das zuletzt geschlossene Fenster, ob Talk im Hauptfenster aufgeht.
+  useEffect(() => { if (FENSTER) return; try { localStorage.setItem("vvec_talk", talk ? "1" : "0"); } catch (e) { /* egal */ } }, [talk]);
   useEffect(() => bus.an("talk-oeffnen", (d) => { setTalkStart({ ...(d || {}), n: Date.now() }); if (d && d.kontext) setKontext(d.kontext); setTalk(true); }), []);
   useEffect(() => bus.an("talk-kontext", (k) => setKontext(k)), []);
   useEffect(() => bus.an("erfassen", () => setErfassen(true)), []);
@@ -202,6 +207,7 @@ function App() {
   const imProjekt = r.bereich === "projects" && r.id && !r.id.startsWith("_") && kontext && kontext.art === "projekt";
   const titel = imProjekt ? kontext.titel : bereich.titel;
   const unter = imProjekt ? "Projekt-Detail" : bereich.unter;
+  if (FENSTER) document.title = titel + " · VvE Cockpit";
 
   function thema() {
     const jetzt = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
@@ -210,29 +216,26 @@ function App() {
     try { localStorage.setItem("vvec_thema", neu); } catch (e) { /* egal */ }
   }
 
-  return html`<div class=${"schale" + (talk ? " mit-talk" : "")}>
-    <nav class="rail" aria-label="Bereiche">
+  return html`<div class=${"schale" + (talk ? " mit-talk" : "") + (FENSTER ? " fenster" : "")}>
+    ${!FENSTER && html`<nav class="rail" aria-label="Bereiche">
       <div class="marke"><${Logo} gross=${true} /></div>
       <button class="erfassen-knopf" onClick=${() => setErfassen(true)} title="Etwas ans Team geben"><${Icon} n="plus" g=${17} w=${2.4} />Capture</button>
-      <div class="nav">
-        ${BEREICHE.slice(0, 3).map((b) => html`<a href=${"#/" + b.id} class=${r.bereich === b.id ? "an" : ""}><${Icon} n=${b.icon} />${b.titel}${zahl(b)}</a>`)}
-        <div class="nav-trenner"></div>
-        ${BEREICHE.slice(3).map((b) => html`<a href=${"#/" + b.id} class=${(r.bereich === b.id ? "an " : "") + (b.neo ? "neo-nav" : "")}><${Icon} n=${b.icon} />${b.titel}${zahl(b)}</a>`)}
-      </div>
+      <${LeisteNav} liste=${leiste} aktiv=${r.bereich} zahl=${zahl} speichern=${leisteSpeichern} />
       <div class="rail-fuss">
         <button onClick=${thema} title="Hell / Dunkel" aria-label="Hell oder dunkel"><${Icon} n="mond" g=${16} /></button>
         <button onClick=${() => api("/konto/abmelden", { methode: "POST" }).then(pruefen)} title="Abmelden" aria-label="Abmelden"><${Icon} n="raus" g=${16} /></button>
       </div>
-    </nav>
+    </nav>`}
     <div class="haupt">
       <header class="topbar">
         <span class="nur-mobil kopf-logo"><${Logo} /></span>
         <div class="kopf-titel">
           <h1>${titel}</h1><span>${unter}</span>
         </div>
-        <${CockpitLeiste} lage=${lage} />
+        ${!FENSTER && html`<${CockpitLeiste} lage=${lage} />
         <span class="kopf-trenner"></span>
-        <${ServerKaesten} offen=${r.bereich === "system"} umschalten=${() => navigiere("#/system")} gesundheit=${lage && lage.gesundheit} />
+        <${ServerKaesten} offen=${r.bereich === "system"} umschalten=${() => navigiere("#/system")} gesundheit=${lage && lage.gesundheit} />`}
+        ${FENSTER && html`<span class="luecke"></span>`}
         <span class="kopf-knoepfe">
           <button class="kopf-icon nur-mobil" onClick=${() => setErfassen(true)} aria-label="Capture" title="Capture"><${Icon} n="plus" g=${19} /></button>
           <${SprechKnopf} />
@@ -255,12 +258,12 @@ function App() {
       </main>
     </div>
     ${talk && html`<${Talk} zu=${() => setTalk(false)} kontext=${kontext} setKontext=${setKontext} start=${talkStart} />`}
-    <nav class="unten-nav" aria-label="Bereiche">
+    ${!FENSTER && html`<nav class="unten-nav" aria-label="Bereiche">
       ${BEREICHE.filter((b) => b.id !== "system").map((b) => html`<a href=${"#/" + b.id} class=${(r.bereich === b.id ? "an " : "") + (b.neo ? "neo-nav" : "")}>
         <${Icon} n=${b.icon} g=${20} />${b.kurz || b.titel}${b.id === "inbox" && offen ? html`<span class="zahl">${offen}</span>` : null}</a>`)}
       <a href="#/system" class=${r.bereich === "system" ? "an" : ""}><${Icon} n="system" g=${20} />System</a>
-    </nav>
-    ${!talk && html`<button class="talk-fab" onClick=${() => setTalk(true)} aria-label="Talk öffnen"><${Icon} n="talk" g=${24} /></button>`}
+    </nav>`}
+    ${!talk && !FENSTER && html`<button class="talk-fab" onClick=${() => setTalk(true)} aria-label="Talk öffnen"><${Icon} n="talk" g=${24} /></button>`}
     ${anzeige && anzeige.art === "ergebnis" && html`<${ErgebnisAnsicht} id=${anzeige.id} zu=${() => setAnzeige(null)} />`}
     ${anzeige && anzeige.art === "notiz" && html`<${NotizAnsicht} id=${anzeige.id} zu=${() => setAnzeige(null)} />`}
     ${erfassen && html`<${Erfassen} zu=${() => setErfassen(false)} />`}

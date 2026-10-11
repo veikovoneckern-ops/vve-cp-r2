@@ -100,6 +100,18 @@ p{margin:0 0 8px}
 .nav a .zahl.ruhig{background:var(--chrome-line);color:var(--chrome-ink)}
 .nav a.neo-nav .ico{color:var(--matrix)}
 .nav a.neo-nav.an{background:color-mix(in srgb,var(--matrix) 12%,transparent);color:var(--matrix)}
+/* Ziehen in der Leiste (leiste.js): der gezogene Knopf hebt sich ab, und
+   oben am Fensterrand steht der Streifen, der das Abloesen ankuendigt. */
+.nav a{user-select:none;-webkit-user-drag:none}
+.nav a.zieht{background:var(--surface);box-shadow:var(--sh-2);outline:1px dashed var(--steel);cursor:grabbing}
+.nav a.zieht.abloesen{outline-color:var(--sea);opacity:.6}
+.leiste-oben{position:fixed;left:0;right:0;top:0;height:48px;z-index:200;display:flex;align-items:center;justify-content:center;gap:8px;
+  font-weight:650;font-size:13px;color:var(--ink-3);background:color-mix(in srgb,var(--bg) 88%,transparent);border-bottom:2px dashed var(--line);pointer-events:none}
+.leiste-oben.an{color:var(--sea);border-bottom-color:var(--sea);background:color-mix(in srgb,var(--sea) 14%,var(--bg))}
+/* Eigenes Fenster (?fenster=1): nur die Seite, keine Leiste. */
+.schale.fenster,.schale.fenster.mit-talk{grid-template-columns:minmax(0,1fr)}
+.schale.fenster.mit-talk{grid-template-columns:minmax(0,1fr) var(--talk)}
+.schale.fenster .haupt{padding-bottom:0}
 .rail-fuss{margin-top:auto;display:flex;gap:4px;padding-top:12px}
 .rail-fuss button{flex:1;background:none;border:1px solid var(--chrome-line);border-radius:7px;padding:7px;cursor:pointer;color:var(--chrome-ink-3);min-height:36px}
 .rail-fuss button:hover{color:var(--chrome-ink);background:var(--hover)}
