@@ -55,7 +55,12 @@ export function useLeiste(bereiche, angemeldet) {
 }
 
 export function LeisteNav({ liste, aktiv, zahl, speichern }) {
-  const [zug, setZug] = useState(null);          // { id, ordnung, oben }
+  const [zug, setZugZustand] = useState(null);   // { id, ordnung, oben } -- fuers Zeichnen
+  // Dasselbe als Ref fuer die Ereignisse: kommen letzte Bewegung und Loslassen
+  // schneller, als neu gezeichnet wird, saehe hoch() sonst einen veralteten
+  // Stand (null) und taete nichts -- das Abloesen ging so beim Pruefen verloren.
+  const zugRef = useRef(null);
+  const setZug = (z) => { zugRef.current = z; setZugZustand(z); };
   const start = useRef(null);
   const geradeGezogen = useRef(false);
   const nav = useRef(null);
@@ -68,7 +73,8 @@ export function LeisteNav({ liste, aktiv, zahl, speichern }) {
   function bewegen(e) {
     const s = start.current;
     if (!s) return;
-    if (!zug) {
+    const zz = zugRef.current;
+    if (!zz) {
       if (Math.abs(e.clientX - s.x) < SCHWELLE && Math.abs(e.clientY - s.y) < SCHWELLE) return;
       // Am LEISTENKASTEN festhalten, nicht am Knopf: der Knopf wird beim
       // Umsortieren im DOM verschoben, und ein verschobenes Element verliert
@@ -77,7 +83,7 @@ export function LeisteNav({ liste, aktiv, zahl, speichern }) {
       // oberen Fensterrand hinaus gezogen wurde.
       try { nav.current.setPointerCapture(s.pid); } catch (x) { /* egal */ }
     }
-    const ordnung = (zug ? zug.ordnung : liste.map((b) => b.id)).filter((id) => id !== s.id);
+    const ordnung = (zz ? zz.ordnung : liste.map((b) => b.id)).filter((id) => id !== s.id);
     // Einfuegestelle aus der Hoehe: vor dem ersten Knopf, dessen Mitte unter dem Zeiger liegt.
     const knoepfe = [...nav.current.querySelectorAll("a[data-id]")].filter((a) => a.dataset.id !== s.id);
     let i = knoepfe.findIndex((a) => { const r = a.getBoundingClientRect(); return e.clientY < r.top + r.height / 2; });
@@ -90,14 +96,14 @@ export function LeisteNav({ liste, aktiv, zahl, speichern }) {
   function hoch() {
     const s = start.current;
     start.current = null;
-    if (!s || !zug) return;
+    const z = zugRef.current;
+    if (!s || !z) return;
     geradeGezogen.current = true;
     // Der Nachklick kommt sofort nach dem Loslassen -- oder gar nicht, wenn
     // Start und Ende auf verschiedenen Knoepfen lagen (dann trifft er die
     // Leiste). Die Sperre darf deshalb nicht auf ihn warten, sonst schluckt
     // sie den naechsten echten Klick.
     setTimeout(() => { geradeGezogen.current = false; }, 0);
-    const z = zug;
     setZug(null);
     if (z.oben) { fensterOeffnen(liste.find((b) => b.id === z.id)); return; }
     if (z.ordnung.join() !== liste.map((b) => b.id).join()) speichern(z.ordnung);
