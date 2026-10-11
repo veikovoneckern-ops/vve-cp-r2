@@ -1096,6 +1096,19 @@ async def system_auftrag_stand():
     return a
 
 
+@router.post("/system/auftrag/schliessen")
+async def system_auftrag_schliessen():
+    # Ein beendeter Auftrag blieb bis zum naechsten Neustart dieses Dienstes
+    # oben stehen -- auf jedem Geraet, auch nach dem Neuladen. Geschlossen wird
+    # deshalb hier und nicht im Browser. Ein laufender Auftrag bleibt sichtbar:
+    # wer ihn wegklickt, saehe nicht mehr, dass gerade etwas am System passiert.
+    from . import systeminfo
+    if systeminfo.AUFTRAG.get("laeuft"):
+        raise HTTPException(409, "Der Auftrag läuft noch.")
+    systeminfo.AUFTRAG.update(art=None, rc=None, start=None, ende=None, log="", fortschritt=None, gestoert=[])
+    return {"ok": True}
+
+
 @router.post("/system/abgleich")
 async def abgleich():
     return {"ok": True, "neu": importer.abgleichen()}

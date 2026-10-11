@@ -194,14 +194,16 @@ function SicherungenBlock({ sich }) {
   </div>`;
 }
 
-export function Auftrag({ a }) {
+export function Auftrag({ a, schliessen }) {
   if (!a || (!a.laeuft && !a.ende)) return null;
   const titel = { updates: "Updates einspielen", neustart: "Neustart", "ollama-neustart": "Ollama neu starten", "caddy-neustart": "Caddy neu starten", "ollama-update": "Ollama aktualisieren" }[a.art] || "Auftrag";
   return html`<section class="sv-kachel sv-voll" style="margin-bottom:12px">
     <div class="sv-kachel-kopf"><h4>${titel}</h4>
       ${a.laeuft ? html`<span class="pill lila">läuft seit ${zeitText(a.start).replace("vor ", "")}</span>`
         : a.rc === 0 && a.gestoert && a.gestoert.length ? html`<span class="pill gelb" title=${"Nicht erreichbar: " + a.gestoert.join(", ")}>fertig ${zeitText(a.ende)} · ${a.gestoert.length === 1 ? "eine Quelle" : a.gestoert.length + " Quellen"} nicht erreichbar</span>`
-        : a.rc === 0 ? html`<span class="pill gruen">fertig ${zeitText(a.ende)}</span>` : html`<span class="pill rot">fehlgeschlagen (rc ${a.rc})</span>`}</div>
+        : a.rc === 0 ? html`<span class="pill gruen">fertig ${zeitText(a.ende)}</span>` : html`<span class="pill rot">fehlgeschlagen (rc ${a.rc})</span>`}
+      ${!a.laeuft && schliessen && html`<button class="btn klein geist icon" style="margin-left:auto;align-self:center" onClick=${schliessen}
+        title="Schließen (auf allen Geräten)" aria-label="Auftrag schließen"><${Icon} n="x" g=${15} /></button>`}</div>
     ${a.fortschritt && html`<${Fortschritt} f=${a.fortschritt} laeuft=${a.laeuft} />`}
     <pre class="log">${a.log || "…"}</pre>
   </section>`;
@@ -524,7 +526,13 @@ export function useDetails({ mitSystem = true } = {}) {
   // Der WatchDog-Stand allein ist billig (eine Datei) -- fuer die WatchDog-Ansicht
   // im kuerzeren Takt, damit eine Temperatur nicht 20 s alt ist.
   const wdLaden = async () => { try { const w = await api("/system/watchdog"); setDet((x) => (x ? { ...x, watchdog: w } : x)); } catch (e) { /* weiter */ } };
-  return { det, sys, detLaden, starten, notfall, modellLaden, wdLaden };
+  // Beendeten Auftrag schliessen: auf dem Server, damit er auf keinem Geraet
+  // wieder auftaucht (er lag bis zum Dienst-Neustart im Speicher).
+  async function auftragSchliessen() {
+    try { await api("/system/auftrag/schliessen", { methode: "POST" }); setDet((x) => (x ? { ...x, auftrag: { ...x.auftrag, laeuft: false, ende: null } } : x)); }
+    catch (e) { fehlerMelden(e); }
+  }
+  return { det, sys, detLaden, starten, notfall, modellLaden, wdLaden, auftragSchliessen };
 }
 
 // Aufbau links, Updates/Empfehlungen/Sicherungen rechts -- in der Server-Sektion
@@ -563,7 +571,7 @@ export function ServerSektion({ gesundheit }) {
         <span class="luecke"></span>
         <button class="btn klein" onClick=${() => detLaden(true)} title="apt und Fassungen frisch abfragen"><${Icon} n="neu_laden" g=${12} />Neu prüfen</button>
       </div>
-      <${Auftrag} a=${det && det.auftrag} />
+      <${Auftrag} a=${det && det.auftrag} schliessen=${d.auftragSchliessen} />
       <${AufbauReihe} d=${d} beiKlick=${setTeil} />
       <${Gruppe} titel="Software" unter="was darauf läuft und wie es zusammenhängt" klasse="sw"><${Software} s=${s} sys=${sys} auftrag=${det && det.auftrag} starten=${starten} /></${Gruppe}>
       <${Gruppe} titel="Womit Sie arbeiten" unter="Modelle, Bestand, Suche und Stimme">

@@ -116,7 +116,7 @@ export function WatchDog() {
       <${Gruppe} titel="Maschine" unter="GPU-Temperatur und Notfall-Automatik"><${Maschine} wd=${wd} notfall=${notfall} /></${Gruppe}>
       <${Gruppe} titel="Sicherheit" unter="Firewall, Anmeldeversuche, Auto-Updates"><${Sicherheit} s=${s} /></${Gruppe}>`}
     <div class="sv-gruppe"><b>Aufbau und Wartung</b><em>dasselbe wie in der Server-Sektion oben</em></div>
-    <${Auftrag} a=${det && det.auftrag} />
+    <${Auftrag} a=${det && det.auftrag} schliessen=${d.auftragSchliessen} />
     <${AufbauReihe} d=${d} beiKlick=${setTeil} />
     ${teil && s && html`<${AufbauDetail} teil=${teil} s=${s} karten=${det && det.karten} wd=${wd} notfall=${notfall} zu=${() => setTeil(null)} />`}
   </div>`;
