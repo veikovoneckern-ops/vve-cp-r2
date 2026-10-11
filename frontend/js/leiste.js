@@ -1,4 +1,4 @@
-// DIE LINKE LEISTE -- Knoepfe umsortieren und als eigenes Fenster abloesen.
+// DIE LINKE LEISTE -- Knoepfe umsortieren und als eigenen Tab abloesen.
 //
 // Ziehen ueber Pointer Events, nie ueber natives HTML5-Drag: das ist im alten
 // Cockpit an <a>/<button> dreimal am echten Browser gescheitert (der Browser
@@ -8,22 +8,26 @@
 // Zwei Gesten, ein Griff:
 //   - ziehen und innerhalb der Leiste loslassen  -> neue Reihenfolge
 //   - ganz nach oben an den Fensterrand ziehen    -> die Seite oeffnet sich
-//     in einem eigenen Browserfenster (?fenster=1), ohne Leiste
+//     in einem neuen Tab (?fenster=1), ohne Leiste
 // Die Reihenfolge liegt auf dem Server (/einstellungen, "leiste"), damit sie
 // auf jedem Geraet gleich ist.
 import { html, useState, useEffect, useRef, Icon, toast, fehlerMelden } from "./ui.js";
 import { api } from "./api.js";
 
-// Eigenes Fenster: dieselbe Seite, nur der Inhalt.
+// Abgeloester Tab: dieselbe Seite, nur der Inhalt.
 export const FENSTER = new URLSearchParams(location.search).has("fenster");
 
 const SCHWELLE = 6;      // Punkt Bewegung, ab der aus einem Klick ein Ziehen wird
 const OBEN = 48;         // so nah am oberen Rand gilt "abloesen"
 
+// Als TAB im selben Browser, nicht als eigenes Fenster (Veikos Vorgabe vom
+// 11.10.2026). Ein window.open
+// ohne Fenstermerkmale oeffnet in jedem gaengigen Browser einen Tab. Der Name
+// je Bereich sorgt dafuer, dass ein zweites Abloesen denselben Tab wiederverwendet
+// statt einen weiteren anzulegen.
 export function fensterOeffnen(b) {
-  const w = window.open(location.pathname + "?fenster=1#/" + b.id, "vvec-" + b.id,
-    "popup,width=" + Math.min(1280, screen.availWidth - 80) + ",height=" + Math.min(900, screen.availHeight - 80));
-  if (!w) toast("Der Browser hat das Fenster blockiert. Pop-ups für das Cockpit erlauben.");
+  const w = window.open(location.pathname + "?fenster=1#/" + b.id, "vvec-" + b.id);
+  if (!w) toast("Der Browser hat den neuen Tab blockiert. Pop-ups für das Cockpit erlauben.");
   else w.focus();
 }
 
@@ -139,9 +143,9 @@ export function LeisteNav({ liste, aktiv, zahl, speichern }) {
     ${sicht.map((b) => html`<a key=${b.id} data-id=${b.id} href=${"#/" + b.id}
         class=${(aktiv === b.id ? "an " : "") + (b.neo ? "neo-nav " : "") + (zug && zug.id === b.id ? "zieht" + (zug.oben ? " abloesen" : "") : "")}
         onPointerDown=${(e) => runter(e, b)} onClick=${klick} draggable="false"
-        title=${b.titel + " · ziehen zum Umsortieren, nach oben an den Rand ziehen für ein eigenes Fenster"}>
+        title=${b.titel + " · ziehen zum Umsortieren, nach oben an den Rand ziehen für einen eigenen Tab"}>
       <${Icon} n=${b.icon} />${b.titel}${zahl(b)}</a>`)}
     ${gezogen && html`<div class=${"leiste-oben" + (zug.oben ? " an" : "")} aria-live="polite">
-      <${Icon} n="extern" g=${15} />${zug.oben ? `Loslassen: „${gezogen.titel}“ im eigenen Fenster` : "Hierher ziehen für ein eigenes Fenster"}</div>`}
+      <${Icon} n="extern" g=${15} />${zug.oben ? `Loslassen: „${gezogen.titel}“ in einem neuen Tab` : "Hierher ziehen für einen eigenen Tab"}</div>`}
   </div>`;
 }
