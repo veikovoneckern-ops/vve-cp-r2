@@ -527,7 +527,8 @@ html.neo-vollbild .schale.mit-talk{grid-template-columns:minmax(0,1fr) var(--tal
 .neo-kopf{flex-wrap:nowrap}
 .neo-kopf h2{min-width:0;overflow:hidden}
 .neo-kopf h2>span{min-width:0}
-.neo-kopf select{max-width:170px;flex:0 1 auto}
+/* min-width: eine Auswahlliste ist sonst mindestens so breit wie ihr laengster Eintrag und gibt nicht nach -- bei offener Vorschau ragte der Vollbild-Knopf dann aus dem Kopf. */
+.neo-kopf select{max-width:170px;min-width:84px;flex:0 1 auto}
 .neo-kopf .btn{flex:none}
 @media (max-width:1100px){.neo-kopf .btn .txt{display:none}}
 .md code{overflow-wrap:anywhere;word-break:break-word}
