@@ -36,15 +36,20 @@ export function ordnen(bereiche, ids) {
 }
 
 export function useLeiste(bereiche, angemeldet) {
-  const [ids, setIds] = useState(null);
+  // Der Server ist die Wahrheit; die letzte bekannte Reihenfolge liegt nur
+  // als Spiegel im Geraet, damit die Leiste beim Laden nicht erst in der
+  // Grundordnung erscheint und dann umspringt.
+  const merken = (x) => { try { localStorage.setItem("vvec_leiste", JSON.stringify(x)); } catch (f) { /* egal */ } };
+  const [ids, setIds] = useState(() => { try { return JSON.parse(localStorage.getItem("vvec_leiste") || "null"); } catch (f) { return null; } });
   useEffect(() => {
-    if (angemeldet) api("/einstellungen").then((e) => setIds(e.leiste || [])).catch(() => setIds([]));
+    if (angemeldet) api("/einstellungen").then((e) => { setIds(e.leiste || []); merken(e.leiste || []); }).catch(() => {});
   }, [angemeldet]);
   async function speichern(neu) {
     const vorher = ids;
     setIds(neu);
+    merken(neu);
     try { await api("/einstellungen", { methode: "POST", daten: { leiste: neu } }); }
-    catch (e) { setIds(vorher); fehlerMelden(e); }
+    catch (e) { setIds(vorher); merken(vorher || []); fehlerMelden(e); }
   }
   return [ordnen(bereiche, ids), speichern];
 }
