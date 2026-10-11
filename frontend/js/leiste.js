@@ -87,6 +87,11 @@ export function LeisteNav({ liste, aktiv, zahl, speichern }) {
     start.current = null;
     if (!s || !zug) return;
     geradeGezogen.current = true;
+    // Der Nachklick kommt sofort nach dem Loslassen -- oder gar nicht, wenn
+    // Start und Ende auf verschiedenen Knoepfen lagen (dann trifft er die
+    // Leiste). Die Sperre darf deshalb nicht auf ihn warten, sonst schluckt
+    // sie den naechsten echten Klick.
+    setTimeout(() => { geradeGezogen.current = false; }, 0);
     const z = zug;
     setZug(null);
     if (z.oben) { fensterOeffnen(liste.find((b) => b.id === z.id)); return; }
@@ -94,7 +99,7 @@ export function LeisteNav({ liste, aktiv, zahl, speichern }) {
   }
   // Der Browser schickt nach einem Ziehen trotzdem noch einen Klick -- genau
   // den einen fangen, sonst navigiert ein Umsortieren nebenbei.
-  function klick(e) { if (geradeGezogen.current) { e.preventDefault(); geradeGezogen.current = false; } }
+  function klick(e) { if (geradeGezogen.current) e.preventDefault(); }
 
   useEffect(() => {
     const esc = (e) => { if (e.key === "Escape" && start.current) { start.current = null; setZug(null); } };
