@@ -395,7 +395,8 @@ def gespraech_holen_oder_anlegen(gid: str | None, kontext: dict | None) -> str:
     return gid
 
 
-async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str], stimme: bool) -> AsyncIterator[dict]:
+async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str], stimme: bool,
+                 schnell: bool = False) -> AsyncIterator[dict]:
     voll = text
     for did in anhaenge or []:
         d = db.holen("dateien", did)
@@ -414,13 +415,17 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
               f"\n\nHEUTE: {time.strftime('%A, %d.%m.%Y %H:%M')}\n\nLAGE:\n{lage_text()}\n\n{kontext_text(kontext)}")
     if re.search(r"beirat|board|vordenker", text, re.I):
         system += "\n\n" + beirat_text()
+    denken, zusatz = llm.tempo(schnell)
+    system += "\n\n" + zusatz
     modell = await llm.modell_waehlen(MODELL_TALK, "qwen3.6:27b", "qwen3:30b-a3b", "llama3.3:70b")
     if not modell:
         yield {"typ": "fehler", "text": "Kein lokales Modell für das Gespräch installiert."}
         return
+    if denken:
+        yield {"typ": "status", "text": "denkt gründlich nach …"}
     gesamt = ""
     try:
-        async for t in llm.strom(modell, system, verlauf, temperatur=0.4, denken=False, num_ctx=24576):
+        async for t in llm.strom(modell, system, verlauf, temperatur=0.4, denken=denken, num_ctx=24576):
             gesamt += t
             if "```aktionen" not in gesamt:
                 yield {"typ": "text", "t": t}

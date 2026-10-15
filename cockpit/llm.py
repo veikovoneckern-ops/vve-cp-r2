@@ -35,6 +35,20 @@ def _ende() -> None:
     if AKTIV["n"] == 0:
         AKTIV["seit"] = None
 
+# Tempo direkter Gespraeche (Talk, Board, Team-Chat). Vorgabe ist gruendlich:
+# das Modell denkt vor der Antwort nach. "Schnelle Antwort" schaltet das ab --
+# Veikos Wunsch fuer unterwegs (Handy, Tablet). Die Pipeline kennt keinen
+# Schalter, sie arbeitet immer gruendlich (stab.DENKEN).
+GRUENDLICH_ZUSATZ = ("TEMPO: gründlich. Denk vor der Antwort sorgfältig nach und antworte vollständig; "
+                     "Rechenzeit spielt keine Rolle.")
+SCHNELL_ZUSATZ = "TEMPO: schnell. Veiko will eine schnelle Antwort: knapp, direkt, das Wichtigste zuerst."
+
+
+def tempo(schnell: bool) -> tuple[bool, str]:
+    """(denken, Zusatz fuer den System-Text)."""
+    return (False, SCHNELL_ZUSATZ) if schnell else (True, GRUENDLICH_ZUSATZ)
+
+
 # Chinesische, japanische, koreanische Schriftzeichen. Gemessen im alten Journal:
 # "Veiko建树作为 expert" -- solche Antworten sollen nie bei Veiko ankommen.
 FREMDSCHRIFT = re.compile(r"[぀-ヿ㐀-䶿一-鿿가-힯]")

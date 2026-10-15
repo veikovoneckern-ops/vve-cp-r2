@@ -656,7 +656,8 @@ async def teamchat_senden(request: Request):
     kontext = {"projekt_id": d.get("projekt_id") or None, "ergebnis_id": d.get("ergebnis_id") or None}
 
     async def strom():
-        async for e in teamchat.senden(d.get("gespraech_id"), str(d.get("wer") or ""), text or "(siehe Anhang)", dateien, kontext):
+        async for e in teamchat.senden(d.get("gespraech_id"), str(d.get("wer") or ""), text or "(siehe Anhang)", dateien, kontext,
+                                       schnell=bool(d.get("schnell"))):
             yield json.dumps(e, ensure_ascii=False) + "\n"
     return StreamingResponse(strom(), media_type="application/x-ndjson")
 
@@ -772,7 +773,8 @@ async def talk_senden(request: Request):
 
     async def strom():
         yield json.dumps({"typ": "start", "gespraech_id": gid}) + "\n"
-        async for e in gespraech.senden(gid, text, d.get("kontext"), d.get("anhaenge") or [], bool(d.get("stimme"))):
+        async for e in gespraech.senden(gid, text, d.get("kontext"), d.get("anhaenge") or [], bool(d.get("stimme")),
+                                        schnell=bool(d.get("schnell"))):
             yield json.dumps(e, ensure_ascii=False) + "\n"
     return StreamingResponse(strom(), media_type="application/x-ndjson",
                              headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
@@ -879,7 +881,8 @@ async def board_senden(request: Request):
         raise HTTPException(400, "Es fehlt die Frage.")
 
     async def strom():
-        async for e in board.senden(d.get("gespraech_id"), text, d.get("mit") or None, d.get("projekt_id") or None):
+        async for e in board.senden(d.get("gespraech_id"), text, d.get("mit") or None, d.get("projekt_id") or None,
+                                    schnell=bool(d.get("schnell"))):
             yield json.dumps(e, ensure_ascii=False) + "\n"
     return StreamingResponse(strom(), media_type="application/x-ndjson")
 

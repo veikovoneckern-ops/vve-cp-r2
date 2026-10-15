@@ -590,25 +590,65 @@ rueckfrage nur, wenn das Ergebnis ohne eine Auskunft von Veiko nicht sinnvoll we
 # drei Pruefrunden statt zwei, ein grosses Fenster und lange Formen Abschnitt
 # fuer Abschnitt: ein Buchkapitel aus EINEM Aufruf blieb kurz, weil ein Modell
 # seine Antwortlaenge an der Aufgabe misst, nicht an dem, was moeglich waere.
+#
+# Zweiter Schritt (Veiko, 15.10.2026): "nicht nur bei Buechern, sondern immer --
+# das Cockpit soll sehr lange an meinen Notizen arbeiten, um optimale Ergebnisse
+# zu erzielen." Deshalb gilt in der Pipeline fuer JEDE Ausarbeitung: das Modell
+# denkt vor dem Schreiben (think), sucht selbst im Netz, gliedert alles ausser
+# Webseite und Praesentation, und jeder Aufruf darf eine halbe Stunde dauern.
+# Die Pipeline laeuft ohne Zuschauer -- Wartezeit kostet hier niemanden etwas.
+# Fuer direkte Gespraeche gibt es dagegen den Schalter "Schnelle Antwort".
 RUNDEN_MAX = 3
-LANGE_FORMEN = ("dokument", "text", "konzept")
+GEGLIEDERTE_FORMEN = ("dokument", "text", "konzept", "aufstellung")
+DENKEN = True
+LANGE_FRIST = 1800
 
 GLIEDERUNG_ANWEISUNG = (
     "PLANE ZUERST, schreibe noch nichts aus. Antworte AUSSCHLIESSLICH mit JSON: "
     '{"titel": "...", "abschnitte": [{"ueberschrift": "...", "inhalt": "was hineingehört, zwei bis drei Sätze", '
-    '"umfang": "etwa N Wörter"}]}. Ein kurzer Auftrag (Mail, Notiz, kurze Antwort) hat EINEN Abschnitt. '
-    "Ein Buchkapitel, ein ausführliches Dokument oder ein Konzept hat vier bis zehn Abschnitte mit je 400 bis 1500 Wörtern.")
+    '"umfang": "etwa N Wörter"}]}. Nur ein wirklich kleiner Auftrag (eine kurze Mail, eine Notiz) hat EINEN Abschnitt. '
+    "Alles andere hat drei bis zehn Abschnitte; ein Buchkapitel, ein ausführliches Dokument oder ein Konzept "
+    "je 400 bis 1500 Wörter pro Abschnitt.")
+
+SUCHPLAN_ANWEISUNG = (
+    "Bevor du schreibst: Welche Fakten aus dem Internet machen dieses Ergebnis besser? Antworte AUSSCHLIESSLICH mit JSON "
+    '{"suchanfragen": ["...", "..."]} -- höchstens vier knappe Suchanfragen (deutsch oder englisch, wie die besten Treffer '
+    'zu erwarten sind). Braucht der Auftrag nichts aus dem Netz (z. B. ein rein persönlicher Text), antworte {"suchanfragen": []}.')
+
+
+async def recherche_planen(modell: str, system: str, frage: str, vorgabe: str | None, rid: str, vid: str) -> list[dict[str, str]]:
+    """Die Rolle sucht selbst, statt nur Jasons eine Suchanfrage zu bekommen.
+    Jasons Vorgabe bleibt die erste; doppelte Adressen fallen heraus."""
+    anfragen = [vorgabe] if vorgabe else []
+    laeuft(rid, "plant die Recherche", vid)
+    try:
+        d = llm.json_aus(await llm.chat(modell, system, [{"role": "user", "content": frage + "\n\n" + SUCHPLAN_ANWEISUNG}],
+                                        json_format=True, temperatur=0.3, denken=False, num_ctx=65536, timeout=LANGE_FRIST))
+        anfragen += [_kurz(q, 150) for q in ((d or {}).get("suchanfragen") or []) if isinstance(q, str) and q.strip()][:4]
+    except llm.ModellFehler:
+        pass
+    quellen: list[dict[str, str]] = []
+    gesehen: set[str] = set()
+    for q in list(dict.fromkeys(anfragen))[:5]:
+        laeuft(rid, f"recherchiert: {q}", vid)
+        treffer = [t for t in await recherche(q, seiten=4) if t.get("url") and t["url"] not in gesehen]
+        gesehen.update(t["url"] for t in treffer)
+        quellen += treffer
+        db.ereignis(vid, rid, "info", f"Recherche „{q}“: {len(treffer)} neue Treffer.",
+                    {"quellen": [{"titel": t["titel"], "url": t["url"]} for t in treffer]})
+    # Volltexte zuerst: sie tragen das Ergebnis, die Kurzanrisse ergaenzen nur.
+    quellen.sort(key=lambda t: 0 if t.get("voll") else 1)
+    return quellen[:20]
 
 
 async def abschnittsweise(modell: str, system: str, frage: str, form: str, rid: str, vid: str) -> str | None:
-    """Lange Formen: erst eine Gliederung, dann jeden Abschnitt in einem eigenen
-    Aufruf. Gibt None zurueck, wenn ein Aufruf reicht -- dann schreibt der Aufrufer
-    wie bisher in einem Stueck."""
-    if form not in LANGE_FORMEN:
+    """Erst eine Gliederung, dann jeden Abschnitt in einem eigenen Aufruf. Gibt
+    None zurueck, wenn ein Aufruf reicht -- dann schreibt der Aufrufer in einem Stueck."""
+    if form not in GEGLIEDERTE_FORMEN:
         return None
     laeuft(rid, "gliedert", vid)
     plan = llm.json_aus(await llm.chat(modell, system, [{"role": "user", "content": frage + "\n\n" + GLIEDERUNG_ANWEISUNG}],
-                                       json_format=True, temperatur=0.3, denken=False, num_ctx=65536))
+                                       json_format=True, temperatur=0.3, denken=DENKEN, num_ctx=65536, timeout=LANGE_FRIST))
     abschnitte = [x for x in (plan.get("abschnitte") if isinstance(plan, dict) else None) or []
                   if isinstance(x, dict) and x.get("ueberschrift")][:12]
     if len(abschnitte) <= 1:
@@ -626,7 +666,8 @@ async def abschnittsweise(modell: str, system: str, frage: str, form: str, rid: 
                    + f"Schreibe JETZT NUR Abschnitt {i + 1}: „{x['ueberschrift']}“ ({x.get('umfang') or 'ausführlich'}). "
                    f"Beginne mit der Zeile „## {x['ueberschrift']}“. Kein Vorwort, keine Wiederholung früherer Abschnitte, "
                    "kein Ausblick auf spätere -- die schreibst du danach.")
-        t = await llm.chat(modell, system, [{"role": "user", "content": auftrag}], temperatur=0.6, denken=False, num_ctx=65536)
+        t = await llm.chat(modell, system, [{"role": "user", "content": auftrag}], temperatur=0.6, denken=DENKEN,
+                           num_ctx=65536, timeout=LANGE_FRIST)
         if t.strip():
             teile.append(t.strip())
     if not teile:
@@ -643,14 +684,6 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
     if not modell:
         raise llm.ModellFehler("Kein passendes lokales Modell installiert.")
     vid = v["id"]
-    quellen: list[dict[str, str]] = []
-    if a.get("recherche"):
-        laeuft(rid, f"recherchiert: {a['recherche']}", vid)
-        quellen = await recherche(a["recherche"])
-        db.ereignis(vid, rid, "info", f"Recherche „{a['recherche']}“: {len(quellen)} Treffer.",
-                    {"quellen": [{"titel": q["titel"], "url": q["url"]} for q in quellen]})
-    quellen_text = "\n\n".join(f"[{i + 1}] {q['titel']} — {q['url']}\n{q['text'][:3000]}"
-                               for i, q in enumerate(quellen))
     # Nur der Kern des Rollenauftrags: der volle Text (Clayton: "Zielbild,
     # Geschaeftsmodell, Wege") faerbte jede Arbeit -- eine Anbieterliste kam mit
     # vorangestelltem "Business-Check". Die Aufgabe bestimmt die Form, nicht die Rolle.
@@ -666,9 +699,13 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
               f"GEDÄCHTNIS:\n{gedaechtnis_text()}")
     system += ("\n\nGRÜNDLICHKEIT: Rechenzeit spielt keine Rolle, das Team rechnet auf Veikos eigenem Server. "
                "Arbeite ausführlich und vollständig; kürze nicht aus Sparsamkeit. Lieber etwas zu viel liefern, "
-               "das Veiko streichen kann, als zu wenig.")
-    frage = (f"AUFTRAG: {a.get('auftrag')}\n\n{_vorgang_kontext(v)}" +
-             (f"\n\nQUELLEN:\n{quellen_text}" if quellen_text else "\n\n(keine Internetquellen)"))
+               "das Veiko streichen kann, als zu wenig. Denk vor dem Schreiben gründlich nach.")
+    grund = f"AUFTRAG: {a.get('auftrag')}\n\n{_vorgang_kontext(v)}"
+    quellen = [] if form == "webseite" and not a.get("recherche") else \
+        await recherche_planen(modell, system, grund, a.get("recherche"), rid, vid)
+    quellen_text = "\n\n".join(f"[{i + 1}] {q['titel']} — {q['url']}\n{q['text'][:3000]}"
+                               for i, q in enumerate(quellen))
+    frage = grund + (f"\n\nQUELLEN:\n{quellen_text}" if quellen_text else "\n\n(keine Internetquellen)")
     entwurf = ""
     pruefung: dict[str, Any] = {}
     for runde in range(RUNDEN_MAX):
@@ -680,15 +717,15 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
                           "\n".join("- " + m for m in pruefung.get("maengel") or []) +
                           "\n\nÜberarbeite den Entwurf und behebe die Mängel. Liefere das vollständige Ergebnis.")
             entwurf = await llm.chat(modell, system, [{"role": "user", "content": nachricht}],
-                                     temperatur=0.5, denken=False, num_ctx=65536)
+                                     temperatur=0.5, denken=DENKEN, num_ctx=65536, timeout=LANGE_FRIST)
         else:
             entwurf = (await abschnittsweise(modell, system, frage, form, rid, vid)
                        or await llm.chat(modell, system, [{"role": "user", "content": nachricht}],
-                                         temperatur=0.5, denken=False, num_ctx=65536))
+                                         temperatur=0.5, denken=DENKEN, num_ctx=65536, timeout=LANGE_FRIST))
         if llm.fremdschrift(entwurf):
             entwurf = await llm.chat(modell, system + "\n\nWICHTIG: Ausschließlich deutsche Sprache und lateinische Schrift.",
                                      [{"role": "user", "content": nachricht + ("\n\nDEIN ENTWURF (in deutscher Sprache neu schreiben):\n" + entwurf[:40000] if runde == 0 else "")}],
-                                     temperatur=0.3, denken=False, num_ctx=65536)
+                                     temperatur=0.3, denken=False, num_ctx=65536, timeout=LANGE_FRIST)
         if not entwurf.strip():
             raise llm.ModellFehler(f"{r.get('name')} hat nichts geliefert.")
         laeuft("kritiker", "prüft", vid)
@@ -716,9 +753,12 @@ async def pruefen(entwurf: str, a: dict[str, Any], v: dict[str, Any], quellen_te
              + (f"QUELLEN, die der Bearbeiter hatte:\n{quellen_text[:30000]}\n\n" if quellen_text else
                 "(Der Bearbeiter hatte keine Internetquellen.)\n\n")
              + f"ERGEBNIS:\n{entwurf[:60000]}")
-    for _ in range(2):
+    # Erster Versuch mit Nachdenken (gruendlicher), der zweite ohne: Denken und
+    # JSON zusammen liefern bei manchen Modellen gelegentlich einen leeren Text.
+    for versuch in range(2):
         antwort = await llm.chat(modell, PRUEF_SYSTEM, [{"role": "user", "content": frage}],
-                                 json_format=True, temperatur=0.2, denken=False, num_ctx=65536)
+                                 json_format=True, temperatur=0.2, denken=DENKEN and versuch == 0,
+                                 num_ctx=65536, timeout=LANGE_FRIST)
         d = llm.json_aus(antwort)
         if isinstance(d, dict) and d.get("urteil") in ("tragfaehig", "nachbessern", "rueckfrage"):
             d["maengel"] = [str(m)[:200] for m in (d.get("maengel") or [])][:6]

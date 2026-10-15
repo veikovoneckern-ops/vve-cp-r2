@@ -298,6 +298,20 @@ export function tippsEinrichten() {
   document.addEventListener("scroll", weg, true);
 }
 
+// ------------------------------------------------------------ Tempo direkter Gespraeche
+// Vorgabe gruendlich (das Modell denkt vor der Antwort nach). "Schnelle Antwort"
+// gilt je GERAET (localStorage, nicht der Server): am Rechner gruendlich, am
+// Handy schnell ist genau der Fall, fuer den Veiko den Schalter wollte.
+// Talk, Board und Team-Chat zeigen denselben Schalter und lesen denselben Wert.
+export function tempoSchnell() { try { return localStorage.getItem("antwort-schnell") === "1"; } catch (e) { return false; } }
+export function TempoSchalter() {
+  const [schnell, setSchnell] = useState(tempoSchnell);
+  useEffect(() => bus.an("tempo", () => setSchnell(tempoSchnell())), []);
+  return html`<label class="tempo-schalter klein" title="Aus: das Team denkt vor der Antwort gründlich nach (dauert länger). An: knappe, schnelle Antwort ohne Nachdenkphase. Gilt auf diesem Gerät.">
+    <input type="checkbox" checked=${schnell} onChange=${(e) => { try { localStorage.setItem("antwort-schnell", e.target.checked ? "1" : "0"); } catch (x) { /* egal */ }
+      setSchnell(e.target.checked); bus.sende("tempo"); }} />Schnelle Antwort</label>`;
+}
+
 // ------------------------------------------------------------ Eingabefelder: Enter und Aufzaehlungen
 // Veikos Regel (01.10.): Enter bestaetigt, Umschalt+Enter macht eine neue Zeile --
 // ueberall. Das Eingabefeld (composer.js) sendet selbst; Felder ohne eigenes

@@ -3,7 +3,7 @@
 // Team und die Spalte "Weiterarbeiten" im Ergebnisfenster. Im Ergebnisfenster
 // liegt das Ergebnis im Kontext; verlangt Veiko eine Aenderung, schreibt das
 // Mitglied eine neue Fassung, Daniel prueft sie, und sie laesst sich zuruecknehmen.
-import { html, useState, useEffect, useRef, Icon, Avatar, Md, Leer, toast, fehlerMelden, navigiere, zeitText, bus, kopieren } from "./ui.js";
+import { html, useState, useEffect, useRef, Icon, Avatar, Md, Leer, toast, fehlerMelden, navigiere, zeitText, bus, kopieren, tempoSchnell, TempoSchalter } from "./ui.js";
 import { api, strom } from "./api.js";
 import { Composer } from "./composer.js";
 import { vorlesen, vorleseStopp } from "./stimme.js";
@@ -75,7 +75,7 @@ export function TeamChat({ wer, partnerListe, gid, ergebnisId = "", projektId = 
     let neuGid = gid, fertig = null, fehler = null, pruefung = null;
     bus.sende("ki-start");
     try {
-      await strom("/teamchat/senden", { gespraech_id: gid || null, wer, text, dateien, ergebnis_id: ergebnisId || null, projekt_id: projektId || null }, (e) => {
+      await strom("/teamchat/senden", { gespraech_id: gid || null, wer, text, dateien, ergebnis_id: ergebnisId || null, projekt_id: projektId || null, schnell: tempoSchnell() }, (e) => {
         if (e.typ === "start") neuGid = e.gespraech_id;
         else if (e.typ === "text") setLauf((l) => l && { ...l, text: l.text + e.t });
         else if (e.typ === "status") setLauf((l) => l && { ...l, status: e.text });
@@ -123,6 +123,7 @@ export function TeamChat({ wer, partnerListe, gid, ergebnisId = "", projektId = 
       <${Composer} feldRef=${feld} platzhalter=${ergebnisId ? `Sag ${ich.name}, was am Ergebnis passieren soll …` : `Schreib ${ich.name} …`}
         beimSenden=${senden} laeuft=${!!lauf} beimStoppen=${() => abbruch.current && abbruch.current.abort()}
         projektId=${projektId} entwurfKey=${"tc:" + wer + ":" + (ergebnisId || gid || "")} zeilen=${2} />
+      <${TempoSchalter} />
       <label class="klein leise tc-vorlesen"><input type="checkbox" checked=${vorlesenAn} onChange=${(e) => setVorlesenAn(e.target.checked)} />Antworten vorlesen</label>
     </div>
   </div>`;

@@ -1049,3 +1049,4 @@ html.ki-arbeitet .logo-knopf{filter:drop-shadow(0 0 .6px rgba(0,0,0,.75)) drop-s
 }
 a.bd-person-haupt{text-decoration:none}
 .tc-fassung-text{display:inline-flex;align-items:center;gap:6px}
+.tempo-schalter{display:inline-flex;gap:6px;align-items:center;margin:4px 12px 0 0;color:var(--ink-3);cursor:pointer}

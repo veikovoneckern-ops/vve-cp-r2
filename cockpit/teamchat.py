@@ -215,7 +215,7 @@ def gespraeche(wer: str | None = None, ergebnis_id: str | None = None) -> list[d
 
 
 async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
-                 kontext: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
+                 kontext: dict[str, Any], schnell: bool = False) -> AsyncIterator[dict[str, Any]]:
     if not ist_extern(wer) and not db.holen("team", wer):
         yield {"typ": "fehler", "text": f"Unbekanntes Teammitglied: {wer}"}
         return
@@ -242,7 +242,8 @@ async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
         if i == len(zeilen) - 1 and anh:
             inhalt += "\n\n" + anh
         verlauf.append({"role": "user" if m["rolle"] == "du" else "assistant", "content": inhalt or "(leer)"})
-    system = system_text(wer, kontext)
+    denken, zusatz = llm.tempo(schnell)
+    system = system_text(wer, kontext) + "\n\n" + zusatz
 
     gesamt = ""
     try:
@@ -257,8 +258,10 @@ async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
                 yield {"typ": "fehler", "text": "Kein lokales Modell installiert."}
                 return
             stab.laeuft(wer, "im Gespräch mit dir")
+            if denken:
+                yield {"typ": "status", "text": f"{wer_name(wer)} denkt gründlich nach …"}
             try:
-                async for t in llm.strom(modell, system, verlauf, temperatur=0.6, denken=False, num_ctx=65536):
+                async for t in llm.strom(modell, system, verlauf, temperatur=0.6, denken=denken, num_ctx=65536):
                     gesamt += t
                     yield {"typ": "text", "t": t}
             finally:

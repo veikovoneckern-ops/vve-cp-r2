@@ -11,7 +11,7 @@
 // Gespraechskennung null (jeder Satz ein neues Gespraech) und keine offenen
 // Vorschlaege (ein "ja" fuehrte nie etwas aus). Kennung und Verlauf liegen
 // deshalb zusaetzlich in Refs, die die Schleife immer aktuell liest.
-import { html, useState, useEffect, useRef, Icon, Md, toast, fehlerMelden, aktualisieren, navigiere, rolleName, bus } from "./ui.js";
+import { html, useState, useEffect, useRef, Icon, Md, toast, fehlerMelden, aktualisieren, navigiere, rolleName, bus, tempoSchnell, TempoSchalter } from "./ui.js";
 import { api, strom } from "./api.js";
 import { Composer } from "./composer.js";
 import { boardFrageMerken } from "./board.js";
@@ -140,7 +140,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
     let fertig = null, stromFehler = null;
     const k = kontextRef.current;
     try {
-      await strom("/talk/senden", { gespraech_id: gidRef.current, text, kontext: k ? { art: k.art, id: k.id } : null, anhaenge, stimme }, (e) => {
+      await strom("/talk/senden", { gespraech_id: gidRef.current, text, kontext: k ? { art: k.art, id: k.id } : null, anhaenge, stimme, schnell: tempoSchnell() }, (e) => {
         if (e.typ === "start") setGid(e.gespraech_id);
         else if (e.typ === "text") setLauf((l) => ({ text: (l ? l.text : "") + e.t }));
         else if (e.typ === "fertig") fertig = e;
@@ -382,6 +382,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
       <${Composer} platzhalter=${kontext ? "Frag zu „" + (kontext.titel || "").slice(0, 40) + "“ …" : "Frag oder beauftrage dein Team … („ja“ bestätigt den letzten Vorschlag)"}
         beimSenden=${(t, a) => eingabe(t, a, false).then(() => true)} laeuft=${!!lauf}
         beimStoppen=${() => abbruch.current && abbruch.current.abort()} entwurfKey="talk" hinweis="" />
+      <${TempoSchalter} />
     </div>
   </aside>`;
 }

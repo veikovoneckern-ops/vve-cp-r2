@@ -4,7 +4,7 @@
 // geteilt (die Advisors nennen sich fett am Absatzanfang) -- lesbarer als ein
 // langer Block. Einzelgespraech mit einer Person, optionaler Projektbezug,
 // Gespraeche bleiben gespeichert.
-import { html, useState, useEffect, useRef, Icon, Md, Modal, Leer, toast, fehlerMelden, navigiere, zeitText, bus } from "./ui.js";
+import { html, useState, useEffect, useRef, Icon, Md, Modal, Leer, toast, fehlerMelden, navigiere, zeitText, bus, tempoSchnell, TempoSchalter } from "./ui.js";
 import { api, strom } from "./api.js";
 import { Composer } from "./composer.js";
 
@@ -137,7 +137,7 @@ export function Board({ id }) {
     let gid = id, fertig = null, fehler = null;
     bus.sende("ki-start");
     try {
-      await strom("/board/senden", { gespraech_id: id || null, text, mit, projekt_id: projekt || null }, (e) => {
+      await strom("/board/senden", { gespraech_id: id || null, text, mit, projekt_id: projekt || null, schnell: tempoSchnell() }, (e) => {
         if (e.typ === "start") gid = e.gespraech_id;
         else if (e.typ === "text") setLauf((l) => l && { ...l, text: l.text + e.t });
         else if (e.typ === "fertig") fertig = e;
@@ -221,6 +221,7 @@ export function Board({ id }) {
       <div class="bd-eingabe">
         <${Composer} feldRef=${feld} platzhalter=${einzelP ? `Frag ${einzelP.name} …` : "Frag das Board …"} beimSenden=${(t) => senden(t)}
           laeuft=${!!lauf} beimStoppen=${() => abbruch.current && abbruch.current.abort()} entwurfKey=${"board:" + (id || "")} erlaubeAnhang=${false} zeilen=${2} />
+        <${TempoSchalter} />
       </div>
     </section>
     ${profil && html`<${Profil} p=${profil} amTisch=${tisch.has(profil.id)} umschalten=${() => umschalten(profil.id)}

@@ -106,7 +106,8 @@ def system_text(ids: list[str], einzeln: bool, projekt_kontext: str) -> str:
             + f"===== PROFILE =====\n{profile}\n===== ENDE =====")
 
 
-async def senden(gid: str | None, text: str, mit: list[str] | None, projekt_id: str | None) -> AsyncIterator[dict[str, Any]]:
+async def senden(gid: str | None, text: str, mit: list[str] | None, projekt_id: str | None,
+                 schnell: bool = False) -> AsyncIterator[dict[str, Any]]:
     from .gespraech import kontext_text
     ids = [i for i in (mit or []) if i in NACH_ID] or tisch()
     if not ids:
@@ -128,7 +129,9 @@ async def senden(gid: str | None, text: str, mit: list[str] | None, projekt_id: 
         return
     gesamt = ""
     try:
-        async for t in llm.strom(modell, system_text(ids, len(ids) == 1, pk), verlauf, temperatur=0.7, denken=False, num_ctx=24576):
+        denken, zusatz = llm.tempo(schnell)
+        async for t in llm.strom(modell, system_text(ids, len(ids) == 1, pk) + "\n\n" + zusatz, verlauf,
+                                 temperatur=0.7, denken=denken, num_ctx=24576):
             gesamt += t
             yield {"typ": "text", "t": t}
     except llm.ModellFehler as f:
