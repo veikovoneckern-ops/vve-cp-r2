@@ -641,6 +641,62 @@ async def recherche_planen(modell: str, system: str, frage: str, vorgabe: str | 
     return quellen[:20]
 
 
+# ---------------------------------------------------------------- Netz in direkten Gespraechen
+# Talk, Board und Team-Chat suchen im GRUENDLICHEN Modus selbst im Netz (Veiko,
+# 15.10.2026), bei "Schnelle Antwort" nicht. EIN Weg fuer alle drei: erst fragt
+# das Modell sich knapp, ob die Frage Internetwissen braucht (die meisten Saetze
+# in Talk -- "ja", "leg eine Aufgabe an" -- brauchen keins), dann dieselbe
+# SearXNG-Suche wie in der Pipeline. Die Quellen haengt das Cockpit selbst an
+# die Antwort, damit sie nicht vom Modell abhaengen.
+NETZ_ANWEISUNG = (
+    "Braucht die LETZTE Nachricht von Veiko aktuelles Wissen aus dem Internet, um gut beantwortet zu werden "
+    "(Fakten, Zahlen, Neuigkeiten, Anbieter, Preise, Gesetze, Personen, Begriffe)? Antworte AUSSCHLIESSLICH mit JSON "
+    '{"suchanfragen": ["..."]} -- höchstens zwei knappe Suchanfragen. Bei Zustimmung, Smalltalk, Bitten um eine Aktion im '
+    'Cockpit, persönlichen Fragen oder reiner Textarbeit: {"suchanfragen": []}.')
+_KEINE_SUCHE = re.compile(r"^\s*(ja|nein|ok(ay)?|danke|genau|passt|mach( das)?|stopp?|weiter)\b[\s.!]*$", re.I)
+
+
+async def netzwissen(modell: str, verlauf: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Gibt die gefundenen Quellen zurueck (leer, wenn keine Suche noetig war oder
+    die Suche nichts fand). Wirft nie: ohne Netz wird eben ohne Netz geantwortet."""
+    letzte = next((m.get("content") or "" for m in reversed(verlauf) if m.get("role") == "user"), "")
+    if len(letzte.strip()) < 12 or _KEINE_SUCHE.match(letzte):
+        return []
+    auszug = "\n\n".join(f"{'Veiko' if m['role'] == 'user' else 'Antwort'}: {(m.get('content') or '')[:1500]}" for m in verlauf[-4:])
+    try:
+        d = llm.json_aus(await llm.chat(modell, "", [{"role": "user", "content": f"GESPRÄCH:\n{auszug}\n\n{NETZ_ANWEISUNG}"}],
+                                        json_format=True, temperatur=0.2, denken=False, num_ctx=16384, timeout=120))
+    except llm.ModellFehler:
+        return []
+    anfragen = [_kurz(q, 150) for q in ((d or {}).get("suchanfragen") or []) if isinstance(q, str) and q.strip()][:2]
+    quellen: list[dict[str, str]] = []
+    gesehen: set[str] = set()
+    for q in anfragen:
+        for t in await recherche(q, seiten=3):
+            if t.get("url") and t["url"] not in gesehen:
+                gesehen.add(t["url"])
+                quellen.append({**t, "anfrage": q})
+    quellen.sort(key=lambda t: 0 if t.get("voll") else 1)
+    return quellen[:10]
+
+
+def netz_system(quellen: list[dict[str, str]]) -> str:
+    if not quellen:
+        return ""
+    return ("AKTUELLE INTERNETQUELLEN (gerade für diese Frage gesucht). Stütze dich darauf, wo es passt, und zitiere als [1], [2]. "
+            "Was dort nicht steht, behauptest du nicht als aktuelle Tatsache. Die Quellenliste hängt das Cockpit selbst an.\n\n"
+            + "\n\n".join(f"[{i + 1}] {q['titel']} — {q['url']}\n{q['text'][:2500]}" for i, q in enumerate(quellen)))
+
+
+def netz_fuss(quellen: list[dict[str, str]]) -> str:
+    """Quellen unter die Antwort. Kursiv statt fett: das Board teilt Antworten an
+    fett gesetzten Namen am Zeilenanfang in Sprecher auf."""
+    if not quellen:
+        return ""
+    return "\n\n_Quellen aus dem Netz:_\n" + "\n".join(
+        f"{i + 1}. [{(q.get('titel') or q.get('url'))[:90]}]({q.get('url')})" for i, q in enumerate(quellen))
+
+
 async def abschnittsweise(modell: str, system: str, frage: str, form: str, rid: str, vid: str) -> str | None:
     """Erst eine Gliederung, dann jeden Abschnitt in einem eigenen Aufruf. Gibt
     None zurueck, wenn ein Aufruf reicht -- dann schreibt der Aufrufer in einem Stueck."""

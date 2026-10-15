@@ -245,6 +245,19 @@ async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
     denken, zusatz = llm.tempo(schnell)
     system = system_text(wer, kontext) + "\n\n" + zusatz
 
+    # Internet im gruendlichen Modus -- auch fuer die Externen: die Suche plant
+    # ein LOKALES Modell, es kostet also nichts extra, und die Cloud-Anbieter
+    # bekommen ueber den Proxy kein eigenes Suchwerkzeug.
+    quellen: list[dict[str, str]] = []
+    if denken:
+        planer = await llm.modell_waehlen(MODELL_TALK, "qwen3.6:27b", "qwen3:30b-a3b")
+        if planer:
+            yield {"typ": "status", "text": "prüft, ob das Internet hilft …"}
+            quellen = await stab.netzwissen(planer, verlauf)
+            if quellen:
+                system += "\n\n" + stab.netz_system(quellen)
+                yield {"typ": "status", "text": f"{len(quellen)} Quellen aus dem Netz gelesen …"}
+
     gesamt = ""
     try:
         if ist_extern(wer):
@@ -274,6 +287,8 @@ async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
         gesamt = llm.FREMDSCHRIFT.sub("", gesamt)
 
     prosa, fassung = fassung_trennen(gesamt)
+    if fassung and quellen:
+        fassung += stab.netz_fuss(quellen)   # die Fassung traegt ihre Quellen selbst, wie in der Pipeline
     daten: dict[str, Any] = {"wer": wer, "modell": modell}
     if fassung and kontext.get("ergebnis_id"):
         eid = kontext["ergebnis_id"]
@@ -300,6 +315,7 @@ async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
     elif fassung:
         # Fassung ohne Ergebnis im Kontext: einfach im Text stehen lassen.
         prosa = gesamt.replace(FASSUNG_AUF, "").replace(FASSUNG_ZU, "").strip()
+    prosa += stab.netz_fuss(quellen)
     mid = db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",
                         (gid, wer, prosa, json.dumps(daten, ensure_ascii=False), time.time()))
     db.ausfuehren("UPDATE gespraeche SET geaendert=? WHERE id=?", (time.time(), gid))

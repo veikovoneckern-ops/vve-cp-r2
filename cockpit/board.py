@@ -127,11 +127,19 @@ async def senden(gid: str | None, text: str, mit: list[str] | None, projekt_id: 
     if not modell:
         yield {"typ": "fehler", "text": "Kein lokales Modell installiert."}
         return
+    from . import stab
+    denken, zusatz = llm.tempo(schnell)
+    system = system_text(ids, len(ids) == 1, pk) + "\n\n" + zusatz
+    quellen: list[dict[str, str]] = []
+    if denken:
+        yield {"typ": "status", "text": "prüft, ob das Internet hilft …"}
+        quellen = await stab.netzwissen(modell, verlauf)
+        if quellen:
+            system += "\n\n" + stab.netz_system(quellen)
+            yield {"typ": "status", "text": f"{len(quellen)} Quellen aus dem Netz gelesen, das Board berät …"}
     gesamt = ""
     try:
-        denken, zusatz = llm.tempo(schnell)
-        async for t in llm.strom(modell, system_text(ids, len(ids) == 1, pk) + "\n\n" + zusatz, verlauf,
-                                 temperatur=0.7, denken=denken, num_ctx=24576):
+        async for t in llm.strom(modell, system, verlauf, temperatur=0.7, denken=denken, num_ctx=32768):
             gesamt += t
             yield {"typ": "text", "t": t}
     except llm.ModellFehler as f:
@@ -139,6 +147,7 @@ async def senden(gid: str | None, text: str, mit: list[str] | None, projekt_id: 
         return
     if llm.fremdschrift(gesamt):
         gesamt = llm.FREMDSCHRIFT.sub("", gesamt)
+    gesamt = gesamt.strip() + stab.netz_fuss(quellen)
     mid = db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",
                         (gid, "board", gesamt.strip(), json.dumps({"mit": ids, "modell": modell}, ensure_ascii=False), time.time()))
     db.ausfuehren("UPDATE gespraeche SET geaendert=? WHERE id=?", (time.time(), gid))

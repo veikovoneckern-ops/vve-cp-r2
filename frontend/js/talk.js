@@ -142,7 +142,8 @@ export function Talk({ zu, kontext, setKontext, start }) {
     try {
       await strom("/talk/senden", { gespraech_id: gidRef.current, text, kontext: k ? { art: k.art, id: k.id } : null, anhaenge, stimme, schnell: tempoSchnell() }, (e) => {
         if (e.typ === "start") setGid(e.gespraech_id);
-        else if (e.typ === "text") setLauf((l) => ({ text: (l ? l.text : "") + e.t }));
+        else if (e.typ === "text") setLauf((l) => ({ ...(l || {}), text: (l ? l.text : "") + e.t }));
+        else if (e.typ === "status") setLauf((l) => ({ ...(l || { text: "" }), status: e.text }));
         else if (e.typ === "fertig") fertig = e;
         else if (e.typ === "fehler") stromFehler = e.text;
       }, ctl.signal);
@@ -376,7 +377,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
             ${(m.medien || []).map((x) => html`<${MedienKarte} key=${x.id} m=${x} />`)}
             ${typeof m.id === "number" && html`<button class="btn klein geist" style="margin-top:4px" title="Vorlesen" onClick=${() => vorlesen(m.text).catch((e) => toast(e.message, { fehler: true }))}><${Icon} n="play" g=${12} />Vorlesen</button>`}
           </div>`)}
-      ${lauf && html`<div class="talk-blase ck">${lauf.text ? html`<${Md} text=${lauf.text} />` : html`<span class="leise">Denke nach …</span>`}</div>`}
+      ${lauf && html`<div class="talk-blase ck">${lauf.text ? html`<${Md} text=${lauf.text} />` : html`<span class="leise">${lauf.status ? lauf.status.charAt(0).toUpperCase() + lauf.status.slice(1) : "Denke nach …"}</span>`}</div>`}
     </div>
     <div class="talk-eingabe">
       <${Composer} platzhalter=${kontext ? "Frag zu „" + (kontext.titel || "").slice(0, 40) + "“ …" : "Frag oder beauftrage dein Team … („ja“ bestätigt den letzten Vorschlag)"}

@@ -139,6 +139,7 @@ export function Board({ id }) {
     try {
       await strom("/board/senden", { gespraech_id: id || null, text, mit, projekt_id: projekt || null, schnell: tempoSchnell() }, (e) => {
         if (e.typ === "start") gid = e.gespraech_id;
+        else if (e.typ === "status") setLauf((l) => l && { ...l, status: e.text });
         else if (e.typ === "text") setLauf((l) => l && { ...l, text: l.text + e.t });
         else if (e.typ === "fertig") fertig = e;
         else if (e.typ === "fehler") fehler = e.text;
@@ -216,7 +217,8 @@ export function Board({ id }) {
         ${lauf && html`<div class="bd-antwort">${lauf.text
           ? html`<${Beitraege} text=${lauf.text} personen=${d.personen} einzel=${lauf.mit.length === 1 ? nach[lauf.mit[0]] : null} />`
           : html`<div class="bd-denkt"><span class="bd-stapel">${lauf.mit.slice(0, 5).map((i) => nach[i] && html`<${Avatar} p=${nach[i]} g=${26} />`)}</span>
-              ${lauf.mit.length === 1 ? (nach[lauf.mit[0]] || {}).name + " denkt nach …" : "Das Board berät …"}</div>`}</div>`}
+              ${lauf.status ? lauf.status.charAt(0).toUpperCase() + lauf.status.slice(1)
+                : lauf.mit.length === 1 ? (nach[lauf.mit[0]] || {}).name + " denkt nach …" : "Das Board berät …"}</div>`}</div>`}
       </div>
       <div class="bd-eingabe">
         <${Composer} feldRef=${feld} platzhalter=${einzelP ? `Frag ${einzelP.name} …` : "Frag das Board …"} beimSenden=${(t) => senden(t)}
