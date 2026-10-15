@@ -315,7 +315,7 @@ textarea.eingabe{resize:vertical;line-height:1.45}
 .ergebnis-ansicht iframe{width:100%;height:65vh;border:1px solid var(--line);border-radius:8px;background:#fff}
 
 /* ------------------------------------------------ Team */
-.team-raster{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.team-raster{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));grid-auto-rows:1fr;gap:12px}
 .mitglied{display:flex;flex-direction:column;gap:8px}
 .mitglied .kopf{display:flex;gap:10px;align-items:center}
 .mitglied .kopf b{display:block;font-size:15px}
@@ -1017,3 +1017,35 @@ html.ki-arbeitet .logo-knopf{filter:drop-shadow(0 0 .6px rgba(0,0,0,.75)) drop-s
 
 /* Untere Leiste: unter 560 Punkt passen keine zehn Bereiche -- vier plus "Mehr". */
 @media (max-width:559px){.unten-nav a.unten-ueber{display:none}.unten-nav .unten-mehr{display:flex}}
+
+/* Mit dem Team sprechen (teamchat.js, 15.10.): Gespraechsseite unter Team und
+   die Spalte "Weiterarbeiten" im Ergebnisfenster. Verlauf und Eingabe teilen sich
+   die Hoehe; min-height:0, sonst waechst die Spalte mit dem Gespraech und die
+   SEITE scrollt statt des Verlaufs (dieselbe Falle wie bei Neo im alten Cockpit). */
+.modal.voll{width:min(1560px,100%);height:calc(100vh - 32px)}
+.modal.voll .modal-inhalt{display:flex;flex-direction:column;flex:1}
+.erg-raster{min-height:0}
+.erg-raster.mit-chat{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(360px,1fr);gap:16px;flex:1;min-height:0}
+.erg-raster.mit-chat .erg-text{overflow:auto;min-height:0;padding-right:6px}
+.erg-chat{display:flex;flex-direction:column;min-height:0;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);overflow:hidden}
+.erg-chat-kopf{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.erg-chat-kopf .bd-auswahl{flex:1;max-width:none}
+.tc{display:flex;flex-direction:column;flex:1;min-height:0}
+.tc-verlauf{padding:14px}
+.tc-eingabe{padding:8px 12px 10px;border-top:1px solid var(--line)}
+.tc-vorlesen{display:inline-flex;gap:6px;align-items:center;margin-top:4px}
+.tc-fassung{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;padding:6px 10px;border-radius:8px;background:var(--steel-soft);font-size:12.5px;font-weight:600}
+.tc-werkzeug{display:flex;gap:4px;margin-top:6px;opacity:.75}
+.tc-werkzeug:hover{opacity:1}
+.tc-kosten{margin:0 12px 8px}
+.team-abschnitt{margin:22px 0 10px;font-size:15px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.team-abschnitt span{font-weight:400}
+.mitglied.extern{border-style:dashed}
+@media (max-width:1000px){
+  .modal.voll{height:auto}
+  .erg-raster.mit-chat{grid-template-columns:minmax(0,1fr)}
+  .erg-raster.mit-chat .erg-text{overflow:visible}
+  .erg-chat{min-height:70vh}
+}
+a.bd-person-haupt{text-decoration:none}
+.tc-fassung-text{display:inline-flex;align-items:center;gap:6px}

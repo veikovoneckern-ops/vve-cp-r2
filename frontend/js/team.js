@@ -3,10 +3,17 @@
 // ohne Nachfrage tun darf). Das Advisory Board hat einen eigenen Bereich (board.js).
 import { html, enterBestaetigt, useState, useEffect, Icon, Avatar, Leer, Modal, toast, fehlerMelden, aktualisieren, zeitText, useAbruf, navigiere, bus } from "./ui.js";
 import { api } from "./api.js";
+import { TeamGespraeche } from "./teamchat.js";
 
 const TABS = [["mitglieder", "Mitglieder"], ["gedaechtnis", "Memory"], ["vertrauen", "Freigaben"]];
 
-export function Team({ id }) {
+// #/team/chat/<wer>[/<gespraech>] ist das Gespraech mit einem Mitglied.
+export function Team({ id, rest = [] }) {
+  if (id === "chat") return html`<${TeamGespraeche} wer=${rest[0] || ""} gid=${rest[1] || null} />`;
+  return html`<${TeamTabs} id=${id} />`;
+}
+
+function TeamTabs({ id }) {
   const [tab, setTab] = useState(id && TABS.some((t) => t[0] === id) ? id : "mitglieder");
   useEffect(() => { bus.sende("talk-kontext", null); }, []);
   return html`<div class="seite">
@@ -25,7 +32,7 @@ function Mitglieder() {
     try { await api("/team/" + m.id, { methode: "PATCH", daten }); toast(meldung); laden(); } catch (e) { fehlerMelden(e); }
   }
   return html`
-    <p class="leise" style="margin-bottom:12px;max-width:70ch">Jason ordnet jede neue Notiz ein und plant. Die anderen arbeiten, wenn eine Notiz oder du es ausdrücklich verlangst. Daniel prüft jedes Ergebnis, bevor du es siehst. Alle rechnen lokal auf deinem Server.</p>
+    <p class="leise" style="margin-bottom:12px;max-width:70ch">Jason ordnet jede neue Notiz ein und plant. Die anderen arbeiten, wenn eine Notiz oder du es ausdrücklich verlangst. Daniel prüft jedes Ergebnis, bevor du es siehst. Das Team rechnet lokal auf deinem Server. Dario, Elon und Demmis sind extern und kosten Geld je Nachricht. Mit jedem kannst du direkt sprechen.</p>
     <div class="team-raster">${d.team.map((m) => {
       const tut = (d.laeuft && d.laeuft.wer === m.id) ? d.laeuft.was : (m.id === "cockpit" && d.neo_laeuft ? "arbeitet an einem Auftrag" : "");
       return html`<div class="karte mitglied" key=${m.id}>
@@ -44,11 +51,35 @@ function Mitglieder() {
           <span class="leise klein">${m.heute ? `heute an ${m.heute} Cases` : "heute noch nichts"}${m.ergebnisse ? ` · ${m.ergebnisse} Ergebnisse` : ""}</span>
           <span style="flex:1"></span>
           ${m.id === "cockpit" ? html`<a class="btn klein primaer" href="#/neo">Mit Neo arbeiten</a>`
-            : html`<button class="btn klein" onClick=${() => setOffen(m.id)}>Details</button>`}
+            : html`<button class="btn klein" onClick=${() => setOffen(m.id)}>Details</button>
+              <a class="btn klein primaer" href=${"#/team/chat/" + m.id}><${Icon} n="chat" g=${14} />Chatten</a>`}
         </div>
       </div>`;
     })}</div>
+    <h3 class="team-abschnitt">Extern <span class="leise klein">zugeschaltet über die Cloud · kostet Geld je Nachricht · arbeitet nie von selbst</span></h3>
+    <div class="team-raster">${(d.externe || []).map((x) => html`<${ExternKarte} key=${x.id} x=${x} nachher=${laden} />`)}</div>
     ${offen && html`<${MitgliedDetail} id=${offen} zu=${() => setOffen(null)} nachher=${laden} />`}`;
+}
+
+// Die drei Externen: Claude, Grok, Gemini. Kein "aktiv"-Schalter -- sie arbeiten
+// nie von selbst, nur wenn Veiko ihnen schreibt. Das Modell waehlt Veiko hier.
+function ExternKarte({ x, nachher }) {
+  async function modell(w) {
+    try { await api("/teamchat/extern/" + x.id, { methode: "PATCH", daten: { modell: w } }); toast(`${x.name} rechnet jetzt mit ${w || "der Vorgabe"}.`); nachher(); } catch (e) { fehlerMelden(e); }
+  }
+  const marke = x.schluessel === false ? ["rot", "kein Schlüssel"] : x.schluessel ? ["gelb", "kostet Geld"] : ["", "Stand unbekannt"];
+  return html`<div class="karte mitglied extern">
+    <div class="kopf"><${Avatar} wer=${x.id} name=${x.name} g=${38} /><div style="min-width:0"><b>${x.name}</b><small>${x.titel}</small></div>
+      <span class=${"pill " + marke[0]} style="margin-left:auto">${marke[1]}</span></div>
+    <div class="leise klein">${x.kurz}</div>
+    <div class="feld"><label for=${"mod-" + x.id}>Modell</label>
+      <select id=${"mod-" + x.id} class="eingabe" value=${x.modell || ""} onChange=${(e) => modell(e.target.value)} disabled=${!x.modelle.length}>
+        <option value="">Vorgabe${x.vorgabe ? ` (${x.vorgabe})` : ""}</option>
+        ${x.modelle.map((m) => html`<option value=${m}>${m}</option>`)}</select></div>
+    <div class="knopfreihe"><span class="leise klein">${x.modelle.length ? x.modelle.length + " Modelle verfügbar" : "Modellliste nicht abrufbar"}</span>
+      <span style="flex:1"></span>
+      <a class="btn klein primaer" href=${"#/team/chat/" + x.id}><${Icon} n="chat" g=${14} />Chatten</a></div>
+  </div>`;
 }
 
 function MitgliedDetail({ id, zu, nachher }) {

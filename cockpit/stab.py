@@ -535,12 +535,12 @@ def _html_zu_text(h: str) -> str:
     return re.sub(r"\s+", " ", htmlmod.unescape(h)).strip()
 
 
-async def recherche(anfrage: str, seiten: int = 3) -> list[dict[str, str]]:
+async def recherche(anfrage: str, seiten: int = 6) -> list[dict[str, str]]:
     try:
         async with httpx.AsyncClient(timeout=12, follow_redirects=True,
                                      headers={"User-Agent": "Mozilla/5.0 VvE-Cockpit"}) as c:
             r = await c.get(f"{SEARX}/search", params={"q": anfrage, "format": "json", "language": "de"})
-            treffer = (r.json().get("results") or [])[:8]
+            treffer = (r.json().get("results") or [])[:12]
             out = []
             for t in treffer:
                 eintrag = {"titel": t.get("title") or "", "url": t.get("url") or "", "text": t.get("content") or ""}
@@ -584,6 +584,56 @@ Die Quellenliste mit Adressen hängt das Cockpit selbst an das Ergebnis an; fehl
 rueckfrage nur, wenn das Ergebnis ohne eine Auskunft von Veiko nicht sinnvoll werden kann."""
 
 
+# Gruendlich statt sparsam (Veiko, 15.10.2026): "Tokenverbrauch spielt keine
+# Rolle, solange das Team lokal rechnet -- es soll ordentlich viel arbeiten,
+# auch auf die Gefahr hin, dass es nicht der richtige Weg ist." Deshalb bis zu
+# drei Pruefrunden statt zwei, ein grosses Fenster und lange Formen Abschnitt
+# fuer Abschnitt: ein Buchkapitel aus EINEM Aufruf blieb kurz, weil ein Modell
+# seine Antwortlaenge an der Aufgabe misst, nicht an dem, was moeglich waere.
+RUNDEN_MAX = 3
+LANGE_FORMEN = ("dokument", "text", "konzept")
+
+GLIEDERUNG_ANWEISUNG = (
+    "PLANE ZUERST, schreibe noch nichts aus. Antworte AUSSCHLIESSLICH mit JSON: "
+    '{"titel": "...", "abschnitte": [{"ueberschrift": "...", "inhalt": "was hineingehört, zwei bis drei Sätze", '
+    '"umfang": "etwa N Wörter"}]}. Ein kurzer Auftrag (Mail, Notiz, kurze Antwort) hat EINEN Abschnitt. '
+    "Ein Buchkapitel, ein ausführliches Dokument oder ein Konzept hat vier bis zehn Abschnitte mit je 400 bis 1500 Wörtern.")
+
+
+async def abschnittsweise(modell: str, system: str, frage: str, form: str, rid: str, vid: str) -> str | None:
+    """Lange Formen: erst eine Gliederung, dann jeden Abschnitt in einem eigenen
+    Aufruf. Gibt None zurueck, wenn ein Aufruf reicht -- dann schreibt der Aufrufer
+    wie bisher in einem Stueck."""
+    if form not in LANGE_FORMEN:
+        return None
+    laeuft(rid, "gliedert", vid)
+    plan = llm.json_aus(await llm.chat(modell, system, [{"role": "user", "content": frage + "\n\n" + GLIEDERUNG_ANWEISUNG}],
+                                       json_format=True, temperatur=0.3, denken=False, num_ctx=65536))
+    abschnitte = [x for x in (plan.get("abschnitte") if isinstance(plan, dict) else None) or []
+                  if isinstance(x, dict) and x.get("ueberschrift")][:12]
+    if len(abschnitte) <= 1:
+        return None
+    gliederung = "\n".join(f"{i + 1}. {x['ueberschrift']} -- {x.get('inhalt') or ''} ({x.get('umfang') or ''})"
+                           for i, x in enumerate(abschnitte))
+    db.ereignis(vid, rid, "info", f"Gliederung mit {len(abschnitte)} Abschnitten:\n{gliederung}")
+    titel = _kurz(plan.get("titel"), 120) if isinstance(plan, dict) else ""
+    teile: list[str] = []
+    for i, x in enumerate(abschnitte):
+        laeuft(rid, f"schreibt Abschnitt {i + 1} von {len(abschnitte)}: {_kurz(x['ueberschrift'], 60)}", vid)
+        bisher = "\n\n".join(teile)
+        auftrag = (f"{frage}\n\nGLIEDERUNG DES GANZEN:\n{gliederung}\n\n"
+                   + (f"BISHER GESCHRIEBEN (Ende):\n…{bisher[-8000:]}\n\n" if bisher else "")
+                   + f"Schreibe JETZT NUR Abschnitt {i + 1}: „{x['ueberschrift']}“ ({x.get('umfang') or 'ausführlich'}). "
+                   f"Beginne mit der Zeile „## {x['ueberschrift']}“. Kein Vorwort, keine Wiederholung früherer Abschnitte, "
+                   "kein Ausblick auf spätere -- die schreibst du danach.")
+        t = await llm.chat(modell, system, [{"role": "user", "content": auftrag}], temperatur=0.6, denken=False, num_ctx=65536)
+        if t.strip():
+            teile.append(t.strip())
+    if not teile:
+        return None
+    return (f"# {titel}\n\n" if titel else "") + "\n\n".join(teile)
+
+
 async def ausarbeiten(v: dict[str, Any]) -> None:
     a = json.loads(v.get("auftrag") or "{}")
     rid = a.get("rolle") or "stratege"
@@ -614,23 +664,31 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
               "Das GEDÄCHTNIS hilft dir nur, Namen und Begriffe im Auftrag richtig zu verstehen. Bring es NICHT von dir aus "
               "ins Ergebnis: was dort steht, gehört nur hinein, wenn der Auftrag es betrifft.\n\n"
               f"GEDÄCHTNIS:\n{gedaechtnis_text()}")
+    system += ("\n\nGRÜNDLICHKEIT: Rechenzeit spielt keine Rolle, das Team rechnet auf Veikos eigenem Server. "
+               "Arbeite ausführlich und vollständig; kürze nicht aus Sparsamkeit. Lieber etwas zu viel liefern, "
+               "das Veiko streichen kann, als zu wenig.")
     frage = (f"AUFTRAG: {a.get('auftrag')}\n\n{_vorgang_kontext(v)}" +
              (f"\n\nQUELLEN:\n{quellen_text}" if quellen_text else "\n\n(keine Internetquellen)"))
     entwurf = ""
     pruefung: dict[str, Any] = {}
-    for runde in range(2):
+    for runde in range(RUNDEN_MAX):
         laeuft(rid, ("überarbeitet" if runde else "arbeitet aus") + f" ({form})", vid)
         nachricht = frage
         if runde and pruefung:
-            nachricht += ("\n\nDEIN ERSTER ENTWURF:\n" + entwurf[:9000] +
+            nachricht += ("\n\nDEIN BISHERIGER ENTWURF:\n" + entwurf[:40000] +
                           "\n\nKRITIK VON DANIEL:\n" + pruefung.get("begruendung", "") + "\n" +
                           "\n".join("- " + m for m in pruefung.get("maengel") or []) +
                           "\n\nÜberarbeite den Entwurf und behebe die Mängel. Liefere das vollständige Ergebnis.")
-        entwurf = await llm.chat(modell, system, [{"role": "user", "content": nachricht}],
-                                 temperatur=0.5, denken=False, num_ctx=32768)
+            entwurf = await llm.chat(modell, system, [{"role": "user", "content": nachricht}],
+                                     temperatur=0.5, denken=False, num_ctx=65536)
+        else:
+            entwurf = (await abschnittsweise(modell, system, frage, form, rid, vid)
+                       or await llm.chat(modell, system, [{"role": "user", "content": nachricht}],
+                                         temperatur=0.5, denken=False, num_ctx=65536))
         if llm.fremdschrift(entwurf):
             entwurf = await llm.chat(modell, system + "\n\nWICHTIG: Ausschließlich deutsche Sprache und lateinische Schrift.",
-                                     [{"role": "user", "content": nachricht}], temperatur=0.3, denken=False, num_ctx=32768)
+                                     [{"role": "user", "content": nachricht + ("\n\nDEIN ENTWURF (in deutscher Sprache neu schreiben):\n" + entwurf[:40000] if runde == 0 else "")}],
+                                     temperatur=0.3, denken=False, num_ctx=65536)
         if not entwurf.strip():
             raise llm.ModellFehler(f"{r.get('name')} hat nichts geliefert.")
         laeuft("kritiker", "prüft", vid)
@@ -655,12 +713,12 @@ async def pruefen(entwurf: str, a: dict[str, Any], v: dict[str, Any], quellen_te
     # Daniel bekommt DIESELBEN Quellen wie der Bearbeiter. Ohne sie pruefte er
     # aus eigenem Gedaechtnis -- und das kann genauso daneben liegen.
     frage = (f"AUFTRAG: {a.get('auftrag')}\nFORM: {a.get('form')}\n\n{_vorgang_kontext(v)[:4000]}\n\n"
-             + (f"QUELLEN, die der Bearbeiter hatte:\n{quellen_text[:12000]}\n\n" if quellen_text else
+             + (f"QUELLEN, die der Bearbeiter hatte:\n{quellen_text[:30000]}\n\n" if quellen_text else
                 "(Der Bearbeiter hatte keine Internetquellen.)\n\n")
-             + f"ERGEBNIS:\n{entwurf[:9000]}")
+             + f"ERGEBNIS:\n{entwurf[:60000]}")
     for _ in range(2):
         antwort = await llm.chat(modell, PRUEF_SYSTEM, [{"role": "user", "content": frage}],
-                                 json_format=True, temperatur=0.2, denken=False, num_ctx=24576)
+                                 json_format=True, temperatur=0.2, denken=False, num_ctx=65536)
         d = llm.json_aus(antwort)
         if isinstance(d, dict) and d.get("urteil") in ("tragfaehig", "nachbessern", "rueckfrage"):
             d["maengel"] = [str(m)[:200] for m in (d.get("maengel") or [])][:6]
@@ -689,6 +747,26 @@ def _folien_html(text: str, titel: str) -> str:
             "li{margin:10px 0}</style>" + "".join(teile))
 
 
+def ansicht_html(e: dict[str, Any]) -> str | None:
+    """Die Ansicht eines Ergebnisses, JEDES MAL aus dem aktuellen Inhalt gerechnet.
+    Frueher lag sie als Datei daneben -- seit Veiko im Ergebnisfenster weiterarbeiten
+    kann (teamchat.py), aendert sich der Inhalt, und eine Datei zeigte dann die alte
+    Fassung, auch nach einem Rueckgaengig. Alte Dateien bleiben nur als Rueckfall."""
+    form, titel, text = e.get("form"), e.get("titel") or "Ergebnis", e.get("inhalt") or ""
+    if form == "webseite":
+        m = re.search(r"```html\s*(.*?)```", text, re.S | re.I)
+        if m:
+            return m.group(1)
+    elif form == "praesentation":
+        return _folien_html(text, titel)
+    elif form == "dokument":
+        from . import dokumente
+        return dokumente.zu_html(titel, text)
+    if e.get("id") and (ERGEBNIS_DIR / f"{e['id']}.html").is_file():
+        return (ERGEBNIS_DIR / f"{e['id']}.html").read_text(encoding="utf-8")
+    return None
+
+
 def ergebnis_speichern(v: dict[str, Any], a: dict[str, Any], text: str, rid: str, modell: str,
                        quellen: list[dict[str, str]], pruefung: dict[str, Any]) -> str:
     eid = db.neue_id("r")
@@ -698,19 +776,7 @@ def ergebnis_speichern(v: dict[str, Any], a: dict[str, Any], text: str, rid: str
         text = text.rstrip() + "\n\n**Quellen**\n" + "\n".join(
             f"{i + 1}. [{(q.get('titel') or q.get('url'))[:90]}]({q.get('url')})" for i, q in enumerate(quellen))
     titel = _kurz(a.get("auftrag"), 90) or v.get("titel") or "Ergebnis"
-    ansicht = 0
-    if form == "webseite":
-        m = re.search(r"```html\s*(.*?)```", text, re.S | re.I)
-        if m:
-            (ERGEBNIS_DIR / f"{eid}.html").write_text(m.group(1), encoding="utf-8")
-            ansicht = 1
-    elif form == "praesentation":
-        (ERGEBNIS_DIR / f"{eid}.html").write_text(_folien_html(text, titel), encoding="utf-8")
-        ansicht = 1
-    elif form == "dokument":
-        from . import dokumente
-        (ERGEBNIS_DIR / f"{eid}.html").write_text(dokumente.zu_html(titel, text), encoding="utf-8")
-        ansicht = 1
+    ansicht = 1 if ansicht_html({"form": form, "titel": titel, "inhalt": text}) else 0
     db.anlegen("ergebnisse", {
         "id": eid, "vorgang_id": v["id"], "projekt_id": v.get("projekt_id"), "titel": titel, "form": form,
         "inhalt": text, "rolle": rid, "modell": modell,

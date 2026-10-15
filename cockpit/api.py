@@ -19,8 +19,8 @@ import httpx
 from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
-from . import anmeldung, db, gespraech, importer, llm, neo, stab, stimme
-from .konfig import (ALT_BACKEND, ALT_COCKPIT_URL, ERGEBNIS_DIR, SEARX, STATUS_URL, UPLOADS,
+from . import anmeldung, db, gespraech, importer, llm, neo, stab, stimme, teamchat
+from .konfig import (ALT_BACKEND, ALT_COCKPIT_URL, SEARX, STATUS_URL, UPLOADS,
                      VORSCHAU_DIR)
 
 router = APIRouter(prefix="/api")
@@ -543,8 +543,8 @@ async def ergebnis_datei(rid: str, format: str = "docx"):
         raise HTTPException(404, "Ergebnis nicht gefunden")
     fmt = format if format in dokumente.FORMATE else "docx"
     text = e.get("inhalt") or ""
-    if e.get("form") == "webseite" and fmt == "html" and (ERGEBNIS_DIR / f"{rid}.html").is_file():
-        roh = (ERGEBNIS_DIR / f"{rid}.html").read_bytes()
+    if e.get("form") == "webseite" and fmt == "html" and stab.ansicht_html(e):
+        roh = stab.ansicht_html(e).encode("utf-8")
     elif fmt == "docx":
         roh = dokumente.zu_docx(e["titel"], text)
     elif fmt == "pptx":
@@ -563,10 +563,11 @@ async def ergebnis_datei(rid: str, format: str = "docx"):
 
 @router.get("/ergebnisse/{rid}/ansicht")
 async def ergebnis_ansicht(rid: str):
-    p = ERGEBNIS_DIR / f"{rid}.html"
-    if not p.is_file():
+    e = db.holen("ergebnisse", rid)
+    h = stab.ansicht_html(e) if e else None
+    if not h:
         raise HTTPException(404, "Keine Ansicht zu diesem Ergebnis")
-    return Response(p.read_text(encoding="utf-8"), media_type="text/html; charset=utf-8", headers=SANDBOX)
+    return Response(h, media_type="text/html; charset=utf-8", headers=SANDBOX)
 
 
 # ================================================================ Gedaechtnis, Team, Einstellungen
@@ -608,7 +609,56 @@ async def team():
         m.pop("auftrag", None)
     lauf = stab.ZUSTAND.get("laeuft") or {}
     return {"team": mitglieder, "laeuft": lauf, "modelle": await llm.installierte_modelle(),
-            "neo_laeuft": any(not j["fertig"] for j in neo.JOBS.values())}
+            "neo_laeuft": any(not j["fertig"] for j in neo.JOBS.values()),
+            "externe": await teamchat.externe_liste()}
+
+
+# Eigener Praefix /teamchat statt /team/chat: GET /team/{rid} wuerde "chat"
+# sonst als Mitglied nehmen.
+@router.patch("/teamchat/extern/{xid}")
+async def extern_modell(xid: str, request: Request):
+    if xid not in teamchat.EXTERNE:
+        raise HTTPException(404, "Unbekannt")
+    d = await _koerper(request)
+    w = db.einstellung("extern_modelle", {}) or {}
+    w[xid] = str(d.get("modell") or "")[:80]
+    db.einstellung_setzen("extern_modelle", w)
+    return {"ok": True}
+
+
+@router.get("/teamchat")
+async def teamchat_liste(wer: str = "", ergebnis_id: str = ""):
+    return {"gespraeche": teamchat.gespraeche(wer or None, ergebnis_id or None)}
+
+
+@router.get("/teamchat/{gid}")
+async def teamchat_holen(gid: str):
+    g = db.holen("gespraeche", gid)
+    if not g or g["art"] != "team":
+        raise HTTPException(404, "Gespräch nicht gefunden")
+    return {"gespraech": g, "nachrichten": db.alle("SELECT * FROM nachrichten WHERE gespraech_id=? ORDER BY id", (gid,))}
+
+
+@router.delete("/teamchat/{gid}")
+async def teamchat_weg(gid: str):
+    # Nicht loeschen, nur aus der Liste nehmen -- wie beim Board.
+    db.ausfuehren("UPDATE gespraeche SET art='team-archiv' WHERE id=? AND art='team'", (gid,))
+    return {"ok": True}
+
+
+@router.post("/teamchat/senden")
+async def teamchat_senden(request: Request):
+    d = await _koerper(request)
+    text = str(d.get("text") or "").strip()
+    dateien = [str(x) for x in (d.get("dateien") or [])][:8]
+    if not text and not dateien:
+        raise HTTPException(400, "Es fehlt die Nachricht.")
+    kontext = {"projekt_id": d.get("projekt_id") or None, "ergebnis_id": d.get("ergebnis_id") or None}
+
+    async def strom():
+        async for e in teamchat.senden(d.get("gespraech_id"), str(d.get("wer") or ""), text or "(siehe Anhang)", dateien, kontext):
+            yield json.dumps(e, ensure_ascii=False) + "\n"
+    return StreamingResponse(strom(), media_type="application/x-ndjson")
 
 
 @router.get("/team/{rid}")

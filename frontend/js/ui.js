@@ -69,7 +69,8 @@ export function Icon({ n, g = 18, w = 1.9 }) {
 
 // ------------------------------------------------------------ Rollen
 export const ROLLEN_FARBE = { pmo: "#2C6BB3", cockpit: "#0b8f3e", stratege: "#C07C12", buch: "#7C3AED", kritiker: "#E0392B",
-  designer: "#D0458F", video: "#0E7490", du: "#1B3F6B", system: "#647388" };
+  designer: "#D0458F", video: "#0E7490", du: "#1B3F6B", system: "#647388",
+  dario: "#C2603F", elon: "#3F4A5A", demmis: "#3B6FD8" };
 export function Avatar({ wer, name, g = 28 }) {
   const n = (name || wer || "?").trim();
   return html`<span class="avatar" title=${n} style=${`background:${ROLLEN_FARBE[wer] || "#647388"};width:${g}px;height:${g}px;font-size:${Math.round(g * 0.4)}px`}>${n === "Du" ? "V" : n.slice(0, 1).toUpperCase()}</span>`;
@@ -122,7 +123,7 @@ export function Modal({ titel, zu, children, fuss, breit }) {
     return () => document.removeEventListener("keydown", k);
   }, [zu]);
   return html`<div class="modal-grund" onMouseDown=${(e) => { if (e.target === e.currentTarget) zu(); }}>
-    <div class=${"modal" + (breit ? " breit" : "")} role="dialog" aria-modal="true" aria-label=${titel}>
+    <div class=${"modal" + (breit ? " breit" : "") + (breit === "voll" ? " voll" : "")} role="dialog" aria-modal="true" aria-label=${titel}>
       <div class="modal-kopf"><h2>${titel}</h2><button class="btn geist icon" onClick=${zu} title="Schließen (Esc)"><${Icon} n="x" /></button></div>
       <div class="modal-inhalt">${children}</div>
       ${fuss && html`<div class="modal-fuss">${fuss}</div>`}
@@ -244,7 +245,8 @@ export function StandPill({ stand }) {
 }
 
 export const ROLLEN_NAME = { pmo: "Jason", cockpit: "Neo", stratege: "Clayton", buch: "Neal", kritiker: "Daniel",
-  designer: "Annie", video: "Ridley", du: "Du", system: "Cockpit" };
+  designer: "Annie", video: "Ridley", du: "Du", system: "Cockpit",
+  dario: "Dario", elon: "Elon", demmis: "Demmis" };
 export const rolleName = (id) => ROLLEN_NAME[id] || id || "Team";
 
 export const ROLLEN_WAHL =[["stratege", "Clayton · Strategie, Konzepte"], ["buch", "Neal · Texte, Artikel, Bücher"],

@@ -269,7 +269,7 @@ function App() {
         ${r.bereich === "briefing" && html`<${Briefing} lage=${lage} />`}
         ${r.bereich === "inbox" && html`<${Inbox} id=${r.id} />`}
         ${r.bereich === "projects" && html`<${Projects} id=${r.id} rest=${r.rest} />`}
-        ${r.bereich === "team" && html`<${Team} id=${r.id} />`}
+        ${r.bereich === "team" && html`<${Team} id=${r.id} rest=${r.rest} />`}
         ${r.bereich === "system" && html`<${System} konto=${konto} thema=${thema} gesundheit=${lage && lage.gesundheit} />`}
         ${r.bereich === "neo" && html`<${Neo} id=${r.id} />`}
         ${r.bereich === "board" && html`<${Board} id=${r.id} />`}

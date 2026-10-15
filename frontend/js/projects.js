@@ -6,6 +6,7 @@ import { html, enterBestaetigt, useState, useEffect, useRef, Icon, Avatar, Leer,
 import { api, hochladen } from "./api.js";
 import { Zeitplan, Struktur } from "./projektansichten.js";
 import { Ausarbeiten } from "./inbox.js";
+import { TeamChat, gespraechsPartner } from "./teamchat.js";
 
 const FARBEN = ["#2C6BB3", "#0E9377", "#C07C12", "#E0392B", "#7C3AED", "#D0458F", "#0E7490", "#647388"];
 
@@ -263,32 +264,68 @@ function ErgebnisZeile({ r }) {
   </div>`;
 }
 
+// Das Ergebnisfenster. Rechts "Weiterarbeiten": dasselbe Gespraech wie unter
+// Team (teamchat.js), mit dem Ergebnis im Kontext -- Anweisungen geben,
+// Unterlagen anhaengen, diktieren. Eine neue Fassung ersetzt links den Text.
 export function ErgebnisAnsicht({ id, zu }) {
   const [e, setE] = useState(null);
   const [ansicht, setAnsicht] = useState(false);
-  useEffect(() => { api("/ergebnisse/" + id).then((x) => { setE(x); setAnsicht(!!x.ansicht); }).catch((x) => { fehlerMelden(x); zu(); }); }, [id]);
+  const [stand, setStand] = useState(0);          // zaehlt Fassungen hoch, damit die Ansicht neu laedt
+  const [team, setTeam] = useState(null);
+  const [wer, setWer] = useState("");
+  const [gid, setGid] = useState(null);
+  const [chatAuf, setChatAuf] = useState(() => { try { return localStorage.getItem("erg-chat") !== "0"; } catch (x) { return true; } });
+  const laden = () => api("/ergebnisse/" + id).then((x) => { setE(x); return x; });
+  useEffect(() => {
+    laden().then((x) => { setAnsicht(!!x.ansicht); setWer((w) => w || x.rolle || "buch"); }).catch((x) => { fehlerMelden(x); zu(); });
+    api("/team").then(setTeam).catch(() => {});
+  }, [id]);
+  // Das letzte Gespraech zu diesem Ergebnis mit dieser Person wieder aufnehmen.
+  useEffect(() => {
+    if (!wer) return;
+    api(`/teamchat?wer=${encodeURIComponent(wer)}&ergebnis_id=${encodeURIComponent(id)}`)
+      .then((x) => setGid(x.gespraeche[0] ? x.gespraeche[0].id : null)).catch(() => setGid(null));
+  }, [wer, id]);
+  useEffect(() => { try { localStorage.setItem("erg-chat", chatAuf ? "1" : "0"); } catch (x) { /* egal */ } }, [chatAuf]);
   if (!e) return html`<${Modal} titel="Ergebnis" zu=${zu}><div class="lade">Lade …</div><//>`;
   const p = e.pruefung || {};
-  return html`<${Modal} titel=${e.titel} zu=${zu} breit=${true} fuss=${html`
+  const partner = gespraechsPartner(team);
+  const fassungNeu = () => { laden().then(() => setStand((n) => n + 1)); aktualisieren(); };
+  return html`<${Modal} titel=${e.titel} zu=${zu} breit=${chatAuf ? "voll" : true} fuss=${html`
       <a class="btn" href=${"/api/ergebnisse/" + e.id + "/datei?format=docx"} download><${Icon} n="download" g=${15} />Word</a>
       ${e.form === "praesentation" && html`<a class="btn" href=${"/api/ergebnisse/" + e.id + "/datei?format=pptx"} download><${Icon} n="download" g=${15} />PowerPoint</a>`}
       <button class="btn" onClick=${async () => { if (await kopieren(e.inhalt)) toast("Kopiert."); }}><${Icon} n="kopie" g=${15} />Kopieren</button>
-      <button class="btn" onClick=${() => { zu(); bus.sende("talk-oeffnen", { kontext: { art: "ergebnis", id: e.id, titel: e.titel } }); }}><${Icon} n="talk" g=${15} />Besprechen</button>
+      <button class=${"btn" + (chatAuf ? " an" : "")} onClick=${() => setChatAuf(!chatAuf)}><${Icon} n="chat" g=${15} />${chatAuf ? "Weiterarbeiten ausblenden" : "Weiterarbeiten"}</button>
       ${e.vorgang_id && html`<a class="btn" href=${"#/inbox/" + e.vorgang_id} onClick=${zu}>Zum Case</a>`}
       <button class="btn primaer" onClick=${zu}>Schließen</button>`}>
-    <div class="knopfreihe" style="margin-bottom:10px">
-      <${Avatar} wer=${e.rolle} name=${e.wer_name} g=${24} /><b>${e.wer_name}</b><span class="leise klein">${e.form} · ${e.modell} · ${zeitText(e.erstellt)}</span>
-      ${p.urteil && html`<span class=${"pill " + (p.urteil === "tragfaehig" ? "gruen" : "gelb")}>Daniel: ${p.urteil === "tragfaehig" ? "trägt" : p.urteil}</span>`}
-      ${e.ansicht ? html`<div class="segment" style="margin-left:auto"><button class=${ansicht ? "an" : ""} onClick=${() => setAnsicht(true)}>Ansicht</button>
-        <button class=${!ansicht ? "an" : ""} onClick=${() => setAnsicht(false)}>Text</button></div>` : ""}
+    <div class=${"erg-raster" + (chatAuf ? " mit-chat" : "")}>
+      <div class="erg-text">
+        <div class="knopfreihe" style="margin-bottom:10px">
+          <${Avatar} wer=${e.rolle} name=${e.wer_name} g=${24} /><b>${e.wer_name}</b><span class="leise klein">${e.form} · ${e.modell} · ${zeitText(e.erstellt)}</span>
+          ${p.urteil && html`<span class=${"pill " + (p.urteil === "tragfaehig" ? "gruen" : "gelb")}>Daniel: ${p.urteil === "tragfaehig" ? "trägt" : p.urteil}</span>`}
+          ${e.ansicht ? html`<div class="segment" style="margin-left:auto"><button class=${ansicht ? "an" : ""} onClick=${() => setAnsicht(true)}>Ansicht</button>
+            <button class=${!ansicht ? "an" : ""} onClick=${() => setAnsicht(false)}>Text</button></div>` : ""}
+        </div>
+        ${p.begruendung && html`<div class="hinweisbox" style="margin-bottom:12px"><b>Prüfung:</b> ${p.begruendung}
+          ${(p.maengel || []).length > 0 && html`<ul style="margin:4px 0 0;padding-left:18px">${p.maengel.map((m) => html`<li>${m}</li>`)}</ul>`}</div>`}
+        ${ansicht ? html`<div class="ergebnis-ansicht"><iframe key=${stand} src=${"/api/ergebnisse/" + e.id + "/ansicht?v=" + stand} sandbox="allow-scripts allow-forms allow-popups" title=${e.titel}></iframe>
+            <a class="btn klein" style="margin-top:6px" href=${"/api/ergebnisse/" + e.id + "/ansicht"} target="_blank" rel="noopener"><${Icon} n="extern" g=${14} />In neuem Tab öffnen</a></div>`
+          : html`<${Md} text=${e.inhalt} />`}
+        ${(e.quellen || []).length > 0 && html`<details style="margin-top:14px"><summary class="klein" style="cursor:pointer">${e.quellen.length} Quellen</summary>
+          <ol class="klein">${e.quellen.map((q) => html`<li><a href=${q.url} target="_blank" rel="noopener">${q.titel || q.url}</a></li>`)}</ol></details>`}
+      </div>
+      ${chatAuf && html`<div class="erg-chat">
+        <div class="erg-chat-kopf"><b>Weiterarbeiten mit</b>
+          <select class="eingabe bd-auswahl" value=${wer} onChange=${(x) => setWer(x.target.value)} aria-label="Mit wem weiterarbeiten">
+            ${partner.length ? partner.map((m) => html`<option value=${m.id}>${m.name} · ${m.extern ? "extern, kostet Geld" : m.titel}</option>`)
+              : html`<option value=${wer}>${rolleName(wer)}</option>`}</select>
+          ${gid && html`<button class="btn klein geist" onClick=${() => setGid(null)} title="Neues Gespräch zu diesem Ergebnis"><${Icon} n="neu" g=${13} />Neu</button>`}</div>
+        ${team ? html`<${TeamChat} key=${wer + ":" + (gid || "neu")} wer=${wer} partnerListe=${partner} gid=${gid} ergebnisId=${e.id}
+            projektId=${e.projekt_id || ""} beiFassung=${fassungNeu} beiGespraech=${setGid}
+            leerText="Sag, was sich ändern soll: kürzen, erweitern, Ton ändern, ein weiteres Kapitel, Quellen einarbeiten. Unterlagen über das Plus anhängen. Jede neue Fassung prüft Daniel, und du kannst sie zurücknehmen." />`
+          : html`<div class="lade">Lade …</div>`}
+      </div>`}
     </div>
-    ${p.begruendung && html`<div class="hinweisbox" style="margin-bottom:12px"><b>Prüfung:</b> ${p.begruendung}
-      ${(p.maengel || []).length > 0 && html`<ul style="margin:4px 0 0;padding-left:18px">${p.maengel.map((m) => html`<li>${m}</li>`)}</ul>`}</div>`}
-    ${ansicht ? html`<div class="ergebnis-ansicht"><iframe src=${"/api/ergebnisse/" + e.id + "/ansicht"} sandbox="allow-scripts allow-forms allow-popups" title=${e.titel}></iframe>
-        <a class="btn klein" style="margin-top:6px" href=${"/api/ergebnisse/" + e.id + "/ansicht"} target="_blank" rel="noopener"><${Icon} n="extern" g=${14} />In neuem Tab öffnen</a></div>`
-      : html`<${Md} text=${e.inhalt} />`}
-    ${(e.quellen || []).length > 0 && html`<details style="margin-top:14px"><summary class="klein" style="cursor:pointer">${e.quellen.length} Quellen</summary>
-      <ol class="klein">${e.quellen.map((q) => html`<li><a href=${q.url} target="_blank" rel="noopener">${q.titel || q.url}</a></li>`)}</ol></details>`}
   <//>`;
 }
 
