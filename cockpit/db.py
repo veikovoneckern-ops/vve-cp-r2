@@ -106,6 +106,9 @@ NACHRUESTEN = [
     ("aufgaben", "eltern_id", "TEXT"),
     ("aufgaben", "sortierung", "INTEGER DEFAULT 0"),
     ("aufgaben", "start", "TEXT"),
+    # E-Mails ans Cockpit (15.10.2026): Message-ID, damit eine Mail nie doppelt
+    # zum Vorgang wird -- auch wenn der Dienst zwischen Lesen und Markieren ausfaellt.
+    ("notizen", "mail_id", "TEXT"),
 ]
 with _lock:
     for _tab, _spalte, _typ in NACHRUESTEN:

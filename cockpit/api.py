@@ -7,6 +7,7 @@ ganzen Zustand. Damit gibt es keine Konflikte zwischen zwei Geraeten.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import mimetypes
 import re
@@ -681,9 +682,22 @@ async def team_aendern(rid: str, request: Request):
     return r
 
 
+@router.post("/postfach/abrufen")
+async def postfach_abrufen():
+    """'Jetzt abrufen' im Cockpit: nicht bis zum naechsten Takt warten."""
+    from . import postfach
+    if not postfach.eingerichtet():
+        raise HTTPException(409, "Das Postfach ist noch nicht eingerichtet.")
+    neu = await asyncio.to_thread(postfach.abrufen)
+    if neu:
+        stab.wecken()
+    return {"neu": neu, **postfach.stand()}
+
+
 @router.get("/einstellungen")
 async def einstellungen():
-    return {"vertrauen": stab.vertrauen(), "stab_aktiv": stab.stab_aktiv(),
+    from . import postfach
+    return {"postfach": postfach.stand(), "vertrauen": stab.vertrauen(), "stab_aktiv": stab.stab_aktiv(),
             "stab_ab": db.einstellung("stab_ab"), "letzter_abgleich": db.einstellung("letzter_abgleich"),
             "alt_cockpit": ALT_COCKPIT_URL, "leiste": db.einstellung("leiste", [])}
 

@@ -346,7 +346,7 @@ export function NotizAnsicht({ id, zu }) {
         : html`<button class="btn" onClick=${anStab}><${Icon} n="team" g=${15} />Vom Team bearbeiten lassen</button>`}
       <button class="btn primaer" onClick=${zu}>Schließen</button>`}>
     <div class="knopfreihe" style="margin-bottom:10px">
-      <span class="leise klein">${n.quelle === "plaud" ? "Plaud" : "Notiz"} · ${n.datum || zeitText(n.erstellt)}</span>
+      <span class="leise klein">${n.quelle === "plaud" ? "Plaud" : n.quelle === "mail" ? "E-Mail" : "Notiz"} ·${n.datum || zeitText(n.erstellt)}</span>
       <select class="eingabe" style="width:auto;margin-left:auto" value=${n.projekt_id || ""} aria-label="Projekt"
         onChange=${async (e) => { try { await api("/notizen/" + id, { methode: "PATCH", daten: { projekt_id: e.target.value || null } }); toast("Zugeordnet."); aktualisieren(); } catch (x) { fehlerMelden(x); } }}>
         <option value="">ohne Projekt</option>${projekte.map((p) => html`<option value=${p.id}>${p.name}</option>`)}</select>

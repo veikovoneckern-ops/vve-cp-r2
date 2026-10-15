@@ -148,6 +148,29 @@ function Gedaechtnis() {
   </div>`;
 }
 
+// E-Mails ans Cockpit: nur anzeigen, nicht einstellen. Zugangsdaten gehoeren in
+// die Konfiguration auf dem Server, nie in den Browser (postfach.py).
+function PostfachZeile({ p, nachher }) {
+  const [laeuft, setLaeuft] = useState(false);
+  if (!p) return "";
+  async function abrufen() {
+    setLaeuft(true);
+    try { const r = await api("/postfach/abrufen", { methode: "POST" }); toast(r.neu ? `${r.neu} Mail(s) ans Team übergeben.` : r.letzter_fehler ? "Abruf gescheitert: " + r.letzter_fehler : "Keine neue Mail."); nachher(); }
+    catch (e) { fehlerMelden(e); }
+    setLaeuft(false);
+  }
+  return html`<div class="zeile" style="flex-wrap:wrap"><div class="haupt-text"><b>E-Mails ans Cockpit</b>
+      <div class="leise klein">${!p.eingerichtet ? "noch nicht eingerichtet. Die Zugangsdaten kommen in die Konfiguration auf dem Server."
+        : html`An <b>${p.adresse}</b> schreiben, Jason bearbeitet die Mail wie eine Plaud-Notiz. Angenommen nur von: ${p.erlaubt.length ? p.erlaubt.join(", ") : html`<b>niemandem (Liste leer)</b>`}.
+          ${p.letzter_abruf ? ` Zuletzt abgerufen ${zeitText(p.letzter_abruf)}.` : " Noch nicht abgerufen."}`}</div>
+      ${p.letzter_fehler && html`<div class="klein" style="color:var(--rot)">Abruf gescheitert: ${p.letzter_fehler}</div>`}
+      ${(p.abgewiesen || []).length > 0 && html`<details class="klein" style="margin-top:4px"><summary style="cursor:pointer">${p.abgewiesen.length} abgewiesen</summary>
+        ${p.abgewiesen.slice().reverse().map((a) => html`<div class="leise">${zeitText(a.zeit)} · ${a.von || "?"} · „${a.betreff}“ · ${a.grund}</div>`)}</details>`}</div>
+    ${p.eingerichtet ? html`<button class="btn klein" disabled=${laeuft} onClick=${abrufen}><${Icon} n="inbox" g=${14} />${laeuft ? "Ruft ab …" : "Jetzt abrufen"}</button>`
+      : html`<span class="pill">aus</span>`}
+  </div>`;
+}
+
 const STUFEN = [
   ["zuordnen", "Notiz einem bestehenden Projekt zuordnen", "Häufigster Fall, leicht zu korrigieren"],
   ["aufgaben", "Aufgaben für dich aus einer Notiz anlegen", "Das, was bisher am verlässlichsten klappte"],
@@ -179,6 +202,7 @@ function Vertrauen() {
         <div class="leise klein">${d.stab_aktiv ? `an, für Notizen seit ${new Date(d.stab_ab * 1000).toLocaleString("de-DE")}` : "aus. Notizen kommen trotzdem herein, nur ohne Einordnung."}</div></div>
         <div class="segment"><button class=${d.stab_aktiv ? "an" : ""} onClick=${() => setzen({ stab_aktiv: true })}>an</button>
           <button class=${!d.stab_aktiv ? "an" : ""} onClick=${() => setzen({ stab_aktiv: false })}>aus</button></div></div>
+      <${PostfachZeile} p=${d.postfach} nachher=${laden} />
       <div class="hinweisbox" style="margin-top:12px">Das alte Cockpit läuft parallel weiter und bearbeitet dieselben Notizen mit seiner eigenen Pipeline. Beide schreiben in getrennte Ablagen, nichts wird überschrieben. Wenn du ganz umsteigst, schaltest du im alten Cockpit unter Setup Settings die automatische Verarbeitung aus.</div>
     </section>
   </div>`;

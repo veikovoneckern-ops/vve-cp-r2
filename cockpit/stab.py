@@ -894,6 +894,13 @@ async def durchgang() -> dict[str, Any]:
             bericht["plaud_neu"] = plaud_scannen()
         except Exception as e:  # noqa: BLE001 -- ein kaputter Abruf darf den Rest nicht stoppen
             bericht["fehler"].append(f"Plaud: {e}")
+        from . import postfach
+        if postfach.faellig():
+            try:
+                # imaplib blockiert -- im Thread, sonst stuende der ganze Dienst still.
+                bericht["mail_neu"] = await asyncio.to_thread(postfach.abrufen)
+            except Exception as e:  # noqa: BLE001
+                bericht["fehler"].append(f"Postfach: {e}")
         for v in db.alle("SELECT * FROM vorgaenge WHERE stand='neu' AND versuche<3 ORDER BY erstellt LIMIT 4"):
             try:
                 await einordnen(v)
