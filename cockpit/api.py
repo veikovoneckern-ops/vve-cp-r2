@@ -548,7 +548,36 @@ async def ergebnis(rid: str):
     if not e:
         raise HTTPException(404, "Ergebnis nicht gefunden")
     e["wer_name"] = stab.rollen_name(e["rolle"])
+    from . import video
+    e["video"] = video.stand(e)
+    if e["video"]:
+        e["video"].pop("drehbuch", None)
     return e
+
+
+@router.post("/ergebnisse/{rid}/video")
+async def ergebnis_video_starten(rid: str):
+    """Video (neu) rechnen -- nach einem Abbruch oder nach einem ueberarbeiteten Drehbuch."""
+    from . import video
+    if not db.holen("ergebnisse", rid):
+        raise HTTPException(404, "Ergebnis nicht gefunden")
+    if not video.starten(rid):
+        raise HTTPException(409, "Läuft schon, oder im Ergebnis steht kein lesbares Drehbuch (```json mit szenen).")
+    return {"ok": True}
+
+
+@router.get("/ergebnisse/{rid}/video")
+async def ergebnis_video(rid: str, download: int = 0):
+    from . import video
+    p = video.datei(rid)
+    if not re.fullmatch(r"r[0-9a-f]{10}", rid) or not p.is_file():
+        raise HTTPException(404, "Kein Video zu diesem Ergebnis")
+    kopf = {"X-Content-Type-Options": "nosniff"}
+    if download:
+        e = db.holen("ergebnisse", rid) or {}
+        from . import dokumente
+        return FileResponse(p, media_type="video/mp4", filename=dokumente.dateiname(e.get("titel") or "Video", "mp4"), headers=kopf)
+    return FileResponse(p, media_type="video/mp4", headers=kopf)
 
 
 @router.get("/ergebnisse/{rid}/datei")

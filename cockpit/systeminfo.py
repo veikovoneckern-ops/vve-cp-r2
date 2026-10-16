@@ -634,6 +634,11 @@ async def taetigkeit(gpu_last: float, geladen: list[str]) -> dict[str, Any]:
     for j in list(medien.JOBS.values()):
         if j.get("stand") == "laeuft":
             zeilen.append(f"Bild/Visualisierung „{j.get('titel') or ''}“ entsteht · {_dauer(j.get('start'))}")
+    from . import video
+    for eid in list(video.LAUFEND):
+        e = db.holen("ergebnisse", eid) or {}
+        vs = video.stand(e) or {}
+        zeilen.append(f"Video „{e.get('titel') or eid}“: {vs.get('schritt') or 'rechnet'} · {_dauer(vs.get('start'))}")
     fremd = await _fremd_taetig()
     zeilen += fremd
     cpu = await _prozessor_spitze()

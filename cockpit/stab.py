@@ -31,7 +31,7 @@ from typing import Any
 
 import httpx
 
-from . import db, llm
+from . import db, llm, video
 from .konfig import (ERGEBNIS_DIR, MODELL_ARBEIT, MODELL_STAB, PLAUD_DIR, SEARX,
                      STAB_TAKT_SEK)
 
@@ -66,7 +66,7 @@ AUSARBEITUNG_RE = re.compile(
     re.IGNORECASE)
 
 ROLLEN_FUER_ARBEIT = ("stratege", "buch", "designer", "video", "cockpit", "pmo")
-FORMEN = ("text", "aufstellung", "konzept", "dokument", "webseite", "praesentation")
+FORMEN = ("text", "aufstellung", "konzept", "dokument", "webseite", "praesentation", "video")
 FORM_ANWEISUNG = {
     "text": "Liefere einen fertigen, gut lesbaren Text in Markdown.",
     "aufstellung": "Liefere eine Aufstellung als Markdown-Tabelle oder gegliederte Liste. Jede Zeile mit Quelle, wo es eine gibt.",
@@ -74,6 +74,8 @@ FORM_ANWEISUNG = {
     "webseite": "Liefere eine vollstaendige, eigenstaendige HTML-Seite (inline CSS, kein externes Skript) in EINEM ```html-Block. Davor zwei Saetze, was die Seite zeigt.",
     "dokument": "Liefere ein vollständiges, gegliedertes Dokument in Markdown (Titel mit #, Abschnitte mit ##, Listen, Tabellen wo sinnvoll). Es wird als Word-Datei ausgegeben -- schreib es so, dass man es direkt weitergeben kann.",
     "praesentation": "Liefere Folien in Markdown. Trenne Folien mit einer Zeile, die nur '---' enthaelt. Jede Folie: '# Titel' und hoechstens fuenf Stichpunkte.",
+    # Aus dem Drehbuch rechnet video.py danach ein echtes Video (16.10.2026).
+    "video": video.DREHBUCH_ANWEISUNG,
 }
 
 # ---------------------------------------------------------------- Zustand
@@ -282,7 +284,7 @@ Antworte AUSSCHLIESSLICH mit einem JSON-Objekt in genau dieser Form:
  "projekt_id": "eine id aus der Projektliste oder null",
  "projekt_neu": "kurzer Name für ein neues Projekt oder null",
  "aufgaben": [{"titel": "konkrete Handlung für Veiko", "projekt_id": "id aus der Liste oder null"}],
- "ausarbeitung": null oder {"rolle": "stratege|buch|designer|video|cockpit", "form": "text|aufstellung|konzept|webseite|praesentation", "auftrag": "was genau erarbeitet werden soll", "recherche": "Suchanfrage oder null"},
+ "ausarbeitung": null oder {"rolle": "stratege|buch|designer|video|cockpit", "form": "text|aufstellung|konzept|webseite|praesentation|video", "auftrag": "was genau erarbeitet werden soll", "recherche": "Suchanfrage oder null"},
  "rueckfrage": "eine Frage an Veiko oder null",
  "gedaechtnis": [{"art": "person|organisation|begriff", "begriff": "...", "bedeutung": "..."}]
 }
@@ -292,7 +294,7 @@ Regeln:
 - projekt_id nur aus der Liste. Nutze das GEDÄCHTNIS, um Personen und Begriffe zuzuordnen.
 - projekt_neu nur, wenn die Notiz ausdrücklich ein neues Projekt verlangt oder klar ein neues, eigenständiges Vorhaben beschreibt, das in kein bestehendes passt.
 - aufgaben: nur Handlungen, die Veiko SELBST erledigen will ("ich muss", "ich will", "nicht vergessen"). Eine je Anliegen, kurz, im Imperativ. Höchstens 6. Jede Aufgabe bekommt ihr eigenes passendes Projekt (projekt_id), eine Notiz kann mehrere Projekte betreffen. Keine Aufgabe über das Anlegen oder Zuordnen eines Projekts.
-- ausarbeitung: nur für das, worum Veiko den STAB ausdrücklich bittet ("such mir raus", "arbeite aus", "mach mir einen Entwurf", "stell zusammen", "recherchiere"). Was er selbst tun muss, ist eine Aufgabe, keine Ausarbeitung. Sonst null. stratege = Recherchen, Aufstellungen, Strategie, Konzepte; buch = Texte, Artikel, Bücher, Mails; designer = Bilder und Gestaltung; video = Video; cockpit = das Cockpit oder Software. recherche = eine knappe Suchanfrage, wenn Fakten aus dem Internet nötig sind.
+- ausarbeitung: nur für das, worum Veiko den STAB ausdrücklich bittet ("such mir raus", "arbeite aus", "mach mir einen Entwurf", "stell zusammen", "recherchiere"). Was er selbst tun muss, ist eine Aufgabe, keine Ausarbeitung. Sonst null. stratege = Recherchen, Aufstellungen, Strategie, Konzepte; buch = Texte, Artikel, Bücher, Mails; designer = Bilder und Gestaltung; video = Video (dann form video: es entsteht ein echtes Erklärvideo mit Sprecherstimme); cockpit = das Cockpit oder Software. recherche = eine knappe Suchanfrage, wenn Fakten aus dem Internet nötig sind.
 
 BEISPIEL
 Notiz: "Ich muss morgen den Quartalsbericht abgeben und Papa anrufen. Such mir raus, welche Hotels in Hamburg Tagungsräume haben."
@@ -860,7 +862,17 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
             break
     if llm.fremdschrift(entwurf):
         pruefung.setdefault("maengel", []).append("Enthält fremde Schriftzeichen.")
-    ergebnis_speichern(v, a, entwurf, rid, modell, quellen, pruefung)
+    eid = ergebnis_speichern(v, a, entwurf, rid, modell, quellen, pruefung)
+    if form == "video":
+        # Das Drehbuch ist das Ergebnis, das Video rechnet im Hintergrund weiter
+        # (eine Minute sind ~12 Szenen zu je einigen Minuten). Ohne lesbares
+        # Drehbuch steht das am Case statt still nichts zu tun.
+        db_ = video.drehbuch_aus(entwurf)
+        if db_ and video.starten(eid, db_):
+            db.ereignis(vid, rid, "info", f"Video wird gerechnet: {len(db_['szenen'])} Szenen. Es erscheint am Ergebnis, sobald es fertig ist.")
+        else:
+            db.ereignis(vid, rid, "fehler", "Das Drehbuch enthielt keinen lesbaren Szenen-Block -- kein Video gestartet. "
+                                             "Im Ergebnisfenster lässt es sich mit Ridley nachbessern.")
     _auftrag_erledigt(vid)
     if pruefung.get("urteil") == "rueckfrage" and pruefung.get("frage"):
         entscheidung_anlegen(vid, "rueckfrage", _kurz(pruefung["frage"], 400), {}, wer="kritiker")

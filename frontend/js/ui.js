@@ -252,7 +252,7 @@ export const rolleName = (id) => ROLLEN_NAME[id] || id || "Team";
 export const ROLLEN_WAHL =[["stratege", "Clayton · Strategie, Konzepte"], ["buch", "Neal · Texte, Artikel, Bücher"],
   ["designer", "Annie · Gestaltung, Bild-Prompts"], ["video", "Ridley · Video, Storyboard"], ["pmo", "Jason · Planung, Überblick"]];
 export const FORM_WAHL = [["dokument", "Dokument (Word)"], ["text", "Text"], ["aufstellung", "Aufstellung / Liste"], ["konzept", "Konzept"],
-  ["praesentation", "Präsentation"], ["webseite", "Webseite"]];
+  ["praesentation", "Präsentation"], ["webseite", "Webseite"], ["video", "Erklärvideo mit Sprecher (rechnet lange)"]];
 
 // ------------------------------------------------------------ Hinweise beim Ueberfahren
 // Ein Baustein fuer das ganze Cockpit (Veiko, 01.10.: "beim Drueberfahren die

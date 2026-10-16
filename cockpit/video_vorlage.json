@@ -1,0 +1,233 @@
+{
+ "id": "hunyuan",
+ "name": "HunyuanVideo 1.5",
+ "art": "video",
+ "modell": "hunyuanvideo1.5_720p_t2v_fp16.safetensors",
+ "quelle": "Video-Workflow",
+ "knoten": {
+  "prompt": "44",
+  "negativ": "93",
+  "groesse": "124",
+  "seed": "129",
+  "speichern": "102",
+  "seedFeld": "noise_seed"
+ },
+ "groesseAuch": [],
+ "vorgabe": {
+  "breite": 480,
+  "hoehe": 848,
+  "laenge": 33
+ },
+ "graph": {
+  "8": {
+   "class_type": "VAEDecode",
+   "inputs": {
+    "samples": [
+     "127",
+     0
+    ],
+    "vae": [
+     "10",
+     0
+    ]
+   },
+   "_meta": {
+    "title": "VAEDecode"
+   }
+  },
+  "10": {
+   "class_type": "VAELoader",
+   "inputs": {
+    "vae_name": "hunyuanvideo15_vae_fp16.safetensors"
+   },
+   "_meta": {
+    "title": "VAELoader"
+   }
+  },
+  "11": {
+   "class_type": "DualCLIPLoader",
+   "inputs": {
+    "clip_name1": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+    "clip_name2": "byt5_small_glyphxl_fp16.safetensors",
+    "type": "hunyuan_video_15",
+    "device": "default"
+   },
+   "_meta": {
+    "title": "DualCLIPLoader"
+   }
+  },
+  "12": {
+   "class_type": "UNETLoader",
+   "inputs": {
+    "unet_name": "hunyuanvideo1.5_720p_t2v_fp16.safetensors",
+    "weight_dtype": "default"
+   },
+   "_meta": {
+    "title": "UNETLoader"
+   }
+  },
+  "44": {
+   "class_type": "CLIPTextEncode",
+   "inputs": {
+    "clip": [
+     "11",
+     0
+    ],
+    "text": ""
+   },
+   "_meta": {
+    "title": "CLIP Text Encode (Positive Prompt)"
+   }
+  },
+  "93": {
+   "class_type": "CLIPTextEncode",
+   "inputs": {
+    "clip": [
+     "11",
+     0
+    ],
+    "text": ""
+   },
+   "_meta": {
+    "title": "CLIP Text Encode (Negative Prompt)"
+   }
+  },
+  "101": {
+   "class_type": "CreateVideo",
+   "inputs": {
+    "images": [
+     "8",
+     0
+    ],
+    "fps": 24,
+    "bit_depth": 8
+   },
+   "_meta": {
+    "title": "CreateVideo"
+   }
+  },
+  "102": {
+   "class_type": "SaveVideo",
+   "inputs": {
+    "video": [
+     "101",
+     0
+    ],
+    "filename_prefix": "video/hunyuan_video_1.5",
+    "format": "auto",
+    "codec": "h264",
+    "codec.encoding": "auto"
+   },
+   "_meta": {
+    "title": "SaveVideo"
+   }
+  },
+  "124": {
+   "class_type": "EmptyHunyuanVideo15Latent",
+   "inputs": {
+    "width": 480,
+    "height": 848,
+    "length": 33,
+    "batch_size": 1
+   },
+   "_meta": {
+    "title": "EmptyHunyuanVideo15Latent"
+   }
+  },
+  "127": {
+   "class_type": "SamplerCustomAdvanced",
+   "inputs": {
+    "noise": [
+     "129",
+     0
+    ],
+    "guider": [
+     "131",
+     0
+    ],
+    "sampler": [
+     "130",
+     0
+    ],
+    "sigmas": [
+     "128",
+     0
+    ],
+    "latent_image": [
+     "124",
+     0
+    ]
+   },
+   "_meta": {
+    "title": "SamplerCustomAdvanced"
+   }
+  },
+  "128": {
+   "class_type": "BasicScheduler",
+   "inputs": {
+    "model": [
+     "12",
+     0
+    ],
+    "scheduler": "simple",
+    "steps": 20,
+    "denoise": 1
+   },
+   "_meta": {
+    "title": "BasicScheduler"
+   }
+  },
+  "129": {
+   "class_type": "RandomNoise",
+   "inputs": {
+    "noise_seed": 887963123424675
+   },
+   "_meta": {
+    "title": "RandomNoise"
+   }
+  },
+  "130": {
+   "class_type": "KSamplerSelect",
+   "inputs": {
+    "sampler_name": "euler"
+   },
+   "_meta": {
+    "title": "KSamplerSelect"
+   }
+  },
+  "131": {
+   "class_type": "CFGGuider",
+   "inputs": {
+    "model": [
+     "132",
+     0
+    ],
+    "positive": [
+     "44",
+     0
+    ],
+    "negative": [
+     "93",
+     0
+    ],
+    "cfg": 6
+   },
+   "_meta": {
+    "title": "CFGGuider"
+   }
+  },
+  "132": {
+   "class_type": "ModelSamplingSD3",
+   "inputs": {
+    "model": [
+     "12",
+     0
+    ],
+    "shift": 7
+   },
+   "_meta": {
+    "title": "ModelSamplingSD3"
+   }
+  }
+ }
+}

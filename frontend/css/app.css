@@ -1060,3 +1060,9 @@ a.bd-person-haupt{text-decoration:none}
 .taetigkeit-zeile:last-child{color:var(--ink-3)}
 @keyframes taet-puls{50%{opacity:.35}}
 @media (prefers-reduced-motion:reduce){.taetigkeit.arbeitet .taetigkeit-kopf i{animation:none}}
+
+/* Erklaervideo am Ergebnis (projects.js VideoBlock, 16.10.) */
+.video-block{margin-bottom:12px}
+.video-block video{width:100%;max-height:60vh;border-radius:10px;background:#000;display:block}
+.video-balken{height:6px;border-radius:3px;background:var(--line);margin:8px 0 6px;overflow:hidden}
+.video-balken i{display:block;height:100%;background:var(--violett);transition:width .4s}
