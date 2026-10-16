@@ -550,6 +550,39 @@ def _dauer(seit: float | None) -> str:
     return f"seit {s} s" if s < 90 else f"seit {s // 60} Min."
 
 
+_NAMEN = {"llama-server": "Ollama (Modell)", "ollama": "Ollama", "python3": "Python", "python": "Python",
+          "apt": "Paketverwaltung", "apt-get": "Paketverwaltung", "dpkg": "Paketverwaltung", "rclone": "Sicherung (rclone)",
+          "tar": "Sicherung (tar)", "docker": "Docker", "node": "Node"}
+
+
+async def _prozessor_spitze() -> list[dict[str, Any]]:
+    """Die groessten Prozessorverbraucher JETZT (Veiko, 16.10.: "der Minisforum
+    laeuft laut, aber die Anzeige sagt, es laeuft nichts" -- sie sah nur die
+    Grafikkarten). top misst im ZWEITEN Durchgang ueber ein halbe Sekunde; der
+    erste Durchgang zeigt Durchschnitte seit Prozessstart und luegt. 10 s gemerkt."""
+    gemerkt = _gemerkt("prozessor_spitze", 10)
+    if gemerkt is not None:
+        return gemerkt
+    try:
+        p = await asyncio.create_subprocess_exec("top", "-b", "-n", "2", "-d", "0.5", "-o", "%CPU", "-w", "200",
+                                                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+        aus = (await asyncio.wait_for(p.communicate(), 8))[0].decode("utf-8", "replace")
+    except (OSError, asyncio.TimeoutError):
+        return _merken("prozessor_spitze", [])
+    letzte = aus.split("PID USER")[-1].splitlines()[1:8]
+    out = []
+    for z in letzte:
+        t = z.split()
+        if len(t) >= 12:
+            try:
+                cpu = float(t[8].replace(",", "."))
+            except ValueError:
+                continue
+            if cpu >= 50 and t[11] != "top":
+                out.append({"name": _NAMEN.get(t[11], t[11]), "prog": t[11], "cpu": round(cpu)})
+    return _merken("prozessor_spitze", out)
+
+
 async def _fremd_taetig() -> list[str]:
     """Was AUSSERHALB dieser Fassung auf denselben Karten rechnet: das alte
     Cockpit (eigene Pipeline) und ComfyUI. 15 Sekunden gemerkt -- die Kopfzeile
@@ -603,6 +636,15 @@ async def taetigkeit(gpu_last: float, geladen: list[str]) -> dict[str, Any]:
             zeilen.append(f"Bild/Visualisierung „{j.get('titel') or ''}“ entsteht · {_dauer(j.get('start'))}")
     fremd = await _fremd_taetig()
     zeilen += fremd
+    cpu = await _prozessor_spitze()
+    eigene = bool(la or llm.TAETIG or llm.AKTIV["n"])
+    for c in cpu[:2]:
+        if c["prog"] == "llama-server" and not eigene and not fremd and gpu_last < 20:
+            zeilen.append(f"Achtung: Ollama rechnet auf dem Prozessor ({c['cpu']} %), ohne dass ein Auftrag läuft -- "
+                          "vermutlich hängt es. Abhilfe: unter System bei Ollama „Neu starten“.")
+        elif not (c["prog"] == "llama-server" and (eigene or fremd)):
+            zeilen.append(f"Prozessor des Mini-PCs: {c['name']} braucht gerade {c['cpu']} %"
+                          + (" (mehrere Kerne)" if c["cpu"] > 100 else ""))
     if not zeilen and (llm.AKTIV["n"] or gpu_last >= 20):
         zeilen.append(f"Die Grafikkarten rechnen ({round(gpu_last)} %), aber nicht für einen bekannten Auftrag dieses Cockpits"
                       " (zum Beispiel ein Test oder ein Programm direkt auf dem Server).")
@@ -611,7 +653,7 @@ async def taetigkeit(gpu_last: float, geladen: list[str]) -> dict[str, Any]:
         zeilen.append("Ruht gerade." + (f" Letzter Durchgang des Teams {_dauer(letzt).replace('seit', 'vor')}." if letzt else ""))
     if geladen:
         zeilen.append("Im Grafikspeicher: " + ", ".join(geladen))
-    return {"zeilen": zeilen[:4], "arbeitet": bool(la or llm.TAETIG or llm.AKTIV["n"] or fremd or gpu_last >= 20)}
+    return {"zeilen": zeilen[:4], "arbeitet": bool(la or llm.TAETIG or llm.AKTIV["n"] or fremd or cpu or gpu_last >= 20)}
 
 
 async def kopf() -> dict[str, Any]:

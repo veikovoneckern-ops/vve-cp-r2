@@ -644,6 +644,13 @@ rueckfrage nur, wenn das Ergebnis ohne eine Auskunft von Veiko nicht sinnvoll we
 RUNDEN_MAX = 3
 GEGLIEDERTE_FORMEN = ("dokument", "text", "konzept", "aufstellung")
 DENKEN = True
+# Nachgedacht wird beim PLANEN (Gliederung) und beim PRUEFEN (Daniel), nicht beim
+# Ausschreiben langer Texte. Gemessen am 16.10.: eine Ueberarbeitung mit Nachdenken
+# blieb bei 4.096 erzeugten Token stehen, der Ollama-Prozess rechnete danach ohne
+# Anfrage weiter auf dem Prozessor (knapp 300 % CPU, Luefter laut), bis Ollama neu
+# gestartet wurde. Dieselbe Laenge OHNE Nachdenken lief sauber durch (9.027 Token
+# in 150 s). Die Gliederung gibt beim Schreiben ohnehin die Richtung vor.
+DENKEN_SCHREIBEN = False
 LANGE_FRIST = 1800
 
 
@@ -778,7 +785,7 @@ async def abschnittsweise(modell: str, system: str, frage: str, form: str, rid: 
                    + f"Schreibe JETZT NUR Abschnitt {i + 1}: „{x['ueberschrift']}“ ({x.get('umfang') or 'ausführlich'}). "
                    f"Beginne mit der Zeile „## {x['ueberschrift']}“. Kein Vorwort, keine Wiederholung früherer Abschnitte, "
                    "kein Ausblick auf spätere -- die schreibst du danach.")
-        t = await _chat_robust(modell, system, [{"role": "user", "content": auftrag}], temperatur=0.6, denken=DENKEN,
+        t = await _chat_robust(modell, system, [{"role": "user", "content": auftrag}], temperatur=0.6, denken=DENKEN_SCHREIBEN,
                            num_ctx=65536, timeout=LANGE_FRIST)
         if t.strip():
             teile.append(t.strip())
@@ -829,11 +836,11 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
                           "\n".join("- " + m for m in pruefung.get("maengel") or []) +
                           "\n\nÜberarbeite den Entwurf und behebe die Mängel. Liefere das vollständige Ergebnis.")
             entwurf = await _chat_robust(modell, system, [{"role": "user", "content": nachricht}],
-                                     temperatur=0.5, denken=DENKEN, num_ctx=65536, timeout=LANGE_FRIST)
+                                     temperatur=0.5, denken=DENKEN_SCHREIBEN, num_ctx=65536, timeout=LANGE_FRIST)
         else:
             entwurf = (await abschnittsweise(modell, system, frage, form, rid, vid)
                        or await _chat_robust(modell, system, [{"role": "user", "content": nachricht}],
-                                         temperatur=0.5, denken=DENKEN, num_ctx=65536, timeout=LANGE_FRIST))
+                                         temperatur=0.5, denken=DENKEN_SCHREIBEN, num_ctx=65536, timeout=LANGE_FRIST))
         if llm.fremdschrift(entwurf):
             entwurf = await llm.chat(modell, system + "\n\nWICHTIG: Ausschließlich deutsche Sprache und lateinische Schrift.",
                                      [{"role": "user", "content": nachricht + ("\n\nDEIN ENTWURF (in deutscher Sprache neu schreiben):\n" + entwurf[:40000] if runde == 0 else "")}],
