@@ -1,7 +1,7 @@
 // TEAM -- Veikos KI-Team: wer ist da, womit rechnet er, was hat er zuletzt getan.
 // Dazu Memory (was das Team ueber Veiko weiss) und Freigaben (was das Team
 // ohne Nachfrage tun darf). Das Advisory Board hat einen eigenen Bereich (board.js).
-import { escEigen, html, enterBestaetigt, useState, useEffect, Icon, Avatar, Leer, Modal, toast, fehlerMelden, aktualisieren, zeitText, useAbruf, navigiere, bus } from "./ui.js";
+import { escEigen, html, enterBestaetigt, useState, useEffect, useRef, Icon, Avatar, Leer, Modal, toast, fehlerMelden, aktualisieren, zeitText, useAbruf, navigiere, bus } from "./ui.js";
 import { api } from "./api.js";
 import { TeamGespraeche } from "./teamchat.js";
 
@@ -179,6 +179,28 @@ const STUFEN = [
   ["gedaechtnis", "Etwas ins Memory schreiben", "Ein falscher Eintrag verfälscht jede spätere Antwort"],
 ];
 
+// Mit welcher Stimme Talk und "Vorlesen" sprechen (stimme.STIMMEN). Eine Hoerprobe
+// vor der Wahl -- wie natuerlich eine Stimme klingt, misst kein Werkzeug.
+function StimmeZeile({ d, setzen }) {
+  const [spielt, setSpielt] = useState(null);
+  const ton = useRef(null);
+  if (!d.stimmen) return "";
+  function probe(id) {
+    if (ton.current) { ton.current.pause(); ton.current = null; }
+    if (spielt === id) { setSpielt(null); return; }
+    const a = new Audio("/api/stimme/probe?stimme_id=" + encodeURIComponent(id));
+    ton.current = a; setSpielt(id);
+    a.onended = () => setSpielt(null);
+    a.play().catch((e) => { setSpielt(null); fehlerMelden(e); });
+  }
+  return html`<div class="zeile stimme-zeile"><div class="haupt-text"><b>Stimme von Talk</b>
+      <div class="leise klein">Spricht in Talk und beim Vorlesen. Erst anhören, dann wählen.</div>
+      <div class="stimme-liste">${Object.entries(d.stimmen).map(([id, name]) => html`<div class="stimme-wahl">
+        <label><input type="radio" name="talk-stimme" checked=${d.talk_stimme === id} onChange=${() => setzen({ talk_stimme: id })} />${name}</label>
+        <button class="btn klein geist" onClick=${() => probe(id)} title="Hörprobe"><${Icon} n=${spielt === id ? "stopp" : "play"} g=${13} />${spielt === id ? "Stopp" : "Probe"}</button></div>`)}</div>
+    </div></div>`;
+}
+
 function Vertrauen() {
   const [d, laden] = useAbruf("/einstellungen", 0, []);
   if (!d) return html`<div class="lade">Lade …</div>`;
@@ -202,6 +224,7 @@ function Vertrauen() {
         <div class="leise klein">${d.stab_aktiv ? `an, für Notizen seit ${new Date(d.stab_ab * 1000).toLocaleString("de-DE")}` : "aus. Notizen kommen trotzdem herein, nur ohne Einordnung."}</div></div>
         <div class="segment"><button class=${d.stab_aktiv ? "an" : ""} onClick=${() => setzen({ stab_aktiv: true })}>an</button>
           <button class=${!d.stab_aktiv ? "an" : ""} onClick=${() => setzen({ stab_aktiv: false })}>aus</button></div></div>
+      <${StimmeZeile} d=${d} setzen=${setzen} />
       <${PostfachZeile} p=${d.postfach} nachher=${laden} />
       ${(() => {
         const a = d.alt_automatik;

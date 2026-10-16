@@ -1173,3 +1173,9 @@ details.eingetragen[open]>summary{margin-bottom:8px}
 .vb-preise summary{cursor:pointer}
 .vb-preis{width:90px}
 .vb-filter select.eingabe{width:auto;min-width:200px}
+.stimme-liste{display:flex;flex-direction:column;gap:4px;margin-top:6px}
+.stimme-wahl{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.stimme-wahl label{display:flex;align-items:center;gap:6px;cursor:pointer}
+.stimme-liste{display:flex;flex-direction:column;gap:4px;margin-top:6px}
+.stimme-wahl{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.stimme-wahl label{display:flex;align-items:center;gap:6px;cursor:pointer}

@@ -230,11 +230,29 @@ def aussprache(text: str) -> str:
     return muster.sub(lambda m: klein.get(m.group(1).lower(), m.group(1)), text)
 
 
-async def sprechen(text: str) -> bytes:
+# Die Stimmen, die Piper hier spricht (Namen wie in openedai-speech,
+# config/voice_to_speaker.yaml). Thorsten in hoher Qualitaet kam am 16.10.2026
+# dazu (Veiko: "besser und fluessiger klingen"); gemessen mit Whisper sind
+# Kerstin, Eva und Thorsten-hoch gleich deutlich -- wie natuerlich eine Stimme
+# klingt, entscheidet Veiko per Hoerprobe (Team -> Einstellungen).
+STIMMEN = {"kerstin": "Kerstin (weiblich)", "eva": "Eva (weiblich, einfachste Qualität)",
+           "thorsten": "Thorsten (männlich)", "thorsten_hq": "Thorsten, hohe Qualität (männlich)"}
+PROBE_SATZ = ("Guten Abend, Veiko. Drei Dinge stehen an: Neal hat dein Buchkapitel überarbeitet, Daniel hat noch zwei Einwände. "
+              "Soll ich sie dir vorlesen?")
+
+
+def gewaehlte_stimme() -> str:
+    from . import db
+    s = db.einstellung("talk_stimme")
+    return s if s in STIMMEN else PIPER_STIMME
+
+
+async def sprechen(text: str, stimme: str | None = None) -> bytes:
     text = aussprache((text or "").strip()[:4000])
     async with httpx.AsyncClient(timeout=60) as c:
         r = await c.post(f"{PIPER}/v1/audio/speech",
-                         json={"model": "tts-1", "input": text, "voice": PIPER_STIMME, "response_format": "mp3"})
+                         json={"model": "tts-1", "input": text, "voice": stimme if stimme in STIMMEN else gewaehlte_stimme(),
+                               "response_format": "mp3"})
     if r.status_code >= 400:
         raise RuntimeError(f"Piper antwortet {r.status_code}")
     return r.content

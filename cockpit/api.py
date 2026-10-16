@@ -938,7 +938,8 @@ async def einstellungen():
         alt = None
     return {"postfach": postfach.stand(), "alt_automatik": alt, "vertrauen": stab.vertrauen(), "stab_aktiv": stab.stab_aktiv(),
             "stab_ab": db.einstellung("stab_ab"), "letzter_abgleich": db.einstellung("letzter_abgleich"),
-            "alt_cockpit": ALT_COCKPIT_URL, "leiste": db.einstellung("leiste", [])}
+            "alt_cockpit": ALT_COCKPIT_URL, "leiste": db.einstellung("leiste", []),
+            "talk_stimme": stimme.gewaehlte_stimme(), "stimmen": stimme.STIMMEN}
 
 
 @router.post("/einstellungen")
@@ -960,7 +961,21 @@ async def einstellungen_setzen(request: Request):
     if "leiste" in d and isinstance(d["leiste"], list):
         ids = [str(x) for x in d["leiste"] if isinstance(x, str) and re.fullmatch(r"[a-z0-9_-]{1,24}", x)]
         db.einstellung_setzen("leiste", list(dict.fromkeys(ids))[:40])
+    if d.get("talk_stimme") in stimme.STIMMEN:
+        db.einstellung_setzen("talk_stimme", d["talk_stimme"])
     return await einstellungen()
+
+
+@router.get("/stimme/probe")
+async def stimme_probe(stimme_id: str = ""):
+    """Hoerprobe einer Stimme -- zum Auswaehlen in den Einstellungen."""
+    if stimme_id not in stimme.STIMMEN:
+        raise HTTPException(404, "Unbekannte Stimme")
+    try:
+        roh = await stimme.sprechen(stimme.PROBE_SATZ, stimme_id)
+    except (RuntimeError, httpx.HTTPError) as e:
+        raise HTTPException(503, f"Piper antwortet nicht: {e}")
+    return Response(roh, media_type="audio/mpeg")
 
 
 # ================================================================ Dateien, Stimme
