@@ -56,6 +56,24 @@ AUFTRAG_AN_TEAM = re.compile(r"\b(lass|lasst|lassen)\b.{0,60}\b(team|neo|jason|c
                              r"|\b(team|neo|annie|clayton|neal|ridley)\b.{0,40}\b(soll|sollen|mach|macht|erstell|erstellt|bau|baut|schreib|schreibt|recherchier|arbeite|arbeitet)", re.I)
 
 
+# Zustimmung oder Auftrag MITTEN in einem laengeren Satz (gemessen am 16.10.:
+# "Okay, du kannst Jensen sagen, er soll das Projekt anlegen und was muss ich
+# beim Buchprojekt machen" -- 18 Woerter, ist_ja() griff nicht, das Projekt blieb
+# offen, und Talk behauptete trotzdem "ich gebe das an Jason weiter"). Das Modell
+# markiert die gemeinte Aktion mit "zugestimmt"; ausgefuehrt wird nur, wenn
+# zusaetzlich hier ein Zustimmungs- oder Auftragswort steht. Beides zusammen --
+# das Modell allein koennte eine Zustimmung erfinden.
+ZUSTIMMUNG_IM_SATZ = re.compile(
+    r"\b(ja|okay|ok|einverstanden|gerne?|bitte|du kannst|kannst du|sag (ihm|ihr|jason|\w+) .{0,20}soll|"
+    r"leg\w*|anlegen|lege|mach\w*|erstell\w*|übernimm|uebernimm|bestätig\w*|freigeb\w*|soll(en)? .{0,30}(anlegen|machen|erstellen|übernehmen))\b",
+    re.I)
+_ABLEHNUNG = re.compile(r"\b(nein|nee|lieber nicht|nicht anlegen|nicht machen|ablehnen|stopp)\b", re.I)
+
+
+def zustimmung_im_satz(text: str) -> bool:
+    return bool(ZUSTIMMUNG_IM_SATZ.search(text or "")) and not _ABLEHNUNG.search(text or "")
+
+
 def ist_ja(text: str) -> bool:
     t = (text or "").strip()
     return len(t.split()) <= 10 and bool(_JA.search(t)) and not _NEIN.search(t)
@@ -102,6 +120,7 @@ WICHTIG: Du selbst führst NICHTS aus. Schreib nie „ich mache das“, „ich k
 PFLICHT: Jede Antwort, die mit „Soll ich das so machen?“ endet, trägt den aktionen-Block in DERSELBEN Antwort. Ohne Block kann Veikos „Ja“ nichts ausführen, und er müsste ein zweites Mal bestätigen -- genau das soll nie passieren.
 AUSNAHME ausarbeiten und neo bei einem klaren Auftrag: Sagt Veiko ausdrücklich, dass das Team oder Neo etwas tun soll („Lass das Team eine Präsentation erstellen“, „Neo, bau …“), ist das schon die Bestätigung. Dann KEINE Frage, sondern ein kurzer Satz, wer sich woran macht -- und IMMER der aktionen-Block dazu. Ohne Block passiert nichts; ein solcher Satz ohne Block wäre gelogen.
 Sagt Veiko „ja“ auf deinen Vorschlag, gehört derselbe Vorschlag als aktionen-Block in deine Antwort.
+ZUSTIMMUNG IM SATZ: Verlangt Veikos LETZTE Nachricht selbst ausdrücklich genau diese Aktion („leg das Projekt an“, „sag Jason, er soll es anlegen“, „ja, die Aufgabe kannst du anlegen“), dann setze in dieser Aktion "zugestimmt": true -- auch wenn die Nachricht noch eine weitere Frage enthält. Dann KEINE Rückfrage dazu, sondern ein kurzer Satz, was passiert; das Cockpit führt es aus. Ohne ausdrücklichen Wunsch in seiner letzten Nachricht nie "zugestimmt".
 AUSNAHME bild und visualisierung: die laufen sofort los, das Ergebnis erscheint gleich im Gespräch zum Ansehen und Herunterladen. Sag nur kurz „Ich erstelle dir das Bild, es erscheint gleich hier.“ bzw. „… die Visualisierung …“ -- keine Frage. Beziehen sie sich auf das Gespräch oder KONTEXT, nimm dessen Inhalte in prompt bzw. beschreibung auf.
 AUSNAHME BrainStrom und ExO (brainstrom, brainstrom_antwort, brainstrom_genug, brainstrom_weg, exo): laufen sofort. Sag nur kurz, was passiert („Ich gebe deine Antwort an BrainStrom.“) -- KEINE Frage und nicht selbst die nächste BrainStrom-Frage erfinden; die stellt BrainStrom, das Cockpit liest sie vor. Ist Veiko in BrainStrom und antwortet auf die aktuelle Frage, ist das IMMER brainstrom_antwort.
 DIE NOTABSCHALTUNG (Kill Switch, Safety Shutdown) gibt es NIE über das Gespräch, auch nicht auf ausdrücklichen Wunsch: sag, dass sie nur über die Knöpfe im WatchDog geht, und biete an, den WatchDog zu öffnen.
@@ -499,8 +518,10 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
         if not vorschlaege:
             sichtbar = re.sub(r"[^.!?\n]*(macht sich|arbeitet an|erscheint in der Inbox)[^.!?\n]*[.!?]?", "", sichtbar).strip()
             sichtbar = (sichtbar + "\n\nIch konnte deinem Ja keinen Auftrag zuordnen, gestartet ist noch nichts. Sag mir bitte noch einmal, was das Team tun soll.").strip()
+    im_satz = zustimmung_im_satz(text)
     gleich = [v for v in vorschlaege if v["aktion"] not in SOFORT_VERFAHREN
-              and (bestaetigt or (auftrag and v["aktion"] in ("ausarbeiten", "neo")))]
+              and (bestaetigt or (auftrag and v["aktion"] in ("ausarbeiten", "neo"))
+                   or (v.get("zugestimmt") is True and im_satz))]
     ausgefuehrt = []
     for v in gleich[:3]:
         try:
@@ -540,6 +561,13 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
                 sichtbar = (sichtbar + "\n\nDie ExO-Analyse läuft, das dauert ein bis zwei Minuten. Das Ergebnis erscheint in der Ansicht.").strip()
         except (ValueError, llm.ModellFehler) as f:
             sichtbar = (sichtbar + f"\n\nDas ging nicht: {f}").strip()
+    # Liegt noch ein Vorschlag offen da, darf der Text nicht so klingen, als sei er
+    # erledigt ("Ich gebe das an Jason weiter" -- und nichts passierte). Dann endet
+    # die Antwort mit der Frage, damit klar ist, dass ein Ja oder der Knopf fehlt.
+    offen = [v for v in vorschlaege if not v.get("erledigt") and v["aktion"] not in ("zeigen",)]
+    if offen and not sichtbar.rstrip().endswith("?"):
+        sichtbar = re.sub(r"[^.!?\n]*\b(gebe das (an \w+ )?weiter|leg(e|t) (es|das|ihn) an|kümmert sich|macht sich)\b[^.!?\n]*[.!?]?", "", sichtbar).strip()
+        sichtbar = (sichtbar + "\n\nNoch nicht ausgeführt: " + "; ".join(v["label"] for v in offen) + ". Soll ich das so machen?").strip()
     if llm.fremdschrift(sichtbar):
         sichtbar = llm.FREMDSCHRIFT.sub("", sichtbar)
     sichtbar += stab.netz_fuss(quellen)
