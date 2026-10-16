@@ -610,8 +610,13 @@ def _vorgang_kontext(v: dict[str, Any]) -> str:
     if v.get("projekt_id"):
         # Dasselbe Bild vom Projekt wie in Talk (Aufgaben, Ergebnisse, Notizen) --
         # wer Auswirkungen auf ein Projekt beurteilen soll, muss es kennen.
+        # Ohne interne Kennungen: Talk braucht sie fuer seine Aktionen, ein
+        # Arbeitsergebnis nicht -- gemessen am 16.10. stand "t85baaa2921 [offen]
+        # Exposé überarbeiten" wörtlich in Claytons Dokument.
         from .gespraech import kontext_text
-        teile.append(kontext_text({"art": "projekt", "id": v["projekt_id"]}).replace("VEIKO SCHAUT GERADE AUF DAS PROJEKT", "PROJEKT"))
+        pk = kontext_text({"art": "projekt", "id": v["projekt_id"]}).replace("VEIKO SCHAUT GERADE AUF DAS PROJEKT", "PROJEKT")
+        # Nur Woerter MIT Ziffer -- sonst fielen "ergebnisse" oder "notizen" mit heraus.
+        teile.append(re.sub(r"\b[tpvrnge](?=[0-9a-z]*\d)[0-9a-z]{6,12}\b\s*", "", pk.replace(f" {v['projekt_id']}:", ":")))
     antworten = db.alle("SELECT text FROM ereignisse WHERE vorgang_id=? AND art='antwort'", (v["id"],))
     if antworten:
         teile.append("VEIKOS ANTWORTEN AUF RÜCKFRAGEN:\n" + "\n".join("- " + a["text"] for a in antworten))
