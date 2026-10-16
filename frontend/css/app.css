@@ -1150,3 +1150,8 @@ details.eingetragen[open]>summary{margin-bottom:8px}
 .erg-text-kopf{position:sticky;top:0;z-index:2;background:var(--surface);padding:0 0 10px;margin-bottom:10px;
   border-bottom:1px solid var(--line-2);display:flex;flex-direction:column;gap:8px}
 .erg-text-kopf .erg-downloads{margin:0}
+
+/* Talk: zwei Schalter unter dem Eingabefeld -- Gruendlich, Internet (beide Vorgabe aus) */
+.talk-schalter{display:flex;gap:16px;flex-wrap:wrap}
+.composer-leiste .sym.globus{color:var(--text-3,#8A94A6)}
+.composer-leiste .sym.globus.an{color:var(--steel,#2C6BB3)}

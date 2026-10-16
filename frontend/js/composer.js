@@ -9,7 +9,7 @@ function groesse(b) { return b > 1048576 ? (b / 1048576).toFixed(1) + " MB" : Ma
 
 export function Composer({ platzhalter = "Schreib oder sprich …", beimSenden, laeuft = false, beimStoppen,
   erlaubeAnhang = true, erlaubeMic = true, projektId = "", autofokus = false, entwurfKey = "", zeilen = 1,
-  hinweis = "Enter senden · Umschalt+Enter neue Zeile", sendenText = "Senden", feldRef }) {
+  hinweis = "Enter senden · Umschalt+Enter neue Zeile", sendenText = "Senden", feldRef, extra = null }) {
   const [text, setText] = useState(() => { try { return entwurfKey ? sessionStorage.getItem("entwurf:" + entwurfKey) || "" : ""; } catch (e) { return ""; } });
   const [anh, setAnh] = useState([]);
   const [aufnahme, setAufnahme] = useState(null); // {start, ctl, basis}
@@ -124,6 +124,7 @@ export function Composer({ platzhalter = "Schreib oder sprich …", beimSenden, 
       ${erlaubeMic && html`<button type="button" class=${"sym" + (aufnahme ? " aufnahme" : erkenne ? " denkt" : "")}
         title=${aufnahme ? "Diktat beenden" : "Diktieren (der Text erscheint beim Sprechen)"} aria-label=${aufnahme ? "Diktat beenden" : "Diktieren"} aria-pressed=${!!aufnahme}
         onClick=${mikro} disabled=${erkenne}><${Icon} n=${aufnahme ? "stopp" : "mic"} g=${18} /></button>`}
+      ${extra}
       <span class="info">${info}</span>
       ${laeuft && beimStoppen
         ? html`<button type="button" class="senden stopp" title="Abbrechen" aria-label="Abbrechen" onClick=${beimStoppen}><${Icon} n="stopp" g=${16} /></button>`

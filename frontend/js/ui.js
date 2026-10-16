@@ -17,6 +17,7 @@ export const bus = {
 
 // ------------------------------------------------------------ Symbole
 const PFADE = {
+  globus: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z",
   briefing: "M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z",
   inbox: "M4 13h4l2 3h4l2-3h4M4 13 6 5h12l2 8v6H4z",
   projects: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",
@@ -334,6 +335,31 @@ export function tippsEinrichten() {
 // gilt je GERAET (localStorage, nicht der Server): am Rechner gruendlich, am
 // Handy schnell ist genau der Fall, fuer den Veiko den Schalter wollte.
 // Talk, Board und Team-Chat zeigen denselben Schalter und lesen denselben Wert.
+// Talk hat EIGENE Schalter (Veiko, 16.10.: "bei Talk geht es primaer um einen
+// Dialog mit dem Cockpit, der soll schnell und fluessig sein"): Vorgabe ist
+// schnell und ohne Internet; beides laesst sich zuschalten, je Geraet gemerkt.
+// Der Team-Chat bleibt bei seiner Vorgabe "gruendlich".
+export function talkSchalter(name) { try { return localStorage.getItem("talk-" + name) === "1"; } catch (e) { return false; } }
+export function TalkSchalter({ name, text, titel }) {
+  const [an, setAn] = useState(() => talkSchalter(name));
+  return html`<label class="tempo-schalter klein" title=${titel}>
+    <input type="checkbox" checked=${an} onChange=${(e) => { try { localStorage.setItem("talk-" + name, e.target.checked ? "1" : "0"); } catch (x) { /* egal */ }
+      setAn(e.target.checked); }} />${text}</label>`;
+}
+// Der Globus im Talk-Eingabefeld (Veiko, 16.10.: lieber der Knopf als ein
+// Haekchen): blau = Internet an, grau = aus. Derselbe Merker wie talkSchalter("netz").
+export function GlobusKnopf() {
+  const [an, setAn] = useState(() => talkSchalter("netz"));
+  const umschalten = () => {
+    const neu = !an;
+    try { localStorage.setItem("talk-netz", neu ? "1" : "0"); } catch (x) { /* egal */ }
+    setAn(neu);
+  };
+  return html`<button type="button" class=${"sym globus" + (an ? " an" : "")} onClick=${umschalten} aria-pressed=${an}
+    aria-label=${an ? "Internet an -- ausschalten" : "Internet aus -- einschalten"}
+    title=${an ? "Internet an: vor der Antwort wird geprüft, ob eine Websuche hilft (eigene SearXNG, dauert länger). Klicken zum Ausschalten."
+      : "Internet aus: Talk antwortet nur mit dem, was das Cockpit weiß -- schnell. Klicken zum Einschalten."}><${Icon} n="globus" g=${18} /></button>`;
+}
 export function tempoSchnell() { try { return localStorage.getItem("antwort-schnell") === "1"; } catch (e) { return false; } }
 export function TempoSchalter() {
   const [schnell, setSchnell] = useState(tempoSchnell);

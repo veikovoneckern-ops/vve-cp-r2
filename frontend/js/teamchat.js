@@ -6,6 +6,7 @@
 import { html, useState, useEffect, useRef, Icon, Avatar, Md, Leer, toast, fehlerMelden, navigiere, zeitText, bus, kopieren, tempoSchnell, TempoSchalter } from "./ui.js";
 import { api, strom } from "./api.js";
 import { Composer } from "./composer.js";
+import { URTEIL } from "./ergebnis.js";
 import { vorlesen, vorleseStopp } from "./stimme.js";
 
 // Eine Liste aller, mit denen man sprechen kann: lokale Mitglieder zuerst, dann die Externen.
@@ -31,7 +32,7 @@ function Nachricht({ m, partner, beiRueckgaengig }) {
     <div class="bd-blase"><b>${p.name}${m.modell ? html` <span class="leise klein" style="font-weight:400">· ${m.modell}</span>` : ""}</b>
       ${(m.text || "").trim() ? html`<${Md} text=${m.text} />`
         : html`<div class="leise">Keine Antwort geliefert. Bitte noch einmal senden, gern mit „Schnelle Antwort“.</div>`}
-      ${m.fassung && html`<div class="tc-fassung"><span class="tc-fassung-text"><${Icon} n="check" g=${13} />Neue Fassung gespeichert${m.pruefung ? ` · Daniel: ${m.pruefung === "tragfaehig" ? "trägt" : m.pruefung}` : ""}</span>
+      ${m.fassung && html`<div class="tc-fassung"><span class="tc-fassung-text"><${Icon} n="check" g=${13} />Neue Fassung gespeichert${m.pruefung ? ` · ${(URTEIL[m.pruefung] || { wort: m.pruefung }).wort}` : ""}</span>
         ${m.protokoll_id && beiRueckgaengig && html`<button class="btn klein geist" onClick=${() => beiRueckgaengig(m.protokoll_id)}><${Icon} n="undo" g=${13} />Zurücknehmen</button>`}</div>`}
       <div class="tc-werkzeug">
         <button class="btn klein geist" onClick=${lesen} title="Vorlesen"><${Icon} n=${liest ? "stopp" : "play"} g=${13} />${liest ? "Stopp" : "Vorlesen"}</button>
@@ -49,7 +50,7 @@ function genannteExterne(text) { return EXTERN_NAMEN.filter(([, re]) => re.test(
 // wer: Kennung des Mitglieds; gid: Gespraech oder null; ergebnisId/projektId: Kontext.
 // beiFassung(): das Ergebnisfenster laedt danach neu. beiGespraech(gid): neue Kennung merken.
 // beiTaetig({name, status} | null): was gerade passiert -- fuer die Anzeige im Fensterkopf.
-export function TeamChat({ wer, partnerListe, gid, ergebnisId = "", projektId = "", beiFassung, beiGespraech, leerText, beiTaetig }) {
+export function TeamChat({ wer, partnerListe, gid, ergebnisId = "", projektId = "", beiFassung, beiGespraech, leerText, beiTaetig, vorlage }) {
   const [msgs, setMsgs] = useState([]);
   const [lauf, setLauf] = useState(null);
   const [vorlesenAn, setVorlesenAn] = useState(() => { try { return localStorage.getItem("tc-vorlesen") === "1"; } catch (e) { return false; } });
@@ -95,6 +96,8 @@ export function TeamChat({ wer, partnerListe, gid, ergebnisId = "", projektId = 
     else beiTaetig(null);
   }, [lauf && lauf.status, lauf && lauf.wer, lauf && !!lauf.text, nach && nach.status, nach && nach.wer, !!lauf, !!nach]);
   useEffect(() => () => beiTaetig && beiTaetig(null), []);
+  // Eine vorbereitete Bitte ins Feld legen (nicht senden -- Veiko liest und schickt selbst).
+  useEffect(() => { if (vorlage && vorlage.text) setTimeout(() => feld.current && feld.current.setzen(vorlage.text), 80); }, [vorlage && vorlage.n]);
 
   async function senden(text, dateien, namen) {
     if (lauf) return false;

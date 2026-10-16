@@ -85,7 +85,7 @@ So antwortest du:
 - Erfinde nichts. Du kennst nur, was unten in LAGE und KONTEXT steht. Wenn etwas fehlt, sag es.
 - Nenne, wer gearbeitet hat, aber nur, wenn es in LAGE oder KONTEXT steht. Schreib niemandem eine Arbeit zu, die dort nicht vorkommt.
 - Nenne im Text NIE interne Kennungen (e…, t…, p…, v…). Die gehören nur in den aktionen-Block. Im Text sagst du den Titel.
-- Auf "Was liegt an?" antwortest du knapp: höchstens fünf Punkte, das Wichtigste zuerst (offene Entscheidungen, Überfälliges, was läuft). Keine vollständigen Listen.
+- Auf "Was liegt an?" antwortest du knapp: höchstens fünf Punkte, in DIESER Reihenfolge -- wie das Briefing, das Veiko daneben sieht: 1. OFFENE ENTSCHEIDUNGEN (stehen dort „keine“, sag genau das), 2. NEU ENTSTANDEN (zuletzt bearbeitete zuerst, mit Daniels Urteil in einfachen Worten), 3. WAS GERADE LÄUFT (steht dort „nichts“, sag genau das), 4. OFFENE AUFGABEN (die ersten drei, in der Reihenfolge der Liste). Nur, was in LAGE steht. Einen eigenen, noch nicht ausgeführten Vorschlag aus diesem Gespräch nennst du getrennt am Ende („Aus unserem Gespräch noch offen: …“) -- er ist keine Entscheidung des Teams. Keine vollständigen Listen.
 - Kein Fachjargon ohne Erklärung.
 - Wortwahl wie im Cockpit: „Team“ (nicht „Stab“), „Case“ (nicht „Akte“), „Memory“ (nicht „Gedächtnis“), „Advisory Board“ (nicht „Beirat“).
 {STIMME}
@@ -159,9 +159,20 @@ def lage_text() -> str:
             (f" (Vorgang: {e['vtitel']})" if e.get("vtitel") else "") for e in ents))
     else:
         teile.append("OFFENE ENTSCHEIDUNGEN: keine")
-    lauf = db.alle("SELECT id, titel, auftrag FROM vorgaenge WHERE stand='in_arbeit' LIMIT 5")
-    if lauf:
-        teile.append("IN ARBEIT:\n" + "\n".join(f"- {v['id']}: {v['titel']}" for v in lauf))
+    # Dieselbe Liste wie im Briefing links daneben (stab.neu_entstanden) --
+    # vorher kannte Talk die neuen Ergebnisse gar nicht und erzaehlte etwas anderes.
+    neu = stab.neu_entstanden()
+    if neu:
+        teile.append("NEU ENTSTANDEN (letzte sieben Tage, zuletzt bearbeitete zuerst -- so steht es auch im Briefing):\n" + "\n".join(
+            f"- {e['titel'][:90]} (von {e['wer_name']}, bearbeitet {_zeit(e['bearbeitet'])}"
+            + (f", Projekt {e['projekt_name']}" if e.get("projekt_name") else "") + f"): {e['urteil_text']}" for e in neu))
+    # Dieselbe Auswahl wie "Läuft gerade" im Briefing. Ist sie leer, steht das da --
+    # ohne den Satz nannte Talk am 16.10. Erledigtes als "läuft gerade".
+    lauf = [v for v in db.alle("SELECT id, titel, auftrag, stand FROM vorgaenge WHERE stand IN ('neu','in_arbeit','wartet') "
+                               "AND quelle!='alt' ORDER BY geaendert DESC LIMIT 30")
+            if v["stand"] != "wartet" or stab.auftrag_offen(v)][:6]
+    teile.append("WAS GERADE LÄUFT:\n" + ("\n".join(f"- {v['id']}: {v['titel']}" for v in lauf) if lauf
+                                         else "nichts -- das Team arbeitet gerade an keinem Case"))
     erl = db.alle("SELECT id, titel, einordnung, geaendert FROM vorgaenge WHERE stand='fertig' AND quelle!='alt' "
                   "ORDER BY geaendert DESC LIMIT 6")
     if erl:
@@ -415,7 +426,7 @@ def gespraech_holen_oder_anlegen(gid: str | None, kontext: dict | None) -> str:
 
 
 async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str], stimme: bool,
-                 schnell: bool = False) -> AsyncIterator[dict]:
+                 schnell: bool = False, netz: bool = False) -> AsyncIterator[dict]:
     voll = text
     for did in anhaenge or []:
         d = db.holen("dateien", did)
@@ -440,15 +451,18 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     if not modell:
         yield {"typ": "fehler", "text": "Kein lokales Modell für das Gespräch installiert."}
         return
+    # Internet nur, wenn Veiko es im Talk zugeschaltet hat (16.10.: "bei Talk soll
+    # zunaechst nicht das Internet befragt werden ... der soll schnell und
+    # fluessig sein"). Vorher lief die Pruefung bei jedem gruendlichen Satz.
     quellen: list[dict[str, str]] = []
-    if denken:
+    if netz:
         yield {"typ": "status", "text": "prüft, ob das Internet hilft …"}
         quellen = await stab.netzwissen(modell, verlauf)
         if quellen:
             system += "\n\n" + stab.netz_system(quellen)
-            yield {"typ": "status", "text": f"{len(quellen)} Quellen aus dem Netz gelesen, denkt gründlich nach …"}
-        else:
-            yield {"typ": "status", "text": "denkt gründlich nach …"}
+            yield {"typ": "status", "text": f"{len(quellen)} Quellen aus dem Netz gelesen …"}
+    if denken:
+        yield {"typ": "status", "text": "denkt gründlich nach …"}
     gesamt = ""
     try:
         with llm.taetig("Talk antwortet dir" + (" (gründlich)" if denken else "")):

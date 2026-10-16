@@ -5,7 +5,7 @@ import { escEigen, html, enterBestaetigt, useState, useEffect, Icon, Avatar, Lee
   zeitText, useAbruf, navigiere, rolleName, ROLLEN_WAHL, FORM_WAHL } from "./ui.js";
 import { api } from "./api.js";
 import { Entscheidung } from "./entscheidung.js";
-import { ErgebnisVorschau } from "./ergebnis.js";
+import { ErgebnisVorschau, URTEIL } from "./ergebnis.js";
 
 const FILTER = [["wartet", "Wartet auf dich"], ["in_arbeit", "In Arbeit"], ["fertig", "Fertig"], ["erledigt", "Erledigt"], ["alle", "Alle"]];
 const ART_TEXT = { notiz: "Notiz", einordnung: "hat eingeordnet", aufgabe: "Aufgabe", rueckfrage: "fragt nach", vorschlag: "schlägt vor",
@@ -191,7 +191,7 @@ function Ereignis({ e, notizText, notizAuf, setNotizAuf }) {
     <${Avatar} wer=${e.wer} name=${e.wer_name} />
     <div class="blase">
       <div class="kopfzeile"><b>${e.wer_name}</b><span>${ART_TEXT[e.art] ?? e.art}</span>
-        ${dt.urteil && html`<span class=${"pill " + (dt.urteil === "tragfaehig" ? "gruen" : dt.urteil === "nachbessern" ? "gelb" : "")}>${dt.urteil === "tragfaehig" ? "trägt" : dt.urteil}</span>`}
+        ${dt.urteil && html`<span class=${"pill " + (dt.urteil === "tragfaehig" ? "gruen" : dt.urteil === "nachbessern" ? "gelb" : "")}>${(URTEIL[dt.urteil] || { wort: dt.urteil }).wort}</span>`}
         <span style="margin-left:auto">${zeitText(e.zeit)}</span></div>
       ${e.art === "notiz" ? html`
         <div class=${"zitat" + (lang ? " einklappbar" + (notizAuf ? " auf" : "") : "")}>${notizText || e.text}</div>

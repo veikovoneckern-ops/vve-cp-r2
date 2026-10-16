@@ -20,17 +20,34 @@ export function Downloads({ e }) {
 // Daniels Urteil als EINE Zeile; Begruendung und Maengel klappen auf.
 // Vorher ein grosser Kasten ueber dem Ergebnis, der es aus dem Blick schob
 // (Veiko, 16.10.: "das ist alles noch sehr sperrig").
-export function Pruefung({ p }) {
+// Was Veiko mit Daniels Urteil anfangen kann -- "trägt" und "mit Mängeln" sagten
+// ihm nichts (16.10.). Jetzt: Klartext, und bei Einwaenden ein Knopf, der sie im
+// Ergebnisfenster einarbeiten laesst (die Bitte steht vorbereitet im Chat).
+export const URTEIL = {
+  tragfaehig: { wort: "Geprüft: in Ordnung", farbe: "gruen", tun: "Daniel hat nichts Wesentliches gefunden. Du kannst das Ergebnis so verwenden." },
+  nachbessern: { wort: "Daniel hat Einwände", farbe: "gelb", tun: "Brauchbar, aber Daniel sieht Schwächen. Lies seine Punkte und lass sie einarbeiten, wenn du zustimmst." },
+  rueckfrage: { wort: "Rückfrage an dich", farbe: "gelb", tun: "Daniel braucht eine Angabe von dir, bevor es weitergeht." },
+  ungeprueft: { wort: "Noch nicht geprüft", farbe: "", tun: "Die Prüfung ist ausgefallen; das Ergebnis ist ungeprüft." },
+};
+export function einarbeitenText(p) {
+  const m = (p && p.maengel) || [];
+  return "Bitte arbeite Daniels Einwände ein und schreib die vollständige neue Fassung."
+    + (m.length ? "\n" + m.map((x) => "- " + x).join("\n") : "");
+}
+export function Pruefung({ p, eid, einarbeiten }) {
   const [auf, setAuf] = useState(false);
   if (!p || !p.urteil) return "";
-  const gut = p.urteil === "tragfaehig";
-  const wort = gut ? "trägt" : p.urteil === "nachbessern" ? "mit Mängeln" : p.urteil === "ungeprueft" ? "nicht geprüft" : p.urteil;
-  const mehr = p.begruendung || (p.maengel || []).length;
+  const u = URTEIL[p.urteil] || { wort: p.urteil, farbe: "", tun: "" };
+  const los = einarbeiten || (eid ? () => bus.sende("ergebnis-zeigen", { id: eid, vorlage: einarbeitenText(p) }) : null);
   return html`<div class="pruef-zeile">
-    <button class=${"pill " + (gut ? "gruen" : "gelb")} onClick=${() => mehr && setAuf(!auf)} disabled=${!mehr}
-      title=${mehr ? "Begründung " + (auf ? "zuklappen" : "aufklappen") : ""}>Daniel: ${wort}${mehr ? (auf ? " ▴" : " ▾") : ""}</button>
-    ${auf && html`<div class="pruef-text klein">${p.begruendung}
-      ${(p.maengel || []).length > 0 && html`<ul>${p.maengel.map((m) => html`<li>${m}</li>`)}</ul>`}</div>`}
+    <button class=${"pill " + u.farbe} onClick=${() => setAuf(!auf)} aria-expanded=${auf}
+      title="Daniel (Red Team) prüft jedes Ergebnis. Klicken für seine Begründung und was du tun kannst.">${u.wort}${auf ? " ▴" : " ▾"}</button>
+    ${auf && html`<div class="pruef-text klein">
+      <div><b>Was das heißt:</b> ${u.tun}</div>
+      ${p.begruendung && html`<div style="margin-top:6px"><b>Daniels Begründung:</b> ${p.begruendung}</div>`}
+      ${(p.maengel || []).length > 0 && html`<div style="margin-top:6px"><b>Seine Punkte:</b><ul>${p.maengel.map((m) => html`<li>${m}</li>`)}</ul></div>`}
+      ${p.urteil === "nachbessern" && los && html`<button class="btn klein primaer" style="margin-top:8px" onClick=${(x) => { x.stopPropagation(); setAuf(false); los(); }}>
+        <${Icon} n="chat" g=${13} />Einwände einarbeiten lassen</button>`}</div>`}
   </div>`;
 }
 
@@ -77,7 +94,7 @@ export function ErgebnisVorschau({ id, ohneOeffnen = false, ohneKopf = false }) 
       <${Avatar} wer=${e.rolle} name=${e.wer_name} g=${26} />
       <div class="haupt-text"><b>${e.kurztitel || e.titel}</b>
         <div class="leise klein">${e.wer_name} · ${zeitText(e.erstellt)}${e.projekt_name ? " · " + e.projekt_name : ""}</div></div>
-      <${Pruefung} p=${e.pruefung} />
+      <${Pruefung} p=${e.pruefung} eid=${e.id} />
     </div>`}
     <div class="erg-vorschau-feld">
       <${Inhalt} e=${e} laden=${laden} />
@@ -176,9 +193,9 @@ export function ErgebnisZeile({ e, neu, auf, umschalten }) {
       <${Avatar} wer=${e.rolle} name=${e.wer_name} g=${26} />
       <div class="haupt-text">
         <b>${neu && html`<span class="pill lila neu-marke">neu</span>`}${e.kurztitel || e.titel}</b>
-        <div class="leise klein">${e.wer_name} · ${zeitText(e.erstellt)}${e.projekt_name ? " · " + e.projekt_name : ""}</div>
+        <div class="leise klein">${e.wer_name} · ${e.bearbeitet && e.bearbeitet - e.erstellt > 120 ? "bearbeitet " + zeitText(e.bearbeitet) : zeitText(e.erstellt)}${e.projekt_name ? " · " + e.projekt_name : ""}</div>
       </div>
-      <${Pruefung} p=${e.pruefung} />
+      <${Pruefung} p=${e.pruefung} eid=${e.id} />
       <button class=${"btn klein" + (auf ? " an" : "")} onClick=${umschalten} aria-expanded=${auf}>
         <${Icon} n=${auf ? "klein" : "auge"} g=${14} />${auf ? "Zuklappen" : "Vorschau"}</button>
       ${e.vorgang_id && html`<a class="btn klein geist" href=${"#/inbox/" + e.vorgang_id}

@@ -1158,3 +1158,38 @@ def gesundheit() -> dict[str, Any]:
     return {"letzte_notiz": letzte_notiz, "letzte_datei": letzter_abruf, "sync": sync,
             "stab_aktiv": stab_aktiv(), "letzter_lauf": ZUSTAND["letzter_lauf"],
             "laeuft": ZUSTAND["laeuft"], "letzter_fehler": ZUSTAND["letzter_fehler"]}
+
+
+# ---------------------------------------------------------------- Neu entstanden
+# EINE Liste fuer Briefing und Talk (Veiko, 16.10.: "Talk sagt etwas anderes, als
+# ich links sehe"). Sortiert nach der LETZTEN BEARBEITUNG, nicht nach dem ersten
+# Entwurf: ein Kapitel, an dem Neal und Demmis eben noch gearbeitet haben, gehoert
+# nach oben, auch wenn der erste Entwurf von gestern ist.
+def neu_entstanden(tage: int = 7, anzahl: int = 8) -> list[dict[str, Any]]:
+    grenze = time.time() - tage * 86400
+    zeilen = db.alle(
+        "SELECT r.id, r.titel, r.form, r.rolle, r.vorgang_id, r.projekt_id, r.erstellt, r.pruefung, "
+        "v.titel AS vorgang_titel, p.name AS projekt_name, "
+        "MAX(r.erstellt, COALESCE((SELECT MAX(q.zeit) FROM protokoll q WHERE q.tabelle='ergebnisse' "
+        "AND q.datensatz_id=r.id AND q.aktion='überarbeitet' AND q.rueckgaengig=0), 0)) AS bearbeitet "
+        "FROM ergebnisse r LEFT JOIN vorgaenge v ON v.id=r.vorgang_id LEFT JOIN projekte p ON p.id=r.projekt_id "
+        "WHERE r.erstellt>? OR EXISTS (SELECT 1 FROM protokoll q WHERE q.tabelle='ergebnisse' AND q.datensatz_id=r.id "
+        "AND q.zeit>?) ORDER BY bearbeitet DESC LIMIT ?", (grenze, grenze, anzahl))
+    for e in zeilen:
+        e["wer_name"] = rollen_name(e["rolle"])
+        e["urteil_text"] = urteil_klartext(e.get("pruefung"))
+    return zeilen
+
+
+def urteil_klartext(pruefung: Any) -> str:
+    """Daniels Urteil so, dass man weiss, was zu tun ist -- "trägt" und "mit
+    Mängeln" sagten Veiko nichts (16.10.)."""
+    if isinstance(pruefung, str):
+        try:
+            pruefung = json.loads(pruefung or "{}")
+        except ValueError:
+            pruefung = {}
+    u = (pruefung or {}).get("urteil")
+    return {"tragfaehig": "geprüft, kann so verwendet werden",
+            "nachbessern": "Daniel hat Einwände -- sie lassen sich im Ergebnisfenster einarbeiten",
+            "rueckfrage": "Daniel hat eine Rückfrage an dich"}.get(u, "noch nicht geprüft")

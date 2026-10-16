@@ -8,7 +8,7 @@ import { Zeitplan, Struktur } from "./projektansichten.js";
 import { Ausarbeiten } from "./inbox.js";
 import { TeamChat, gespraechsPartner } from "./teamchat.js";
 import { Composer } from "./composer.js";
-import { VideoBlock, FolienbilderBlock, Downloads, Pruefung, GrossAnsicht, ErgebnisZeile } from "./ergebnis.js";
+import { VideoBlock, FolienbilderBlock, Downloads, Pruefung, GrossAnsicht, ErgebnisZeile, einarbeitenText } from "./ergebnis.js";
 
 const FARBEN = ["#2C6BB3", "#0E9377", "#C07C12", "#E0392B", "#7C3AED", "#D0458F", "#0E7490", "#647388"];
 
@@ -287,7 +287,7 @@ function ErgebnisZeileProjekt({ r }) {
 // Das Ergebnisfenster. Rechts "Weiterarbeiten": dasselbe Gespraech wie unter
 // Team (teamchat.js), mit dem Ergebnis im Kontext -- Anweisungen geben,
 // Unterlagen anhaengen, diktieren. Eine neue Fassung ersetzt links den Text.
-export function ErgebnisAnsicht({ id, zu }) {
+export function ErgebnisAnsicht({ id, zu, vorlage = "" }) {
   const [e, setE] = useState(null);
   const [ansicht, setAnsicht] = useState(false);
   const [stand, setStand] = useState(0);          // zaehlt Fassungen hoch, damit die Ansicht neu laedt
@@ -297,6 +297,9 @@ export function ErgebnisAnsicht({ id, zu }) {
   const [gid, setGid] = useState(null);
   const [chatAuf, setChatAuf] = useState(() => { try { return localStorage.getItem("erg-chat") !== "0"; } catch (x) { return true; } });
   const [taetig, setTaetig] = useState(null);     // was im Chat gerade passiert (TeamChat meldet es)
+  // Vorbereitete Bitte im Chat (z. B. "Daniels Einwände einarbeiten"); n zaehlt, damit derselbe Text erneut greift.
+  const [chatVorlage, setChatVorlage] = useState(() => (vorlage ? { text: vorlage, n: 1 } : null));
+  useEffect(() => { if (vorlage) setChatAuf(true); }, []);
   const laden = () => api("/ergebnisse/" + id).then((x) => { setE(x); return x; });
   useEffect(() => {
     laden().then((x) => { setAnsicht(!!x.ansicht); setWer((w) => w || x.rolle || "buch"); }).catch((x) => { fehlerMelden(x); zu(); });
@@ -336,7 +339,7 @@ export function ErgebnisAnsicht({ id, zu }) {
             <${Avatar} wer=${(e.fassung_von || {}).wer || e.rolle} name=${(e.fassung_von || {}).name || e.wer_name} g=${24} />
             <span><b>${e.fassung_von && e.fassung_von.nr > 1 ? `Aktuelle Fassung (${e.fassung_von.nr})` : "Erste Fassung"}</b>
               <span class="leise klein"> · von ${(e.fassung_von || {}).name || e.wer_name} · ${zeitText((e.fassung_von || {}).zeit || e.erstellt)} · ${(e.inhalt || "").length.toLocaleString("de-DE")} Zeichen</span></span>
-            <${Pruefung} p=${p} />
+            <${Pruefung} p=${p} einarbeiten=${() => { setChatAuf(true); setChatVorlage((v) => ({ text: einarbeitenText(p), n: ((v && v.n) || 0) + 1 })); }} />
             ${e.ansicht ? html`<div class="segment" style="margin-left:auto"><button class=${ansicht ? "an" : ""} onClick=${() => setAnsicht(true)}>Ansicht</button>
               <button class=${!ansicht ? "an" : ""} onClick=${() => setAnsicht(false)}>Text</button></div>` : ""}
             ${!(e.form === "video" || e.video) && html`<button class="btn klein" style=${e.ansicht ? "" : "margin-left:auto"} onClick=${() => setGross(true)} title="Über das ganze Fenster ansehen">
@@ -360,7 +363,7 @@ export function ErgebnisAnsicht({ id, zu }) {
               : html`<option value=${wer}>${rolleName(wer)}</option>`}</select>
           ${gid && html`<button class="btn klein geist" onClick=${() => setGid(null)} title="Neues Gespräch zu diesem Ergebnis"><${Icon} n="neu" g=${13} />Neu</button>`}</div>
         ${team ? html`<${TeamChat} key=${wer + ":" + (gid || "neu")} wer=${wer} partnerListe=${partner} gid=${gid} ergebnisId=${e.id}
-            projektId=${e.projekt_id || ""} beiFassung=${fassungNeu} beiGespraech=${setGid} beiTaetig=${setTaetig}
+            projektId=${e.projekt_id || ""} beiFassung=${fassungNeu} beiGespraech=${setGid} beiTaetig=${setTaetig} vorlage=${chatVorlage}
             leerText="Sag, was sich ändern soll: kürzen, erweitern, Ton ändern, ein weiteres Kapitel, Quellen einarbeiten. Unterlagen über das Plus anhängen. Jede neue Fassung prüft Daniel, und du kannst sie zurücknehmen." />`
           : html`<div class="lade">Lade …</div>`}
       </div>`}

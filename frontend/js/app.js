@@ -196,7 +196,8 @@ function App() {
   // Sprechen oben im Kopf: Talk geht auf und hoert sofort zu.
   useEffect(() => bus.an("dialog-start", () => { setTalkStart({ frei: true, ausKopf: true, n: Date.now() }); setTalk(true); }), []);
   useEffect(() => { if (konto && konto.angemeldet) return kopfAbruf(); }, [konto && konto.angemeldet]);
-  useEffect(() => bus.an("ergebnis-zeigen", (id) => setAnzeige({ art: "ergebnis", id })), []);
+  // ergebnis-zeigen: eine Kennung, oder { id, vorlage } -- dann steht die Bitte schon im Chat (Daniels Einwände einarbeiten).
+  useEffect(() => bus.an("ergebnis-zeigen", (x) => setAnzeige({ art: "ergebnis", id: (x && x.id) || x, vorlage: x && x.vorlage, n: Date.now() })), []);
   useEffect(() => bus.an("notiz-zeigen", (id) => setAnzeige({ art: "notiz", id })), []);
   useEffect(() => {
     if (!konto || !konto.angemeldet) return;
@@ -273,7 +274,7 @@ function App() {
     ${talk && html`<${Talk} zu=${() => setTalk(false)} kontext=${kontext} setKontext=${setKontext} start=${talkStart} />`}
     ${!FENSTER && html`<${UntenNav} liste=${leiste} aktiv=${r.bereich} offen=${offen} />`}
     ${!talk && !FENSTER && html`<button class="talk-fab" onClick=${() => setTalk(true)} aria-label="Talk öffnen"><${Icon} n="talk" g=${24} /></button>`}
-    ${anzeige && anzeige.art === "ergebnis" && html`<${ErgebnisAnsicht} id=${anzeige.id} zu=${() => setAnzeige(null)} />`}
+    ${anzeige && anzeige.art === "ergebnis" && html`<${ErgebnisAnsicht} key=${anzeige.n} id=${anzeige.id} vorlage=${anzeige.vorlage} zu=${() => setAnzeige(null)} />`}
     ${anzeige && anzeige.art === "notiz" && html`<${NotizAnsicht} id=${anzeige.id} zu=${() => setAnzeige(null)} />`}
     ${erfassen && html`<${Erfassen} zu=${() => setErfassen(false)} />`}
     <${Toasts} />

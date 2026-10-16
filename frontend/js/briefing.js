@@ -51,7 +51,7 @@ export function Briefing({ lage }) {
   const ergebnisse = lage.ergebnisse || [];
   // Das neueste NEUE Ergebnis steht beim Oeffnen gleich aufgeklappt da --
   // genau das, was man beim Oeffnen sehen will.
-  const vorgabeOffen = (ergebnisse.find((e) => e.erstellt > gesehen) || {}).id || null;
+  const vorgabeOffen = (ergebnisse.find((e) => (e.bearbeitet || e.erstellt) > gesehen) || {}).id || null;
   const aufId = offen === undefined ? vorgabeOffen : offen;
 
   async function rueckgaengig(pid) {
@@ -86,7 +86,7 @@ export function Briefing({ lage }) {
         </section>`}
         <section class="karte">
           <div class="karte-kopf"><h3>Neu entstanden</h3><span class="leise klein">Ergebnisse deines Teams, letzte sieben Tage</span></div>
-          ${ergebnisse.length ? ergebnisse.map((e) => html`<${ErgebnisZeile} key=${e.id} e=${e} neu=${gesehen && e.erstellt > gesehen}
+          ${ergebnisse.length ? ergebnisse.map((e) => html`<${ErgebnisZeile} key=${e.id} e=${e} neu=${gesehen && (e.bearbeitet || e.erstellt) > gesehen}
               auf=${aufId === e.id} umschalten=${() => setOffen(aufId === e.id ? null : e.id)} />`)
             : html`<${Leer} titel="Noch keine Ergebnisse diese Woche.">Wenn eine Notiz um eine Ausarbeitung bittet, erscheint das Ergebnis hier -- mit Vorschau und Downloads.</${Leer}>`}
         </section>

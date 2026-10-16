@@ -144,12 +144,9 @@ async def lage():
         if lab:
             erledigt.append({"protokoll_id": p["id"], "text": lab, "wer": p["wer"], "wer_name": stab.rollen_name(p["wer"]),
                              "zeit": p["zeit"], "vorgang_id": p.get("vorgang_id")})
-    ergebnisse = db.alle("SELECT r.id, r.titel, r.form, r.rolle, r.vorgang_id, r.projekt_id, r.erstellt, r.pruefung, "
-                         "v.titel AS vorgang_titel, p.name AS projekt_name FROM ergebnisse r "
-                         "LEFT JOIN vorgaenge v ON v.id=r.vorgang_id LEFT JOIN projekte p ON p.id=r.projekt_id "
-                         "WHERE r.erstellt>? ORDER BY r.erstellt DESC LIMIT 8", (time.time() - 7 * 86400,))
+    # Dieselbe Liste wie in Talk (stab.neu_entstanden), zuletzt bearbeitete zuerst.
+    ergebnisse = stab.neu_entstanden()
     for e in ergebnisse:
-        e["wer_name"] = stab.rollen_name(e["rolle"])
         e["kurztitel"] = kurztitel(e)
     # "Seit deinem letzten Besuch" (Veiko, 16.10.: "bis ich raus habe, was wirklich
     # entstanden ist und was das Neue ist"). Auf dem Server gemerkt, nicht im
@@ -195,7 +192,7 @@ async def lage():
     return {
         "entscheidungen": ents, "erledigt": erledigt[:12], "ergebnisse": ergebnisse, "laufend": laufend,
         "gesehen": gesehen, "videos": videos,
-        "neu": {"ergebnisse": sum(1 for e in ergebnisse if e["erstellt"] > gesehen),
+        "neu": {"ergebnisse": sum(1 for e in ergebnisse if e["bearbeitet"] > gesehen),
                 "cases": db.wert("SELECT COUNT(*) FROM vorgaenge WHERE erstellt>? AND quelle!='alt'", (gesehen,)),
                 "erledigt": sum(1 for x in erledigt if x["zeit"] > gesehen)},
         "aufgaben": aufgaben, "gesundheit": stab.gesundheit(), "neo_laeuft": neo_lauf,
@@ -1030,7 +1027,7 @@ async def talk_senden(request: Request):
     async def mit_start():
         yield {"typ": "start", "gespraech_id": gid}
         async for e in gespraech.senden(gid, text, d.get("kontext"), d.get("anhaenge") or [], bool(d.get("stimme")),
-                                        schnell=bool(d.get("schnell"))):
+                                        schnell=bool(d.get("schnell")), netz=bool(d.get("netz"))):
             yield e
     return _im_hintergrund(mit_start(), "talk")
 

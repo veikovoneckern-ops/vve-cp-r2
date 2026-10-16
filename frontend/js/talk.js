@@ -11,7 +11,7 @@
 // Gespraechskennung null (jeder Satz ein neues Gespraech) und keine offenen
 // Vorschlaege (ein "ja" fuehrte nie etwas aus). Kennung und Verlauf liegen
 // deshalb zusaetzlich in Refs, die die Schleife immer aktuell liest.
-import { useEsc, html, useState, useEffect, useRef, Icon, Md, toast, fehlerMelden, aktualisieren, navigiere, rolleName, bus, tempoSchnell, TempoSchalter } from "./ui.js";
+import { useEsc, html, useState, useEffect, useRef, Icon, Md, toast, fehlerMelden, aktualisieren, navigiere, rolleName, bus, talkSchalter, TalkSchalter, GlobusKnopf } from "./ui.js";
 import { api, strom } from "./api.js";
 import { Composer } from "./composer.js";
 import { boardFrageMerken } from "./board.js";
@@ -140,7 +140,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
     let fertig = null, stromFehler = null;
     const k = kontextRef.current;
     try {
-      await strom("/talk/senden", { gespraech_id: gidRef.current, text, kontext: k ? { art: k.art, id: k.id } : null, anhaenge, stimme, schnell: tempoSchnell() }, (e) => {
+      await strom("/talk/senden", { gespraech_id: gidRef.current, text, kontext: k ? { art: k.art, id: k.id } : null, anhaenge, stimme, schnell: !talkSchalter("gruendlich"), netz: talkSchalter("netz") }, (e) => {
         if (e.typ === "start") setGid(e.gespraech_id);
         else if (e.typ === "text") setLauf((l) => ({ ...(l || {}), text: (l ? l.text : "") + e.t }));
         else if (e.typ === "status") setLauf((l) => ({ ...(l || { text: "" }), status: e.text }));
@@ -382,8 +382,10 @@ export function Talk({ zu, kontext, setKontext, start }) {
     <div class="talk-eingabe">
       <${Composer} feldRef=${talkFeld} platzhalter=${kontext ? "Frag zu „" + (kontext.titel || "").slice(0, 40) + "“ …" : "Frag oder beauftrage dein Team … („ja“ bestätigt den letzten Vorschlag)"}
         beimSenden=${(t, a) => eingabe(t, a, false).then(() => true)} laeuft=${!!lauf}
-        beimStoppen=${() => abbruch.current && abbruch.current.abort()} entwurfKey="talk" hinweis="" />
-      <${TempoSchalter} />
+        beimStoppen=${() => abbruch.current && abbruch.current.abort()} entwurfKey="talk" hinweis="" extra=${html`<${GlobusKnopf} />`} />
+      <div class="talk-schalter">
+        <${TalkSchalter} name="gruendlich" text="Gründlich" titel="An: das Cockpit denkt vor der Antwort nach (dauert deutlich länger). Aus: schnelle, flüssige Antwort. Gilt auf diesem Gerät." />
+      </div>
     </div>
   </aside>`;
 }
