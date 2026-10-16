@@ -829,6 +829,9 @@ def _im_hintergrund(erzeuger, art: str, wer: str = "") -> StreamingResponse:
                     stand["text"] += e.get("t") or ""
                 elif e.get("typ") == "status":
                     stand["status"] = e.get("text") or ""
+                elif e.get("typ") == "wer":
+                    # Ein Externer uebernimmt im selben Gespraech (teamchat.senden mit extern).
+                    stand.update(wer=e.get("wer") or wer, text="", status="")
                 schlange.put_nowait(e)
         except Exception as f:  # noqa: BLE001 -- der Grund soll beim Browser ankommen, nicht nur im Journal
             schlange.put_nowait({"typ": "fehler", "text": f"{f.__class__.__name__}: {f}"})
@@ -877,8 +880,11 @@ async def teamchat_senden(request: Request):
         raise HTTPException(400, "Es fehlt die Nachricht.")
     kontext = {"projekt_id": d.get("projekt_id") or None, "ergebnis_id": d.get("ergebnis_id") or None}
     wer = str(d.get("wer") or "")
+    # extern: die Externen, die Veiko in DIESER Nachricht dazuholt UND fuer die er im
+    # Fenster die Kosten freigegeben hat. Ohne diese Liste ruft der Server keinen an.
+    extern = [str(x) for x in (d.get("extern") or []) if str(x) in teamchat.EXTERNE][:3]
     return _im_hintergrund(teamchat.senden(d.get("gespraech_id"), wer, text or "(siehe Anhang)", dateien, kontext,
-                                           schnell=bool(d.get("schnell"))), "team", wer)
+                                           schnell=bool(d.get("schnell")), extern=extern), "team", wer)
 
 
 @router.get("/team/{rid}")

@@ -221,7 +221,13 @@ def gespraeche(wer: str | None = None, ergebnis_id: str | None = None) -> list[d
 
 
 async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
-                 kontext: dict[str, Any], schnell: bool = False) -> AsyncIterator[dict[str, Any]]:
+                 kontext: dict[str, Any], schnell: bool = False,
+                 extern: list[str] | None = None) -> AsyncIterator[dict[str, Any]]:
+    """extern: Externe, die Veiko in dieser Nachricht dazuholt und fuer die er im
+    Fenster die Kosten freigegeben hat. Sie antworten dann SELBST in diesem
+    Gespraech, statt dass das Mitglied nur einen Auftrag an sie formuliert --
+    gemessen am 16.10.: "gib Demmis die Fassung zum Korrekturlesen" brachte von
+    Neal einen fertigen Pruefauftrag "zum Weiterschicken", aber keinen Demmis."""
     if not ist_extern(wer) and not db.holen("team", wer):
         yield {"typ": "fehler", "text": f"Unbekanntes Teammitglied: {wer}"}
         return
@@ -264,6 +270,27 @@ async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
                 system += "\n\n" + stab.netz_system(quellen)
                 yield {"typ": "status", "text": f"{len(quellen)} Quellen aus dem Netz gelesen …"}
 
+    sprecher = [x for x in (extern or []) if x in EXTERNE] if not ist_extern(wer) else []
+    if not sprecher:
+        async for e in _antwort(gid, wer, system, verlauf, kontext, text, quellen, denken):
+            yield e
+        return
+    netz = ("\n\n" + stab.netz_system(quellen)) if quellen else ""
+    for xid in sprecher:
+        yield {"typ": "wer", "wer": xid}
+        xsys = (system_text(xid, kontext) + "\n\n" + zusatz + netz +
+                f"\n\nDICH HAT {wer_name(wer).upper()} AUS VEIKOS TEAM AUF VEIKOS WUNSCH IN DIESES GESPRÄCH GEHOLT. "
+                "Erledige Veikos letzte Nachricht selbst und vollständig hier im Gespräch -- nicht als Vorschlag, "
+                "was jemand anderes tun könnte. Bei einer Korrektur: nenne jede Fundstelle mit Zitat und Verbesserung.")
+        async for e in _antwort(gid, xid, xsys, verlauf, kontext, text, quellen, denken):
+            yield e
+
+
+async def _antwort(gid: str, wer: str, system: str, verlauf: list[dict[str, str]], kontext: dict[str, Any],
+                   text: str, quellen: list[dict[str, str]], denken: bool) -> AsyncIterator[dict[str, Any]]:
+    """Eine Antwort eines Mitglieds oder Externen: rechnen, Fassung uebernehmen,
+    Daniel pruefen lassen, speichern. Ein Weg fuer beide, damit eine Fassung von
+    Demmis genauso zuruecknehmbar ist wie eine von Neal."""
     gesamt = ""
     try:
         if ist_extern(wer):
@@ -326,4 +353,4 @@ async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
     mid = db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",
                         (gid, wer, prosa, json.dumps(daten, ensure_ascii=False), time.time()))
     db.ausfuehren("UPDATE gespraeche SET geaendert=? WHERE id=?", (time.time(), gid))
-    yield {"typ": "fertig", "text": prosa, "nachricht_id": mid, "modell": modell, **{k: daten[k] for k in ("fassung", "protokoll_id") if k in daten}}
+    yield {"typ": "fertig", "text": prosa, "nachricht_id": mid, "modell": modell, "wer": wer, **{k: daten[k] for k in ("fassung", "protokoll_id") if k in daten}}

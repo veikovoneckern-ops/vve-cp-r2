@@ -39,13 +39,21 @@ function Nachricht({ m, partner, beiRueckgaengig }) {
     </div></div>`;
 }
 
+// Wen Veiko in einer Nachricht an ein Teammitglied dazuholt ("gib Demmis die
+// Fassung zum Korrekturlesen"). Die Externen antworten dann selbst im selben
+// Gespraech (teamchat.senden mit extern) -- nach einmaliger Kostenfreigabe.
+const EXTERN_NAMEN = [["dario", /\b(dario|claude)\b/i], ["elon", /\b(elon|grok)\b/i], ["demmis", /\b(demmis|demis|gemini)\b/i]];
+function genannteExterne(text) { return EXTERN_NAMEN.filter(([, re]) => re.test(text || "")).map(([id]) => id); }
+
 // wer: Kennung des Mitglieds; gid: Gespraech oder null; ergebnisId/projektId: Kontext.
 // beiFassung(): das Ergebnisfenster laedt danach neu. beiGespraech(gid): neue Kennung merken.
-export function TeamChat({ wer, partnerListe, gid, ergebnisId = "", projektId = "", beiFassung, beiGespraech, leerText }) {
+// beiTaetig({name, status} | null): was gerade passiert -- fuer die Anzeige im Fensterkopf.
+export function TeamChat({ wer, partnerListe, gid, ergebnisId = "", projektId = "", beiFassung, beiGespraech, leerText, beiTaetig }) {
   const [msgs, setMsgs] = useState([]);
   const [lauf, setLauf] = useState(null);
   const [vorlesenAn, setVorlesenAn] = useState(() => { try { return localStorage.getItem("tc-vorlesen") === "1"; } catch (e) { return false; } });
   const [kostenOk, setKostenOk] = useState(false);   // je Gespraech einmal: Externe kosten Geld
+  const [externFrei, setExternFrei] = useState([]);   // dazugeholte Externe, fuer die die Kosten freigegeben sind
   const [wartet, setWartet] = useState(null);
   const feld = useRef(null);
   const verlauf = useRef(null);
@@ -78,36 +86,56 @@ export function TeamChat({ wer, partnerListe, gid, ergebnisId = "", projektId = 
   useEffect(() => { const v = verlauf.current; if (v) v.scrollTop = v.scrollHeight; }, [msgs, lauf]);
   useEffect(() => { try { localStorage.setItem("tc-vorlesen", vorlesenAn ? "1" : "0"); } catch (e) { /* egal */ } }, [vorlesenAn]);
 
+  // Was gerade passiert, nach oben melden (Fensterkopf des Ergebnisses).
+  useEffect(() => {
+    if (!beiTaetig) return;
+    if (lauf) { const p = partner(lauf.wer || wer); beiTaetig({ name: p.name, status: lauf.status || (lauf.text ? "schreibt …" : "denkt nach …") }); }
+    else if (nach) { const p = partner(nach.wer || wer); beiTaetig({ name: p.name, status: nach.status || (nach.text ? "schreibt …" : "arbeitet …") }); }
+    else beiTaetig(null);
+  }, [lauf && lauf.status, lauf && lauf.wer, lauf && !!lauf.text, nach && nach.status, nach && nach.wer, !!lauf, !!nach]);
+  useEffect(() => () => beiTaetig && beiTaetig(null), []);
+
   async function senden(text, dateien, namen) {
     if (lauf) return false;
     if (ich.extern && !kostenOk) { setWartet({ text, dateien, namen }); return true; }
-    return sendenFrei(text, dateien);
+    const dazu = ich.extern ? [] : genannteExterne(text).filter((x) => partnerListe.some((p) => p.id === x));
+    if (dazu.length && !dazu.every((x) => externFrei.includes(x))) { setWartet({ text, dateien, namen, dazu }); return true; }
+    return sendenFrei(text, dateien, dazu);
   }
 
-  async function sendenFrei(text, dateien) {
+  async function sendenFrei(text, dateien, extern = []) {
     setMsgs((m) => [...m, { id: "d" + Date.now(), rolle: "du", text: text || "(siehe Anhang)", dateien }]);
     setLauf({ text: "", status: "" });
     const ctl = new AbortController(); abbruch.current = ctl;
-    let neuGid = gid, fertig = null, fehler = null, pruefung = null;
+    let neuGid = gid, fehler = null, pruefung = null;
+    const fertige = [];
     bus.sende("ki-start");
     try {
-      await strom("/teamchat/senden", { gespraech_id: gid || null, wer, text, dateien, ergebnis_id: ergebnisId || null, projekt_id: projektId || null, schnell: tempoSchnell() }, (e) => {
+      await strom("/teamchat/senden", { gespraech_id: gid || null, wer, text, dateien, ergebnis_id: ergebnisId || null, projekt_id: projektId || null,
+        schnell: tempoSchnell(), extern }, (e) => {
         if (e.typ === "start") neuGid = e.gespraech_id;
+        else if (e.typ === "wer") setLauf({ wer: e.wer, text: "", status: `${partner(e.wer).name} wird dazugeholt …` });
         else if (e.typ === "text") setLauf((l) => l && { ...l, text: l.text + e.t });
         else if (e.typ === "status") setLauf((l) => l && { ...l, status: e.text });
         else if (e.typ === "fassung") { setLauf((l) => l && { ...l, status: "Neue Fassung gespeichert." }); beiFassung && beiFassung(); }
         else if (e.typ === "pruefung") pruefung = e.pruefung;
-        else if (e.typ === "fertig") fertig = e;
+        else if (e.typ === "fertig") {
+          // Mehrere Antworten in einer Runde (Neal holt Demmis und Elon): jede sofort zeigen.
+          const f = { id: e.nachricht_id, rolle: e.wer || wer, text: e.text, modell: e.modell, fassung: e.fassung,
+            protokoll_id: e.protokoll_id, pruefung: pruefung && pruefung.urteil };
+          pruefung = null;
+          fertige.push(f);
+          setMsgs((m) => [...m, f]);
+          setLauf((l) => l && { ...l, text: "", status: "" });
+        }
         else if (e.typ === "fehler") fehler = e.text;
       }, ctl.signal);
       if (fehler) throw new Error(fehler);
     } catch (e) { if (e.name !== "AbortError") fehlerMelden(e); }
     setLauf(null);
-    if (fertig) {
-      setMsgs((m) => [...m, { id: fertig.nachricht_id, rolle: wer, text: fertig.text, modell: fertig.modell, fassung: fertig.fassung,
-        protokoll_id: fertig.protokoll_id, pruefung: pruefung && pruefung.urteil }]);
-      if (fertig.fassung && beiFassung) beiFassung();
-      if (vorlesenAn) vorlesen(fertig.text).catch(() => {});
+    if (fertige.length) {
+      if (fertige.some((f) => f.fassung) && beiFassung) beiFassung();
+      if (vorlesenAn) vorlesen(fertige.map((f) => f.text).join("\n\n")).catch(() => {});
     }
     if (neuGid && neuGid !== gid && beiGespraech) beiGespraech(neuGid);
     return true;
@@ -127,17 +155,25 @@ export function TeamChat({ wer, partnerListe, gid, ergebnisId = "", projektId = 
         ? `${ich.name} ist extern und kostet Geld je Nachricht. Gut für eine zweite Meinung.`
         : `${ich.name} rechnet lokal auf deinem Server. Tippen, diktieren (Mikrofon) oder Unterlagen anhängen.`)}</${Leer}>`}
       ${msgs.map((m) => html`<${Nachricht} key=${m.id} m=${m} partner=${partner} beiRueckgaengig=${ergebnisId ? rueckgaengig : null} />`)}
-      ${lauf && html`<div class="bd-beitrag"><${Avatar} wer=${wer} name=${ich.name} g=${30} />
-        <div class="bd-blase"><b>${ich.name}</b>${lauf.text ? html`<${Md} text=${lauf.text.replace(/<<<FASSUNG>>>[\s\S]*/, "\n\n_… schreibt die neue Fassung …_")} />`
-          : html`<div class="bd-denkt">${lauf.status || `${ich.name} denkt nach …`}</div>`}
+      ${lauf && html`<div class="bd-beitrag"><${Avatar} wer=${lauf.wer || wer} name=${partner(lauf.wer || wer).name} g=${30} />
+        <div class="bd-blase"><b>${partner(lauf.wer || wer).name}</b>${lauf.text ? html`<${Md} text=${lauf.text.replace(/<<<FASSUNG>>>[\s\S]*/, "\n\n_… schreibt die neue Fassung …_")} />`
+          : html`<div class="bd-denkt">${lauf.status || `${partner(lauf.wer || wer).name} denkt nach …`}</div>`}
           ${lauf.text && lauf.status && html`<div class="leise klein" style="margin-top:6px">${lauf.status}</div>`}</div></div>`}
-      ${!lauf && nach && html`<div class="bd-beitrag"><${Avatar} wer=${wer} name=${ich.name} g=${30} />
-        <div class="bd-blase"><b>${ich.name}</b> <span class="leise klein">arbeitet noch · seit ${zeitText(nach.start).replace("vor ", "")}</span>
+      ${!lauf && nach && html`<div class="bd-beitrag"><${Avatar} wer=${nach.wer || wer} name=${partner(nach.wer || wer).name} g=${30} />
+        <div class="bd-blase"><b>${partner(nach.wer || wer).name}</b> <span class="leise klein">arbeitet noch · seit ${zeitText(nach.start).replace("vor ", "")}</span>
           ${nach.text ? html`<${Md} text=${nach.text.replace(/<<<FASSUNG>>>[\s\S]*/, "\n\n_… schreibt die neue Fassung …_")} />`
-            : html`<div class="bd-denkt">${nach.status || `${ich.name} denkt nach …`}</div>`}
+            : html`<div class="bd-denkt">${nach.status || `${partner(nach.wer || wer).name} denkt nach …`}</div>`}
           <div class="leise klein" style="margin-top:6px">Du kannst das Fenster schließen. Die Antwort wird fertig gerechnet und erscheint hier.</div></div></div>`}
     </div>
-    ${wartet && html`<div class="hinweisbox tc-kosten"><b>${ich.name} ist ein bezahltes Cloud-Modell.</b> Jede Nachricht in diesem Gespräch kostet Geld beim Anbieter.
+    ${wartet && wartet.dazu && html`<div class="hinweisbox tc-kosten">
+      <b>Du holst ${wartet.dazu.map((x) => partner(x).name).join(" und ")} dazu.</b>${" "}${wartet.dazu.map((x) => `${partner(x).name} (${partner(x).titel})`).join(", ")} ${wartet.dazu.length > 1 ? "sind bezahlte Cloud-Modelle" : "ist ein bezahltes Cloud-Modell"}:
+      der Aufruf kostet Geld beim Anbieter. ${ergebnisId ? "Die vollständige aktuelle Fassung geht mit. " : ""}Die Antwort erscheint hier im Gespräch.
+      <div class="knopfreihe" style="margin-top:8px">
+        <button class="btn primaer klein" onClick=${() => { const w = wartet; setWartet(null); setExternFrei((f) => [...new Set([...f, ...w.dazu])]); setTimeout(() => sendenFrei(w.text, w.dateien, w.dazu), 0); }}>
+          Erlauben und ${wartet.dazu.map((x) => partner(x).name).join(" und ")} fragen</button>
+        <button class="btn klein" onClick=${() => { const w = wartet; setWartet(null); setTimeout(() => sendenFrei(w.text, w.dateien, []), 0); }}>Nur ${ich.name} antworten lassen</button>
+        <button class="btn klein geist" onClick=${() => { feld.current && feld.current.setzen(wartet.text); setWartet(null); }}>Abbrechen</button></div></div>`}
+    ${wartet && !wartet.dazu && html`<div class="hinweisbox tc-kosten"><b>${ich.name} ist ein bezahltes Cloud-Modell.</b> Jede Nachricht in diesem Gespräch kostet Geld beim Anbieter.
       <div class="knopfreihe" style="margin-top:8px"><button class="btn primaer klein" onClick=${() => { const w = wartet; setWartet(null); setKostenOk(true); setTimeout(() => sendenFrei(w.text, w.dateien), 0); }}>Für dieses Gespräch erlauben und senden</button>
         <button class="btn klein geist" onClick=${() => { feld.current && feld.current.setzen(wartet.text); setWartet(null); }}>Abbrechen</button></div></div>`}
     <div class="tc-eingabe">

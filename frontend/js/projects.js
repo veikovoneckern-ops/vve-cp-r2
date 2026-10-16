@@ -296,6 +296,7 @@ export function ErgebnisAnsicht({ id, zu }) {
   const [wer, setWer] = useState("");
   const [gid, setGid] = useState(null);
   const [chatAuf, setChatAuf] = useState(() => { try { return localStorage.getItem("erg-chat") !== "0"; } catch (x) { return true; } });
+  const [taetig, setTaetig] = useState(null);     // was im Chat gerade passiert (TeamChat meldet es)
   const laden = () => api("/ergebnisse/" + id).then((x) => { setE(x); return x; });
   useEffect(() => {
     laden().then((x) => { setAnsicht(!!x.ansicht); setWer((w) => w || x.rolle || "buch"); }).catch((x) => { fehlerMelden(x); zu(); });
@@ -312,7 +313,14 @@ export function ErgebnisAnsicht({ id, zu }) {
   const p = e.pruefung || {};
   const partner = gespraechsPartner(team);
   const fassungNeu = () => { laden().then(() => setStand((n) => n + 1)); aktualisieren(); };
-  return html`<${Modal} titel=${e.kurztitel || e.titel} zu=${zu} breit=${chatAuf ? "voll" : true} fuss=${html`
+  // Neben dem Titel: was gerade an diesem Ergebnis passiert (Veiko, 16.10.:
+  // "ich will wissen, was gerade geschieht"). Chat zuerst, dann Bilder und Video.
+  const fb = e.folienbilder, vd = e.video;
+  const jetzt = taetig ? `${taetig.name}: ${taetig.status}`
+    : fb && fb.stand === "rechnet" ? `Bilder werden gerechnet${fb.anzahl ? ` · ${fb.fertig || 0} von ${fb.anzahl}` : ""}`
+    : vd && vd.stand === "rechnet" ? `Video wird gerechnet · ${vd.schritt || ""}` : "";
+  const kopf = jetzt ? html`<span class="erg-jetzt" role="status" aria-live="polite"><span class="erg-jetzt-punkt"></span>${jetzt}</span>` : "";
+  return html`<${Modal} titel=${e.kurztitel || e.titel} kopf=${kopf} zu=${zu} breit=${chatAuf ? "voll" : true} fuss=${html`
       <${Downloads} e=${e} />
       <span style="flex:1"></span>
       <button class=${"btn" + (chatAuf ? " an" : "")} onClick=${() => setChatAuf(!chatAuf)}><${Icon} n="chat" g=${15} />${chatAuf ? "Weiterarbeiten ausblenden" : "Weiterarbeiten"}</button>
@@ -344,7 +352,7 @@ export function ErgebnisAnsicht({ id, zu }) {
               : html`<option value=${wer}>${rolleName(wer)}</option>`}</select>
           ${gid && html`<button class="btn klein geist" onClick=${() => setGid(null)} title="Neues Gespräch zu diesem Ergebnis"><${Icon} n="neu" g=${13} />Neu</button>`}</div>
         ${team ? html`<${TeamChat} key=${wer + ":" + (gid || "neu")} wer=${wer} partnerListe=${partner} gid=${gid} ergebnisId=${e.id}
-            projektId=${e.projekt_id || ""} beiFassung=${fassungNeu} beiGespraech=${setGid}
+            projektId=${e.projekt_id || ""} beiFassung=${fassungNeu} beiGespraech=${setGid} beiTaetig=${setTaetig}
             leerText="Sag, was sich ändern soll: kürzen, erweitern, Ton ändern, ein weiteres Kapitel, Quellen einarbeiten. Unterlagen über das Plus anhängen. Jede neue Fassung prüft Daniel, und du kannst sie zurücknehmen." />`
           : html`<div class="lade">Lade …</div>`}
       </div>`}

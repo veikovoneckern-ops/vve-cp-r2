@@ -150,11 +150,12 @@ document.addEventListener("keydown", (e) => {
 // Kennung wird gelesen, nichts aus dem Rahmen ausgefuehrt.
 window.addEventListener("message", (m) => { if (m.data && m.data.vvecEsc === 1) escAusloesen(); });
 
-export function Modal({ titel, zu, children, fuss, breit }) {
+// kopf: optional etwas neben dem Titel -- z. B. was im Ergebnisfenster gerade passiert.
+export function Modal({ titel, zu, children, fuss, breit, kopf }) {
   useEsc(zu);
   return html`<div class="modal-grund" onMouseDown=${(e) => { if (e.target === e.currentTarget) zu(); }}>
     <div class=${"modal" + (breit ? " breit" : "") + (breit === "voll" ? " voll" : "")} role="dialog" aria-modal="true" aria-label=${titel}>
-      <div class="modal-kopf"><h2>${titel}</h2><button class="btn geist icon" onClick=${zu} title="Schließen (Esc)"><${Icon} n="x" /></button></div>
+      <div class="modal-kopf"><h2>${titel}</h2>${kopf || ""}<button class="btn geist icon" onClick=${zu} title="Schließen (Esc)"><${Icon} n="x" /></button></div>
       <div class="modal-inhalt">${children}</div>
       ${fuss && html`<div class="modal-fuss">${fuss}</div>`}
     </div></div>`;
