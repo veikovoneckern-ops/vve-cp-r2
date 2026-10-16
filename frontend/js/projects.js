@@ -320,21 +320,29 @@ export function ErgebnisAnsicht({ id, zu }) {
     : fb && fb.stand === "rechnet" ? `Bilder werden gerechnet${fb.anzahl ? ` · ${fb.fertig || 0} von ${fb.anzahl}` : ""}`
     : vd && vd.stand === "rechnet" ? `Video wird gerechnet · ${vd.schritt || ""}` : "";
   const kopf = jetzt ? html`<span class="erg-jetzt" role="status" aria-live="polite"><span class="erg-jetzt-punkt"></span>${jetzt}</span>` : "";
+  // Der Kopf der linken Spalte (.erg-text-kopf) bleibt beim Scrollen stehen:
+  // welcher Stand gilt, von wem, und Download/Kopieren direkt daneben (Veiko,
+  // 16.10.: "dort immer den letzten vollstaendigen Stand und die Buttons").
+  // Die Downloads stehen deshalb nicht mehr zusaetzlich im Fuss.
   return html`<${Modal} titel=${e.kurztitel || e.titel} kopf=${kopf} zu=${zu} breit=${chatAuf ? "voll" : true} fuss=${html`
-      <${Downloads} e=${e} />
       <span style="flex:1"></span>
       <button class=${"btn" + (chatAuf ? " an" : "")} onClick=${() => setChatAuf(!chatAuf)}><${Icon} n="chat" g=${15} />${chatAuf ? "Weiterarbeiten ausblenden" : "Weiterarbeiten"}</button>
       ${e.vorgang_id && html`<a class="btn" href=${"#/inbox/" + e.vorgang_id} onClick=${zu} title="Die ursprüngliche Notiz, was Jason daraus gemacht hat, alle Ergebnisse dazu">Herkunft</a>`}
       <button class="btn primaer" onClick=${zu}>Schließen</button>`}>
     <div class=${"erg-raster" + (chatAuf ? " mit-chat" : "")}>
       <div class="erg-text">
-        <div class="knopfreihe" style="margin-bottom:10px">
-          <${Avatar} wer=${e.rolle} name=${e.wer_name} g=${24} /><b>${e.wer_name}</b><span class="leise klein">${e.form} · ${e.modell} · ${zeitText(e.erstellt)}</span>
-          <${Pruefung} p=${p} />
-          ${e.ansicht ? html`<div class="segment" style="margin-left:auto"><button class=${ansicht ? "an" : ""} onClick=${() => setAnsicht(true)}>Ansicht</button>
-            <button class=${!ansicht ? "an" : ""} onClick=${() => setAnsicht(false)}>Text</button></div>` : ""}
-          ${!(e.form === "video" || e.video) && html`<button class="btn klein" style=${e.ansicht ? "" : "margin-left:auto"} onClick=${() => setGross(true)} title="Über das ganze Fenster ansehen">
-            <${Icon} n="voll" g=${13} />Groß ansehen</button>`}
+        <div class="erg-text-kopf">
+          <div class="knopfreihe">
+            <${Avatar} wer=${(e.fassung_von || {}).wer || e.rolle} name=${(e.fassung_von || {}).name || e.wer_name} g=${24} />
+            <span><b>${e.fassung_von && e.fassung_von.nr > 1 ? `Aktuelle Fassung (${e.fassung_von.nr})` : "Erste Fassung"}</b>
+              <span class="leise klein"> · von ${(e.fassung_von || {}).name || e.wer_name} · ${zeitText((e.fassung_von || {}).zeit || e.erstellt)} · ${(e.inhalt || "").length.toLocaleString("de-DE")} Zeichen</span></span>
+            <${Pruefung} p=${p} />
+            ${e.ansicht ? html`<div class="segment" style="margin-left:auto"><button class=${ansicht ? "an" : ""} onClick=${() => setAnsicht(true)}>Ansicht</button>
+              <button class=${!ansicht ? "an" : ""} onClick=${() => setAnsicht(false)}>Text</button></div>` : ""}
+            ${!(e.form === "video" || e.video) && html`<button class="btn klein" style=${e.ansicht ? "" : "margin-left:auto"} onClick=${() => setGross(true)} title="Über das ganze Fenster ansehen">
+              <${Icon} n="voll" g=${13} />Groß ansehen</button>`}
+          </div>
+          <${Downloads} e=${e} />
         </div>
         ${e.auftrag && html`<details class="auftrag-zeile klein"><summary>Auftrag</summary><div>${e.auftrag}</div></details>`}
         ${(e.form === "video" || e.video) && html`<${VideoBlock} e=${e} neuLaden=${laden} ohneDownload=${true} />`}

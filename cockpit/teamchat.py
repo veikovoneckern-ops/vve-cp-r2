@@ -310,8 +310,22 @@ async def _antwort(gid: str, wer: str, system: str, verlauf: list[dict[str, str]
                 async for t in llm.strom(modell, system, verlauf, temperatur=0.6, denken=denken, num_ctx=65536):
                     gesamt += t
                     yield {"typ": "text", "t": t}
+                if not gesamt.strip() and denken:
+                    # Gemessen am 16.10.: qwen3.8 dachte 2:41 Min. (rund 11.000 Token) und
+                    # schrieb dann keinen Satz -- gespeichert wurde eine leere Nachricht.
+                    # Ein zweiter Anlauf ohne Denkphase schreibt direkt.
+                    yield {"typ": "status", "text": f"{wer_name(wer)} hat nur nachgedacht und nichts geschrieben -- zweiter Anlauf, diesmal direkt …"}
+                    async for t in llm.strom(modell, system, verlauf, temperatur=0.6, denken=False, num_ctx=65536):
+                        gesamt += t
+                        yield {"typ": "text", "t": t}
     except llm.ModellFehler as f:
         yield {"typ": "fehler", "text": str(f)}
+        return
+    if not gesamt.strip():
+        # Eine leere Antwort ist ein Fehler, keine Nachricht -- sonst steht eine
+        # leere Blase im Chat und man weiss nicht, ob noch etwas kommt.
+        yield {"typ": "fehler", "text": f"{wer_name(wer)} hat keine Antwort geliefert. Bitte noch einmal senden, "
+                                        "gern mit „Schnelle Antwort“ oder in kleineren Schritten."}
         return
     if llm.fremdschrift(gesamt):
         gesamt = llm.FREMDSCHRIFT.sub("", gesamt)

@@ -1145,3 +1145,8 @@ details.eingetragen[open]>summary{margin-bottom:8px}
 .erg-jetzt-punkt{flex:none;width:8px;height:8px;border-radius:50%;background:var(--steel,#2C6BB3);animation:erg-puls 1.2s ease-in-out infinite}
 @keyframes erg-puls{0%,100%{opacity:.35;transform:scale(.8)}50%{opacity:1;transform:scale(1.15)}}
 @media (prefers-reduced-motion:reduce){.erg-jetzt-punkt{animation-duration:3s}}
+
+/* Ergebnisfenster links: Stand und Knoepfe bleiben beim Scrollen oben */
+.erg-text-kopf{position:sticky;top:0;z-index:2;background:var(--surface);padding:0 0 10px;margin-bottom:10px;
+  border-bottom:1px solid var(--line-2);display:flex;flex-direction:column;gap:8px}
+.erg-text-kopf .erg-downloads{margin:0}

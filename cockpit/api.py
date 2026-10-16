@@ -612,6 +612,16 @@ async def ergebnis(rid: str):
     if not e:
         raise HTTPException(404, "Ergebnis nicht gefunden")
     e["wer_name"] = stab.rollen_name(e["rolle"])
+    # Von wem der Stand ist, der gerade gilt: die letzte Ueberarbeitung im
+    # Protokoll, sonst der erste Entwurf. Das Fenster zeigt es ueber dem Text --
+    # nach drei Fassungen von Neal und Demmis war nicht mehr zu erkennen, welche
+    # links steht (Veiko, 16.10.).
+    from . import teamchat
+    p = db.alle("SELECT wer, zeit, (SELECT COUNT(*) FROM protokoll q WHERE q.tabelle='ergebnisse' AND q.datensatz_id=? "
+                "AND q.aktion='überarbeitet' AND q.rueckgaengig=0) AS anzahl FROM protokoll WHERE tabelle='ergebnisse' "
+                "AND datensatz_id=? AND aktion='überarbeitet' AND rueckgaengig=0 ORDER BY id DESC LIMIT 1", (rid, rid))
+    e["fassung_von"] = ({"wer": p[0]["wer"], "name": teamchat.wer_name(p[0]["wer"]), "zeit": p[0]["zeit"], "nr": p[0]["anzahl"] + 1}
+                        if p else {"wer": e["rolle"], "name": e["wer_name"], "zeit": e["erstellt"], "nr": 1})
     v = db.holen("vorgaenge", e.get("vorgang_id") or "") or {}
     e["vorgang_titel"] = v.get("titel")
     e["projekt_name"] = (db.holen("projekte", e.get("projekt_id") or "") or {}).get("name")

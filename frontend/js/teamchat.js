@@ -29,7 +29,8 @@ function Nachricht({ m, partner, beiRueckgaengig }) {
   return html`<div class="bd-beitrag">
     <${Avatar} wer=${m.rolle} name=${p.name} g=${30} />
     <div class="bd-blase"><b>${p.name}${m.modell ? html` <span class="leise klein" style="font-weight:400">· ${m.modell}</span>` : ""}</b>
-      <${Md} text=${m.text} />
+      ${(m.text || "").trim() ? html`<${Md} text=${m.text} />`
+        : html`<div class="leise">Keine Antwort geliefert. Bitte noch einmal senden, gern mit „Schnelle Antwort“.</div>`}
       ${m.fassung && html`<div class="tc-fassung"><span class="tc-fassung-text"><${Icon} n="check" g=${13} />Neue Fassung gespeichert${m.pruefung ? ` · Daniel: ${m.pruefung === "tragfaehig" ? "trägt" : m.pruefung}` : ""}</span>
         ${m.protokoll_id && beiRueckgaengig && html`<button class="btn klein geist" onClick=${() => beiRueckgaengig(m.protokoll_id)}><${Icon} n="undo" g=${13} />Zurücknehmen</button>`}</div>`}
       <div class="tc-werkzeug">
