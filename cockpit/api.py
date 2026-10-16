@@ -21,7 +21,7 @@ from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFil
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from . import anmeldung, db, gespraech, importer, llm, neo, stab, stimme, teamchat
-from .konfig import (ALT_BACKEND, ALT_COCKPIT_URL, SEARX, STATUS_URL, UPLOADS,
+from .konfig import (ALT_BACKEND, ALT_COCKPIT_URL, ALT_STATE, SEARX, STATUS_URL, UPLOADS,
                      VORSCHAU_DIR)
 
 router = APIRouter(prefix="/api")
@@ -1442,3 +1442,88 @@ async def suche(q: str):
     t += [{"art": "ergebnis", "id": r["id"], "titel": r["titel"]} for r in
           db.alle("SELECT id, titel FROM ergebnisse WHERE titel LIKE ? OR inhalt LIKE ? LIMIT 6", (like, like))]
     return {"treffer": t}
+
+
+# ================================================================ Verbrauch (Token und Kosten)
+# Die Seite "AI Consumption" des alten Cockpits, neu (Veiko, 16.10.2026). Dort
+# waren die Token geschaetzt (Zeichen / 4) und auch lokale Aufrufe trugen einen
+# Preis. Hier: lokale Zahlen exakt von Ollama, kostenlos (eigener Server);
+# Cloud-Zahlen exakt vom Anbieter, die KOSTEN nach einer sichtbaren, aenderbaren
+# Preistabelle -- Listenpreise aendern sich, und eine still veraltete Zahl waere
+# schlimmer als eine, deren Annahme man sieht.
+PREISE_VORGABE = {"claude": [5.0, 25.0], "grok": [3.0, 15.0], "gemini": [2.0, 12.0]}   # US-$ je 1 Mio. Token: [Eingabe, Ausgabe]
+ANBIETER_NAME = {"ollama": "Lokal (eigener Server)", "claude": "Dario · Claude", "grok": "Elon · Grok", "gemini": "Demmis · Gemini"}
+
+
+def _preise() -> dict[str, list[float]]:
+    p = db.einstellung("verbrauch_preise", {}) or {}
+    return {k: [float(x) for x in (p.get(k) or v)] for k, v in PREISE_VORGABE.items()}
+
+
+def _kosten(anbieter: str, ein: int, aus: int, preise: dict[str, list[float]]) -> float:
+    pr = preise.get(anbieter)
+    return (ein / 1e6 * pr[0] + aus / 1e6 * pr[1]) if pr else 0.0
+
+
+@router.get("/verbrauch")
+async def verbrauch(von: float = 0, bis: float = 0, projekt: str = ""):
+    bis = bis or time.time() + 60
+    preise = _preise()
+    sql = ("SELECT bereich, anbieter, modell, COUNT(*) AS aufrufe, SUM(tok_ein) AS ein, SUM(tok_aus) AS aus, "
+           "SUM(dauer_s) AS dauer, SUM(geschaetzt) AS geschaetzt FROM verbrauch WHERE zeit>=? AND zeit<=?")
+    args: list[Any] = [von, bis]
+    if projekt:
+        sql += " AND projekt_id=?"
+        args.append(projekt)
+    zeilen = db.alle(sql + " GROUP BY bereich, anbieter, modell", args)
+    for z in zeilen:
+        z["quelle"] = "neu"
+        z["kosten"] = _kosten(z["anbieter"], z["ein"] or 0, z["aus"] or 0, preise)
+    # Das alte Cockpit (nur lesen): seine Liste S.usage, Token dort geschaetzt.
+    # Projekt-Kennungen des alten Cockpits passen nicht zu den neuen -- mit einem
+    # Projektfilter bleibt der alte Bestand deshalb draussen, statt falsch zugeordnet.
+    alt: dict[tuple[str, str], dict[str, Any]] = {}
+    if not projekt:
+        try:
+            for u in (json.loads(ALT_STATE.read_text(encoding="utf-8")).get("usage") or []):
+                ts = (u.get("ts") or 0) / 1000
+                if not (von <= ts <= bis):
+                    continue
+                anb = "ollama" if u.get("provider") == "lokal" else str(u.get("provider") or "")
+                k = (str(u.get("op") or "Sonstiges"), anb)
+                a = alt.setdefault(k, {"bereich": "Altes Cockpit: " + k[0], "anbieter": anb, "modell": "",
+                                       "aufrufe": 0, "ein": 0, "aus": 0, "dauer": 0.0, "geschaetzt": 0, "quelle": "alt"})
+                a["aufrufe"] += 1
+                a["geschaetzt"] += 1
+                a["ein"] += int(u.get("inTok") or 0)
+                a["aus"] += int(u.get("outTok") or 0)
+        except (OSError, ValueError):
+            pass
+    for a in alt.values():
+        a["kosten"] = _kosten(a["anbieter"], a["ein"], a["aus"], preise)
+    alle = zeilen + list(alt.values())
+    je_anbieter: dict[str, dict[str, Any]] = {}
+    for z in alle:
+        j = je_anbieter.setdefault(z["anbieter"], {"anbieter": z["anbieter"], "name": ANBIETER_NAME.get(z["anbieter"], z["anbieter"]),
+                                                   "aufrufe": 0, "ein": 0, "aus": 0, "dauer": 0.0, "kosten": 0.0})
+        for f in ("aufrufe", "ein", "aus", "dauer", "kosten"):
+            j[f] += z[f] or 0
+    seit = db.wert("SELECT MIN(zeit) FROM verbrauch")
+    return {"zeilen": alle, "je_anbieter": list(je_anbieter.values()), "preise": preise,
+            "preise_vorgabe": PREISE_VORGABE, "erfasst_seit": seit,
+            "projekte": db.alle("SELECT id, name FROM projekte ORDER BY name")}
+
+
+@router.post("/verbrauch/preise")
+async def verbrauch_preise(request: Request):
+    d = await _koerper(request)
+    neu = {}
+    for k in PREISE_VORGABE:
+        v = d.get(k)
+        if isinstance(v, list) and len(v) == 2:
+            try:
+                neu[k] = [max(0.0, float(v[0])), max(0.0, float(v[1]))]
+            except (TypeError, ValueError):
+                raise HTTPException(400, f"Preis für {k} ist keine Zahl.")
+    db.einstellung_setzen("verbrauch_preise", neu)
+    return {"preise": _preise()}

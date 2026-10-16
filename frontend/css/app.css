@@ -1155,3 +1155,21 @@ details.eingetragen[open]>summary{margin-bottom:8px}
 .talk-schalter{display:flex;gap:16px;flex-wrap:wrap}
 .composer-leiste .sym.globus{color:var(--text-3,#8A94A6)}
 .composer-leiste .sym.globus.an{color:var(--steel,#2C6BB3)}
+
+/* Verbrauch (verbrauch.js) */
+.vb-filter{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px}
+.vb-karten{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-auto-rows:1fr;gap:12px;margin-bottom:14px}
+@media (max-width:1100px){.vb-karten{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:560px){.vb-karten{grid-template-columns:minmax(0,1fr)}}
+.vb-karte{padding:14px 16px;border-top:3px solid var(--line)}
+.vb-karte.ollama{border-top-color:var(--gruen,#2E8B57)}.vb-karte.claude{border-top-color:#C96442}
+.vb-karte.grok{border-top-color:#6B7280}.vb-karte.gemini{border-top-color:#2C6BB3}.vb-karte.gesamt{border-top-color:var(--ink-2,#444)}
+.vb-betrag{font-size:24px;font-weight:700;margin:4px 0}
+.vb-tabelle .zahl{text-align:right}
+.vb-tabelle tr.alt td{color:var(--ink-3)}
+.vb-tabelle tfoot td{border-top:2px solid var(--line);font-weight:600}
+.vb-sort{background:none;border:0;padding:0;font:inherit;color:inherit;text-transform:inherit;letter-spacing:inherit;cursor:pointer}
+.vb-preise{margin-top:14px;padding:14px 16px}
+.vb-preise summary{cursor:pointer}
+.vb-preis{width:90px}
+.vb-filter select.eingabe{width:auto;min-width:200px}

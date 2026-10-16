@@ -152,6 +152,55 @@ def _body(modell: str, system: str, nachrichten: list[dict[str, Any]], *, json_f
     return body
 
 
+# ---------------------------------------------------------------- Verbrauch
+# Jeder Modellaufruf bucht eine Zeile in die Tabelle "verbrauch" (Seite
+# Verbrauch). Wofuer gerechnet wurde, steht nicht im Aufruf -- es wird aus dem
+# genommen, was sich gerade angemeldet hat (taetig() fuer Talk, Team-Chat,
+# Board; stab.laeuft() fuer die Pipeline). Laufen zwei Dinge gleichzeitig,
+# gilt das zuletzt angemeldete; das ist eine Naeherung, die Token selbst sind exakt.
+def _bereich(was: str) -> str:
+    for wort, b in (("Talk", "Talk"), ("Team-Chat", "Team-Chat"), ("Advisory Board", "Advisory Board"), ("Neo", "Neo")):
+        if wort in was:
+            return b
+    return "Sonstiges"
+
+
+def wofuer() -> dict[str, Any]:
+    if TAETIG:
+        was = TAETIG[max(TAETIG)]["was"]
+        return {"bereich": _bereich(was), "was": was, "wer": None, "vorgang_id": None}
+    try:
+        from . import stab
+        l = stab.ZUSTAND.get("laeuft")
+        if l:
+            return {"bereich": "Team (Pipeline)", "was": f"{stab.rollen_name(l['wer'])} {l.get('was') or ''}".strip(),
+                    "wer": l["wer"], "vorgang_id": l.get("vorgang_id")}
+    except Exception:  # noqa: BLE001 -- Buchen darf nie einen Aufruf scheitern lassen
+        pass
+    return {"bereich": "Sonstiges", "was": "", "wer": None, "vorgang_id": None}
+
+
+def buchen(art: str, anbieter: str, modell: str, tok_ein: int, tok_aus: int, dauer_s: float = 0.0,
+           geschaetzt: bool = False, **dazu: Any) -> None:
+    try:
+        from . import db
+        w = {**wofuer(), **{k: v for k, v in dazu.items() if v}}
+        pid = w.get("projekt_id")
+        if not pid and w.get("vorgang_id"):
+            pid = (db.holen("vorgaenge", w["vorgang_id"]) or {}).get("projekt_id")
+        db.ausfuehren("INSERT INTO verbrauch (zeit,art,anbieter,modell,bereich,was,wer,vorgang_id,projekt_id,tok_ein,tok_aus,dauer_s,geschaetzt) "
+                      "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                      (time.time(), art, anbieter, modell, w.get("bereich"), (w.get("was") or "")[:160], w.get("wer"),
+                       w.get("vorgang_id"), pid, int(tok_ein or 0), int(tok_aus or 0), round(float(dauer_s or 0), 2), int(geschaetzt)))
+    except Exception as e:  # noqa: BLE001
+        print(f"[verbrauch] nicht gebucht: {e}", flush=True)
+
+
+def _ollama_buchen(body: dict[str, Any], d: dict[str, Any]) -> None:
+    buchen("lokal", "ollama", body.get("model") or "", d.get("prompt_eval_count") or 0, d.get("eval_count") or 0,
+           (d.get("total_duration") or 0) / 1e9)
+
+
 async def _post(body: dict[str, Any], timeout: float) -> dict[str, Any]:
     _beginn()
     try:
@@ -165,7 +214,9 @@ async def _post(body: dict[str, Any], timeout: float) -> dict[str, Any]:
         _ende()
     if r.status_code >= 400:
         raise ModellFehler(f"Ollama antwortet {r.status_code}: {r.text[:300]}")
-    return r.json()
+    d = r.json()
+    _ollama_buchen(body, d)
+    return d
 
 
 async def chat(modell: str, system: str, nachrichten: list[dict[str, Any]], *,
@@ -225,6 +276,8 @@ async def _strom_lauf(body: dict[str, Any]) -> AsyncIterator[str]:
                     d = json.loads(zeile)
                 except ValueError:
                     continue
+                if d.get("done"):   # die letzte Zeile traegt die Zaehler
+                    _ollama_buchen(body, d)
                 t = (d.get("message") or {}).get("content") or ""
                 if t:
                     yield t
@@ -240,6 +293,8 @@ async def _strom_nochmal(c: httpx.AsyncClient, body: dict[str, Any]) -> AsyncIte
                 d = json.loads(zeile)
             except ValueError:
                 continue
+            if d.get("done"):
+                _ollama_buchen(body, d)
             t = (d.get("message") or {}).get("content") or ""
             if t:
                 yield t

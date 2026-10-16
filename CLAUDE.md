@@ -65,3 +65,4 @@ Für Tests ohne echte Daten: eine zweite Instanz mit `VVEC_PORT=8791 VVEC_NEU_DA
 ## Ausliefern
 
 Kein ZIP, kein Manifest. Committen, nach GitHub pushen, auf dem Server `git pull` und `systemctl --user restart vve-cp-r2`.
+- **Verbrauch (Token und Kosten, `verbrauch.js`, `/api/verbrauch`)** -- die Seite „AI Consumption“ des alten Cockpits, neu (16.10.2026). Jeder Modellaufruf bucht eine Zeile in `verbrauch` (`llm.buchen`): lokal mit Ollamas exakten Zählern und Rechenzeit, Cloud mit den Zählern des Anbieters (das alte Backend reicht `usage` durch; fehlen sie: geschätzt und so markiert). „Wofür“ kommt aus dem, was gerade angemeldet ist (`llm.taetig`, `stab.laeuft`) -- eine Näherung bei Gleichzeitigem. Lokal kostet nichts; Cloud-Kosten = Token × Preis aus der sichtbaren, änderbaren Tabelle (`verbrauch_preise`, Vorgabe `PREISE_VORGABE`, US-$ je 1 Mio.). Die Liste `usage` des alten Cockpits wird nur gelesen und grau mit angezeigt (dort geschätzt), nicht bei Projektfilter.

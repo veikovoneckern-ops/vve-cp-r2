@@ -93,6 +93,15 @@ CREATE TABLE IF NOT EXISTS dateien (
 );
 CREATE TABLE IF NOT EXISTS sitzungen (token TEXT PRIMARY KEY, benutzer TEXT, erstellt REAL);
 CREATE TABLE IF NOT EXISTS einstellungen (schluessel TEXT PRIMARY KEY, wert TEXT);
+-- Token und Kosten (16.10.2026, Seite "Verbrauch"): je Modellaufruf eine Zeile.
+-- Lokal sind die Zahlen exakt (Ollama meldet sie), Cloud ebenfalls (der Anbieter
+-- meldet sie ueber das alte Backend); geschaetzt ist nur, wo nichts gemeldet wird.
+CREATE TABLE IF NOT EXISTS verbrauch (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, zeit REAL, art TEXT, anbieter TEXT, modell TEXT,
+  bereich TEXT, was TEXT, wer TEXT, vorgang_id TEXT, projekt_id TEXT,
+  tok_ein INTEGER DEFAULT 0, tok_aus INTEGER DEFAULT 0, dauer_s REAL DEFAULT 0, geschaetzt INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS verbrauch_zeit ON verbrauch(zeit);
 """
 
 with _lock:

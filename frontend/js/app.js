@@ -15,6 +15,7 @@ import { Board } from "./board.js";
 import { Logo, CockpitLeiste, ServerKaesten, SprechKnopf, kopfAbruf } from "./kopf.js";
 import { LeisteNav, useLeiste, FENSTER } from "./leiste.js";
 import { WatchDog } from "./watchdog.js";
+import { Verbrauch } from "./verbrauch.js";
 import { BrainStrom, ExO } from "./verfahren.js";
 
 const BEREICHE = [
@@ -29,6 +30,8 @@ const BEREICHE = [
   { id: "brainstrom", titel: "BrainStrom", icon: "brainstrom", unter: "Aus einer Idee ein Vorhaben" },
   { id: "exo", titel: "ExO", icon: "exo", unter: "Exponential-Organizations-Analyse" },
   { id: "watchdog", titel: "WatchDog", icon: "watchdog", unter: "Temperaturen, Sicherheit, Notabschaltung" },
+  // Token und Kosten -- im alten Cockpit "AI Consumption" (Veiko, 16.10.).
+  { id: "verbrauch", titel: "Verbrauch", icon: "verbrauch", unter: "Token und Kosten der Modelle" },
   { id: "system", titel: "System", icon: "system", unter: "Team-Pipeline, Daten, Einstellungen" },
 ];
 
@@ -269,6 +272,7 @@ function App() {
         ${r.bereich === "brainstrom" && html`<${BrainStrom} />`}
         ${r.bereich === "exo" && html`<${ExO} />`}
         ${r.bereich === "watchdog" && html`<${WatchDog} />`}
+        ${r.bereich === "verbrauch" && html`<${Verbrauch} />`}
       </main>
     </div>
     ${talk && html`<${Talk} zu=${() => setTalk(false)} kontext=${kontext} setKontext=${setKontext} start=${talkStart} />`}

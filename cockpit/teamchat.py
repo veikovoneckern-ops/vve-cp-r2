@@ -131,7 +131,18 @@ async def _cloud_chat(wer: str, modell: str, system: str, nachrichten: list[dict
     if r.status_code != 200:
         raise llm.ModellFehler(((d.get("error") or {}).get("message") if isinstance(d.get("error"), dict) else None)
                                or d.get("detail") or f"Fehler {r.status_code}")
-    return "\n".join(b.get("text", "") for b in d.get("content") or [] if b.get("type") == "text").strip()
+    antwort = "\n".join(b.get("text", "") for b in d.get("content") or [] if b.get("type") == "text").strip()
+    # Verbrauch buchen (Seite Verbrauch): die Zaehler meldet der Anbieter selbst
+    # (das alte Backend reicht "usage" durch); fehlen sie, wird geschaetzt
+    # (Zeichen / 4) und das steht als geschaetzt dabei.
+    u = d.get("usage") or {}
+    ein, aus = u.get("input_tokens") or 0, u.get("output_tokens") or 0
+    geschaetzt = not (ein or aus)
+    if geschaetzt:
+        ein = (len(system) + sum(len(str(n.get("content") or "")) for n in nachrichten)) // 4
+        aus = len(antwort) // 4
+    llm.buchen("cloud", p, modell, ein, aus, geschaetzt=geschaetzt, wer=wer)
+    return antwort
 
 
 # ---------------------------------------------------------------- Kontext
