@@ -1,7 +1,7 @@
 // ERGEBNISSE ZEIGEN -- was beide Orte brauchen, an denen Ergebnisse erscheinen:
 // das Ergebnisfenster (projects.js) und der Case in der Inbox (inbox.js).
 // Eigenes Modul, damit es den Video-Teil und die Vorschau nur einmal gibt.
-import { html, useState, useEffect, Icon, Avatar, Md, toast, fehlerMelden, zeitText, bus, kopieren } from "./ui.js";
+import { html, useState, useEffect, Icon, Avatar, Md, toast, fehlerMelden, zeitText, bus, kopieren, useEsc } from "./ui.js";
 import { api } from "./api.js";
 
 // Downloads je Form -- dieselben Endpunkte wie im Ergebnisfenster.
@@ -38,8 +38,10 @@ export function Pruefung({ p }) {
 // Webseite) oder Text. hoch: die Vorschau fuellt den verfuegbaren Platz (Gross ansehen).
 function Inhalt({ e, laden, hoch }) {
   if (e.form === "video" || e.video) return html`<${VideoBlock} e=${e} neuLaden=${laden} ohneDownload=${true} />`;
-  if (e.ansicht) return html`<div class=${"erg-vorschau-rahmen form-" + e.form + (hoch ? " hoch" : "")}>
-    <iframe src=${"/api/ergebnisse/" + e.id + "/ansicht"} sandbox="allow-scripts allow-forms allow-popups" title=${e.kurztitel || e.titel}></iframe></div>`;
+  const b = e.folienbilder ? e.folienbilder.vorhanden : 0;
+  if (e.ansicht) return html`${!hoch && html`<${FolienbilderBlock} e=${e} neuLaden=${laden} />`}
+    <div class=${"erg-vorschau-rahmen form-" + e.form + (hoch ? " hoch" : "")}>
+    <iframe src=${"/api/ergebnisse/" + e.id + "/ansicht?b=" + b} sandbox="allow-scripts allow-forms allow-popups" title=${e.kurztitel || e.titel}></iframe></div>`;
   return html`<div class=${"erg-vorschau-text" + (hoch ? " hoch" : "")}><${Md} text=${e.inhalt || ""} /></div>`;
 }
 
@@ -47,11 +49,7 @@ function Inhalt({ e, laden, hoch }) {
 // Downloads oben, Escape schliesst. Ersetzt das Scrollen in einer Vorschau,
 // die selbst in einer scrollenden Spalte steckt.
 export function GrossAnsicht({ e, laden, zu }) {
-  useEffect(() => {
-    const k = (x) => { if (x.key === "Escape") { x.stopPropagation(); zu(); } };
-    document.addEventListener("keydown", k, true);
-    return () => document.removeEventListener("keydown", k, true);
-  }, []);
+  useEsc(zu);
   return html`<div class="gross-ansicht" role="dialog" aria-label=${e.kurztitel || e.titel}>
     <div class="gross-kopf">
       <b>${e.kurztitel || e.titel}</b>
@@ -95,6 +93,41 @@ export function ErgebnisVorschau({ id, ohneOeffnen = false, ohneKopf = false }) 
   </div>`;
 }
 
+// Bilder einer Praesentation (folienbilder.py): Stand, Fortschritt und die
+// Knoepfe dazu. Waehrend gerechnet wird, fragt der Block alle 8 s nach;
+// jedes fertige Bild laedt die Vorschau neu (die Zahl steht in ihrer Adresse).
+export function FolienbilderBlock({ e, neuLaden }) {
+  const s = e.folienbilder;
+  const rechnet = s && s.stand === "rechnet";
+  useEffect(() => {
+    if (!rechnet) return;
+    const t = setInterval(neuLaden, 8000);
+    return () => clearInterval(t);
+  }, [rechnet]);
+  if (!s) return "";
+  async function starten(neu) {
+    try {
+      const r = await api(`/ergebnisse/${e.id}/folienbilder${neu ? "?neu=1" : ""}`, { methode: "POST" });
+      toast(r.bilder ? `${r.bilder} Bilder werden gerechnet, je etwa 15 Sekunden.` : "Alle Bilder sind schon da.");
+      neuLaden();
+    } catch (x) { fehlerMelden(x); }
+  }
+  if (!s.gewuenscht) return html`<div class="hinweisbox folienbilder klein">Diese Präsentation hat keine Bilder.
+    Im Chat rechts genügt „Bitte setze Bilder auf die Folien“ – Annie schreibt dann je Folie eine Bildbeschreibung, und die Bilder werden gerechnet.</div>`;
+  if (rechnet) {
+    const anteil = s.anzahl ? Math.round(((s.fertig || 0) / s.anzahl) * 100) : 0;
+    return html`<div class="hinweisbox folienbilder"><b>Folienbilder werden gerechnet</b> · ${s.schritt || ""}
+      <div class="video-balken"><i style=${`width:${anteil}%`}></i></div>
+      <div class="leise klein">Auf der zweiten Grafikkarte, je Bild etwa 15 Sekunden. Du kannst das Fenster schließen, es rechnet weiter.</div></div>`;
+  }
+  const fehlen = s.gewuenscht - s.vorhanden;
+  return html`<div class=${"knopfreihe klein leise folienbilder" + (s.stand === "fehler" ? " fehler" : "")}>
+    <span>${s.vorhanden} von ${s.gewuenscht} Folienbildern${s.stand === "fehler" && s.fehler ? ` · ${s.fehler}` : ""}${s.stand === "abgebrochen" ? " · Rechnen wurde unterbrochen" : ""}</span>
+    ${fehlen > 0 && html`<button class="btn klein primaer" onClick=${() => starten(false)}><${Icon} n="play" g=${13} />${s.vorhanden ? "Fehlende rechnen" : "Bilder rechnen"}</button>`}
+    ${s.vorhanden > 0 && html`<button class="btn klein geist" onClick=${() => starten(true)} title="Alle Bilder neu rechnen -- jedes fällt anders aus">Neu rechnen</button>`}
+  </div>`;
+}
+
 // Erklaervideo am Ergebnis (video.py): waehrend des Rechnens der Fortschritt,
 // danach der Player. Ein Lauf, den es nach einem Neustart nicht mehr gibt,
 // heisst "abgebrochen" und laesst sich neu starten -- ebenso nach einem im
@@ -131,8 +164,12 @@ export function VideoBlock({ e, neuLaden, ohneDownload = false }) {
 // Ein neu entstandenes Ergebnis als Zeile; "Vorschau" klappt es AN DER STELLE
 // auf (dieselbe Darstellung wie im Case), statt in ein Fenster zu springen.
 export function ErgebnisZeile({ e, neu, auf, umschalten }) {
+  // Ein Klick irgendwo auf die Zeile (ausser auf die Knoepfe) oeffnet das
+  // Ergebnis mit seinem Chat (Veiko, 16.10.: "wenn ich in diesem Bereich
+  // klicke, soll sich immer der zugehoerige Chat oeffnen").
+  const oeffnen = (x) => { if (!x.target.closest("button, a, .pruef-zeile")) bus.sende("ergebnis-zeigen", e.id); };
   return html`<div class=${"erg-zeile" + (auf ? " auf" : "")}>
-    <div class="zeile">
+    <div class="zeile klickbar" onClick=${oeffnen} title="Öffnen und mit dem Team daran weiterarbeiten">
       <${Avatar} wer=${e.rolle} name=${e.wer_name} g=${26} />
       <div class="haupt-text">
         <b>${neu && html`<span class="pill lila neu-marke">neu</span>`}${e.kurztitel || e.titel}</b>
@@ -141,7 +178,8 @@ export function ErgebnisZeile({ e, neu, auf, umschalten }) {
       <${Pruefung} p=${e.pruefung} />
       <button class=${"btn klein" + (auf ? " an" : "")} onClick=${umschalten} aria-expanded=${auf}>
         <${Icon} n=${auf ? "klein" : "auge"} g=${14} />${auf ? "Zuklappen" : "Vorschau"}</button>
-      ${e.vorgang_id && html`<a class="btn klein geist" href=${"#/inbox/" + e.vorgang_id} title="Den ganzen Case öffnen">Case</a>`}
+      ${e.vorgang_id && html`<a class="btn klein geist" href=${"#/inbox/" + e.vorgang_id}
+        title="Woher das kommt: die ursprüngliche Notiz, was Jason daraus gemacht hat, alle Ergebnisse dazu">Herkunft</a>`}
     </div>
     ${auf && html`<div class="erg-zeile-vorschau"><${ErgebnisVorschau} id=${e.id} ohneKopf=${true} /></div>`}
   </div>`;

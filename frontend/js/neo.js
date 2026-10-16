@@ -3,7 +3,7 @@
 // (Matrix-Regen, solange nichts darin steht). Neo arbeitet mit echten
 // Werkzeugen als vveadmin; jeder Schritt steht aufklappbar im Verlauf.
 // Ein Auftrag laeuft auf dem Server weiter, auch wenn du die Seite wechselst.
-import { html, useState, useEffect, useRef, Icon, Md, Leer, toast, fehlerMelden, zeitText, dauer, navigiere, kopieren, bus } from "./ui.js";
+import { useEsc, escEigen, html, useState, useEffect, useRef, Icon, Md, Leer, toast, fehlerMelden, zeitText, dauer, navigiere, kopieren, bus } from "./ui.js";
 import { api } from "./api.js";
 import { Composer } from "./composer.js";
 import { MatrixRegen, MatrixZeichen } from "./matrix.js";
@@ -50,6 +50,10 @@ export function Neo({ id }) {
     return () => document.documentElement.classList.remove("neo-vollbild");
   }, [voll]);
   useEffect(() => bus.an("vollbild", (an) => setVoll(!!an)), []);
+  // Escape verlaesst erst die Gespraechsliste (Telefon), dann das Vollbild --
+  // was zuletzt aufging, liegt oben auf dem Stapel (ui.js).
+  useEsc(() => setVoll(false), voll);
+  useEsc(() => setListeOffen(false), listeOffen);
   useEffect(() => { merk("vvec_neo_matrix", matrix); }, [matrix]);
   useEffect(() => { if (!job) return; const i = setInterval(() => setJetzt(Date.now()), 1000); return () => clearInterval(i); }, [!!job]);
 
@@ -175,7 +179,7 @@ export function Neo({ id }) {
         <button class="btn geist icon neo-ersatz" onClick=${neuesGespraech} aria-label="Neues Gespräch" title="Neues Gespräch"><${Icon} n="neu" g=${15} /></button>
         <h2><${Icon} n="neo" g=${18} />
           ${titelBearb !== null ? html`<input class="eingabe" value=${titelBearb} autofocus onInput=${(e) => setTitelBearb(e.target.value)} onBlur=${titelSpeichern}
-              onKeyDown=${(e) => { if (e.key === "Enter") titelSpeichern(); if (e.key === "Escape") setTitelBearb(null); }} />`
+              onKeyDown=${(e) => { if (e.key === "Enter") titelSpeichern(); if (escEigen(e)) setTitelBearb(null); }} />`
             : html`<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:text" title="Doppelklick zum Umbenennen" onDblClick=${() => g && setTitelBearb(g.gespraech.titel)}>${g ? g.gespraech.titel : "Neo"}</span>`}</h2>
         ${team && html`<select class="eingabe" style="width:auto;min-height:32px;font-size:12.5px" value=${neoModell || ""} onChange=${(e) => modellSetzen(e.target.value)} aria-label="Neos Modell" title="Womit Neo rechnet">
           <option value="">Vorgabe (qwen3-coder-neo)</option>

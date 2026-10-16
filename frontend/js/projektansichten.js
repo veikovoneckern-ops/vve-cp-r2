@@ -6,7 +6,7 @@
 // scheiterten drei Anlaeufe mit draggable/dragstart am echten Browser (CLAUDE.md
 // dort, "Rail-Reihenfolge"). Pointer Events sind gewoehnliche Ereignisse ohne
 // eigenen Browser-Modus und funktionieren mit Maus und Finger gleich.
-import { html, useState, useRef, Icon, Leer, fehlerMelden, aktualisieren } from "./ui.js";
+import { escEigen, html, useState, useRef, Icon, Leer, fehlerMelden, aktualisieren } from "./ui.js";
 import { api } from "./api.js";
 
 const TAG = 86400000;
@@ -216,7 +216,7 @@ export function Struktur({ projekt, aufgaben, laden }) {
   }
   const neuFeld = (x, y) => html`<div class="st-neu" style=${`left:${x}px;top:${y}px;width:${ST.W}px;height:${ST.H}px`}>
     <input autofocus value=${neuText} placeholder=${neu === "wurzel" ? "Neue Aufgabe … (Enter)" : "Neue Unteraufgabe … (Enter)"}
-      onInput=${(e) => setNeuText(e.target.value)} onKeyDown=${(e) => { if (e.key === "Enter") anlegen(); if (e.key === "Escape") { setNeu(null); setNeuText(""); } }}
+      onInput=${(e) => setNeuText(e.target.value)} onKeyDown=${(e) => { if (e.key === "Enter") anlegen(); if (escEigen(e)) { setNeu(null); setNeuText(""); } }}
       onBlur=${() => { if (!neuText.trim()) setNeu(null); }} aria-label="Titel der neuen Aufgabe" /></div>`;
 
   const offen = sichtbar.filter((t) => t.status !== "erledigt").length;
@@ -254,7 +254,7 @@ export function Struktur({ projekt, aufgaben, laden }) {
               title=${erl ? "Wieder öffnen" : "Als erledigt markieren"} aria-label=${(erl ? "Wieder öffnen: " : "Erledigt: ") + t.titel}>${erl ? html`<${Icon} n="check" g=${10} w=${3} />` : ""}</button>
             ${umben && umben.id === t.id
               ? html`<input class="st-umben" autofocus value=${umben.text} onInput=${(e) => setUmben({ id: t.id, text: e.target.value })}
-                  onKeyDown=${(e) => { if (e.key === "Enter") umbenennen(); if (e.key === "Escape") setUmben(null); }} onBlur=${umbenennen} aria-label="Neuer Titel" />`
+                  onKeyDown=${(e) => { if (e.key === "Enter") umbenennen(); if (escEigen(e)) setUmben(null); }} onBlur=${umbenennen} aria-label="Neuer Titel" />`
               : html`<span class="st-tt" onDblClick=${() => setUmben({ id: t.id, text: t.titel })}>${t.titel}</span>`}
             ${kinder ? html`<span class=${"st-zahl" + (f === n ? " fertig" : "")} title=${`${f} von ${n} Unteraufgaben erledigt`}>${f}/${n}</span>` : ""}
             <label class=${"st-termin" + (t.faellig ? "" : " leer")} title=${t.faellig ? "Fällig am " + kurz(t.faellig) + " · ändern" : "Termin setzen"}>

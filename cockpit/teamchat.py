@@ -151,7 +151,10 @@ def _ergebnis_text(e: dict[str, Any]) -> str:
             "zuerst ein bis zwei Sätze, was du änderst, und danach die VOLLSTÄNDIGE neue Fassung -- nicht nur die geänderten "
             f"Stellen -- zwischen einer Zeile, die nur {FASSUNG_AUF} enthält, und einer Zeile, die nur {FASSUNG_ZU} enthält. "
             "Behalte Aufbau und Form bei, sofern Veiko nichts anderes will. Stellt Veiko nur eine Frage oder will diskutieren, "
-            "antwortest du ohne Fassung.")
+            "antwortest du ohne Fassung."
+            + (" Bei dieser Präsentation wird aus einer Zeile 'Bild: <Bildbeschreibung>' am Folienende ein echtes Bild "
+               "gerechnet (eine je Folie, ohne Schrift im Bild). Will Veiko Bilder, setze solche Zeilen; behalte vorhandene "
+               "unverändert, wenn das Bild bleiben soll." if e.get("form") == "praesentation" else ""))
 
 
 def system_text(wer: str, kontext: dict[str, Any]) -> str:
@@ -294,6 +297,10 @@ async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
                    aktion="überarbeitet")
         pid = db.wert("SELECT MAX(id) FROM protokoll WHERE tabelle='ergebnisse' AND datensatz_id=?", (eid,))
         daten.update(fassung=True, zeichen=len(fassung), protokoll_id=pid)
+        if e.get("form") == "praesentation":
+            # Neue oder geaenderte Bildzeilen gleich rechnen; unveraenderte Bilder bleiben.
+            from . import folienbilder
+            folienbilder.starten(eid)
         yield {"typ": "fassung", "zeichen": len(fassung), "protokoll_id": pid}
         # Daniel prueft auch die ueberarbeitete Fassung -- dieselbe Regel wie beim ersten Entwurf.
         yield {"typ": "status", "text": "Daniel prüft die neue Fassung …"}

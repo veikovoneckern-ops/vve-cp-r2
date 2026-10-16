@@ -11,7 +11,7 @@
 //     in einem neuen Tab (?fenster=1), ohne Leiste
 // Die Reihenfolge liegt auf dem Server (/einstellungen, "leiste"), damit sie
 // auf jedem Geraet gleich ist.
-import { html, useState, useEffect, useRef, Icon, toast, fehlerMelden } from "./ui.js";
+import { useEsc, html, useState, useEffect, useRef, Icon, toast, fehlerMelden } from "./ui.js";
 import { api } from "./api.js";
 
 // Abgeloester Tab: dieselbe Seite, nur der Inhalt.
@@ -131,11 +131,7 @@ export function LeisteNav({ liste, aktiv, zahl, speichern }) {
   // den einen fangen, sonst navigiert ein Umsortieren nebenbei.
   function klick(e) { if (geradeGezogen.current) e.preventDefault(); }
 
-  useEffect(() => {
-    const esc = (e) => { if (e.key === "Escape" && start.current) abbrechen(); };
-    document.addEventListener("keydown", esc);
-    return () => document.removeEventListener("keydown", esc);
-  }, []);
+  useEsc(abbrechen, !!zug);
 
   const sicht = zug ? zug.ordnung.map((id) => liste.find((b) => b.id === id)) : liste;
   const gezogen = zug && liste.find((b) => b.id === zug.id);

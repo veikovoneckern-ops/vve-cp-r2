@@ -1,7 +1,7 @@
 // Eine Entscheidungskarte -- im Briefing und in der Inbox derselbe Baustein.
 // Reihenfolge der Knoepfe ueberall gleich: Hauptaktion zuerst, dann Aendern,
 // dann Nein, ganz rechts leise "Spaeter".
-import { html, useState, Icon, Avatar, toast, fehlerMelden, aktualisieren, bus, navigiere, zeitText } from "./ui.js";
+import { escEigen, html, useState, Icon, Avatar, toast, fehlerMelden, aktualisieren, bus, navigiere, zeitText } from "./ui.js";
 import { api } from "./api.js";
 import { Composer } from "./composer.js";
 
@@ -49,7 +49,7 @@ export function Entscheidung({ e, mitVorgang = true, nachher }) {
     : modus === "aendern" ? html`
       <div class="antwortfeld">
         <input class="eingabe" value=${text} onInput=${(x) => setText(x.target.value)} aria-label="Änderung"
-          onKeyDown=${(x) => { if (x.key === "Enter" && text.trim()) antworten("ja", text.trim()); if (x.key === "Escape") setModus(null); }} autofocus />
+          onKeyDown=${(x) => { if (x.key === "Enter" && text.trim()) antworten("ja", text.trim()); if (escEigen(x)) setModus(null); }} autofocus />
         <button class="btn ja" disabled=${laeuft || !text.trim()} onClick=${() => antworten("ja", text.trim())}><${Icon} n="check" g=${15} />${HAUPT[e.art] || "Ja"}</button>
         <button class="btn geist" onClick=${() => setModus(null)}>Abbrechen</button>
       </div>`

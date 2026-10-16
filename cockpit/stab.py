@@ -73,7 +73,11 @@ FORM_ANWEISUNG = {
     "konzept": "Liefere ein Konzept in Markdown: Ziel, Ausgangslage, Vorschlag, Schritte, offene Punkte.",
     "webseite": "Liefere eine vollstaendige, eigenstaendige HTML-Seite (inline CSS, kein externes Skript) in EINEM ```html-Block. Davor zwei Saetze, was die Seite zeigt.",
     "dokument": "Liefere ein vollständiges, gegliedertes Dokument in Markdown (Titel mit #, Abschnitte mit ##, Listen, Tabellen wo sinnvoll). Es wird als Word-Datei ausgegeben -- schreib es so, dass man es direkt weitergeben kann.",
-    "praesentation": "Liefere Folien in Markdown. Trenne Folien mit einer Zeile, die nur '---' enthaelt. Jede Folie: '# Titel' und hoechstens fuenf Stichpunkte.",
+    # Die Zeile "Bild:" rechnet folienbilder.py zu einem echten Bild auf der Folie (16.10.2026).
+    "praesentation": "Liefere Folien in Markdown. Trenne Folien mit einer Zeile, die nur '---' enthaelt. Jede Folie: '# Titel' und hoechstens fuenf Stichpunkte. "
+                     "Wo ein Bild die Aussage traegt (Titelfolie und etwa jede zweite Folie), setze ans Folienende GENAU EINE Zeile "
+                     "'Bild: <ausfuehrliche Bildbeschreibung: Motiv, Stil, Licht, Farben>' -- daraus wird ein echtes Bild gerechnet. "
+                     "Keine Schrift, keine Logos und keine echten Personen im Bild beschreiben.",
     # Aus dem Drehbuch rechnet video.py danach ein echtes Video (16.10.2026).
     "video": video.DREHBUCH_ANWEISUNG,
 }
@@ -863,6 +867,11 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
     if llm.fremdschrift(entwurf):
         pruefung.setdefault("maengel", []).append("Enthält fremde Schriftzeichen.")
     eid = ergebnis_speichern(v, a, entwurf, rid, modell, quellen, pruefung)
+    if form == "praesentation":
+        from . import folienbilder
+        n = folienbilder.starten(eid)
+        if n:
+            db.ereignis(vid, rid, "info", f"Folienbilder werden gerechnet: {n}. Sie erscheinen in Vorschau und PowerPoint, sobald sie fertig sind.")
     if form == "video":
         # Das Drehbuch ist das Ergebnis, das Video rechnet im Hintergrund weiter
         # (eine Minute sind ~12 Szenen zu je einigen Minuten). Ohne lesbares
@@ -916,7 +925,7 @@ async def pruefen(entwurf: str, a: dict[str, Any], v: dict[str, Any], quellen_te
     return {"urteil": "ungeprueft", "begruendung": "Die Prüfung hat keine lesbare Antwort geliefert.", "maengel": []}
 
 
-HINWEIS_RE = re.compile(r"^\s*(bildbeschreibung|bild|bildidee|visual|layout|typografie|typographie|gestaltung|design|"
+HINWEIS_RE = re.compile(r"^\s*(bildbeschreibung|bild|bildidee|visual|image|layout|typografie|typographie|gestaltung|design|"
                         r"sprechernotiz|sprechertext|notiz|hinweis|farbwelt|stil)\b[^:]{0,40}:", re.I)
 
 
@@ -933,10 +942,15 @@ def _md_inline(s: str) -> str:
     return t.replace("**", "")
 
 
-def _folien_html(text: str, titel: str) -> str:
-    folien = [f.strip() for f in re.split(r"(?m)^---\s*$", text) if f.strip()]
+def _folien_html(text: str, titel: str, eid: str | None = None) -> str:
+    from . import folienbilder
+    folien = [f.strip() for f in folienbilder.folien_roh(text)]
     teile = []
     for f in folien:
+        # Ein gerechnetes Folienbild (folienbilder.py) steht rechts; eingebettet,
+        # weil der abgeschottete Rahmen keine angemeldeten Anfragen stellen darf.
+        roh = folienbilder.vorhanden(eid, folienbilder.bild_prompt(f)) if eid else None
+        bild = f"<img class='bild' alt='' src='{folienbilder.daten_uri(roh)}'>" if roh else ""
         zeilen = f.splitlines()
         kopf = next((z.lstrip("# ").strip() for z in zeilen if z.startswith("#")), "")
         punkte = [z.strip().lstrip("-*• ").strip() for z in zeilen if z.strip().startswith(("-", "*", "•"))]
@@ -947,7 +961,10 @@ def _folien_html(text: str, titel: str) -> str:
         hinweis = [p for p in punkte + rest if HINWEIS_RE.match(_ohne_md(p))]
         punkte = [p for p in punkte if p not in hinweis]
         rest = [z for z in rest if z not in hinweis]
-        teile.append("<section><h2>" + _md_inline(kopf) + "</h2>" +
+        if bild:
+            # Die Beschreibung des Bildes braucht niemand mehr, wenn es dasteht.
+            hinweis = [h for h in hinweis if not folienbilder.BILD_ZEILE.match(h)]
+        teile.append(("<section class='mitbild'>" + bild if bild else "<section>") + "<h2>" + _md_inline(kopf) + "</h2>" +
                      ("<ul>" + "".join(f"<li>{_md_inline(p)}</li>" for p in punkte) + "</ul>" if punkte else "") +
                      "".join(f"<p>{_md_inline(z)}</p>" for z in rest[:4]) +
                      ("<div class='hinweis'>" + "<br>".join(_md_inline(h) for h in hinweis) + "</div>" if hinweis else "") +
@@ -967,6 +984,8 @@ def _folien_html(text: str, titel: str) -> str:
             "h2{font-size:1.75em;line-height:1.15;margin:0 0 .6em;color:#2C6BB3}ul{margin:0;padding-left:1.1em}li{margin:.35em 0}p{margin:.4em 0}"
             ".hinweis{margin-top:auto;font-size:15px;line-height:1.4;color:#8A94A6;font-style:italic;border-top:1px solid #E1E6EE;padding-top:8px}"
             ".nr{margin-top:8px;font-size:16px;color:#8A94A6;text-align:right}.hinweis+.nr{margin-top:6px}"
+            "section{position:relative}section.mitbild{padding-right:calc(40% + 52px)}"
+            ".bild{position:absolute;top:0;right:0;bottom:0;width:40%;height:100%;object-fit:cover}"
             "</style><div class='buehne'>"
             + "".join(t.replace("</section>", f"<div class='nr'>{i + 1} / {len(teile)}</div></section>") for i, t in enumerate(teile))
             + "</div><script>"
@@ -989,7 +1008,7 @@ def ansicht_html(e: dict[str, Any]) -> str | None:
         if m:
             return m.group(1)
     elif form == "praesentation":
-        return _folien_html(text, titel)
+        return _folien_html(text, titel, e.get("id"))
     elif form == "dokument":
         from . import dokumente
         return dokumente.zu_html(titel, text)

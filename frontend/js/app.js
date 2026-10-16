@@ -1,7 +1,7 @@
 // Das Grundgeruest: fuenf Bereiche plus Neo, ein Gespraech, ein Erfassen.
 // Briefing · Inbox · Projects · Team · System -- dazu Neo als eigener Knopf
 // (Veikos Wunsch: "einer der Hauptakteure in meinem Team"), Talk und Capture.
-import { html, render, useState, useEffect, useRef, Icon, Toasts, Modal, bus, toast, fehlerMelden, navigiere, tippsEinrichten, listenEinrichten } from "./ui.js";
+import { useEsc, html, render, useState, useEffect, useRef, Icon, Toasts, Modal, bus, toast, fehlerMelden, navigiere, tippsEinrichten, listenEinrichten } from "./ui.js";
 import { api } from "./api.js";
 import { Composer } from "./composer.js";
 import { Briefing } from "./briefing.js";
@@ -149,6 +149,7 @@ const UNTEN_SICHTBAR = 4;
 function UntenNav({ liste, aktiv, offen }) {
   const [mehr, setMehr] = useState(false);
   useEffect(() => { setMehr(false); }, [aktiv]);
+  useEsc(() => setMehr(false), mehr);
   const zahl = (b) => (b.id === "inbox" && offen ? html`<span class="zahl">${offen}</span>` : null);
   const verborgenAktiv = liste.slice(UNTEN_SICHTBAR).some((b) => b.id === aktiv);
   return html`<nav class="unten-nav" aria-label="Bereiche">
@@ -205,15 +206,6 @@ function App() {
     const aus = bus.an("aktualisieren", holen);
     return () => { clearInterval(i); aus(); };
   }, [konto && konto.angemeldet]);
-  useEffect(() => {
-    const k = (e) => {
-      if (e.key === "Escape" && document.documentElement.classList.contains("neo-vollbild") && !document.querySelector(".modal-grund")) {
-        document.documentElement.classList.remove("neo-vollbild"); bus.sende("vollbild", false);
-      }
-    };
-    document.addEventListener("keydown", k);
-    return () => document.removeEventListener("keydown", k);
-  }, []);
   useEffect(() => { if (r.bereich !== "neo") document.documentElement.classList.remove("neo-vollbild"); }, [r.bereich]);
 
   if (!konto) return html`<div class="lade">Cockpit wird geladen …</div>`;

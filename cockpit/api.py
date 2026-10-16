@@ -624,7 +624,27 @@ async def ergebnis(rid: str):
     e["video"] = video.stand(e)
     if e["video"]:
         e["video"].pop("drehbuch", None)
+    from . import folienbilder
+    e["folienbilder"] = folienbilder.stand(e)
     return e
+
+
+@router.post("/ergebnisse/{rid}/folienbilder")
+async def ergebnis_folienbilder(rid: str, neu: int = 0):
+    """Die Bilder einer Praesentation rechnen: fehlende, oder mit neu=1 alle."""
+    from . import folienbilder
+    e = db.holen("ergebnisse", rid)
+    if not e or e.get("form") != "praesentation":
+        raise HTTPException(404, "Keine Präsentation")
+    n = folienbilder.starten(rid, neu=bool(neu))
+    if not n:
+        s = folienbilder.stand(e) or {}
+        if s.get("stand") == "rechnet" and rid in folienbilder.LAUFEND:
+            raise HTTPException(409, "Die Bilder werden gerade gerechnet.")
+        if s.get("gewuenscht"):
+            return {"ok": True, "bilder": 0}
+        raise HTTPException(409, "Keine Folie trägt eine Zeile 'Bild: …' -- im Ergebnisfenster Annie bitten, Bilder vorzusehen.")
+    return {"ok": True, "bilder": n}
 
 
 @router.post("/ergebnisse/{rid}/video")
@@ -666,7 +686,7 @@ async def ergebnis_datei(rid: str, format: str = "docx"):
     elif fmt == "docx":
         roh = dokumente.zu_docx(e["titel"], text)
     elif fmt == "pptx":
-        roh = dokumente.zu_pptx(e["titel"], text)
+        roh = dokumente.zu_pptx(e["titel"], text, rid)
     elif fmt == "html":
         roh = dokumente.zu_html(e["titel"], text).encode("utf-8")
     else:
@@ -685,7 +705,15 @@ async def ergebnis_ansicht(rid: str):
     h = stab.ansicht_html(e) if e else None
     if not h:
         raise HTTPException(404, "Keine Ansicht zu diesem Ergebnis")
+    # Escape im Rahmen erreicht das Cockpit sonst nicht -- das Fenster blieb
+    # offen, sobald man in die Vorschau geklickt hatte. Nur in der Ansicht,
+    # nicht im Download: die Datei soll aussehen wie geliefert.
+    h += ESC_WEITERGEBEN
     return Response(h, media_type="text/html; charset=utf-8", headers=SANDBOX)
+
+
+ESC_WEITERGEBEN = ("<script>document.addEventListener('keydown',function(e){if(e.key==='Escape')"
+                   "parent.postMessage({vvecEsc:1},'*')});</script>")
 
 
 # ================================================================ Gedaechtnis, Team, Einstellungen

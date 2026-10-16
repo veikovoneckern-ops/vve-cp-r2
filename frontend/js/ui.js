@@ -116,12 +116,42 @@ export function Toasts() {
 export function fehlerMelden(e) { toast(e && e.message ? e.message : String(e), { fehler: true }); }
 
 // ------------------------------------------------------------ Modal
-export function Modal({ titel, zu, children, fuss, breit }) {
+// ------------------------------------------------------------ Escape
+// Escape schliesst IMMER das zuletzt geoeffnete Fenster -- und nur das eine.
+// Vorher hatte jedes Fenster seinen eigenen Hoerer am Dokument: zwei offene
+// Fenster gingen mit einem Druck beide zu, und stand der Fokus in einer
+// Vorschau (iframe), kam die Taste gar nicht erst an (Veiko, 16.10.: "Esc soll
+// immer ein aktuell geoeffnetes Fenster schliessen"). Jetzt ein Stapel: wer
+// aufgeht, legt sich oben drauf. Ein Eingabefeld, das Escape selbst nutzt
+// (Umbenennen abbrechen), ruft preventDefault -- dann bleibt das Fenster offen.
+const escStapel = [];
+export function useEsc(zu, an = true) {
+  const ref = useRef(zu);
+  ref.current = zu;
   useEffect(() => {
-    const k = (e) => { if (e.key === "Escape") zu(); };
-    document.addEventListener("keydown", k);
-    return () => document.removeEventListener("keydown", k);
-  }, [zu]);
+    if (!an) return;
+    const eintrag = () => ref.current && ref.current();
+    escStapel.push(eintrag);
+    return () => { const i = escStapel.lastIndexOf(eintrag); if (i >= 0) escStapel.splice(i, 1); };
+  }, [an]);
+}
+function escAusloesen() {
+  const oben = escStapel[escStapel.length - 1];
+  if (!oben) return false;
+  oben();
+  return true;
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || e.defaultPrevented) return;
+  if (escAusloesen()) e.preventDefault();
+});
+// Die Vorschauen laufen im abgeschotteten Rahmen; dort gedrueckt, meldet das
+// Skript der Ansicht die Taste per Nachricht (stab.ansicht_html). Nur die
+// Kennung wird gelesen, nichts aus dem Rahmen ausgefuehrt.
+window.addEventListener("message", (m) => { if (m.data && m.data.vvecEsc === 1) escAusloesen(); });
+
+export function Modal({ titel, zu, children, fuss, breit }) {
+  useEsc(zu);
   return html`<div class="modal-grund" onMouseDown=${(e) => { if (e.target === e.currentTarget) zu(); }}>
     <div class=${"modal" + (breit ? " breit" : "") + (breit === "voll" ? " voll" : "")} role="dialog" aria-modal="true" aria-label=${titel}>
       <div class="modal-kopf"><h2>${titel}</h2><button class="btn geist icon" onClick=${zu} title="Schließen (Esc)"><${Icon} n="x" /></button></div>
@@ -359,4 +389,12 @@ export function listenEinrichten() {
     if (!m[2].trim()) feldSetzen(t, v.slice(0, anfang) + v.slice(pos), anfang);          // leerer Punkt: Liste zu Ende
     else feldSetzen(t, v.slice(0, pos) + "\n" + m[1] + "• " + v.slice(pos), pos + m[1].length + 3);
   }, true);
+}
+
+// Fuer Eingabefelder, die Escape selbst nutzen (Umbenennen abbrechen u. a.):
+// meldet die Taste als verbraucht, damit das umgebende Fenster offen bleibt.
+export function escEigen(e) {
+  if (e.key !== "Escape") return false;
+  e.preventDefault();
+  return true;
 }

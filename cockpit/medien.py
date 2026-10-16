@@ -53,41 +53,47 @@ def stand(jid: str) -> dict[str, Any] | None:
 
 
 # ------------------------------------------------------------ Bild (ComfyUI)
-async def _bild(j: dict[str, Any], prompt: str, vorlage: str, format_: str) -> None:
+async def comfy_bild(cl: httpx.AsyncClient, prompt: str, vorlage: str, breite: int, hoehe: int) -> bytes:
+    """Ein Bild aus ComfyUI, als PNG. Geteilt mit den Folienbildern
+    (folienbilder.py) -- zwei Kopien dieses Ablaufs liefen beim naechsten
+    ComfyUI-Update auseinander. Wirft RuntimeError mit Klartextgrund."""
     v = VORLAGEN.get(vorlage) or VORLAGEN["z-image"]
     graph = json.loads(json.dumps(v["graph"]))
     k = v["knoten"]
     graph[k["prompt"]]["inputs"]["text"] = prompt
-    breite, hoehe = FORMATE.get(format_, FORMATE["quadrat"])
     for knoten in [k["groesse"], *v.get("groesseAuch", [])]:
         graph[knoten]["inputs"]["width"], graph[knoten]["inputs"]["height"] = breite, hoehe
     graph[k["seed"]]["inputs"][k["seedFeld"]] = random.randint(1, 2**48)
+    r = await cl.post(f"{COMFY}/prompt", json={"prompt": graph, "client_id": "vve-cockpit-r2"})
+    if r.status_code >= 400:
+        raise RuntimeError(f"ComfyUI lehnt ab: {r.text[:200]}")
+    pid = r.json()["prompt_id"]
+    for _ in range(600):                      # bis zu 10 Minuten
+        await asyncio.sleep(1)
+        h = (await cl.get(f"{COMFY}/history/{pid}")).json().get(pid)
+        if not h:
+            continue
+        if (h.get("status") or {}).get("status_str") == "error":
+            raise RuntimeError("ComfyUI meldet einen Fehler beim Rechnen.")
+        bilder = [b for o in (h.get("outputs") or {}).values() for b in o.get("images", [])]
+        if bilder:
+            b = bilder[0]
+            return (await cl.get(f"{COMFY}/view", params={"filename": b["filename"], "subfolder": b.get("subfolder", ""),
+                                                          "type": b.get("type", "output")})).content
+    raise RuntimeError("ComfyUI hat nach 10 Minuten nichts geliefert.")
+
+
+async def _bild(j: dict[str, Any], prompt: str, vorlage: str, format_: str) -> None:
+    v = VORLAGEN.get(vorlage) or VORLAGEN["z-image"]
+    breite, hoehe = FORMATE.get(format_, FORMATE["quadrat"])
     try:
         async with httpx.AsyncClient(timeout=30) as cl:
-            r = await cl.post(f"{COMFY}/prompt", json={"prompt": graph, "client_id": "vve-cockpit-r2"})
-            if r.status_code >= 400:
-                j.update(stand="fehler", fehler=f"ComfyUI lehnt ab: {r.text[:200]}")
-                return
-            pid = r.json()["prompt_id"]
             j["schritt"] = "ComfyUI rechnet"
-            for _ in range(600):                      # bis zu 10 Minuten
-                await asyncio.sleep(1)
-                h = (await cl.get(f"{COMFY}/history/{pid}")).json().get(pid)
-                if not h:
-                    continue
-                st = (h.get("status") or {}).get("status_str")
-                if st == "error":
-                    j.update(stand="fehler", fehler="ComfyUI meldet einen Fehler beim Rechnen.")
-                    return
-                bilder = [b for o in (h.get("outputs") or {}).values() for b in o.get("images", [])]
-                if bilder:
-                    b = bilder[0]
-                    roh = (await cl.get(f"{COMFY}/view", params={"filename": b["filename"], "subfolder": b.get("subfolder", ""),
-                                                                 "type": b.get("type", "output")})).content
-                    (MEDIEN_DIR / f"{j['id']}.png").write_bytes(roh)
-                    j.update(stand="fertig", datei=f"{j['id']}.png", ende=time.time(), modell=v["name"])
-                    return
-            j.update(stand="fehler", fehler="ComfyUI hat nach 10 Minuten nichts geliefert.")
+            roh = await comfy_bild(cl, prompt, vorlage, breite, hoehe)
+        (MEDIEN_DIR / f"{j['id']}.png").write_bytes(roh)
+        j.update(stand="fertig", datei=f"{j['id']}.png", ende=time.time(), modell=v["name"])
+    except RuntimeError as e:
+        j.update(stand="fehler", fehler=str(e))
     except (httpx.HTTPError, KeyError, ValueError) as e:
         j.update(stand="fehler", fehler=f"ComfyUI nicht erreichbar: {e.__class__.__name__}")
 

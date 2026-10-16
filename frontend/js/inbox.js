@@ -1,7 +1,7 @@
 // INBOX -- alles, was hereinkommt, als Akte mit Verlauf.
 // Ersetzt Eingang, Zuordnungen, Drop, Schnellsichtung, Vorgaenge und Work in
 // Progress des alten Cockpits: EIN Ort pro Notiz.
-import { html, enterBestaetigt, useState, useEffect, Icon, Avatar, Leer, Md, Modal, StandPill, bus, toast, fehlerMelden, aktualisieren,
+import { escEigen, html, enterBestaetigt, useState, useEffect, Icon, Avatar, Leer, Md, Modal, StandPill, bus, toast, fehlerMelden, aktualisieren,
   zeitText, useAbruf, navigiere, rolleName, ROLLEN_WAHL, FORM_WAHL } from "./ui.js";
 import { api } from "./api.js";
 import { Entscheidung } from "./entscheidung.js";
@@ -121,7 +121,7 @@ function Akte({ id, nachher }) {
       <div class="feld"><label for="verw">Warum? (optional, hilft später beim Nachsehen)</label>
         <div class="antwortfeld" style="display:flex;gap:6px">
           <input id="verw" class="eingabe" value=${verwerfen} onInput=${(e) => setVerwerfen(e.target.value)} autofocus
-            onKeyDown=${(e) => { if (e.key === "Enter") aktion("verwerfen", { kommentar: verwerfen }); if (e.key === "Escape") setVerwerfen(null); }} />
+            onKeyDown=${(e) => { if (e.key === "Enter") aktion("verwerfen", { kommentar: verwerfen }); if (escEigen(e)) setVerwerfen(null); }} />
           <button class="btn gefahr voll" onClick=${() => aktion("verwerfen", { kommentar: verwerfen })}>Verwerfen</button>
           <button class="btn geist" onClick=${() => setVerwerfen(null)}>Abbrechen</button>
         </div></div></div>`}

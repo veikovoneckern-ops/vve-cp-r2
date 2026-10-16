@@ -1,14 +1,14 @@
 // PROJECTS -- Portfolio und je Projekt: Aufgaben, Notizen, Ergebnisse,
 // Dateien, Verlauf. Dazu die Uebersichten "Alle Aufgaben" und "Alle Notizen".
 // Ersetzt Projekte, Aufgaben, Notizen, Artefakte und Archiv des alten Cockpits.
-import { html, enterBestaetigt, useState, useEffect, useRef, Icon, Avatar, Leer, Md, Modal, StandPill, bus, toast, fehlerMelden, aktualisieren,
+import { escEigen, html, enterBestaetigt, useState, useEffect, useRef, Icon, Avatar, Leer, Md, Modal, StandPill, bus, toast, fehlerMelden, aktualisieren,
   zeitText, datumText, useAbruf, navigiere, kopieren, rolleName } from "./ui.js";
 import { api, hochladen } from "./api.js";
 import { Zeitplan, Struktur } from "./projektansichten.js";
 import { Ausarbeiten } from "./inbox.js";
 import { TeamChat, gespraechsPartner } from "./teamchat.js";
 import { Composer } from "./composer.js";
-import { VideoBlock, Downloads, Pruefung, GrossAnsicht, ErgebnisZeile } from "./ergebnis.js";
+import { VideoBlock, FolienbilderBlock, Downloads, Pruefung, GrossAnsicht, ErgebnisZeile } from "./ergebnis.js";
 
 const FARBEN = ["#2C6BB3", "#0E9377", "#C07C12", "#E0392B", "#7C3AED", "#D0458F", "#0E7490", "#647388"];
 
@@ -94,12 +94,12 @@ function AufgabeZeile({ t, nachher, mitProjekt }) {
       ${erledigt ? html`<${Icon} n="check" g=${14} w=${3} />` : ""}</button>
     <div class="haupt-text">
       ${bearb ? html`<input class="eingabe" value=${titel} autofocus onInput=${(e) => setTitel(e.target.value)}
-          onKeyDown=${(e) => { if (e.key === "Enter") { setBearb(false); if (titel.trim() && titel !== t.titel) setzen({ titel: titel.trim() }); } if (e.key === "Escape") { setBearb(false); setTitel(t.titel); } }}
+          onKeyDown=${(e) => { if (e.key === "Enter") { setBearb(false); if (titel.trim() && titel !== t.titel) setzen({ titel: titel.trim() }); } if (escEigen(e)) { setBearb(false); setTitel(t.titel); } }}
           onBlur=${() => { setBearb(false); if (titel.trim() && titel !== t.titel) setzen({ titel: titel.trim() }); }} />`
         : html`<span style=${erledigt ? "text-decoration:line-through;color:var(--ink-3)" : ""} onDblClick=${() => setBearb(true)}>${t.titel}</span>`}
       <div class="leise klein">
         ${mitProjekt && (t.projekt_name ? html`<a href=${"#/projects/" + t.projekt_id} style="color:inherit">${t.projekt_name}</a>` : "ohne Projekt")}
-        ${t.quelle === "stab" ? html`${mitProjekt ? " · " : ""}vom Team${t.vorgang_id ? html` (<a href=${"#/inbox/" + t.vorgang_id} style="color:inherit">Case</a>)` : ""}` : ""}
+        ${t.quelle === "stab" ? html`${mitProjekt ? " · " : ""}vom Team${t.vorgang_id ? html` (<a href=${"#/inbox/" + t.vorgang_id} style="color:inherit" title="Die ursprüngliche Notiz und was das Team daraus gemacht hat">Herkunft</a>)` : ""}` : ""}
       </div>
     </div>
     <input type="date" class="eingabe" style="width:auto;min-height:30px;padding:2px 6px;font-size:12px" value=${t.faellig || ""} aria-label="Fällig am"
@@ -197,7 +197,7 @@ function Projekt({ id, reiter }) {
       <button class="btn geist icon" onClick=${() => navigiere("/projects")} aria-label="Zurück zu allen Projekten" title="Alle Projekte"><${Icon} n="links" /></button>
       <div class="titel">
         ${nameBearb !== null ? html`<input class="eingabe titel-gross" value=${nameBearb} autofocus onInput=${(e) => setNameBearb(e.target.value)}
-            onKeyDown=${(e) => { if (e.key === "Enter" && nameBearb.trim()) { aendern({ name: nameBearb.trim() }, "Umbenannt. Der alte Name bleibt Jason bekannt."); setNameBearb(null); } if (e.key === "Escape") setNameBearb(null); }} />`
+            onKeyDown=${(e) => { if (e.key === "Enter" && nameBearb.trim()) { aendern({ name: nameBearb.trim() }, "Umbenannt. Der alte Name bleibt Jason bekannt."); setNameBearb(null); } if (escEigen(e)) setNameBearb(null); }} />`
           : html`<h2 class="titel-gross" style="display:flex;align-items:center;gap:10px"><span class="punkt" style=${"width:14px;height:14px;background:" + (p.farbe || "#999")}></span>${p.name}
             <button class="btn klein geist icon" onClick=${() => setNameBearb(p.name)} title="Umbenennen" aria-label="Umbenennen"><${Icon} n="stift" g=${14} /></button></h2>`}
         <div class="leise klein" style="margin-top:3px">${p.ziel || "Kein Ziel eingetragen."}${(p.fruehere_namen || []).length ? ` · früher: ${p.fruehere_namen.join(", ")}` : ""}</div>
@@ -316,7 +316,7 @@ export function ErgebnisAnsicht({ id, zu }) {
       <${Downloads} e=${e} />
       <span style="flex:1"></span>
       <button class=${"btn" + (chatAuf ? " an" : "")} onClick=${() => setChatAuf(!chatAuf)}><${Icon} n="chat" g=${15} />${chatAuf ? "Weiterarbeiten ausblenden" : "Weiterarbeiten"}</button>
-      ${e.vorgang_id && html`<a class="btn" href=${"#/inbox/" + e.vorgang_id} onClick=${zu}>Zum Case</a>`}
+      ${e.vorgang_id && html`<a class="btn" href=${"#/inbox/" + e.vorgang_id} onClick=${zu} title="Die ursprüngliche Notiz, was Jason daraus gemacht hat, alle Ergebnisse dazu">Herkunft</a>`}
       <button class="btn primaer" onClick=${zu}>Schließen</button>`}>
     <div class=${"erg-raster" + (chatAuf ? " mit-chat" : "")}>
       <div class="erg-text">
@@ -330,7 +330,8 @@ export function ErgebnisAnsicht({ id, zu }) {
         </div>
         ${e.auftrag && html`<details class="auftrag-zeile klein"><summary>Auftrag</summary><div>${e.auftrag}</div></details>`}
         ${(e.form === "video" || e.video) && html`<${VideoBlock} e=${e} neuLaden=${laden} ohneDownload=${true} />`}
-        ${ansicht ? html`<div class="ergebnis-ansicht"><iframe key=${stand} src=${"/api/ergebnisse/" + e.id + "/ansicht?v=" + stand} sandbox="allow-scripts allow-forms allow-popups" title=${e.kurztitel || e.titel}></iframe></div>`
+        <${FolienbilderBlock} e=${e} neuLaden=${laden} />
+        ${ansicht ? html`<div class="ergebnis-ansicht"><iframe key=${stand} src=${"/api/ergebnisse/" + e.id + "/ansicht?v=" + stand + "&b=" + (e.folienbilder ? e.folienbilder.vorhanden : 0)} sandbox="allow-scripts allow-forms allow-popups" title=${e.kurztitel || e.titel}></iframe></div>`
           : html`<${Md} text=${e.inhalt} />`}
         ${gross && html`<${GrossAnsicht} e=${e} laden=${laden} zu=${() => setGross(false)} />`}
         ${(e.quellen || []).length > 0 && html`<details style="margin-top:14px"><summary class="klein" style="cursor:pointer">${e.quellen.length} Quellen</summary>
@@ -364,7 +365,7 @@ export function NotizAnsicht({ id, zu }) {
     try { const r = await api(`/notizen/${id}/an-stab`, { methode: "POST" }); toast("Jason ordnet die Notiz ein."); zu(); navigiere("/inbox/" + r.vorgang_id); } catch (e) { fehlerMelden(e); }
   }
   return html`<${Modal} titel=${n.titel || "Notiz"} zu=${zu} fuss=${html`
-      ${n.vorgaenge && n.vorgaenge.length ? html`<a class="btn" href=${"#/inbox/" + n.vorgaenge[0].id} onClick=${zu}>Zum Case</a>`
+      ${n.vorgaenge && n.vorgaenge.length ? html`<a class="btn" href=${"#/inbox/" + n.vorgaenge[0].id} onClick=${zu} title="Die ursprüngliche Notiz, was Jason daraus gemacht hat, alle Ergebnisse dazu">Herkunft</a>`
         : html`<button class="btn" onClick=${anStab}><${Icon} n="team" g=${15} />Vom Team bearbeiten lassen</button>`}
       <button class="btn primaer" onClick=${zu}>Schließen</button>`}>
     <div class="knopfreihe" style="margin-bottom:10px">

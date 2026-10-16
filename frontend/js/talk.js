@@ -11,7 +11,7 @@
 // Gespraechskennung null (jeder Satz ein neues Gespraech) und keine offenen
 // Vorschlaege (ein "ja" fuehrte nie etwas aus). Kennung und Verlauf liegen
 // deshalb zusaetzlich in Refs, die die Schleife immer aktuell liest.
-import { html, useState, useEffect, useRef, Icon, Md, toast, fehlerMelden, aktualisieren, navigiere, rolleName, bus, tempoSchnell, TempoSchalter } from "./ui.js";
+import { useEsc, html, useState, useEffect, useRef, Icon, Md, toast, fehlerMelden, aktualisieren, navigiere, rolleName, bus, tempoSchnell, TempoSchalter } from "./ui.js";
 import { api, strom } from "./api.js";
 import { Composer } from "./composer.js";
 import { boardFrageMerken } from "./board.js";
@@ -123,11 +123,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
   // Der Sprechen-Knopf im Kopf zeigt, was gerade passiert, und kann beenden.
   useEffect(() => { bus.sende("dialog-zustand", frei ? frei.zustand : null); }, [frei && frei.zustand]);
   useEffect(() => bus.an("dialog-ende", () => { ausKopf.current = false; freiStopp(); }), []);
-  useEffect(() => {
-    const k = (e) => { if (e.key === "Escape" && !document.querySelector(".modal-grund")) { if (freiAn.current) freiStopp(); else zu(); } };
-    document.addEventListener("keydown", k);
-    return () => document.removeEventListener("keydown", k);
-  }, []);
+  useEsc(() => { if (freiAn.current) freiStopp(); else zu(); });
 
   function zuAnzeige(m) {
     const d = m.daten || {};

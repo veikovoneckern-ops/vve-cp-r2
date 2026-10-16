@@ -1,7 +1,7 @@
 // TEAM -- Veikos KI-Team: wer ist da, womit rechnet er, was hat er zuletzt getan.
 // Dazu Memory (was das Team ueber Veiko weiss) und Freigaben (was das Team
 // ohne Nachfrage tun darf). Das Advisory Board hat einen eigenen Bereich (board.js).
-import { html, enterBestaetigt, useState, useEffect, Icon, Avatar, Leer, Modal, toast, fehlerMelden, aktualisieren, zeitText, useAbruf, navigiere, bus } from "./ui.js";
+import { escEigen, html, enterBestaetigt, useState, useEffect, Icon, Avatar, Leer, Modal, toast, fehlerMelden, aktualisieren, zeitText, useAbruf, navigiere, bus } from "./ui.js";
 import { api } from "./api.js";
 import { TeamGespraeche } from "./teamchat.js";
 
@@ -125,7 +125,7 @@ function Gedaechtnis() {
         : d.eintraege.map((g) => bearb && bearb.id === g.id ? html`<div class="zeile" key=${g.id} style="flex-wrap:wrap">
             <input class="eingabe" style="flex:1;min-width:120px" value=${bearb.begriff} onInput=${(e) => setBearb({ ...bearb, begriff: e.target.value })} />
             <input class="eingabe" style="flex:2;min-width:160px" value=${bearb.bedeutung} onInput=${(e) => setBearb({ ...bearb, bedeutung: e.target.value })}
-              onKeyDown=${(e) => { if (e.key === "Enter") speichern(); if (e.key === "Escape") setBearb(null); }} />
+              onKeyDown=${(e) => { if (e.key === "Enter") speichern(); if (escEigen(e)) setBearb(null); }} />
             <button class="btn ja klein" onClick=${speichern}>Speichern</button><button class="btn geist klein" onClick=${() => setBearb(null)}>Abbrechen</button></div>`
           : html`<div class="zeile" key=${g.id}>
             <span class="pill">${(ARTEN.find((a) => a[0] === g.art) || [0, g.art])[1].split(" ")[0]}</span>
