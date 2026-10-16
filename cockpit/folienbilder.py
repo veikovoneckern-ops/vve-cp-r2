@@ -57,18 +57,33 @@ def folien_roh(md: str) -> list[str]:
     return teile
 
 
+def bild_text(roh: str) -> str:
+    """Die Beschreibung aus einer Bildzeile, ohne Markdown-Reste. EINE Stelle,
+    weil der Dateischluessel daraus entsteht: weicht das Saeubern beim Rechnen
+    und beim Einbauen ab, findet der Einbau das Bild nie."""
+    return re.sub(r"\*\*|__", "", roh).strip().strip("*").strip()[:900]
+
+
 def bild_prompt(folie: str) -> str | None:
     for z in folie.splitlines():
         m = BILD_ZEILE.match(z)
-        if m:
-            p = re.sub(r"\*\*|__", "", m.group(2)).strip().strip("*").strip()
-            if len(p) >= 8:
-                return p[:900]
+        if m and len(bild_text(m.group(2))) >= 8:
+            return bild_text(m.group(2))
     return None
 
 
-def prompts(md: str) -> list[str | None]:
-    return [bild_prompt(f) for f in folien_roh(md)]
+# Wo Bilder gerechnet werden: Folien und alles, was als Text/Word ausgegeben
+# wird. Webseiten bringen ihr eigenes HTML mit, Videos haben ein Drehbuch.
+MIT_BILDERN = ("praesentation", "text", "aufstellung", "konzept", "dokument")
+
+
+def prompts(md: str, form: str = "praesentation") -> list[str | None]:
+    """Praesentation: ein Bild je Folie (das erste der Folie). Sonst: jede
+    Bildzeile im Text, an ihrer Stelle."""
+    if form == "praesentation":
+        return [bild_prompt(f) for f in folien_roh(md)]
+    return [bild_text(m.group(2)) for z in (md or "").splitlines()
+            if (m := BILD_ZEILE.match(z)) and len(bild_text(m.group(2))) >= 8]
 
 
 def _schluessel(prompt: str) -> str:
@@ -101,12 +116,11 @@ def _stand_setzen(eid: str, **werte: Any) -> None:
 
 
 def stand(e: dict[str, Any]) -> dict[str, Any] | None:
-    """Was die Oberflaeche braucht: wie viele Folien ein Bild wollen, wie viele
-    es schon haben, und ob gerade gerechnet wird. None, wenn es keine
-    Praesentation ist."""
-    if e.get("form") != "praesentation":
+    """Was die Oberflaeche braucht: wie viele Bilder gewuenscht sind, wie viele
+    es schon gibt, und ob gerade gerechnet wird. None bei Formen ohne Bilder."""
+    if e.get("form") not in MIT_BILDERN:
         return None
-    ps = [p for p in prompts(e.get("inhalt") or "") if p]
+    ps = [p for p in prompts(e.get("inhalt") or "", e["form"]) if p]
     s = dict(((e.get("medien") if isinstance(e.get("medien"), dict) else {}) or {}).get("folienbilder") or {})
     if s.get("stand") == "rechnet" and e["id"] not in LAUFEND:
         s["stand"] = "abgebrochen"
@@ -156,14 +170,17 @@ def starten(eid: str, neu: bool = False) -> int:
     if eid in LAUFEND:
         return 0
     e = db.holen("ergebnisse", eid)
-    if not e or e.get("form") != "praesentation":
+    if not e or e.get("form") not in MIT_BILDERN:
         return 0
-    ps = [p for p in prompts(e.get("inhalt") or "") if p][:MAX_BILDER]
+    ps = [p for p in prompts(e.get("inhalt") or "", e["form"]) if p][:MAX_BILDER]
     if neu:
         for p in ps:
             datei(eid, p).unlink(missing_ok=True)
     liste = [p for p in dict.fromkeys(ps) if not datei(eid, p).is_file()]
     if not liste:
         return 0
+    # Sofort als "rechnet" vermerken: die Antwort auf das Oeffnen soll den
+    # Fortschritt schon zeigen, nicht erst der naechste Abruf.
+    _stand_setzen(eid, stand="rechnet", anzahl=len(liste), fertig=0, fehler=None, schritt="beginnt")
     LAUFEND[eid] = asyncio.create_task(_lauf(eid, liste))
     return len(liste)

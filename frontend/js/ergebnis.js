@@ -105,6 +105,8 @@ export function FolienbilderBlock({ e, neuLaden }) {
     return () => clearInterval(t);
   }, [rechnet]);
   if (!s) return "";
+  const folien = e.form === "praesentation";
+  const wort = folien ? "Folienbildern" : "Bildern";
   async function starten(neu) {
     try {
       const r = await api(`/ergebnisse/${e.id}/folienbilder${neu ? "?neu=1" : ""}`, { methode: "POST" });
@@ -112,17 +114,18 @@ export function FolienbilderBlock({ e, neuLaden }) {
       neuLaden();
     } catch (x) { fehlerMelden(x); }
   }
+  if (!s.gewuenscht && !folien) return "";
   if (!s.gewuenscht) return html`<div class="hinweisbox folienbilder klein">Diese Präsentation hat keine Bilder.
     Im Chat rechts genügt „Bitte setze Bilder auf die Folien“ – Annie schreibt dann je Folie eine Bildbeschreibung, und die Bilder werden gerechnet.</div>`;
   if (rechnet) {
     const anteil = s.anzahl ? Math.round(((s.fertig || 0) / s.anzahl) * 100) : 0;
-    return html`<div class="hinweisbox folienbilder"><b>Folienbilder werden gerechnet</b> · ${s.schritt || ""}
+    return html`<div class="hinweisbox folienbilder"><b>${folien ? "Folienbilder" : "Bilder"} werden gerechnet</b> · ${s.schritt || ""}
       <div class="video-balken"><i style=${`width:${anteil}%`}></i></div>
       <div class="leise klein">Auf der zweiten Grafikkarte, je Bild etwa 15 Sekunden. Du kannst das Fenster schließen, es rechnet weiter.</div></div>`;
   }
   const fehlen = s.gewuenscht - s.vorhanden;
   return html`<div class=${"knopfreihe klein leise folienbilder" + (s.stand === "fehler" ? " fehler" : "")}>
-    <span>${s.vorhanden} von ${s.gewuenscht} Folienbildern${s.stand === "fehler" && s.fehler ? ` · ${s.fehler}` : ""}${s.stand === "abgebrochen" ? " · Rechnen wurde unterbrochen" : ""}</span>
+    <span>${s.vorhanden} von ${s.gewuenscht} ${wort}${s.stand === "fehler" && s.fehler ? ` · ${s.fehler}` : ""}${s.stand === "abgebrochen" ? " · Rechnen wurde unterbrochen" : ""}</span>
     ${fehlen > 0 && html`<button class="btn klein primaer" onClick=${() => starten(false)}><${Icon} n="play" g=${13} />${s.vorhanden ? "Fehlende rechnen" : "Bilder rechnen"}</button>`}
     ${s.vorhanden > 0 && html`<button class="btn klein geist" onClick=${() => starten(true)} title="Alle Bilder neu rechnen -- jedes fällt anders aus">Neu rechnen</button>`}
   </div>`;

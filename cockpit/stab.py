@@ -81,6 +81,14 @@ FORM_ANWEISUNG = {
     # Aus dem Drehbuch rechnet video.py danach ein echtes Video (16.10.2026).
     "video": video.DREHBUCH_ANWEISUNG,
 }
+# Bilder in Texten und Word-Dokumenten (Veiko, 16.10.2026: "egal ob ppt oder
+# winword -- wenn ich ein Bild haben will, soll es generiert und eingebaut
+# werden"). Dieselbe Zeile wie bei den Folien; folienbilder.py rechnet sie.
+BILD_HINWEIS = (" Verlangt der Auftrag Bilder, Illustrationen oder Grafiken, setze an die passende Stelle eine eigene Zeile "
+                "'Bild: <ausfuehrliche Bildbeschreibung: Motiv, Stil, Licht, Farben>' -- daraus wird ein echtes Bild gerechnet und "
+                "eingebaut. Beschreibe das Bild NIE nur im Text. Keine Schrift, keine Logos, keine echten Personen im Bild.")
+for _f in ("text", "aufstellung", "konzept", "dokument"):
+    FORM_ANWEISUNG[_f] += BILD_HINWEIS
 
 # ---------------------------------------------------------------- Zustand
 ZUSTAND: dict[str, Any] = {"laeuft": None, "letzter_lauf": None, "letzter_fehler": None,
@@ -867,11 +875,11 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
     if llm.fremdschrift(entwurf):
         pruefung.setdefault("maengel", []).append("Enthält fremde Schriftzeichen.")
     eid = ergebnis_speichern(v, a, entwurf, rid, modell, quellen, pruefung)
-    if form == "praesentation":
-        from . import folienbilder
+    from . import folienbilder
+    if form in folienbilder.MIT_BILDERN:
         n = folienbilder.starten(eid)
         if n:
-            db.ereignis(vid, rid, "info", f"Folienbilder werden gerechnet: {n}. Sie erscheinen in Vorschau und PowerPoint, sobald sie fertig sind.")
+            db.ereignis(vid, rid, "info", f"Bilder werden gerechnet: {n}. Sie erscheinen in Vorschau und Download, sobald sie fertig sind.")
     if form == "video":
         # Das Drehbuch ist das Ergebnis, das Video rechnet im Hintergrund weiter
         # (eine Minute sind ~12 Szenen zu je einigen Minuten). Ohne lesbares
@@ -949,25 +957,28 @@ def _folien_html(text: str, titel: str, eid: str | None = None) -> str:
     for f in folien:
         # Ein gerechnetes Folienbild (folienbilder.py) steht rechts; eingebettet,
         # weil der abgeschottete Rahmen keine angemeldeten Anfragen stellen darf.
-        roh = folienbilder.vorhanden(eid, folienbilder.bild_prompt(f)) if eid else None
-        bild = f"<img class='bild' alt='' src='{folienbilder.daten_uri(roh)}'>" if roh else ""
+        wunsch = folienbilder.bild_prompt(f)
+        roh = folienbilder.vorhanden(eid, wunsch) if eid else None
+        # Ein gewuenschtes Bild, das noch fehlt, steht als Platzhalter da --
+        # nie als Beschreibung im Text (Veiko, 16.10.: "ich will ein Bild in
+        # der ppt und nicht die Beschreibung, wie es aussehen soll").
+        bild = (f"<img class='bild' alt='' src='{folienbilder.daten_uri(roh)}'>" if roh else
+                "<div class='bild kommt'>Bild wird gerechnet …</div>" if wunsch else "")
         zeilen = f.splitlines()
         kopf = next((z.lstrip("# ").strip() for z in zeilen if z.startswith("#")), "")
         punkte = [z.strip().lstrip("-*• ").strip() for z in zeilen if z.strip().startswith(("-", "*", "•"))]
         rest = [z.strip() for z in zeilen if z.strip() and not z.startswith("#") and not z.strip().startswith(("-", "*", "•"))]
         # Gestaltungs- und Sprecherhinweise ("Bildbeschreibung: …", "Layout & Typografie: …")
-        # sind keine Folieninhalte -- gemessen am 16.10. standen sie als Stichpunkte samt
-        # "**" mitten auf Annies Folien. Sie kommen klein und grau ans Folienende.
+        # sind Regieanweisungen, kein Ergebnis -- sie erscheinen auf keiner Folie
+        # (Veiko, 16.10.: "ich will ein Bild und nicht die Beschreibung, wie es
+        # aussehen soll"). Im Text des Ergebnisses bleiben sie stehen, dort
+        # kann man sie im Chat aendern lassen.
         hinweis = [p for p in punkte + rest if HINWEIS_RE.match(_ohne_md(p))]
         punkte = [p for p in punkte if p not in hinweis]
         rest = [z for z in rest if z not in hinweis]
-        if bild:
-            # Die Beschreibung des Bildes braucht niemand mehr, wenn es dasteht.
-            hinweis = [h for h in hinweis if not folienbilder.BILD_ZEILE.match(h)]
         teile.append(("<section class='mitbild'>" + bild if bild else "<section>") + "<h2>" + _md_inline(kopf) + "</h2>" +
                      ("<ul>" + "".join(f"<li>{_md_inline(p)}</li>" for p in punkte) + "</ul>" if punkte else "") +
                      "".join(f"<p>{_md_inline(z)}</p>" for z in rest[:4]) +
-                     ("<div class='hinweis'>" + "<br>".join(_md_inline(h) for h in hinweis) + "</div>" if hinweis else "") +
                      "</section>")
     # Folien auf einer festen Buehne von 1280x720 gesetzt und als Ganzes auf die
     # verfuegbare Breite SKALIERT; was nicht passt, wird kleiner gesetzt statt in
@@ -983,9 +994,10 @@ def _folien_html(text: str, titel: str, eid: str | None = None) -> str:
             "display:flex;flex-direction:column}"
             "h2{font-size:1.75em;line-height:1.15;margin:0 0 .6em;color:#2C6BB3}ul{margin:0;padding-left:1.1em}li{margin:.35em 0}p{margin:.4em 0}"
             ".hinweis{margin-top:auto;font-size:15px;line-height:1.4;color:#8A94A6;font-style:italic;border-top:1px solid #E1E6EE;padding-top:8px}"
-            ".nr{margin-top:8px;font-size:16px;color:#8A94A6;text-align:right}.hinweis+.nr{margin-top:6px}"
+            ".nr{margin-top:auto;padding-top:8px;font-size:16px;color:#8A94A6;text-align:right}"
             "section{position:relative}section.mitbild{padding-right:calc(40% + 52px)}"
             ".bild{position:absolute;top:0;right:0;bottom:0;width:40%;height:100%;object-fit:cover}"
+            ".bild.kommt{display:flex;align-items:center;justify-content:center;background:#EEF2F7;color:#8A94A6;font-size:22px}"
             "</style><div class='buehne'>"
             + "".join(t.replace("</section>", f"<div class='nr'>{i + 1} / {len(teile)}</div></section>") for i, t in enumerate(teile))
             + "</div><script>"
@@ -995,6 +1007,11 @@ def _folien_html(text: str, titel: str, eid: str | None = None) -> str:
             "document.querySelectorAll('section').forEach(function(f){var g=30;"
             "while(f.scrollHeight>f.clientHeight+1&&g>15){g-=1;f.style.fontSize=g+'px';}});"
             "passen();window.addEventListener('resize',passen);</script>")
+
+
+def _hat_bildzeile(text: str) -> bool:
+    from . import folienbilder
+    return bool(folienbilder.prompts(text, "text"))
 
 
 def ansicht_html(e: dict[str, Any]) -> str | None:
@@ -1009,9 +1026,11 @@ def ansicht_html(e: dict[str, Any]) -> str | None:
             return m.group(1)
     elif form == "praesentation":
         return _folien_html(text, titel, e.get("id"))
-    elif form == "dokument":
+    elif form == "dokument" or (form in ("text", "aufstellung", "konzept") and _hat_bildzeile(text)):
+        # Texte mit gewuenschten Bildern bekommen eine Ansicht, damit die
+        # Bilder darin stehen statt ihrer Beschreibung.
         from . import dokumente
-        return dokumente.zu_html(titel, text)
+        return dokumente.zu_html(titel, text, e.get("id"))
     if e.get("id") and (ERGEBNIS_DIR / f"{e['id']}.html").is_file():
         return (ERGEBNIS_DIR / f"{e['id']}.html").read_text(encoding="utf-8")
     return None

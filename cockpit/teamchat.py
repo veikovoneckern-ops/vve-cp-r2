@@ -154,7 +154,10 @@ def _ergebnis_text(e: dict[str, Any]) -> str:
             "antwortest du ohne Fassung."
             + (" Bei dieser Präsentation wird aus einer Zeile 'Bild: <Bildbeschreibung>' am Folienende ein echtes Bild "
                "gerechnet (eine je Folie, ohne Schrift im Bild). Will Veiko Bilder, setze solche Zeilen; behalte vorhandene "
-               "unverändert, wenn das Bild bleiben soll." if e.get("form") == "praesentation" else ""))
+               "unverändert, wenn das Bild bleiben soll." if e.get("form") == "praesentation" else
+               " Wünscht Veiko ein Bild, setze an die Stelle eine eigene Zeile 'Bild: <Bildbeschreibung>' -- daraus wird ein "
+               "echtes Bild gerechnet und in Ansicht und Word-Datei eingebaut. Beschreibe ein Bild nie nur im Text."
+               if e.get("form") in ("text", "aufstellung", "konzept", "dokument") else ""))
 
 
 def system_text(wer: str, kontext: dict[str, Any]) -> str:
@@ -297,9 +300,9 @@ async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
                    aktion="überarbeitet")
         pid = db.wert("SELECT MAX(id) FROM protokoll WHERE tabelle='ergebnisse' AND datensatz_id=?", (eid,))
         daten.update(fassung=True, zeichen=len(fassung), protokoll_id=pid)
-        if e.get("form") == "praesentation":
+        from . import folienbilder
+        if e.get("form") in folienbilder.MIT_BILDERN:
             # Neue oder geaenderte Bildzeilen gleich rechnen; unveraenderte Bilder bleiben.
-            from . import folienbilder
             folienbilder.starten(eid)
         yield {"typ": "fassung", "zeichen": len(fassung), "protokoll_id": pid}
         # Daniel prueft auch die ueberarbeitete Fassung -- dieselbe Regel wie beim ersten Entwurf.

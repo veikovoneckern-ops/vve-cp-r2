@@ -18,6 +18,7 @@ import time
 from io import BytesIO
 from pathlib import Path
 
+from .folienbilder import BILD_ZEILE, bild_text
 from .konfig import DATEN
 
 EXPORT_DIR = DATEN / "exports"
@@ -47,6 +48,13 @@ def _bloecke(md: str) -> list[tuple[str, object]]:
             i += 1
             out.append(("code", "\n".join(code)))
             continue
+        mb = BILD_ZEILE.match(z)
+        if mb:
+            # Ein gewuenschtes Bild ist ein eigener Baustein, kein Absatz:
+            # eingebaut wird das gerechnete Bild, nie seine Beschreibung.
+            out.append(("bild", bild_text(mb.group(2))))
+            i += 1
+            continue
         m = re.match(r"^(#{1,4})\s+(.*)", z)
         if m:
             out.append((f"h{len(m.group(1))}", m.group(2).strip()))
@@ -63,7 +71,7 @@ def _bloecke(md: str) -> list[tuple[str, object]]:
             continue
         if re.match(r"^\s*[-*•]\s+", z):
             punkte = []
-            while i < len(zeilen) and re.match(r"^\s*[-*•]\s+", zeilen[i]):
+            while i < len(zeilen) and re.match(r"^\s*[-*•]\s+", zeilen[i]) and not BILD_ZEILE.match(zeilen[i]):
                 punkte.append(re.sub(r"^\s*[-*•]\s+", "", zeilen[i]))
                 i += 1
             out.append(("liste", punkte))
@@ -83,7 +91,7 @@ def _bloecke(md: str) -> list[tuple[str, object]]:
             i += 1
             continue
         absatz = []
-        while i < len(zeilen) and zeilen[i].strip() and not re.match(r"^(#{1,4}\s|```|\s*[-*•]\s|\s*\d+[.)]\s|\s*\||\s*---+\s*$)", zeilen[i]):
+        while i < len(zeilen) and zeilen[i].strip() and not BILD_ZEILE.match(zeilen[i]) and not re.match(r"^(#{1,4}\s|```|\s*[-*•]\s|\s*\d+[.)]\s|\s*\||\s*---+\s*$)", zeilen[i]):
             absatz.append(zeilen[i].strip())
             i += 1
         if absatz:
@@ -121,9 +129,11 @@ def _klartext(text: str) -> str:
 
 
 # ------------------------------------------------------------ Word
-def zu_docx(titel: str, md: str) -> bytes:
+def zu_docx(titel: str, md: str, eid: str | None = None) -> bytes:
     from docx import Document
-    from docx.shared import Pt, RGBColor
+    from docx.shared import Cm, Pt, RGBColor
+
+    from . import folienbilder
 
     doc = Document()
     stil = doc.styles["Normal"]
@@ -175,6 +185,10 @@ def zu_docx(titel: str, md: str) -> bytes:
             r.font.size = Pt(9)
         elif art == "trenner":
             doc.add_paragraph("")
+        elif art == "bild":
+            roh = folienbilder.vorhanden(eid, str(inhalt)) if eid else None
+            if roh:
+                doc.add_picture(BytesIO(roh), width=Cm(16))
     puffer = BytesIO()
     doc.save(puffer)
     return puffer.getvalue()
@@ -241,7 +255,8 @@ def zu_pptx(titel: str, md: str, eid: str | None = None) -> bytes:
 
 
 # ------------------------------------------------------------ HTML
-def zu_html(titel: str, md: str) -> str:
+def zu_html(titel: str, md: str, eid: str | None = None) -> str:
+    from . import folienbilder
     teile = []
     for art, inhalt in _bloecke(md):
         def fmt(s: str) -> str:
@@ -263,10 +278,16 @@ def zu_html(titel: str, md: str) -> str:
                          "".join("<tr>" + "".join(f"<td>{fmt(c)}</td>" for c in r) + "</tr>" for r in reihen[1:]) + "</table>")
         elif art == "code":
             teile.append(f"<pre>{htmlmod.escape(str(inhalt))}</pre>")
+        elif art == "bild":
+            roh = folienbilder.vorhanden(eid, str(inhalt)) if eid else None
+            teile.append(f"<img class='bild' alt='' src='{folienbilder.daten_uri(roh)}'>" if roh else
+                         "<div class='bild-kommt'>Hier entsteht ein Bild – es wird gerade gerechnet.</div>")
     return ("<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
             f"<title>{htmlmod.escape(titel)}</title><style>body{{font:16px/1.6 system-ui;max-width:860px;margin:32px auto;padding:0 20px;color:#0B1826}}"
             "h1,h2,h3{color:#0F5E68;line-height:1.25}table{border-collapse:collapse;margin:12px 0}td,th{border:1px solid #d8dee6;padding:6px 10px;text-align:left}"
-            "th{background:#eef3f4}pre{background:#f4f6f8;padding:12px;border-radius:6px;overflow:auto}</style>"
+            "th{background:#eef3f4}pre{background:#f4f6f8;padding:12px;border-radius:6px;overflow:auto}"
+            ".bild{display:block;width:100%;border-radius:10px;margin:18px 0}"
+            ".bild-kommt{margin:18px 0;padding:40px 16px;text-align:center;border:2px dashed #d8dee6;border-radius:10px;color:#8A94A6}</style>"
             f"<h1>{htmlmod.escape(titel)}</h1>" + "".join(teile))
 
 

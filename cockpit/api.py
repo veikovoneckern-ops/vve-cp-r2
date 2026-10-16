@@ -625,7 +625,16 @@ async def ergebnis(rid: str):
     if e["video"]:
         e["video"].pop("drehbuch", None)
     from . import folienbilder
-    e["folienbilder"] = folienbilder.stand(e)
+    fb = folienbilder.stand(e)
+    # Fehlen gewuenschte Bilder, rechnet das Oeffnen sie an -- kostet nur
+    # Rechenzeit, und wer ein Bild bestellt hat, soll nicht noch klicken
+    # muessen. Nach einem gescheiterten Lauf nicht erneut von selbst.
+    if fb and fb["gewuenscht"] > fb["vorhanden"] and fb.get("stand") not in ("rechnet", "fehler"):
+        if folienbilder.starten(rid):
+            fb = folienbilder.stand(db.holen("ergebnisse", rid) or e)
+    e["folienbilder"] = fb
+    if fb and fb["gewuenscht"]:
+        e["ansicht"] = 1
     return e
 
 
@@ -634,8 +643,8 @@ async def ergebnis_folienbilder(rid: str, neu: int = 0):
     """Die Bilder einer Praesentation rechnen: fehlende, oder mit neu=1 alle."""
     from . import folienbilder
     e = db.holen("ergebnisse", rid)
-    if not e or e.get("form") != "praesentation":
-        raise HTTPException(404, "Keine Präsentation")
+    if not e or e.get("form") not in folienbilder.MIT_BILDERN:
+        raise HTTPException(404, "Zu dieser Art Ergebnis gibt es keine Bilder")
     n = folienbilder.starten(rid, neu=bool(neu))
     if not n:
         s = folienbilder.stand(e) or {}
@@ -643,7 +652,7 @@ async def ergebnis_folienbilder(rid: str, neu: int = 0):
             raise HTTPException(409, "Die Bilder werden gerade gerechnet.")
         if s.get("gewuenscht"):
             return {"ok": True, "bilder": 0}
-        raise HTTPException(409, "Keine Folie trägt eine Zeile 'Bild: …' -- im Ergebnisfenster Annie bitten, Bilder vorzusehen.")
+        raise HTTPException(409, "Im Ergebnis steht noch keine Zeile 'Bild: …' -- im Chat rechts um Bilder bitten.")
     return {"ok": True, "bilder": n}
 
 
@@ -684,11 +693,11 @@ async def ergebnis_datei(rid: str, format: str = "docx"):
     if e.get("form") == "webseite" and fmt == "html" and stab.ansicht_html(e):
         roh = stab.ansicht_html(e).encode("utf-8")
     elif fmt == "docx":
-        roh = dokumente.zu_docx(e["titel"], text)
+        roh = dokumente.zu_docx(e["titel"], text, rid)
     elif fmt == "pptx":
         roh = dokumente.zu_pptx(e["titel"], text, rid)
     elif fmt == "html":
-        roh = dokumente.zu_html(e["titel"], text).encode("utf-8")
+        roh = dokumente.zu_html(e["titel"], text, rid).encode("utf-8")
     else:
         roh = text.encode("utf-8")
     typen = {"docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
