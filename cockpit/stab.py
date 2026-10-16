@@ -868,6 +868,10 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
         # (eine Minute sind ~12 Szenen zu je einigen Minuten). Ohne lesbares
         # Drehbuch steht das am Case statt still nichts zu tun.
         db_ = video.drehbuch_aus(entwurf)
+        if db_ and db_.get("titel"):
+            # Ridleys Videotitel statt des abgeschnittenen Auftrags ("Erklärvideo
+            # von etwa einer Minute (rund 12 Szenen): der OODA-Loop (Obs…").
+            db.ausfuehren("UPDATE ergebnisse SET titel=? WHERE id=?", (f"Video: {db_['titel']}"[:120], eid))
         if db_ and video.starten(eid, db_):
             db.ereignis(vid, rid, "info", f"Video wird gerechnet: {len(db_['szenen'])} Szenen. Es erscheint am Ergebnis, sobald es fertig ist.")
         else:

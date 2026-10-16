@@ -5,6 +5,7 @@ import { html, enterBestaetigt, useState, useEffect, Icon, Avatar, Leer, Md, Mod
   zeitText, useAbruf, navigiere, rolleName, ROLLEN_WAHL, FORM_WAHL } from "./ui.js";
 import { api } from "./api.js";
 import { Entscheidung } from "./entscheidung.js";
+import { ErgebnisVorschau } from "./ergebnis.js";
 
 const FILTER = [["wartet", "Wartet auf dich"], ["in_arbeit", "In Arbeit"], ["fertig", "Fertig"], ["erledigt", "Erledigt"], ["alle", "Alle"]];
 const ART_TEXT = { notiz: "Notiz", einordnung: "hat eingeordnet", aufgabe: "Aufgabe", rueckfrage: "fragt nach", vorschlag: "schlägt vor",
@@ -61,6 +62,7 @@ function Akte({ id, nachher }) {
   const [ausarbeiten, setAusarbeiten] = useState(false);
   const [projekte, setProjekte] = useState([]);
   const [notizAuf, setNotizAuf] = useState(false);
+  const [ergWahl, setErgWahl] = useState(null);     // welches Ergebnis die Vorschau zeigt; null = das neueste
   useEffect(() => { api("/projekte").then((x) => setProjekte(x.projekte)).catch(() => {}); }, []);
   useEffect(() => {
     if (!d) return;
@@ -134,6 +136,18 @@ function Akte({ id, nachher }) {
       ${offen.map((e) => html`<${Entscheidung} key=${e.id} e=${e} mitVorgang=${false} nachher=${() => { laden(); nachher && nachher(); }} />`)}
     </section>`}
 
+    ${d.ergebnisse.length > 0 && (() => {
+      // Neuestes zuerst; die Vorschau ist DER Ort fuer Ergebnisse im Case.
+      const liste = [...d.ergebnisse].reverse();
+      const aktiv = liste.find((r) => r.id === ergWahl) || liste[0];
+      return html`<section class="karte erg-bereich" style="margin-bottom:12px">
+        <div class="karte-kopf"><h3>${liste.length > 1 ? "Ergebnisse" : "Ergebnis"}</h3>
+          ${liste.length > 1 && html`<div class="segment erg-wahl">${liste.map((r, i) => html`<button key=${r.id} class=${r.id === aktiv.id ? "an" : ""}
+            onClick=${() => setErgWahl(r.id)} title=${r.titel}>${i === 0 ? "Neuestes" : r.form + " · " + zeitText(r.erstellt)}</button>`)}</div>`}</div>
+        <${ErgebnisVorschau} key=${aktiv.id} id=${aktiv.id} />
+      </section>`;
+    })()}
+
     <div class="raster zwei">
       <section>
         <div class="karte-kopf"><h3>Verlauf</h3></div>
@@ -155,12 +169,6 @@ function Akte({ id, nachher }) {
             <button class=${"check" + (t.status === "erledigt" ? " an" : "")} onClick=${() => aufgabeUmschalten(t)} aria-label="Erledigt umschalten">${t.status === "erledigt" ? html`<${Icon} n="check" g=${14} w=${3} />` : ""}</button>
             <div class="haupt-text" style=${t.status === "erledigt" ? "text-decoration:line-through;color:var(--ink-3)" : ""}>${t.titel}</div>
           </div>`)}
-        </section>`}
-        ${d.ergebnisse.length > 0 && html`<section class="karte">
-          <div class="karte-kopf"><h3>Ergebnisse</h3></div>
-          ${d.ergebnisse.map((r) => html`<div class="zeile" key=${r.id}>
-            <div class="haupt-text"><b>${r.titel}</b><div class="leise klein">${r.form} · ${zeitText(r.erstellt)}</div></div>
-            <button class="btn klein" onClick=${() => bus.sende("ergebnis-zeigen", r.id)}>Ansehen</button></div>`)}
         </section>`}
         <section class="karte">
           <div class="karte-kopf"><h3>Weitere Schritte</h3></div>

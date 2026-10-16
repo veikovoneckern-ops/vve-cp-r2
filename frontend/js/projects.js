@@ -8,6 +8,7 @@ import { Zeitplan, Struktur } from "./projektansichten.js";
 import { Ausarbeiten } from "./inbox.js";
 import { TeamChat, gespraechsPartner } from "./teamchat.js";
 import { Composer } from "./composer.js";
+import { VideoBlock } from "./ergebnis.js";
 
 const FARBEN = ["#2C6BB3", "#0E9377", "#C07C12", "#E0392B", "#7C3AED", "#D0458F", "#0E7490", "#647388"];
 
@@ -290,39 +291,6 @@ function ErgebnisZeile({ r }) {
 // Das Ergebnisfenster. Rechts "Weiterarbeiten": dasselbe Gespraech wie unter
 // Team (teamchat.js), mit dem Ergebnis im Kontext -- Anweisungen geben,
 // Unterlagen anhaengen, diktieren. Eine neue Fassung ersetzt links den Text.
-// Erklaervideo am Ergebnis (video.py): waehrend des Rechnens der Fortschritt,
-// danach der Player. Ein Lauf, den es nach einem Neustart nicht mehr gibt,
-// heisst "abgebrochen" und laesst sich neu starten -- ebenso nach einem im
-// Weiterarbeiten-Gespraech ueberarbeiteten Drehbuch.
-function VideoBlock({ e, neuLaden }) {
-  const v = e.video;
-  const rechnet = v && v.stand === "rechnet";
-  useEffect(() => {
-    if (!rechnet) return;
-    const t = setInterval(neuLaden, 10000);
-    return () => clearInterval(t);
-  }, [rechnet]);
-  async function starten() {
-    try { await api(`/ergebnisse/${e.id}/video`, { methode: "POST" }); toast("Video wird gerechnet. Das dauert pro Szene einige Minuten."); neuLaden(); }
-    catch (x) { fehlerMelden(x); }
-  }
-  if (!v) return html`<div class="hinweisbox video-block">Zu diesem Drehbuch wurde noch kein Video gerechnet.
-    <button class="btn klein primaer" style="margin-left:8px" onClick=${starten}><${Icon} n="play" g=${13} />Video rechnen</button></div>`;
-  if (v.stand === "fertig") return html`<div class="video-block">
-    <video controls preload="metadata" src=${"/api/ergebnisse/" + e.id + "/video?t=" + Math.round(v.geaendert || 0)}></video>
-    <div class="knopfreihe klein leise" style="margin-top:6px">${v.laenge_s ? `${Math.round(v.laenge_s)} s` : ""} · ${v.szenen} Szenen · gerechnet in ${Math.round((v.dauer_s || 0) / 60)} Min.
-      <a class="btn klein" href=${"/api/ergebnisse/" + e.id + "/video?download=1"}><${Icon} n="download" g=${13} />Herunterladen</a>
-      <button class="btn klein geist" onClick=${starten}>Neu rechnen</button></div></div>`;
-  const anteil = v.szenen ? Math.round(((v.fertig || 0) / v.szenen) * 100) : 0;
-  return html`<div class=${"hinweisbox video-block" + (v.stand === "fehler" ? " fehler" : "")}>
-    ${rechnet ? html`<b>Video wird gerechnet</b> · ${v.schritt || ""} · seit ${zeitText(v.start)}
-        <div class="video-balken"><i style=${`width:${anteil}%`}></i></div>
-        <div class="leise klein">Jede Szene braucht auf der zweiten Grafikkarte einige Minuten. Du kannst das Fenster schließen, es rechnet weiter.</div>`
-      : html`<b>${v.stand === "fehler" ? "Video gescheitert" : "Video-Rechnung abgebrochen"}</b>${v.fehler ? `: ${v.fehler}` : " (der Dienst wurde neu gestartet)."}
-        <button class="btn klein primaer" style="margin-left:8px" onClick=${starten}>Neu rechnen</button>`}
-  </div>`;
-}
-
 export function ErgebnisAnsicht({ id, zu }) {
   const [e, setE] = useState(null);
   const [ansicht, setAnsicht] = useState(false);
