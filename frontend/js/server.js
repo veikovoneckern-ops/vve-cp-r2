@@ -535,13 +535,26 @@ export function useDetails({ mitSystem = true } = {}) {
   return { det, sys, detLaden, starten, notfall, modellLaden, wdLaden, auftragSchliessen };
 }
 
+// Was das Cockpit gerade tut -- zwei, drei Zeilen unter dem Aufbau (Veiko,
+// 16.10.: "aktuell laeuft etwas, aber ich sehe nicht, was es macht"). Kommt aus
+// der Kopfzeile (/kopf, alle 3-6 s), also kein eigener Abruf.
+function Taetigkeit() {
+  const k = useKopf();
+  const t = k && k.taetigkeit;
+  if (!t) return html`<div class="taetigkeit leise klein">Was gerade läuft: noch nicht abgerufen.</div>`;
+  return html`<div class=${"taetigkeit" + (t.arbeitet ? " arbeitet" : "")} role="status" aria-live="polite">
+    <div class="taetigkeit-kopf"><i></i>Was das Cockpit gerade tut</div>
+    ${t.zeilen.map((z, i) => html`<div class="taetigkeit-zeile" key=${i}>${z}</div>`)}
+  </div>`;
+}
+
 // Aufbau links, Updates/Empfehlungen/Sicherungen rechts -- in der Server-Sektion
 // und (wie im alten Cockpit, auf Veikos Wunsch vom 11.09.2026) zusaetzlich im WatchDog.
 export function AufbauReihe({ d, beiKlick }) {
   const { det, starten, detLaden, modellLaden } = d;
   const s = det ? det.status : null;
   return html`<div class="sv-reihe">
-    <${Kachel} titel="Aufbau" neben="Bauteil anklicken für Einzelheiten"><${Aufbau} s=${s} beiKlick=${beiKlick} /></${Kachel}>
+    <${Kachel} titel="Aufbau" neben="Bauteil anklicken für Einzelheiten"><${Aufbau} s=${s} beiKlick=${beiKlick} /><${Taetigkeit} /></${Kachel}>
     <${Kachel} titel="Updates, Empfehlungen und Sicherungen" klasse="sv-folgt">
       <div class="sv-zwei"><${UpdatesBlock} u=${det && det.updates} s=${s} auftrag=${det && det.auftrag} starten=${starten} neuPruefen=${() => detLaden(true)} />
         <${SicherungenBlock} sich=${det && det.sicherungen} /></div>

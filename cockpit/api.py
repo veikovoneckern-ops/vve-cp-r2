@@ -356,6 +356,22 @@ async def projekt_aendern(pid: str, request: Request):
     return db.aendern("projekte", pid, erlaubt)
 
 
+@router.post("/projekte/{pid}/unterlagen")
+async def projekt_unterlagen(pid: str, request: Request):
+    """Unterlagen ans Team: Dateien sind schon hochgeladen (/dateien), hier wird
+    daraus ein Case mit festem Auftrag -- Relevanz pruefen, Auswirkungen, Arbeitsergebnisse."""
+    d = await _koerper(request)
+    ids = [str(x) for x in (d.get("dateien") or [])][:10]
+    if not ids:
+        raise HTTPException(400, "Häng mindestens eine Datei an.")
+    try:
+        v = stab.unterlagen_an_team(pid, ids, str(d.get("hinweis") or "").strip()[:2000])
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    stab.wecken()
+    return {"ok": True, "vorgang_id": v["id"]}
+
+
 @router.post("/projekte/reihenfolge")
 async def projekt_reihenfolge(request: Request):
     d = await _koerper(request)

@@ -202,6 +202,44 @@ def aus_text(text: str, quelle: str = "eingabe", projekt_id: str | None = None,
                            titel=titel or text[:80], projekt_id=projekt_id)
 
 
+# Unterlagen ans Team (Veiko, 16.10.2026): im Projekt Dateien ablegen, das Team
+# schaut sie an, und wenn sie fuer das Projekt relevant sind, bearbeitet es sie
+# und liefert Auswirkungen auf das Projekt und Arbeitsergebnisse. Derselbe Weg
+# wie eine Plaud-Notiz (Notiz -> Vorgang -> Jason), nur mit festem Auftrag --
+# ob "relevant" ist, entscheidet die Rolle beim Lesen, nicht ein Wortfilter.
+UNTERLAGE_AUFTRAG = (
+    "Prüfe die angehängten Unterlagen auf ihre Bedeutung für das Projekt „{projekt}“.{hinweis} "
+    "Gliedere das Ergebnis so: 1. Kurz: Was steht in den Unterlagen? 2. Relevanz für das Projekt (hoch, mittel, gering) mit Begründung. "
+    "3. Auswirkungen auf das Projekt: Ziel, offene Aufgaben, Zeitplan, Risiken, frühere Ergebnisse -- konkret, mit Bezug auf das, "
+    "was im Projekt schon steht. 4. Arbeitsergebnisse: was sich daraus direkt erarbeiten lässt (Entwürfe, Überarbeitungen, "
+    "Zusammenfassungen, Vorschläge), gleich ausgearbeitet und nicht nur angekündigt. 5. Vorschläge für nächste Schritte und neue Aufgaben. "
+    "Sind die Unterlagen für das Projekt nicht relevant, sag das klar in Punkt 2 und halte den Rest kurz.")
+
+
+def unterlagen_an_team(projekt_id: str, datei_ids: list[str], hinweis: str = "") -> dict[str, Any]:
+    p = db.holen("projekte", projekt_id)
+    if not p:
+        raise ValueError("Projekt nicht gefunden")
+    dateien = [d for d in (db.holen("dateien", i) for i in datei_ids) if d]
+    if not dateien:
+        raise ValueError("Keine Datei gefunden")
+    for d in dateien:
+        if d.get("projekt_id") != projekt_id:
+            db.ausfuehren("UPDATE dateien SET projekt_id=? WHERE id=?", (projekt_id, d["id"]))
+    namen = ", ".join(d["name"] for d in dateien)
+    text = (f"Unterlagen für das Projekt „{p['name']}“: {namen}" + (f"\n\nVeikos Hinweis: {hinweis}" if hinweis else ""))
+    for d in dateien:
+        text += f"\n\n[Angehängt: {d['name']}]\n" + ((d.get("text") or "").strip()[:60000] or "(Inhalt nicht lesbar)")
+    nid = db.neue_id("n")
+    db.einfuegen("notizen", {"id": nid, "titel": f"Unterlagen: {namen}"[:120], "datum": time.strftime("%Y-%m-%d"),
+                             "text": text, "quelle": "unterlage", "projekt_id": projekt_id, "erstellt": time.time()})
+    auftrag = {"rolle": "stratege", "form": "dokument", "zeit": time.time(), "titel": f"Auswirkungen auf {p['name']}: {namen}",
+               "auftrag": UNTERLAGE_AUFTRAG.format(projekt=p["name"], hinweis=f" Veikos Hinweis dazu: {hinweis}" if hinweis else ""),
+               "recherche": None}
+    return vorgang_anlegen(db.holen("notizen", nid) or {"id": nid, "text": text}, "unterlage",
+                           titel=f"Unterlagen: {namen}"[:120], projekt_id=projekt_id, auftrag=auftrag)
+
+
 def plaud_scannen() -> int:
     """Neue Plaud-Notizen aus der Ablage des alten Servers holen (nur lesen)."""
     if not PLAUD_DIR.is_dir():
@@ -369,7 +407,9 @@ def anwenden(v: dict[str, Any], n: dict[str, Any], d: dict[str, Any], modell: st
         entscheidung_anlegen(vid, "rueckfrage", _kurz(d["rueckfrage"], 400), {})
 
     aus = d.get("ausarbeitung")
-    if isinstance(aus, dict) and aus.get("auftrag"):
+    # Hat der Vorgang schon einen Auftrag (Unterlagen ans Team), bleibt er: Jason
+    # ordnet ein und leitet Aufgaben ab, ersetzt aber nicht, was Veiko verlangt hat.
+    if isinstance(aus, dict) and aus.get("auftrag") and not auftrag_offen(v):
         r = aus.get("rolle") if aus.get("rolle") in ROLLEN_FUER_ARBEIT else "stratege"
         f = aus.get("form") if aus.get("form") in FORMEN else "text"
         auftrag = {"rolle": r, "form": f, "auftrag": _kurz(aus["auftrag"], 600),
@@ -563,12 +603,15 @@ def _vorgang_kontext(v: dict[str, Any]) -> str:
     if v.get("notiz_id"):
         n = db.holen("notizen", v["notiz_id"])
         if n:
-            teile.append(f"VEIKOS NOTIZ:\n{notiz_text(n, 5000)}")
+            # Gruendlich (15.10.): die ganze Notiz samt angehaengter Unterlagen, nicht
+            # nur der Anfang -- eine Unterlage, von der das Team 5.000 Zeichen sieht,
+            # kann es nicht auf ihre Folgen fuer das Projekt pruefen.
+            teile.append(f"VEIKOS NOTIZ:\n{notiz_text(n, 40000)}")
     if v.get("projekt_id"):
-        p = db.holen("projekte", v["projekt_id"]) or {}
-        offen = db.alle("SELECT titel FROM aufgaben WHERE projekt_id=? AND status!='erledigt' LIMIT 15", (v["projekt_id"],))
-        teile.append(f"PROJEKT: {p.get('name')}" + (f" -- Ziel: {p['ziel']}" if p.get("ziel") else "") +
-                     ("\nOffene Aufgaben: " + "; ".join(a["titel"] for a in offen) if offen else ""))
+        # Dasselbe Bild vom Projekt wie in Talk (Aufgaben, Ergebnisse, Notizen) --
+        # wer Auswirkungen auf ein Projekt beurteilen soll, muss es kennen.
+        from .gespraech import kontext_text
+        teile.append(kontext_text({"art": "projekt", "id": v["projekt_id"]}).replace("VEIKO SCHAUT GERADE AUF DAS PROJEKT", "PROJEKT"))
     antworten = db.alle("SELECT text FROM ereignisse WHERE vorgang_id=? AND art='antwort'", (v["id"],))
     if antworten:
         teile.append("VEIKOS ANTWORTEN AUF RÜCKFRAGEN:\n" + "\n".join("- " + a["text"] for a in antworten))
@@ -602,6 +645,19 @@ RUNDEN_MAX = 3
 GEGLIEDERTE_FORMEN = ("dokument", "text", "konzept", "aufstellung")
 DENKEN = True
 LANGE_FRIST = 1800
+
+
+async def _chat_robust(*args: Any, denken: bool = False, **kw: Any) -> str:
+    """Mit Nachdenken versuchen, bei einem Abbruch ohne. Gemessen am 16.10.: in
+    der Denkphase kann sich das Modell wiederholen, bis Ollama mit "token repeat
+    limit reached" abbricht -- das soll eine Ausarbeitung nicht kippen."""
+    try:
+        return await llm.chat(*args, denken=denken, **kw)
+    except llm.ModellFehler as f:
+        if not denken:
+            raise
+        print(f"[stab] Abbruch mit Nachdenken, zweiter Versuch ohne: {f}", flush=True)
+        return await llm.chat(*args, denken=False, **kw)
 
 GLIEDERUNG_ANWEISUNG = (
     "PLANE ZUERST, schreibe noch nichts aus. Antworte AUSSCHLIESSLICH mit JSON: "
@@ -703,7 +759,7 @@ async def abschnittsweise(modell: str, system: str, frage: str, form: str, rid: 
     if form not in GEGLIEDERTE_FORMEN:
         return None
     laeuft(rid, "gliedert", vid)
-    plan = llm.json_aus(await llm.chat(modell, system, [{"role": "user", "content": frage + "\n\n" + GLIEDERUNG_ANWEISUNG}],
+    plan = llm.json_aus(await _chat_robust(modell, system, [{"role": "user", "content": frage + "\n\n" + GLIEDERUNG_ANWEISUNG}],
                                        json_format=True, temperatur=0.3, denken=DENKEN, num_ctx=65536, timeout=LANGE_FRIST))
     abschnitte = [x for x in (plan.get("abschnitte") if isinstance(plan, dict) else None) or []
                   if isinstance(x, dict) and x.get("ueberschrift")][:12]
@@ -722,7 +778,7 @@ async def abschnittsweise(modell: str, system: str, frage: str, form: str, rid: 
                    + f"Schreibe JETZT NUR Abschnitt {i + 1}: „{x['ueberschrift']}“ ({x.get('umfang') or 'ausführlich'}). "
                    f"Beginne mit der Zeile „## {x['ueberschrift']}“. Kein Vorwort, keine Wiederholung früherer Abschnitte, "
                    "kein Ausblick auf spätere -- die schreibst du danach.")
-        t = await llm.chat(modell, system, [{"role": "user", "content": auftrag}], temperatur=0.6, denken=DENKEN,
+        t = await _chat_robust(modell, system, [{"role": "user", "content": auftrag}], temperatur=0.6, denken=DENKEN,
                            num_ctx=65536, timeout=LANGE_FRIST)
         if t.strip():
             teile.append(t.strip())
@@ -772,11 +828,11 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
                           "\n\nKRITIK VON DANIEL:\n" + pruefung.get("begruendung", "") + "\n" +
                           "\n".join("- " + m for m in pruefung.get("maengel") or []) +
                           "\n\nÜberarbeite den Entwurf und behebe die Mängel. Liefere das vollständige Ergebnis.")
-            entwurf = await llm.chat(modell, system, [{"role": "user", "content": nachricht}],
+            entwurf = await _chat_robust(modell, system, [{"role": "user", "content": nachricht}],
                                      temperatur=0.5, denken=DENKEN, num_ctx=65536, timeout=LANGE_FRIST)
         else:
             entwurf = (await abschnittsweise(modell, system, frage, form, rid, vid)
-                       or await llm.chat(modell, system, [{"role": "user", "content": nachricht}],
+                       or await _chat_robust(modell, system, [{"role": "user", "content": nachricht}],
                                          temperatur=0.5, denken=DENKEN, num_ctx=65536, timeout=LANGE_FRIST))
         if llm.fremdschrift(entwurf):
             entwurf = await llm.chat(modell, system + "\n\nWICHTIG: Ausschließlich deutsche Sprache und lateinische Schrift.",
@@ -805,16 +861,23 @@ async def pruefen(entwurf: str, a: dict[str, Any], v: dict[str, Any], quellen_te
         return {"urteil": "ungeprueft", "begruendung": "Kein Modell für die Prüfung installiert."}
     # Daniel bekommt DIESELBEN Quellen wie der Bearbeiter. Ohne sie pruefte er
     # aus eigenem Gedaechtnis -- und das kann genauso daneben liegen.
-    frage = (f"AUFTRAG: {a.get('auftrag')}\nFORM: {a.get('form')}\n\n{_vorgang_kontext(v)[:4000]}\n\n"
+    frage = (f"AUFTRAG: {a.get('auftrag')}\nFORM: {a.get('form')}\n\n{_vorgang_kontext(v)[:40000]}\n\n"
              + (f"QUELLEN, die der Bearbeiter hatte:\n{quellen_text[:30000]}\n\n" if quellen_text else
                 "(Der Bearbeiter hatte keine Internetquellen.)\n\n")
              + f"ERGEBNIS:\n{entwurf[:60000]}")
     # Erster Versuch mit Nachdenken (gruendlicher), der zweite ohne: Denken und
-    # JSON zusammen liefern bei manchen Modellen gelegentlich einen leeren Text.
+    # JSON zusammen liefern bei manchen Modellen gelegentlich einen leeren Text --
+    # oder Ollama bricht ab ("token repeat limit reached", gemessen am 16.10.: das
+    # Modell wiederholt sich in der Denkphase). Ein Abbruch ist hier KEIN Grund,
+    # Claytons fertige Arbeit wegzuwerfen; es geht mit dem naechsten Versuch weiter.
     for versuch in range(2):
-        antwort = await llm.chat(modell, PRUEF_SYSTEM, [{"role": "user", "content": frage}],
-                                 json_format=True, temperatur=0.2, denken=DENKEN and versuch == 0,
-                                 num_ctx=65536, timeout=LANGE_FRIST)
+        try:
+            antwort = await llm.chat(modell, PRUEF_SYSTEM, [{"role": "user", "content": frage}],
+                                     json_format=True, temperatur=0.2, denken=DENKEN and versuch == 0,
+                                     num_ctx=65536, timeout=LANGE_FRIST)
+        except llm.ModellFehler as f:
+            print(f"[stab] Prüfung, Versuch {versuch + 1} abgebrochen: {f}", flush=True)
+            continue
         d = llm.json_aus(antwort)
         if isinstance(d, dict) and d.get("urteil") in ("tragfaehig", "nachbessern", "rueckfrage"):
             d["maengel"] = [str(m)[:200] for m in (d.get("maengel") or [])][:6]
@@ -871,7 +934,7 @@ def ergebnis_speichern(v: dict[str, Any], a: dict[str, Any], text: str, rid: str
         # Das Ergebnis traegt seine Quellen selbst -- auch wenn es kopiert oder gemailt wird.
         text = text.rstrip() + "\n\n**Quellen**\n" + "\n".join(
             f"{i + 1}. [{(q.get('titel') or q.get('url'))[:90]}]({q.get('url')})" for i, q in enumerate(quellen))
-    titel = _kurz(a.get("auftrag"), 90) or v.get("titel") or "Ergebnis"
+    titel = _kurz(a.get("titel"), 90) or _kurz(a.get("auftrag"), 90) or v.get("titel") or "Ergebnis"
     ansicht = 1 if ansicht_html({"form": form, "titel": titel, "inhalt": text}) else 0
     db.anlegen("ergebnisse", {
         "id": eid, "vorgang_id": v["id"], "projekt_id": v.get("projekt_id"), "titel": titel, "form": form,

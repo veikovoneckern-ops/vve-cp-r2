@@ -10,7 +10,7 @@ const FILTER = [["wartet", "Wartet auf dich"], ["in_arbeit", "In Arbeit"], ["fer
 const ART_TEXT = { notiz: "Notiz", einordnung: "hat eingeordnet", aufgabe: "Aufgabe", rueckfrage: "fragt nach", vorschlag: "schlägt vor",
   antwort: "hat geantwortet", ergebnis: "hat geliefert", pruefung: "hat geprüft", entscheidung: "hat entschieden", fehler: "Fehler",
   info: "", auftrag: "hat beauftragt" };
-const QUELLE = { plaud: "Plaud", mail: "E-Mail", eingabe: "Capture", gespraech: "Talk", alt: "altes Cockpit" };
+const QUELLE = { plaud: "Plaud", mail: "E-Mail", unterlage: "Unterlagen", eingabe: "Capture", gespraech: "Talk", alt: "altes Cockpit" };
 
 export function Inbox({ id }) {
   const [filter, setFilter] = useState(() => { try { return sessionStorage.getItem("inbox_filter") || "wartet"; } catch (e) { return "wartet"; } });

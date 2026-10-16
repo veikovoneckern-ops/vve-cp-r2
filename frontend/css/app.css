@@ -1050,3 +1050,13 @@ html.ki-arbeitet .logo-knopf{filter:drop-shadow(0 0 .6px rgba(0,0,0,.75)) drop-s
 a.bd-person-haupt{text-decoration:none}
 .tc-fassung-text{display:inline-flex;align-items:center;gap:6px}
 .tempo-schalter{display:inline-flex;gap:6px;align-items:center;margin:4px 12px 0 0;color:var(--ink-3);cursor:pointer}
+
+/* Was das Cockpit gerade tut (server.js Taetigkeit, 16.10.) */
+.taetigkeit{margin-top:10px;padding:10px 12px;border-top:1px solid var(--line);font-size:13px;display:flex;flex-direction:column;gap:3px}
+.taetigkeit-kopf{display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-3);margin-bottom:2px}
+.taetigkeit-kopf i{width:8px;height:8px;border-radius:50%;background:var(--ink-3);flex:none}
+.taetigkeit.arbeitet .taetigkeit-kopf i{background:var(--violett);animation:taet-puls 1.2s ease-in-out infinite}
+.taetigkeit-zeile{color:var(--ink-2);overflow-wrap:anywhere}
+.taetigkeit-zeile:last-child{color:var(--ink-3)}
+@keyframes taet-puls{50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.taetigkeit.arbeitet .taetigkeit-kopf i{animation:none}}

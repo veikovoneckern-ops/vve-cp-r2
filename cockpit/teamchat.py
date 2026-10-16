@@ -263,23 +263,20 @@ async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
         if ist_extern(wer):
             modell = await _extern_modell(wer)
             yield {"typ": "status", "text": f"{wer_name(wer)} antwortet ({modell}) …"}
-            gesamt = await _cloud_chat(wer, modell or "", system, verlauf)
+            with llm.taetig(f"{wer_name(wer)} (Cloud, {modell}) antwortet dir im Team-Chat"):
+                gesamt = await _cloud_chat(wer, modell or "", system, verlauf)
             yield {"typ": "text", "t": gesamt}
         else:
             modell = await stab.modell_fuer(wer, MODELL_TALK)
             if not modell:
                 yield {"typ": "fehler", "text": "Kein lokales Modell installiert."}
                 return
-            stab.laeuft(wer, "im Gespräch mit dir")
             if denken:
                 yield {"typ": "status", "text": f"{wer_name(wer)} denkt gründlich nach …"}
-            try:
+            with llm.taetig(f"{wer_name(wer)} antwortet dir im Team-Chat" + (" (überarbeitet ein Ergebnis)" if kontext.get("ergebnis_id") else "")):
                 async for t in llm.strom(modell, system, verlauf, temperatur=0.6, denken=denken, num_ctx=65536):
                     gesamt += t
                     yield {"typ": "text", "t": t}
-            finally:
-                if (stab.ZUSTAND.get("laeuft") or {}).get("was") == "im Gespräch mit dir":
-                    stab.laeuft(None)
     except llm.ModellFehler as f:
         yield {"typ": "fehler", "text": str(f)}
         return

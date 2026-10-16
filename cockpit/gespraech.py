@@ -451,10 +451,11 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
             yield {"typ": "status", "text": "denkt gründlich nach …"}
     gesamt = ""
     try:
-        async for t in llm.strom(modell, system, verlauf, temperatur=0.4, denken=denken, num_ctx=24576):
-            gesamt += t
-            if "```aktionen" not in gesamt:
-                yield {"typ": "text", "t": t}
+        with llm.taetig("Talk antwortet dir" + (" (gründlich)" if denken else "")):
+            async for t in llm.strom(modell, system, verlauf, temperatur=0.4, denken=denken, num_ctx=24576):
+                gesamt += t
+                if "```aktionen" not in gesamt:
+                    yield {"typ": "text", "t": t}
     except llm.ModellFehler as f:
         yield {"typ": "fehler", "text": str(f)}
         return

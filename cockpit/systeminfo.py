@@ -543,6 +543,77 @@ def _gpu_zeilen(s: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def _dauer(seit: float | None) -> str:
+    if not seit:
+        return ""
+    s = int(time.time() - seit)
+    return f"seit {s} s" if s < 90 else f"seit {s // 60} Min."
+
+
+async def _fremd_taetig() -> list[str]:
+    """Was AUSSERHALB dieser Fassung auf denselben Karten rechnet: das alte
+    Cockpit (eigene Pipeline) und ComfyUI. 15 Sekunden gemerkt -- die Kopfzeile
+    fragt alle 3 bis 6 Sekunden, und beide Antworten aendern sich langsamer."""
+    gemerkt = _gemerkt("fremd_taetig", 15)
+    if gemerkt is not None:
+        return gemerkt
+    from .konfig import ALT_BACKEND, ALT_TOKEN
+    zeilen: list[str] = []
+    try:
+        async with httpx.AsyncClient(timeout=3) as c:
+            kopf_alt = {"X-Cockpit-Token": ALT_TOKEN} if ALT_TOKEN else {}
+            st = (await c.get(f"{ALT_BACKEND}/api/vorgang/status", headers=kopf_alt)).json()
+            if st.get("laeuft"):
+                v = (await c.get(f"{ALT_BACKEND}/api/vorgang", headers=kopf_alt)).json()
+                wer, was = v.get("laeuftWer") or "", v.get("laeuftWas") or ""
+                zeilen.append("Altes Cockpit: " + (f"{wer} {was}".strip() or "die Vorgänge-Pipeline arbeitet"))
+    except (httpx.HTTPError, ValueError, AttributeError):
+        pass
+    try:
+        async with httpx.AsyncClient(timeout=3) as c:
+            q = (await c.get("http://127.0.0.1:8188/queue")).json()
+        n_lauf, n_warte = len(q.get("queue_running") or []), len(q.get("queue_pending") or [])
+        if n_lauf:
+            zeilen.append("ComfyUI erzeugt ein Bild oder Video" + (f", {n_warte} warten" if n_warte else ""))
+    except (httpx.HTTPError, ValueError, AttributeError):
+        pass
+    return _merken("fremd_taetig", zeilen)
+
+
+async def taetigkeit(gpu_last: float, geladen: list[str]) -> dict[str, Any]:
+    """Zwei, drei Saetze: was das Cockpit gerade tut (Veiko, 16.10.: "aktuell
+    laeuft etwas, aber ich sehe nicht, was es macht"). Nur Angaben, die es
+    wirklich gibt; rechnen die Karten, ohne dass jemand bekannt ist, steht genau
+    das da -- nicht geraten, wer es sein koennte."""
+    from . import llm, medien, neo, stab
+    zeilen: list[str] = []
+    la = stab.ZUSTAND.get("laeuft")
+    if la:
+        v = db.holen("vorgaenge", la.get("vorgang_id") or "") if la.get("vorgang_id") else None
+        zeilen.append(f"{stab.rollen_name(la['wer'])} {la.get('was') or 'arbeitet'}"
+                      + (f" · Case „{v['titel']}“" if v else "") + f" · {_dauer(la.get('seit'))}")
+    for t in list(llm.TAETIG.values()):
+        zeilen.append(f"{t['was']} · {_dauer(t['seit'])}")
+    for j in list(neo.JOBS.values()):
+        if not j.get("fertig"):
+            g = db.holen("gespraeche", j.get("gid") or "") or {}
+            zeilen.append(f"Neo arbeitet" + (f" an „{g.get('titel')}“" if g.get("titel") else "") + f" · {_dauer(j.get('start'))}")
+    for j in list(medien.JOBS.values()):
+        if j.get("stand") == "laeuft":
+            zeilen.append(f"Bild/Visualisierung „{j.get('titel') or ''}“ entsteht · {_dauer(j.get('start'))}")
+    fremd = await _fremd_taetig()
+    zeilen += fremd
+    if not zeilen and (llm.AKTIV["n"] or gpu_last >= 20):
+        zeilen.append(f"Die Grafikkarten rechnen ({round(gpu_last)} %), aber nicht für einen bekannten Auftrag dieses Cockpits"
+                      " (zum Beispiel ein Test oder ein Programm direkt auf dem Server).")
+    if not zeilen:
+        letzt = stab.ZUSTAND.get("letzter_lauf")
+        zeilen.append("Ruht gerade." + (f" Letzter Durchgang des Teams {_dauer(letzt).replace('seit', 'vor')}." if letzt else ""))
+    if geladen:
+        zeilen.append("Im Grafikspeicher: " + ", ".join(geladen))
+    return {"zeilen": zeilen[:4], "arbeitet": bool(la or llm.TAETIG or llm.AKTIV["n"] or fremd or gpu_last >= 20)}
+
+
 async def kopf() -> dict[str, Any]:
     global _upd_task
     from . import llm, stab
@@ -561,6 +632,7 @@ async def kopf() -> dict[str, Any]:
           # deshalb zaehlt die Kartenlast mit, nicht nur die eigenen Aufrufe.
           "arbeitet": llm.AKTIV["n"] > 0 or gpu_last >= 20}
     out: dict[str, Any] = {"zeit": jetzt, "status_da": bool(s), "ki": ki}
+    out["taetigkeit"] = await taetigkeit(gpu_last, [str(x).split("|")[0] for x in ((s or {}).get("ollama_running") or [])])
     sich = sicherungen() or {}
     out["sicherungen"] = {k: {"alter_h": round((jetzt - float(x.get("zeit") or 0)) / 3600, 1) if x.get("zeit") else None,
                               "zustand": x.get("zustand")} for k, x in sich.items() if k in ("inhalt", "server") and isinstance(x, dict)}

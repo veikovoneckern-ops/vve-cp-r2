@@ -139,9 +139,10 @@ async def senden(gid: str | None, text: str, mit: list[str] | None, projekt_id: 
             yield {"typ": "status", "text": f"{len(quellen)} Quellen aus dem Netz gelesen, das Board berät …"}
     gesamt = ""
     try:
-        async for t in llm.strom(modell, system, verlauf, temperatur=0.7, denken=denken, num_ctx=32768):
-            gesamt += t
-            yield {"typ": "text", "t": t}
+        with llm.taetig("Das Advisory Board antwortet dir"):
+            async for t in llm.strom(modell, system, verlauf, temperatur=0.7, denken=denken, num_ctx=32768):
+                gesamt += t
+                yield {"typ": "text", "t": t}
     except llm.ModellFehler as f:
         yield {"typ": "fehler", "text": str(f)}
         return

@@ -7,6 +7,7 @@ import { api, hochladen } from "./api.js";
 import { Zeitplan, Struktur } from "./projektansichten.js";
 import { Ausarbeiten } from "./inbox.js";
 import { TeamChat, gespraechsPartner } from "./teamchat.js";
+import { Composer } from "./composer.js";
 
 const FARBEN = ["#2C6BB3", "#0E9377", "#C07C12", "#E0392B", "#7C3AED", "#D0458F", "#0E7490", "#647388"];
 
@@ -216,6 +217,7 @@ function Projekt({ id, reiter }) {
         ${offen.length > 12 && html`<button class="btn klein geist" onClick=${() => setTab("aufgaben")}>Alle ${offen.length} zeigen</button>`}
       </section>
       <div>
+        <${UnterlagenKarte} projektId=${id} name=${p.name} nachher=${laden} />
         <section class="karte"><div class="karte-kopf"><h3>Ziel</h3></div>
           <textarea class="eingabe" rows="2" onKeyDown=${enterBestaetigt} placeholder="Ein Satz: Was soll mit diesem Projekt erreicht werden? Hilft dem Team beim Einordnen." value=${p.ziel || ""}
             onBlur=${(e) => { if (e.target.value !== (p.ziel || "")) aendern({ ziel: e.target.value }, "Ziel gespeichert."); }}></textarea></section>
@@ -252,6 +254,27 @@ function Projekt({ id, reiter }) {
     </section>`}
     ${ausarbeiten && html`<${Ausarbeiten} v=${null} projektId=${id} zu=${() => setAusarbeiten(false)} fertig=${() => { setAusarbeiten(false); navigiere("/inbox"); }} />`}
   </div>`;
+}
+
+// Unterlagen ans Team: Dateien ablegen (Plus, Ziehen, Einfuegen), optional ein
+// Hinweis. Das Team prueft die Relevanz fuer DIESES Projekt und liefert
+// Auswirkungen und Arbeitsergebnisse (stab.unterlagen_an_team). Derselbe
+// Composer wie ueberall -- kein zweites Hochladefeld daneben.
+function UnterlagenKarte({ projektId, name, nachher }) {
+  async function senden(hinweis, dateien) {
+    if (!dateien.length) { toast("Häng mindestens eine Datei an (Plus oder hierher ziehen).", { fehler: true }); return false; }
+    try {
+      const r = await api(`/projekte/${projektId}/unterlagen`, { methode: "POST", daten: { dateien, hinweis } });
+      toast("Ans Team übergeben. Clayton prüft, was das für das Projekt bedeutet.", { aktion: { text: "Case ansehen", fn: () => navigiere("/inbox/" + r.vorgang_id) } });
+      nachher && nachher(); aktualisieren();
+      return true;
+    } catch (e) { fehlerMelden(e); return false; }
+  }
+  return html`<section class="karte"><div class="karte-kopf"><h3>Unterlagen ans Team</h3></div>
+    <p class="leise klein" style="margin:0 0 8px">Dateien hier ablegen. Das Team liest sie, prüft, was sie für „${name}“ bedeuten, und liefert Auswirkungen und Arbeitsergebnisse. Ergebnis und neue Aufgaben erscheinen hier im Projekt.</p>
+    <${Composer} platzhalter="Optional: worauf soll das Team achten?" beimSenden=${senden} projektId=${projektId}
+      entwurfKey=${"unterlagen:" + projektId} sendenText="Ans Team" hinweis="Plus oder hierher ziehen · Enter übergibt" />
+  </section>`;
 }
 
 function ErgebnisZeile({ r }) {
@@ -346,7 +369,7 @@ export function NotizAnsicht({ id, zu }) {
         : html`<button class="btn" onClick=${anStab}><${Icon} n="team" g=${15} />Vom Team bearbeiten lassen</button>`}
       <button class="btn primaer" onClick=${zu}>Schließen</button>`}>
     <div class="knopfreihe" style="margin-bottom:10px">
-      <span class="leise klein">${n.quelle === "plaud" ? "Plaud" : n.quelle === "mail" ? "E-Mail" : "Notiz"} ·${n.datum || zeitText(n.erstellt)}</span>
+      <span class="leise klein">${n.quelle === "plaud" ? "Plaud" : n.quelle === "mail" ? "E-Mail" : n.quelle === "unterlage" ? "Unterlagen" : "Notiz"} ·${n.datum || zeitText(n.erstellt)}</span>
       <select class="eingabe" style="width:auto;margin-left:auto" value=${n.projekt_id || ""} aria-label="Projekt"
         onChange=${async (e) => { try { await api("/notizen/" + id, { methode: "PATCH", daten: { projekt_id: e.target.value || null } }); toast("Zugeordnet."); aktualisieren(); } catch (x) { fehlerMelden(x); } }}>
         <option value="">ohne Projekt</option>${projekte.map((p) => html`<option value=${p.id}>${p.name}</option>`)}</select>

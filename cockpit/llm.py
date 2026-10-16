@@ -35,6 +35,29 @@ def _ende() -> None:
     if AKTIV["n"] == 0:
         AKTIV["seit"] = None
 
+
+# WER gerade rechnen laesst (Veiko, 16.10.: "aktuell laeuft etwas, aber ich sehe
+# nicht, was es macht"). Der Zaehler oben sagt nur DASS; die direkten Gespraeche
+# tragen sich hier mit einem Satz ein. Die Pipeline meldet sich ueber stab.laeuft().
+TAETIG: dict[int, dict[str, Any]] = {}
+
+
+class taetig:
+    """with llm.taetig("Talk antwortet"): ... -- traegt sich fuer die Dauer ein."""
+    _n = 0
+
+    def __init__(self, was: str):
+        taetig._n += 1
+        self.id, self.was = taetig._n, was
+
+    def __enter__(self):
+        TAETIG[self.id] = {"was": self.was, "seit": time.time()}
+        return self
+
+    def __exit__(self, *_):
+        TAETIG.pop(self.id, None)
+        return False
+
 # Tempo direkter Gespraeche (Talk, Board, Team-Chat). Vorgabe ist gruendlich:
 # das Modell denkt vor der Antwort nach. "Schnelle Antwort" schaltet das ab --
 # Veikos Wunsch fuer unterwegs (Handy, Tablet). Die Pipeline kennt keinen
