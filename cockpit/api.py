@@ -713,7 +713,15 @@ async def postfach_abrufen():
 @router.get("/einstellungen")
 async def einstellungen():
     from . import postfach
-    return {"postfach": postfach.stand(), "vertrauen": stab.vertrauen(), "stab_aktiv": stab.stab_aktiv(),
+    from .konfig import ALT_DATEN
+    # Was das ALTE Cockpit gerade selbst tut -- nur gelesen (die Datei gehoert
+    # dem alten Backend). Seit dem 16.10.2026 arbeitet Veiko nur noch hier;
+    # der Notizimport dort bleibt an, weil diese Fassung dessen Ablage liest.
+    try:
+        alt = json.loads((ALT_DATEN / "automatisierung.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        alt = None
+    return {"postfach": postfach.stand(), "alt_automatik": alt, "vertrauen": stab.vertrauen(), "stab_aktiv": stab.stab_aktiv(),
             "stab_ab": db.einstellung("stab_ab"), "letzter_abgleich": db.einstellung("letzter_abgleich"),
             "alt_cockpit": ALT_COCKPIT_URL, "leiste": db.einstellung("leiste", [])}
 

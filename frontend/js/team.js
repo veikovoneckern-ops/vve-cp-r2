@@ -203,7 +203,15 @@ function Vertrauen() {
         <div class="segment"><button class=${d.stab_aktiv ? "an" : ""} onClick=${() => setzen({ stab_aktiv: true })}>an</button>
           <button class=${!d.stab_aktiv ? "an" : ""} onClick=${() => setzen({ stab_aktiv: false })}>aus</button></div></div>
       <${PostfachZeile} p=${d.postfach} nachher=${laden} />
-      <div class="hinweisbox" style="margin-top:12px">Das alte Cockpit läuft parallel weiter und bearbeitet dieselben Notizen mit seiner eigenen Pipeline. Beide schreiben in getrennte Ablagen, nichts wird überschrieben. Wenn du ganz umsteigst, schaltest du im alten Cockpit unter Setup Settings die automatische Verarbeitung aus.</div>
+      ${(() => {
+        const a = d.alt_automatik;
+        if (!a) return html`<div class="hinweisbox" style="margin-top:12px">Stand des alten Cockpits nicht lesbar.</div>`;
+        const aus = a.verarbeitung_aktiv === false;
+        return html`<div class="hinweisbox" style="margin-top:12px"><b>Altes Cockpit:</b> ${aus
+          ? "bearbeitet keine Notizen mehr, trägt nichts mehr selbst ein" + (a.bericht_aktiv === false ? " und schickt keinen Morgenbericht" : "") + ". Du arbeitest nur noch hier."
+          : "bearbeitet dieselben Notizen parallel mit seiner eigenen Pipeline (doppelte Arbeit auf denselben Grafikkarten). Abschalten: im alten Cockpit unter Setup Settings."}
+          ${" "}Sein Notizimport ist ${a.import_aktiv === false ? html`<b>aus -- dann kommen auch hier keine Plaud-Notizen an</b>` : "an; diese Fassung liest dessen Ablage"}.</div>`;
+      })()}
     </section>
   </div>`;
 }
