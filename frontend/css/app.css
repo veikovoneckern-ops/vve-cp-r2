@@ -1179,3 +1179,13 @@ details.eingetragen[open]>summary{margin-bottom:8px}
 .stimme-liste{display:flex;flex-direction:column;gap:4px;margin-top:6px}
 .stimme-wahl{display:flex;align-items:center;gap:8px;justify-content:space-between}
 .stimme-wahl label{display:flex;align-items:center;gap:6px;cursor:pointer}
+
+/* Modelle (modelle.js) */
+.mo-kopf{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:14px}
+.mo .karte{margin-bottom:14px}
+.mo-empf .haupt-text{min-width:0}
+.mo-tabelle .zahl{text-align:right}
+.mo-neu{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+.mo-familie{border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:6px}
+.mo-familie-kopf{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.mo-ausgabe{display:flex;align-items:center;gap:8px;justify-content:space-between;flex-wrap:wrap;border-top:1px solid var(--line-2);padding-top:6px}

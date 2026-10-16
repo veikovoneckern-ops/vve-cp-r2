@@ -1542,3 +1542,48 @@ async def verbrauch_preise(request: Request):
                 raise HTTPException(400, f"Preis für {k} ist keine Zahl.")
     db.einstellung_setzen("verbrauch_preise", neu)
     return {"preise": _preise()}
+
+
+# ================================================================ Modelle (Uebersicht und Empfehlungen)
+# Wie die Seite "Modelle" im alten Cockpit (Veiko, 16.10.2026: "ich hatte doch
+# im alten Cockpit eine gute Uebersicht zu den Modellen, die installiert sind,
+# und ob ich welche durch neue ersetzen sollte"). Eine Seite, vier Fragen:
+# was liegt hier, wer nutzt es wirklich, was sollte ich ersetzen, was ist neu.
+@router.get("/modelle")
+async def modelle_uebersicht(frisch: int = 0):
+    from . import modellkatalog, systeminfo
+    s = await systeminfo.status()
+    vram = systeminfo._vram_gesamt(s)
+    inst_gb = modellkatalog.lokal_gb()
+    geladen = {m.get("name"): m for m in await llm.geladene_modelle()}
+    team: dict[str, list[str]] = {}
+    for t in db.alle("SELECT name, modell FROM team WHERE modell!=''"):
+        team.setdefault(t["modell"], []).append(t["name"])
+    vor30 = time.time() - 30 * 86400
+    nutzung = {z["modell"]: z for z in db.alle(
+        "SELECT modell, COUNT(*) AS aufrufe, SUM(tok_ein + tok_aus) AS token, SUM(dauer_s) AS dauer, MAX(zeit) AS zuletzt "
+        "FROM verbrauch WHERE art='lokal' AND zeit>? GROUP BY modell", (vor30,))}
+    aufgaben_von: dict[str, list[str]] = {}
+    for a in modellkatalog.AUFGABEN:
+        kand = [modellkatalog._tag(k) for k in a["kandidaten"]]
+        bester = next((k for k in kand if k in inst_gb), None)
+        if bester:
+            aufgaben_von.setdefault(bester, []).append(a["name"])
+    installiert = []
+    for name, gb in sorted(inst_gb.items(), key=lambda x: -x[1]):
+        n = nutzung.get(name) or {}
+        installiert.append({"name": name, "gb": gb, "passt": modellkatalog._passt(gb, vram), "team": team.get(name, []),
+                            "aufgaben": aufgaben_von.get(name, []), "geladen": name in geladen,
+                            "aufrufe": n.get("aufrufe") or 0, "token": n.get("token") or 0, "zuletzt": n.get("zuletzt")})
+    try:
+        katalog = await modellkatalog.pruefen(bool(frisch))
+    except Exception:  # noqa: BLE001
+        katalog = None
+    try:
+        neu = await modellkatalog.neu_bei_ollama(bool(frisch), vram)
+    except Exception as e:  # noqa: BLE001
+        neu = {"fehler": str(e), "familien": []}
+    return {"installiert": installiert, "vram": vram, "frei_gb": ((s or {}).get("disk_gb") or {}).get("free"),
+            "empfehlungen": modellkatalog.vorschlaege(katalog, vram) + modellkatalog.neu_vorschlaege(neu, 8),
+            "neu": neu, "katalog_stand": katalog and katalog.get("zeit"), "laden": modellkatalog.LADEN,
+            "erfasst_seit": db.wert("SELECT MIN(zeit) FROM verbrauch WHERE art='lokal'")}

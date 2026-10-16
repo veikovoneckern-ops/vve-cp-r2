@@ -68,6 +68,21 @@ def lokal() -> dict[str, str]:
     return aus
 
 
+def lokal_gb() -> dict[str, float]:
+    """Installierte Modelle -> Groesse in GB (Summe der Schichten im Manifest)."""
+    aus = {}
+    try:
+        for f in MANIFESTE.glob("*/*"):
+            try:
+                schichten = json.loads(f.read_text(encoding="utf-8")).get("layers") or []
+                aus[f"{f.parent.name}:{f.name}"] = round(sum(int(l.get("size") or 0) for l in schichten) / 1e9, 1)
+            except (OSError, ValueError):
+                continue
+    except OSError:
+        pass
+    return aus
+
+
 async def _eins(cl: httpx.AsyncClient, tag: str) -> dict[str, Any]:
     familie, _, ausgabe = tag.partition(":")
     try:
@@ -197,3 +212,220 @@ def laden_starten(name: str) -> dict[str, Any]:
     LADEN[name] = {"name": name, "stand": "laeuft", "prozent": 0, "start": time.time(), "schritt": "beginne"}
     asyncio.create_task(_laden(name))
     return LADEN[name]
+
+
+# ---------------------------------------------------------------- Neu bei Ollama
+# Warum es das gibt (Veiko, 16.10.2026: "warum werden mir keine neuen mehr
+# empfohlen?"): die Rangfolge oben ist von Hand gepflegt und kannte die neuen
+# Modelle nicht -- qwen3.8:27b stand ueberall oben und war installiert, also gab
+# es "nichts Besseres". Hier liest das Cockpit die Liste der neuesten Modelle auf
+# ollama.com und je Modell die verfuegbaren Groessen, und rechnet aus, was auf
+# die beiden Karten passt. Das ist eine Liste dessen, was ES GIBT -- ob es hier
+# besser ist, sagt erst eine Messung; deshalb steht "ungetestet" dabei.
+import html as _html
+import re as _re
+
+NEU_DATEI = DATEN / "ollama-neu.json"
+NEU_FRISCH_SEK = 24 * 3600
+WEB = "https://ollama.com"
+# Ausgaben fuer andere Hardware oder volle Genauigkeit -- auf zwei RTX 3090 nicht sinnvoll.
+# (mlx = Apple, nvfp4/mxfp8 = neuere NVIDIA-Karten). q8_0 laeuft auf der 3090 und
+# bleibt, solange es zu derselben Groesse keine kleinere Ausgabe gibt.
+_FREMD = _re.compile(r"mlx|nvfp4|mxfp8|bf16|fp16|fp8|-mtp|-cloud|instruct-fp")
+
+
+def _version(familie: str) -> float | None:
+    """qwen3.8 -> 3.8, gemma4 -> 4.0, qwen3-coder -> 3.0, deepseek-r1 -> 1.0,
+    deepseek-v4-pro -> 4.0, nemotron-3.5-bolt -> 3.5, deepseek-coder -> None."""
+    m = _re.match(r"[a-z]+-?[a-z]?(\d+(?:\.\d+)?)", familie or "")
+    return float(m.group(1)) if m else None
+
+
+def familie_wurzel(name: str) -> str:
+    m = _re.match(r"[a-z]+", name or "")
+    return m.group(0) if m else ""
+
+
+def _text(s: str) -> str:
+    return _html.unescape(_re.sub(r"<[^>]+>", " ", s)).strip()
+
+
+def _suche_lesen(h: str) -> list[dict[str, Any]]:
+    aus = []
+    for block in _re.split(r'<li\s+class="border-b', h)[1:]:   # ollama.com schreibt "<li  class" mit zwei Leerzeichen
+        m = _re.search(r'href="/library/([a-z0-9._-]+)"', block)
+        if not m:
+            continue
+        b = _re.search(r'<p class="mt-1[^"]*" title="([^"]*)"', block)
+        faeh = _re.findall(r'bg-indigo-50[^"]*">([a-z ]+)</span>', block)
+        nur_cloud = 'bg-cyan-50' in block and not _re.search(r'bg-blue-50|x-test-size', block)
+        dl = _re.search(r'title="([\d,.]+) downloads"', block)
+        aus.append({"familie": m.group(1), "beschreibung": _html.unescape(b.group(1)) if b else "",
+                    "faehigkeiten": [f.strip() for f in faeh], "nur_cloud": nur_cloud,
+                    "downloads": int(dl.group(1).replace(",", "").replace(".", "")) if dl else None})
+    return aus
+
+
+def _tags_lesen(familie: str, h: str) -> list[dict[str, Any]]:
+    aus = []
+    # Grossbuchstaben gehoeren dazu: die 4-Bit-Ausgaben heissen "…-q4_K_M".
+    for m in _re.finditer(r'<a href="/library/(' + _re.escape(familie) + r':[A-Za-z0-9._-]+)" class="md:hidden(.*?)</a>', h, _re.S):
+        teile = [t.strip() for t in _text(m.group(2)).split("•")]
+        # Kurznamen (qwen3.6:35b-a3b) tragen eine Spanne: "23GB - 24GB" -- es zaehlt die erste Zahl.
+        groesse = next((t for t in teile if _re.fullmatch(r"[\d.]+\s*(GB|MB|TB)(\s*-\s*[\d.]+\s*(GB|MB|TB))?", t)), None)
+        if not groesse:
+            continue
+        zahl = float(_re.match(r"[\d.]+", groesse).group(0))
+        einheit = _re.match(r"[\d.]+\s*(GB|MB|TB)", groesse).group(1)
+        gb = zahl / 1000 if einheit == "MB" else zahl * 1000 if einheit == "TB" else zahl
+        kontext = next((t.replace(" context window", "") for t in teile if "context window" in t), "")
+        rest = next((t for t in teile if "input" in t), "")
+        alter = next((t for t in reversed(teile) if "ago" in t), "")
+        aus.append({"name": m.group(1), "gb": round(gb, 1), "kontext": kontext,
+                    "bilder": "Image" in rest, "alter": alter})
+    return aus
+
+
+async def neu_bei_ollama(frisch: bool = False, vram_gesamt: float = 48.0, anzahl: int = 40) -> dict[str, Any]:
+    if not frisch:
+        try:
+            d = json.loads(NEU_DATEI.read_text(encoding="utf-8"))
+            if time.time() - d.get("zeit", 0) < NEU_FRISCH_SEK:
+                return d
+        except (OSError, ValueError):
+            pass
+    try:
+        async with httpx.AsyncClient(timeout=40, headers={"User-Agent": "vve-cockpit-r2"}, follow_redirects=True) as cl:
+            # Zwei Quellen: (1) die 20 neuesten Modelle ueberhaupt, (2) je Familie,
+            # die hier schon laeuft (qwen, gemma, deepseek ...), die Suche nach
+            # ihrem Namen -- dort stehen die Nachfolger (qwen3.6 neben qwen3.8,
+            # gemma4 in groesseren Ausgaben). Unter "neueste" allein standen am
+            # 16.10. fast nur Exoten. Aeltere Generationen (qwen2.5 neben qwen3.8)
+            # fallen ueber die Versionsnummer heraus.
+            inst = lokal()
+            inst_gb = lokal_gb()
+            fam_inst: dict[str, float] = {}
+            for n, gb in inst_gb.items():
+                fam_inst[n.split(":")[0]] = max(fam_inst.get(n.split(":")[0], 0), gb)
+            wurzeln = {familie_wurzel(n) for n in inst} - {"nomic", "mxbai", "llava"}
+            hoechste: dict[str, float] = {}
+            for n in inst:
+                v = _version(n.split(":")[0])
+                if v is not None:
+                    hoechste[familie_wurzel(n)] = max(hoechste.get(familie_wurzel(n), 0), v)
+            liste = _suche_lesen((await cl.get(f"{WEB}/search?o=newest")).text)
+            for w in sorted(wurzeln):
+                for f in _suche_lesen((await cl.get(f"{WEB}/search", params={"q": w})).text)[:8]:
+                    v = _version(f["familie"])
+                    # Bleiben: dieselbe oder eine neuere Generation, und Familien, die hier
+                    # schon laufen (fuer groessere Ausgaben). Ohne Versionsnummer kein Vergleich.
+                    if familie_wurzel(f["familie"]) == w and (f["familie"] in fam_inst or (v is not None and v >= hoechste.get(w, 0) - 0.5)):
+                        liste.append(f)
+            gesehen: set[str] = set()
+            # "nur Cloud" laut Suchseite wird nicht gefiltert: gemma4 traegt das Abzeichen
+            # UND lokale Ausgaben. Reine Cloud-Modelle fallen unten heraus, weil sie keine
+            # Ausgabe mit Groesse haben.
+            liste = [f for f in liste if "embedding" not in f["faehigkeiten"]
+                     and not _re.search(r"embed|ocr|guard|shield", f["familie"])
+                     and not (f["familie"] in gesehen or gesehen.add(f["familie"]))][:anzahl]
+            sem = asyncio.Semaphore(4)
+
+            async def tags(f: dict[str, Any]) -> None:
+                async with sem:
+                    try:
+                        f["ausgaben"] = _tags_lesen(f["familie"], (await cl.get(f"{WEB}/library/{f['familie']}/tags")).text)
+                    except httpx.HTTPError:
+                        f["ausgaben"] = []
+            await asyncio.gather(*[tags(f) for f in liste])
+    except httpx.HTTPError as e:
+        return {"zeit": time.time(), "fehler": f"ollama.com nicht erreichbar: {e.__class__.__name__}", "familien": []}
+    familien = []
+    for f in liste:
+        brauchbar = [a for a in f.get("ausgaben") or [] if not _FREMD.search(a["name"].split(":", 1)[1]) and a["gb"] * 1.08 < vram_gesamt - 1.5]
+        # Je Groesse (27b, 35b-a3b …) nur EINE Ausgabe: die kleinste, also 4 Bit; bei
+        # gleicher Groesse der kuerzere Name (qwen3.6:35b-a3b statt …-q4_K_M). Sonst
+        # stuende dasselbe Modell in hoeherer Genauigkeit als "groessere Ausgabe" da.
+        je_groesse: dict[str, dict[str, Any]] = {}
+        for a in brauchbar:
+            k = _re.sub(r"-(it-)?(q\d[A-Za-z0-9_]*|int\d+|qat|fp\d+)$", "", a["name"].split(":", 1)[1])
+            b = je_groesse.get(k)
+            def rang(x: dict[str, Any]) -> tuple:   # 35b-a3b sagt mehr als 35b (Mixture of Experts)
+                return (x["gb"], 0 if _re.search(r"-a\d+b", x["name"]) else 1, len(x["name"]))
+            if not b or rang(a) < rang(b):
+                je_groesse[k] = a
+        brauchbar = list(je_groesse.values())
+        # "latest" ist nur ein Zweitname einer bestimmten Groesse (qwen3.6:latest =
+        # 35b-a3b) -- dann gilt der sprechende Name. Spezialausgaben (…-coding)
+        # nur, wenn es die allgemeine in der Groesse nicht gibt.
+        allgemein = [a for a in brauchbar if "-coding" not in a["name"]]
+        brauchbar = allgemein or brauchbar
+
+        def zweitname(a: dict[str, Any]) -> bool:
+            t = a["name"].split(":", 1)[1]
+            return any(b is not a and abs(b["gb"] - a["gb"]) <= 1 and
+                       (t == "latest" or _re.fullmatch(_re.escape(t) + r"-a\d+b", b["name"].split(":", 1)[1]))
+                       for b in brauchbar)
+        brauchbar = [a for a in brauchbar if not zweitname(a)]
+        # Eine Familie, die hier schon laeuft, zaehlt nur mit deutlich groesseren
+        # Ausgaben (gemma4:26b neben dem installierten e4b) -- dieselbe Groesse
+        # unter anderem Namen (qwen3.8:latest = qwen3.8:27b) ist nichts Neues.
+        installiert_gb = fam_inst.get(f["familie"])
+        if installiert_gb:
+            brauchbar = [a for a in brauchbar if a["gb"] >= installiert_gb * 1.5]
+        if not brauchbar:
+            continue
+        eine = [a for a in brauchbar if a["gb"] * 1.08 < 22.5]
+        wahl = []
+        if eine:
+            wahl.append(max(eine, key=lambda a: a["gb"]))
+        groesste = max(brauchbar, key=lambda a: a["gb"])
+        if groesste not in wahl:
+            wahl.append(groesste)
+        for a in wahl:
+            a["passt"] = _passt(a["gb"], vram_gesamt)
+            a["installiert"] = _tag(a["name"]) in inst
+        v = _version(f["familie"])
+        wurzel = familie_wurzel(f["familie"])
+        familien.append({**{k: f[k] for k in ("familie", "beschreibung", "faehigkeiten", "downloads")},
+                         "ausgaben": wahl, "verwandt": wurzel in wurzeln,
+                         "neuer": bool(wurzel in wurzeln and not installiert_gb and v is not None and v > hoechste.get(wurzel, 0)),
+                         "groesser": bool(installiert_gb)})
+    d = {"zeit": time.time(), "familien": familien}
+    try:
+        NEU_DATEI.write_text(json.dumps(d), encoding="utf-8")
+    except OSError:
+        pass
+    return d
+
+
+def neu_vorschlaege(neu: dict[str, Any] | None, anzahl: int = 3) -> list[dict[str, Any]]:
+    """Fuer die Empfehlungen: neue Fassungen von Familien, die hier schon laufen
+    (qwen, gemma, deepseek ...) -- das ist der Fall "sollte ich ersetzen?"."""
+    kandidaten = []
+    for f in (neu or {}).get("familien") or []:
+        if not f.get("verwandt"):
+            continue
+        offen = [x for x in f["ausgaben"] if not x.get("installiert")]
+        if not offen:
+            continue
+        wurzel = familie_wurzel(f["familie"])
+        # Drei Gruende, an eine neue Ausgabe zu denken -- in dieser Reihenfolge.
+        # "Mixture of Experts" (…-a3b): pro Wort rechnet nur ein kleiner Teil des
+        # Modells, deshalb deutlich schneller als ein gleich grosses dichtes Modell.
+        moe_aus = next((x for x in offen if _re.search(r"-a\d+b", x["name"])), None)
+        a = offen[0] if (f.get("neuer") or f.get("groesser") or not moe_aus) else moe_aus
+        moe = bool(moe_aus)
+        if f.get("neuer"):
+            rang, grund = 0, f"Neuere Generation der Familie {wurzel}, die du schon nutzt."
+        elif f.get("groesser"):
+            rang, grund = 1, f"Größere Ausgabe von {f['familie']}, das hier schon läuft -- mehr Qualität, mehr Speicher."
+        elif moe:
+            rang, grund = 2, (f"Schnellere Bauart aus der Familie {wurzel} (Mixture of Experts: je Wort rechnet nur ein "
+                              "kleiner Teil des Modells).")
+        else:
+            continue
+        kandidaten.append((rang, {"stufe": "einspielen", "titel": f"Neu bei Ollama: {a['name']}",
+                                  "warum": f"{grund} {a['gb']} GB, {a['passt']}. {f['beschreibung'][:120]} "
+                                           "Ungetestet -- erst laden und messen, dann ersetzen.",
+                                  "aktion": {"art": "modell", "name": a["name"], "text": "Laden"}}))
+    return [k for _, k in sorted(kandidaten, key=lambda x: x[0])][:anzahl]

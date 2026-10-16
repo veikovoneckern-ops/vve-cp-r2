@@ -505,7 +505,12 @@ async def gesamt(frisch: bool = False) -> dict[str, Any]:
         katalog = await modellkatalog.pruefen(frisch)
     except Exception:  # noqa: BLE001 -- ohne Netz zur Registry bleibt der Rest der Seite heil
         katalog = None
-    e = empfehlungen(s, upd, neu, sich, stab.gesundheit()) + modellkatalog.vorschlaege(katalog, _vram_gesamt(s))
+    try:   # neue Modelle bei ollama.com (Nachfolger der Familien, die hier laufen), 24 h gemerkt
+        neu_ollama = await modellkatalog.neu_bei_ollama(frisch, _vram_gesamt(s))
+    except Exception:  # noqa: BLE001
+        neu_ollama = None
+    e = (empfehlungen(s, upd, neu, sich, stab.gesundheit()) + modellkatalog.vorschlaege(katalog, _vram_gesamt(s))
+         + modellkatalog.neu_vorschlaege(neu_ollama))
     return {"status": s, "updates": upd, "ollama_neueste": neu, "sicherungen": sich, "modelle": modelle(s),
             "empfehlungen": e, "auftrag": AUFTRAG, "laden": modellkatalog.LADEN,
             "katalog_stand": katalog and katalog.get("zeit"), "karten": await asyncio.to_thread(karten),
@@ -689,6 +694,11 @@ async def kopf() -> dict[str, Any]:
         try:   # nur der gemerkte Katalogstand -- die Kopfzeile fragt nie selbst die Registry
             from . import modellkatalog
             e += modellkatalog.vorschlaege(json.loads(modellkatalog.DATEI.read_text(encoding="utf-8")), _vram_gesamt(s))
+        except (OSError, ValueError):
+            pass
+        try:
+            from . import modellkatalog
+            e += modellkatalog.neu_vorschlaege(json.loads(modellkatalog.NEU_DATEI.read_text(encoding="utf-8")))
         except (OSError, ValueError):
             pass
         out["empfehlungen"] = {"achtung": sum(1 for x in e if x["stufe"] == "achtung"),
