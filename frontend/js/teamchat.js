@@ -53,12 +53,28 @@ export function TeamChat({ wer, partnerListe, gid, ergebnisId = "", projektId = 
   const partner = (id) => partnerListe.find((p) => p.id === id) || { name: id };
   const ich = partner(wer);
 
-  useEffect(() => {
-    if (!gid) { setMsgs([]); return; }
-    api("/teamchat/" + gid).then((x) => setMsgs(x.nachrichten.map((m) => ({ id: m.id, rolle: m.rolle, text: m.text,
+  // Eine Antwort, die auf dem Server noch entsteht, OHNE dass dieses Fenster sie
+  // angestossen hat (Fenster war zu, anderes Geraet). Sie wird mitgelesen, bis
+  // sie fertig ist -- statt wie frueher stumm verloren zu gehen.
+  const [nach, setNach] = useState(null);
+  const lade = () => api("/teamchat/" + gid).then((x) => {
+    setMsgs(x.nachrichten.map((m) => ({ id: m.id, rolle: m.rolle, text: m.text,
       dateien: (m.daten || {}).dateien, modell: (m.daten || {}).modell, fassung: (m.daten || {}).fassung,
-      protokoll_id: (m.daten || {}).protokoll_id, pruefung: (m.daten || {}).pruefung })))).catch(() => setMsgs([]));
+      protokoll_id: (m.daten || {}).protokoll_id, pruefung: (m.daten || {}).pruefung })));
+    setNach((vorher) => {
+      if (vorher && !x.laeuft && beiFassung) beiFassung();   // fertig geworden: Ergebnis neu laden
+      return x.laeuft || null;
+    });
+  }).catch(() => setMsgs([]));
+  useEffect(() => {
+    if (!gid) { setMsgs([]); setNach(null); return; }
+    lade();
   }, [gid]);
+  useEffect(() => {
+    if (!nach || lauf) return;
+    const t = setInterval(lade, 3000);
+    return () => clearInterval(t);
+  }, [!!nach, !!lauf, gid]);
   useEffect(() => { const v = verlauf.current; if (v) v.scrollTop = v.scrollHeight; }, [msgs, lauf]);
   useEffect(() => { try { localStorage.setItem("tc-vorlesen", vorlesenAn ? "1" : "0"); } catch (e) { /* egal */ } }, [vorlesenAn]);
 
@@ -115,13 +131,18 @@ export function TeamChat({ wer, partnerListe, gid, ergebnisId = "", projektId = 
         <div class="bd-blase"><b>${ich.name}</b>${lauf.text ? html`<${Md} text=${lauf.text.replace(/<<<FASSUNG>>>[\s\S]*/, "\n\n_… schreibt die neue Fassung …_")} />`
           : html`<div class="bd-denkt">${lauf.status || `${ich.name} denkt nach …`}</div>`}
           ${lauf.text && lauf.status && html`<div class="leise klein" style="margin-top:6px">${lauf.status}</div>`}</div></div>`}
+      ${!lauf && nach && html`<div class="bd-beitrag"><${Avatar} wer=${wer} name=${ich.name} g=${30} />
+        <div class="bd-blase"><b>${ich.name}</b> <span class="leise klein">arbeitet noch · seit ${zeitText(nach.start).replace("vor ", "")}</span>
+          ${nach.text ? html`<${Md} text=${nach.text.replace(/<<<FASSUNG>>>[\s\S]*/, "\n\n_… schreibt die neue Fassung …_")} />`
+            : html`<div class="bd-denkt">${nach.status || `${ich.name} denkt nach …`}</div>`}
+          <div class="leise klein" style="margin-top:6px">Du kannst das Fenster schließen. Die Antwort wird fertig gerechnet und erscheint hier.</div></div></div>`}
     </div>
     ${wartet && html`<div class="hinweisbox tc-kosten"><b>${ich.name} ist ein bezahltes Cloud-Modell.</b> Jede Nachricht in diesem Gespräch kostet Geld beim Anbieter.
       <div class="knopfreihe" style="margin-top:8px"><button class="btn primaer klein" onClick=${() => { const w = wartet; setWartet(null); setKostenOk(true); setTimeout(() => sendenFrei(w.text, w.dateien), 0); }}>Für dieses Gespräch erlauben und senden</button>
         <button class="btn klein geist" onClick=${() => { feld.current && feld.current.setzen(wartet.text); setWartet(null); }}>Abbrechen</button></div></div>`}
     <div class="tc-eingabe">
       <${Composer} feldRef=${feld} platzhalter=${ergebnisId ? `Sag ${ich.name}, was am Ergebnis passieren soll …` : `Schreib ${ich.name} …`}
-        beimSenden=${senden} laeuft=${!!lauf} beimStoppen=${() => abbruch.current && abbruch.current.abort()}
+        beimSenden=${senden} laeuft=${!!lauf || !!nach} beimStoppen=${() => { if (lauf) { abbruch.current && abbruch.current.abort(); } else if (nach) { api("/gespraech/" + gid + "/abbrechen", { methode: "POST" }).then(lade).catch(() => {}); } }}
         projektId=${projektId} entwurfKey=${"tc:" + wer + ":" + (ergebnisId || gid || "")} zeilen=${2} />
       <${TempoSchalter} />
       <label class="klein leise tc-vorlesen"><input type="checkbox" checked=${vorlesenAn} onChange=${(e) => setVorlesenAn(e.target.checked)} />Antworten vorlesen</label>

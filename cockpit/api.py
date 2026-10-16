@@ -105,6 +105,30 @@ def _wer_ist_stab(wer: str) -> bool:
     return wer not in ("du", "system", None, "")
 
 
+FORM_NAME = {"text": "Text", "aufstellung": "Aufstellung", "konzept": "Konzept", "dokument": "Dokument",
+             "webseite": "Webseite", "praesentation": "Präsentation", "video": "Video"}
+
+
+def kurztitel(e: dict[str, Any]) -> str:
+    """Ein Ergebnis-Titel, den man ueberfliegen kann. Bis zum 16.10. war der Titel
+    der abgeschnittene Auftrag ("Erstellung einer lebendigen und detaillierten
+    PowerPoint-Präsentation zum Thema ExO"); dann lieber Form und Case-Titel.
+    Kurze Titel bleiben, wie sie sind."""
+    t = (e.get("titel") or "").strip()
+    vt = e.get("vorgang_titel")
+    if vt is None and e.get("vorgang_id"):
+        vt = (db.holen("vorgaenge", e["vorgang_id"]) or {}).get("titel")
+    if vt and (len(t) > 55 or t.endswith(("…", ")")) and len(t) > 40) and not t.startswith("Video:"):
+        return f"{FORM_NAME.get(e.get('form'), 'Ergebnis')}: {vt}"
+    return t or "Ergebnis"
+
+
+@router.post("/lage/gesehen")
+async def lage_gesehen():
+    db.einstellung_setzen("briefing_gesehen", time.time())
+    return {"ok": True}
+
+
 @router.get("/lage")
 async def lage():
     ents = db.alle("SELECT e.*, v.titel AS vorgang_titel, v.projekt_id FROM entscheidungen e "
@@ -120,10 +144,24 @@ async def lage():
         if lab:
             erledigt.append({"protokoll_id": p["id"], "text": lab, "wer": p["wer"], "wer_name": stab.rollen_name(p["wer"]),
                              "zeit": p["zeit"], "vorgang_id": p.get("vorgang_id")})
-    ergebnisse = db.alle("SELECT id, titel, form, rolle, vorgang_id, projekt_id, erstellt, pruefung FROM ergebnisse "
-                         "WHERE erstellt>? ORDER BY erstellt DESC LIMIT 6", (time.time() - 7 * 86400,))
+    ergebnisse = db.alle("SELECT r.id, r.titel, r.form, r.rolle, r.vorgang_id, r.projekt_id, r.erstellt, r.pruefung, "
+                         "v.titel AS vorgang_titel, p.name AS projekt_name FROM ergebnisse r "
+                         "LEFT JOIN vorgaenge v ON v.id=r.vorgang_id LEFT JOIN projekte p ON p.id=r.projekt_id "
+                         "WHERE r.erstellt>? ORDER BY r.erstellt DESC LIMIT 8", (time.time() - 7 * 86400,))
     for e in ergebnisse:
         e["wer_name"] = stab.rollen_name(e["rolle"])
+        e["kurztitel"] = kurztitel(e)
+    # "Seit deinem letzten Besuch" (Veiko, 16.10.: "bis ich raus habe, was wirklich
+    # entstanden ist und was das Neue ist"). Auf dem Server gemerkt, nicht im
+    # Browser: was am Handy schon gesehen wurde, ist am Rechner nicht mehr neu.
+    gesehen = db.einstellung("briefing_gesehen") or 0
+    from . import video
+    videos = []
+    for eid in list(video.LAUFEND):
+        r = db.holen("ergebnisse", eid) or {}
+        vs = video.stand(r) or {}
+        videos.append({"id": eid, "titel": kurztitel(r) if r else eid, "schritt": vs.get("schritt"),
+                       "fertig": vs.get("fertig") or 0, "szenen": vs.get("szenen") or 0, "start": vs.get("start")})
     laufend = [v for v in db.alle("SELECT id, titel, auftrag, geaendert, versuche, stand FROM vorgaenge "
                                   "WHERE stand IN ('neu','in_arbeit','wartet') AND quelle!='alt' ORDER BY geaendert DESC LIMIT 30")
                if v["stand"] != "wartet" or stab.auftrag_offen(v)][:6]
@@ -141,7 +179,15 @@ async def lage():
     neo_lauf = [{"gespraech_id": j["gespraech_id"], "seit": j["start"]} for j in neo.JOBS.values() if not j["fertig"]]
     return {
         "entscheidungen": ents, "erledigt": erledigt[:12], "ergebnisse": ergebnisse, "laufend": laufend,
+        "gesehen": gesehen, "videos": videos,
+        "neu": {"ergebnisse": sum(1 for e in ergebnisse if e["erstellt"] > gesehen),
+                "cases": db.wert("SELECT COUNT(*) FROM vorgaenge WHERE erstellt>? AND quelle!='alt'", (gesehen,)),
+                "erledigt": sum(1 for x in erledigt if x["zeit"] > gesehen)},
         "aufgaben": aufgaben, "gesundheit": stab.gesundheit(), "neo_laeuft": neo_lauf,
+        # Antworten, die gerade auf dem Server entstehen -- auch wenn das Fenster zu ist.
+        "gespraeche_laufen": [{"gespraech_id": g, "art": s["art"], "wer": s["wer"],
+                               "wer_name": teamchat.wer_name(s["wer"]) if s["wer"] else ("Talk" if s["art"] == "talk" else "Advisory Board"),
+                               "start": s["start"], "status": s["status"]} for g, s in list(GESPRAECH_LAEUFT.items())],
         "woche": {
             "angenommen": sum(1 for e in entschieden if e["stand"] == "ja"),
             "entschieden": len(entschieden),
@@ -205,7 +251,8 @@ async def vorgang(vid: str):
         "projekt": db.holen("projekte", v["projekt_id"]) if v.get("projekt_id") else None,
         "ereignisse": ev, "entscheidungen": ents,
         "aufgaben": db.alle("SELECT * FROM aufgaben WHERE vorgang_id=? ORDER BY erstellt", (vid,)),
-        "ergebnisse": db.alle("SELECT id, titel, form, rolle, pruefung, ansicht, erstellt FROM ergebnisse WHERE vorgang_id=? ORDER BY erstellt", (vid,)),
+        "ergebnisse": [{**r, "kurztitel": kurztitel({**r, "vorgang_titel": v.get("titel")})} for r in
+                       db.alle("SELECT id, titel, form, rolle, pruefung, ansicht, erstellt FROM ergebnisse WHERE vorgang_id=? ORDER BY erstellt", (vid,))],
         "protokoll": [p for p in prot if p["label"]],
         "laeuft": (stab.ZUSTAND.get("laeuft") or {}).get("vorgang_id") == vid and stab.ZUSTAND["laeuft"],
     }
@@ -391,8 +438,10 @@ async def projekt(pid: str):
                             "(faellig='' OR faellig IS NULL), faellig, prio, erstellt DESC", (pid,)),
         "notizen": db.alle("SELECT id, titel, datum, kurz, substr(text,1,600) AS text, quelle, erstellt FROM notizen "
                            "WHERE projekt_id=? ORDER BY erstellt DESC LIMIT 100", (pid,)),
-        "ergebnisse": db.alle("SELECT id, titel, form, rolle, pruefung, ansicht, erstellt, vorgang_id FROM ergebnisse "
-                              "WHERE projekt_id=? ORDER BY erstellt DESC", (pid,)),
+        "ergebnisse": [{**r, "wer_name": stab.rollen_name(r["rolle"]), "kurztitel": kurztitel(r)} for r in
+                       db.alle("SELECT r.id, r.titel, r.form, r.rolle, r.pruefung, r.ansicht, r.erstellt, r.vorgang_id, "
+                               "v.titel AS vorgang_titel FROM ergebnisse r LEFT JOIN vorgaenge v ON v.id=r.vorgang_id "
+                               "WHERE r.projekt_id=? ORDER BY r.erstellt DESC", (pid,))],
         "vorgaenge": db.alle("SELECT id, titel, stand, einordnung, geaendert FROM vorgaenge WHERE projekt_id=? "
                              "ORDER BY geaendert DESC LIMIT 60", (pid,)),
         "dateien": db.alle("SELECT id, name, typ, groesse, erstellt FROM dateien WHERE projekt_id=? ORDER BY erstellt DESC", (pid,)),
@@ -548,6 +597,14 @@ async def ergebnis(rid: str):
     if not e:
         raise HTTPException(404, "Ergebnis nicht gefunden")
     e["wer_name"] = stab.rollen_name(e["rolle"])
+    v = db.holen("vorgaenge", e.get("vorgang_id") or "") or {}
+    e["vorgang_titel"] = v.get("titel")
+    e["projekt_name"] = (db.holen("projekte", e.get("projekt_id") or "") or {}).get("name")
+    e["kurztitel"] = kurztitel(e)
+    try:
+        e["auftrag"] = (json.loads(v.get("auftrag") or "{}") or {}).get("auftrag")
+    except ValueError:
+        e["auftrag"] = None
     from . import video
     e["video"] = video.stand(e)
     if e["video"]:
@@ -682,7 +739,8 @@ async def teamchat_holen(gid: str):
     g = db.holen("gespraeche", gid)
     if not g or g["art"] != "team":
         raise HTTPException(404, "Gespräch nicht gefunden")
-    return {"gespraech": g, "nachrichten": db.alle("SELECT * FROM nachrichten WHERE gespraech_id=? ORDER BY id", (gid,))}
+    return {"gespraech": g, "nachrichten": db.alle("SELECT * FROM nachrichten WHERE gespraech_id=? ORDER BY id", (gid,)),
+            "laeuft": _laeuft_oeffentlich(gid)}
 
 
 @router.delete("/teamchat/{gid}")
@@ -690,6 +748,72 @@ async def teamchat_weg(gid: str):
     # Nicht loeschen, nur aus der Liste nehmen -- wie beim Board.
     db.ausfuehren("UPDATE gespraeche SET art='team-archiv' WHERE id=? AND art='team'", (gid,))
     return {"ok": True}
+
+
+# Gespraeche, deren Antwort gerade auf dem Server entsteht: gespraech_id -> Stand.
+# Gemessen am 16.10.: Veiko schrieb Annie zu ihrer Praesentation, schloss das
+# Fenster, und es kam nie eine Antwort -- StreamingResponse bricht den Erzeuger
+# ab, sobald der Browser die Verbindung schliesst, und mit ihm die ganze Arbeit.
+# Bei gruendlichen Antworten (Minuten) ist das kein Randfall, sondern der Normalfall.
+GESPRAECH_LAEUFT: dict[str, dict[str, Any]] = {}
+_HINTERGRUND: set = set()
+
+
+def _im_hintergrund(erzeuger, art: str, wer: str = "") -> StreamingResponse:
+    """Laesst einen Antwort-Erzeuger als eigene Aufgabe laufen und reicht seine
+    Ereignisse nur DURCH. Schliesst der Browser, laeuft die Aufgabe zu Ende und
+    speichert ihre Antwort wie sonst auch; beim Wiederoeffnen ist sie da."""
+    schlange: asyncio.Queue = asyncio.Queue()
+    stand: dict[str, Any] = {"art": art, "wer": wer, "start": time.time(), "text": "", "status": ""}
+
+    async def pumpe():
+        gid = None
+        try:
+            async for e in erzeuger:
+                if e.get("typ") == "start" and e.get("gespraech_id"):
+                    gid = e["gespraech_id"]
+                    GESPRAECH_LAEUFT[gid] = stand
+                elif e.get("typ") == "text":
+                    stand["text"] += e.get("t") or ""
+                elif e.get("typ") == "status":
+                    stand["status"] = e.get("text") or ""
+                schlange.put_nowait(e)
+        except Exception as f:  # noqa: BLE001 -- der Grund soll beim Browser ankommen, nicht nur im Journal
+            schlange.put_nowait({"typ": "fehler", "text": f"{f.__class__.__name__}: {f}"})
+        finally:
+            if gid:
+                GESPRAECH_LAEUFT.pop(gid, None)
+            schlange.put_nowait(None)
+
+    aufgabe = asyncio.create_task(pumpe())
+    _HINTERGRUND.add(aufgabe)
+    aufgabe.add_done_callback(_HINTERGRUND.discard)
+    stand["_aufgabe"] = aufgabe   # fuer "Stopp"; wird beim Ausliefern herausgefiltert
+
+    async def strom():
+        while True:
+            e = await schlange.get()
+            if e is None:
+                break
+            yield json.dumps(e, ensure_ascii=False) + "\n"
+    return StreamingResponse(strom(), media_type="application/x-ndjson",
+                             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+
+def _laeuft_oeffentlich(gid: str) -> dict[str, Any] | None:
+    s = GESPRAECH_LAEUFT.get(gid)
+    return {k: v for k, v in s.items() if not k.startswith("_")} if s else None
+
+
+@router.post("/gespraech/{gid}/abbrechen")
+async def gespraech_abbrechen(gid: str):
+    """"Stopp" im Browser haelt die Arbeit wirklich an -- seit sie im Hintergrund
+    weiterlaeuft, wuerde ein blosses Trennen der Verbindung nichts mehr stoppen."""
+    s = GESPRAECH_LAEUFT.get(gid)
+    if s and s.get("_aufgabe"):
+        s["_aufgabe"].cancel()
+        return {"ok": True}
+    return {"ok": False}
 
 
 @router.post("/teamchat/senden")
@@ -700,12 +824,9 @@ async def teamchat_senden(request: Request):
     if not text and not dateien:
         raise HTTPException(400, "Es fehlt die Nachricht.")
     kontext = {"projekt_id": d.get("projekt_id") or None, "ergebnis_id": d.get("ergebnis_id") or None}
-
-    async def strom():
-        async for e in teamchat.senden(d.get("gespraech_id"), str(d.get("wer") or ""), text or "(siehe Anhang)", dateien, kontext,
-                                       schnell=bool(d.get("schnell"))):
-            yield json.dumps(e, ensure_ascii=False) + "\n"
-    return StreamingResponse(strom(), media_type="application/x-ndjson")
+    wer = str(d.get("wer") or "")
+    return _im_hintergrund(teamchat.senden(d.get("gespraech_id"), wer, text or "(siehe Anhang)", dateien, kontext,
+                                           schnell=bool(d.get("schnell"))), "team", wer)
 
 
 @router.get("/team/{rid}")
@@ -838,13 +959,12 @@ async def talk_senden(request: Request):
         raise HTTPException(400, "Es fehlt der Text.")
     gid = gespraech.gespraech_holen_oder_anlegen(d.get("gespraech_id"), d.get("kontext"))
 
-    async def strom():
-        yield json.dumps({"typ": "start", "gespraech_id": gid}) + "\n"
+    async def mit_start():
+        yield {"typ": "start", "gespraech_id": gid}
         async for e in gespraech.senden(gid, text, d.get("kontext"), d.get("anhaenge") or [], bool(d.get("stimme")),
                                         schnell=bool(d.get("schnell"))):
-            yield json.dumps(e, ensure_ascii=False) + "\n"
-    return StreamingResponse(strom(), media_type="application/x-ndjson",
-                             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+            yield e
+    return _im_hintergrund(mit_start(), "talk")
 
 
 # ================================================================ BrainStrom und ExO (verfahren.py)
@@ -929,7 +1049,8 @@ async def board_gespraech(gid: str):
     g = db.holen("gespraeche", gid)
     if not g or g["art"] != "board":
         raise HTTPException(404, "Gespräch nicht gefunden")
-    return {"gespraech": g, "nachrichten": db.alle("SELECT * FROM nachrichten WHERE gespraech_id=? ORDER BY id", (gid,))}
+    return {"gespraech": g, "nachrichten": db.alle("SELECT * FROM nachrichten WHERE gespraech_id=? ORDER BY id", (gid,)),
+            "laeuft": _laeuft_oeffentlich(gid)}
 
 
 @router.delete("/board/gespraech/{gid}")
@@ -947,11 +1068,8 @@ async def board_senden(request: Request):
     if not text:
         raise HTTPException(400, "Es fehlt die Frage.")
 
-    async def strom():
-        async for e in board.senden(d.get("gespraech_id"), text, d.get("mit") or None, d.get("projekt_id") or None,
-                                    schnell=bool(d.get("schnell"))):
-            yield json.dumps(e, ensure_ascii=False) + "\n"
-    return StreamingResponse(strom(), media_type="application/x-ndjson")
+    return _im_hintergrund(board.senden(d.get("gespraech_id"), text, d.get("mit") or None, d.get("projekt_id") or None,
+                                        schnell=bool(d.get("schnell"))), "board")
 
 
 @router.get("/talk/gespraeche")
@@ -964,7 +1082,8 @@ async def talk_holen(gid: str):
     g = db.holen("gespraeche", gid)
     if not g:
         raise HTTPException(404, "Gespräch nicht gefunden")
-    return {"gespraech": g, "nachrichten": db.alle("SELECT * FROM nachrichten WHERE gespraech_id=? ORDER BY id", (gid,))}
+    return {"gespraech": g, "nachrichten": db.alle("SELECT * FROM nachrichten WHERE gespraech_id=? ORDER BY id", (gid,)),
+            "laeuft": _laeuft_oeffentlich(gid)}
 
 
 @router.post("/talk/ausfuehren")

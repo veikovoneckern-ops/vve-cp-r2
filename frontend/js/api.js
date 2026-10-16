@@ -29,8 +29,17 @@ export async function api(pfad, { methode = "GET", daten } = {}) {
   return inhalt;
 }
 
-// NDJSON-Strom lesen (Talk). Ruft fuer jede Zeile beiZeile(objekt) auf.
+// NDJSON-Strom lesen (Talk, Board, Team-Chat). Ruft fuer jede Zeile beiZeile(objekt) auf.
+// Seit dem 16.10. laeuft die Antwort auf dem Server weiter, auch wenn der Browser
+// die Verbindung schliesst (Fenster zu, Seite gewechselt). Ein ausdrueckliches
+// "Stopp" (signal) muss den Server deshalb eigens bitten aufzuhoeren.
 export async function strom(pfad, daten, beiZeile, signal) {
+  let gid = null;
+  if (signal) signal.addEventListener("abort", () => {
+    if (gid) fetch("/api/gespraech/" + encodeURIComponent(gid) + "/abbrechen", { method: "POST", credentials: "same-origin" }).catch(() => {});
+  }, { once: true });
+  const weiter = beiZeile;
+  beiZeile = (e) => { if (e && e.typ === "start" && e.gespraech_id) gid = e.gespraech_id; weiter(e); };
   const r = await fetch("/api" + pfad, {
     method: "POST", credentials: "same-origin", signal,
     headers: { "Content-Type": "application/json" }, body: JSON.stringify(daten),

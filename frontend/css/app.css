@@ -1081,3 +1081,37 @@ a.bd-person-haupt{text-decoration:none}
    in Talk (.vorschlag = flex, violetter Rahmen) und zog den Avatar zur Ellipse
    breit (16.10.). Hier gilt das Raster des Verlaufs. */
 .ev.vorschlag{display:grid;border:0;background:none;padding:0;margin:0;font-size:inherit;align-items:start}
+
+/* Ergebnisse ueberall gleich (ergebnis.js, 16.10.): Urteil als Zeile, Vorschau
+   mit "Gross ansehen", aufklappbare Zeilen in Briefing und Projekt. */
+.pruef-zeile{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0}
+.pruef-zeile .pill{cursor:pointer;border:0;font:inherit;font-size:11.5px;font-weight:700}
+.pruef-zeile .pill:disabled{cursor:default}
+.pruef-text{max-width:60ch;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--ink-2)}
+.pruef-text ul{margin:4px 0 0;padding-left:18px}
+.erg-vorschau-feld{position:relative}
+.gross-knopf{position:absolute;top:8px;right:8px;z-index:2;box-shadow:var(--sh-2)}
+.erg-vorschau-fuss{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
+.erg-vorschau-fuss .erg-downloads{margin-top:0;flex:1}
+.erg-vorschau-rahmen.hoch iframe,.erg-vorschau-text.hoch{height:100%;max-height:none}
+.erg-vorschau-rahmen.hoch{height:100%}
+.gross-ansicht{position:fixed;inset:0;z-index:300;background:var(--bg);display:flex;flex-direction:column}
+.gross-kopf{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap;background:var(--surface)}
+.gross-kopf .luecke{flex:1}
+.gross-kopf .erg-downloads{margin-top:0}
+.gross-inhalt{flex:1;min-height:0;padding:14px 16px}
+.gross-inhalt .erg-vorschau-text{overflow:auto}
+.erg-zeile{border-bottom:1px solid var(--line-2)}
+.erg-zeile:last-child{border-bottom:0}
+.erg-zeile>.zeile{border-bottom:0}
+.erg-zeile.auf{background:var(--surface-2);border-radius:10px}
+.erg-zeile-vorschau{padding:4px 10px 12px}
+.neu-marke{margin-right:6px;font-size:10.5px;vertical-align:1px}
+details.eingetragen>summary{cursor:pointer;list-style:none;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+details.eingetragen>summary::before{content:"▸";color:var(--ink-3)}
+details.eingetragen[open]>summary::before{content:"▾"}
+details.eingetragen[open]>summary{margin-bottom:8px}
+.briefing-ruhe{display:flex;gap:6px;align-items:center;margin:2px 4px 12px}
+.auftrag-zeile{margin:-4px 0 10px;color:var(--ink-3)}
+.auftrag-zeile summary{cursor:pointer}
+.auftrag-zeile div{margin-top:4px;color:var(--ink-2)}

@@ -8,7 +8,7 @@ import { Zeitplan, Struktur } from "./projektansichten.js";
 import { Ausarbeiten } from "./inbox.js";
 import { TeamChat, gespraechsPartner } from "./teamchat.js";
 import { Composer } from "./composer.js";
-import { VideoBlock } from "./ergebnis.js";
+import { VideoBlock, Downloads, Pruefung, GrossAnsicht, ErgebnisZeile } from "./ergebnis.js";
 
 const FARBEN = ["#2C6BB3", "#0E9377", "#C07C12", "#E0392B", "#7C3AED", "#D0458F", "#0E7490", "#647388"];
 
@@ -223,7 +223,7 @@ function Projekt({ id, reiter }) {
           <textarea class="eingabe" rows="2" onKeyDown=${enterBestaetigt} placeholder="Ein Satz: Was soll mit diesem Projekt erreicht werden? Hilft dem Team beim Einordnen." value=${p.ziel || ""}
             onBlur=${(e) => { if (e.target.value !== (p.ziel || "")) aendern({ ziel: e.target.value }, "Ziel gespeichert."); }}></textarea></section>
         <section class="karte"><div class="karte-kopf"><h3>Neueste Ergebnisse</h3></div>
-          ${d.ergebnisse.length ? d.ergebnisse.slice(0, 4).map((r) => html`<${ErgebnisZeile} key=${r.id} r=${r} />`) : html`<${Leer}>Noch keine. „Ausarbeiten lassen“ gibt einer Rolle einen Auftrag.</${Leer}>`}</section>
+          ${d.ergebnisse.length ? d.ergebnisse.slice(0, 4).map((r) => html`<${ErgebnisZeileProjekt} key=${r.id} r=${r} />`) : html`<${Leer}>Noch keine. „Ausarbeiten lassen“ gibt einer Rolle einen Auftrag.</${Leer}>`}</section>
         <section class="karte"><div class="karte-kopf"><h3>Jüngste Cases</h3></div>
           ${d.vorgaenge.length ? d.vorgaenge.slice(0, 5).map((v) => html`<div class="zeile" key=${v.id}><div class="haupt-text"><a href=${"#/inbox/" + v.id} style="color:inherit">${v.titel}</a></div><${StandPill} stand=${v.stand} /></div>`)
             : html`<${Leer}>Noch keine.</${Leer}>`}</section>
@@ -239,7 +239,7 @@ function Projekt({ id, reiter }) {
     ${tab === "zeitplan" && html`<${Zeitplan} projekt=${p} aufgaben=${d.aufgaben} laden=${laden} />`}
     ${tab === "struktur" && html`<${Struktur} projekt=${p} aufgaben=${d.aufgaben} laden=${laden} />`}
     ${tab === "notizen" && html`<${NotizListe} projektId=${id} />`}
-    ${tab === "ergebnisse" && html`<section class="karte">${d.ergebnisse.length ? d.ergebnisse.map((r) => html`<${ErgebnisZeile} key=${r.id} r=${r} />`)
+    ${tab === "ergebnisse" && html`<section class="karte">${d.ergebnisse.length ? d.ergebnisse.map((r) => html`<${ErgebnisZeileProjekt} key=${r.id} r=${r} />`)
       : html`<${Leer} titel="Noch keine Ergebnisse.">Mit „Ausarbeiten lassen“ bekommt eine Rolle einen Auftrag. Das Ergebnis landet hier, geprüft von Daniel.</${Leer}>`}</section>`}
     ${tab === "verlauf" && html`<section class="karte">${d.vorgaenge.length ? d.vorgaenge.map((v) => html`<div class="zeile" key=${v.id}>
         <div class="haupt-text"><a href=${"#/inbox/" + v.id} style="color:inherit"><b>${v.titel}</b></a><div class="leise klein">${v.einordnung || ""}</div></div>
@@ -278,14 +278,10 @@ function UnterlagenKarte({ projektId, name, nachher }) {
   </section>`;
 }
 
-function ErgebnisZeile({ r }) {
-  const u = r.pruefung && r.pruefung.urteil;
-  return html`<div class="zeile">
-    <${Avatar} wer=${r.rolle} name=${rolleName(r.rolle)} g=${22} />
-    <div class="haupt-text"><b>${r.titel}</b><div class="leise klein">${rolleName(r.rolle)} · ${r.form} · ${zeitText(r.erstellt)}</div></div>
-    ${u && html`<span class=${"pill " + (u === "tragfaehig" ? "gruen" : "gelb")}>${u === "tragfaehig" ? "geprüft" : u === "nachbessern" ? "mit Mängeln" : u}</span>`}
-    <button class="btn klein" onClick=${() => bus.sende("ergebnis-zeigen", r.id)}>Ansehen</button>
-  </div>`;
+// Ergebniszeile im Projekt: dieselbe aufklappbare Zeile wie im Briefing (ergebnis.js).
+function ErgebnisZeileProjekt({ r }) {
+  const [auf, setAuf] = useState(false);
+  return html`<${ErgebnisZeile} e=${r} auf=${auf} umschalten=${() => setAuf(!auf)} />`;
 }
 
 // Das Ergebnisfenster. Rechts "Weiterarbeiten": dasselbe Gespraech wie unter
@@ -295,6 +291,7 @@ export function ErgebnisAnsicht({ id, zu }) {
   const [e, setE] = useState(null);
   const [ansicht, setAnsicht] = useState(false);
   const [stand, setStand] = useState(0);          // zaehlt Fassungen hoch, damit die Ansicht neu laedt
+  const [gross, setGross] = useState(false);
   const [team, setTeam] = useState(null);
   const [wer, setWer] = useState("");
   const [gid, setGid] = useState(null);
@@ -315,10 +312,9 @@ export function ErgebnisAnsicht({ id, zu }) {
   const p = e.pruefung || {};
   const partner = gespraechsPartner(team);
   const fassungNeu = () => { laden().then(() => setStand((n) => n + 1)); aktualisieren(); };
-  return html`<${Modal} titel=${e.titel} zu=${zu} breit=${chatAuf ? "voll" : true} fuss=${html`
-      <a class="btn" href=${"/api/ergebnisse/" + e.id + "/datei?format=docx"} download><${Icon} n="download" g=${15} />Word</a>
-      ${e.form === "praesentation" && html`<a class="btn" href=${"/api/ergebnisse/" + e.id + "/datei?format=pptx"} download><${Icon} n="download" g=${15} />PowerPoint</a>`}
-      <button class="btn" onClick=${async () => { if (await kopieren(e.inhalt)) toast("Kopiert."); }}><${Icon} n="kopie" g=${15} />Kopieren</button>
+  return html`<${Modal} titel=${e.kurztitel || e.titel} zu=${zu} breit=${chatAuf ? "voll" : true} fuss=${html`
+      <${Downloads} e=${e} />
+      <span style="flex:1"></span>
       <button class=${"btn" + (chatAuf ? " an" : "")} onClick=${() => setChatAuf(!chatAuf)}><${Icon} n="chat" g=${15} />${chatAuf ? "Weiterarbeiten ausblenden" : "Weiterarbeiten"}</button>
       ${e.vorgang_id && html`<a class="btn" href=${"#/inbox/" + e.vorgang_id} onClick=${zu}>Zum Case</a>`}
       <button class="btn primaer" onClick=${zu}>Schließen</button>`}>
@@ -326,16 +322,17 @@ export function ErgebnisAnsicht({ id, zu }) {
       <div class="erg-text">
         <div class="knopfreihe" style="margin-bottom:10px">
           <${Avatar} wer=${e.rolle} name=${e.wer_name} g=${24} /><b>${e.wer_name}</b><span class="leise klein">${e.form} · ${e.modell} · ${zeitText(e.erstellt)}</span>
-          ${p.urteil && html`<span class=${"pill " + (p.urteil === "tragfaehig" ? "gruen" : "gelb")}>Daniel: ${p.urteil === "tragfaehig" ? "trägt" : p.urteil}</span>`}
+          <${Pruefung} p=${p} />
           ${e.ansicht ? html`<div class="segment" style="margin-left:auto"><button class=${ansicht ? "an" : ""} onClick=${() => setAnsicht(true)}>Ansicht</button>
             <button class=${!ansicht ? "an" : ""} onClick=${() => setAnsicht(false)}>Text</button></div>` : ""}
+          ${!(e.form === "video" || e.video) && html`<button class="btn klein" style=${e.ansicht ? "" : "margin-left:auto"} onClick=${() => setGross(true)} title="Über das ganze Fenster ansehen">
+            <${Icon} n="voll" g=${13} />Groß ansehen</button>`}
         </div>
-        ${(e.form === "video" || e.video) && html`<${VideoBlock} e=${e} neuLaden=${laden} />`}
-        ${p.begruendung && html`<div class="hinweisbox" style="margin-bottom:12px"><b>Prüfung:</b> ${p.begruendung}
-          ${(p.maengel || []).length > 0 && html`<ul style="margin:4px 0 0;padding-left:18px">${p.maengel.map((m) => html`<li>${m}</li>`)}</ul>`}</div>`}
-        ${ansicht ? html`<div class="ergebnis-ansicht"><iframe key=${stand} src=${"/api/ergebnisse/" + e.id + "/ansicht?v=" + stand} sandbox="allow-scripts allow-forms allow-popups" title=${e.titel}></iframe>
-            <a class="btn klein" style="margin-top:6px" href=${"/api/ergebnisse/" + e.id + "/ansicht"} target="_blank" rel="noopener"><${Icon} n="extern" g=${14} />In neuem Tab öffnen</a></div>`
+        ${e.auftrag && html`<details class="auftrag-zeile klein"><summary>Auftrag</summary><div>${e.auftrag}</div></details>`}
+        ${(e.form === "video" || e.video) && html`<${VideoBlock} e=${e} neuLaden=${laden} ohneDownload=${true} />`}
+        ${ansicht ? html`<div class="ergebnis-ansicht"><iframe key=${stand} src=${"/api/ergebnisse/" + e.id + "/ansicht?v=" + stand} sandbox="allow-scripts allow-forms allow-popups" title=${e.kurztitel || e.titel}></iframe></div>`
           : html`<${Md} text=${e.inhalt} />`}
+        ${gross && html`<${GrossAnsicht} e=${e} laden=${laden} zu=${() => setGross(false)} />`}
         ${(e.quellen || []).length > 0 && html`<details style="margin-top:14px"><summary class="klein" style="cursor:pointer">${e.quellen.length} Quellen</summary>
           <ol class="klein">${e.quellen.map((q) => html`<li><a href=${q.url} target="_blank" rel="noopener">${q.titel || q.url}</a></li>`)}</ol></details>`}
       </div>

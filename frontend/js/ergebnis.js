@@ -17,31 +17,81 @@ export function Downloads({ e }) {
   </div>`;
 }
 
-// Die Vorschau im Case (Veiko, 16.10.: "ich moechte auch dort ein
-// Vorschaufenster fuer die Ergebnisse haben und dann die Downloadmoeglichkeit
-// dazu"). Vorher stand ein Ergebnis nur als schmale Zeile mit "Ansehen" rechts
-// unten -- das OODA-Video war darueber nicht zu finden.
-export function ErgebnisVorschau({ id }) {
+// Daniels Urteil als EINE Zeile; Begruendung und Maengel klappen auf.
+// Vorher ein grosser Kasten ueber dem Ergebnis, der es aus dem Blick schob
+// (Veiko, 16.10.: "das ist alles noch sehr sperrig").
+export function Pruefung({ p }) {
+  const [auf, setAuf] = useState(false);
+  if (!p || !p.urteil) return "";
+  const gut = p.urteil === "tragfaehig";
+  const wort = gut ? "trägt" : p.urteil === "nachbessern" ? "mit Mängeln" : p.urteil === "ungeprueft" ? "nicht geprüft" : p.urteil;
+  const mehr = p.begruendung || (p.maengel || []).length;
+  return html`<div class="pruef-zeile">
+    <button class=${"pill " + (gut ? "gruen" : "gelb")} onClick=${() => mehr && setAuf(!auf)} disabled=${!mehr}
+      title=${mehr ? "Begründung " + (auf ? "zuklappen" : "aufklappen") : ""}>Daniel: ${wort}${mehr ? (auf ? " ▴" : " ▾") : ""}</button>
+    ${auf && html`<div class="pruef-text klein">${p.begruendung}
+      ${(p.maengel || []).length > 0 && html`<ul>${p.maengel.map((m) => html`<li>${m}</li>`)}</ul>`}</div>`}
+  </div>`;
+}
+
+// Der eigentliche Inhalt eines Ergebnisses -- Video, Ansicht (Folien, Dokument,
+// Webseite) oder Text. hoch: die Vorschau fuellt den verfuegbaren Platz (Gross ansehen).
+function Inhalt({ e, laden, hoch }) {
+  if (e.form === "video" || e.video) return html`<${VideoBlock} e=${e} neuLaden=${laden} ohneDownload=${true} />`;
+  if (e.ansicht) return html`<div class=${"erg-vorschau-rahmen" + (hoch ? " hoch" : "")}>
+    <iframe src=${"/api/ergebnisse/" + e.id + "/ansicht"} sandbox="allow-scripts allow-forms allow-popups" title=${e.kurztitel || e.titel}></iframe></div>`;
+  return html`<div class=${"erg-vorschau-text" + (hoch ? " hoch" : "")}><${Md} text=${e.inhalt || ""} /></div>`;
+}
+
+// Gross ansehen: das Ergebnis ueber das ganze Fenster, EINE Scrollflaeche,
+// Downloads oben, Escape schliesst. Ersetzt das Scrollen in einer Vorschau,
+// die selbst in einer scrollenden Spalte steckt.
+export function GrossAnsicht({ e, laden, zu }) {
+  useEffect(() => {
+    const k = (x) => { if (x.key === "Escape") { x.stopPropagation(); zu(); } };
+    document.addEventListener("keydown", k, true);
+    return () => document.removeEventListener("keydown", k, true);
+  }, []);
+  return html`<div class="gross-ansicht" role="dialog" aria-label=${e.kurztitel || e.titel}>
+    <div class="gross-kopf">
+      <b>${e.kurztitel || e.titel}</b>
+      <span class="luecke"></span>
+      <${Downloads} e=${e} />
+      <button class="btn geist icon" onClick=${zu} title="Schließen (Esc)"><${Icon} n="x" /></button>
+    </div>
+    <div class="gross-inhalt"><${Inhalt} e=${e} laden=${laden} hoch=${true} /></div>
+  </div>`;
+}
+
+// Die Vorschau eines Ergebnisses -- im Case, im Briefing (aufgeklappt) und als
+// Kopf des Ergebnisfensters dieselbe Darstellung (Veiko, 16.10.: Briefing,
+// Chats und Ergebnisse sollen sich gleich anfuehlen).
+export function ErgebnisVorschau({ id, ohneOeffnen = false, ohneKopf = false }) {
   const [e, setE] = useState(null);
   const [fehler, setFehler] = useState("");
+  const [gross, setGross] = useState(false);
   const laden = () => api("/ergebnisse/" + id).then(setE).catch((x) => setFehler(x.message));
   useEffect(() => { laden(); }, [id]);
   if (fehler) return html`<div class="fehlerbox">${fehler}</div>`;
   if (!e) return html`<div class="lade">Lade Ergebnis …</div>`;
-  const p = e.pruefung || {};
-  const hatVideo = e.form === "video" || e.video;
   return html`<div class="erg-vorschau">
-    <div class="erg-vorschau-kopf">
+    ${!ohneKopf && html`<div class="erg-vorschau-kopf">
       <${Avatar} wer=${e.rolle} name=${e.wer_name} g=${26} />
-      <div class="haupt-text"><b>${e.titel}</b>
-        <div class="leise klein">${e.wer_name} · ${e.form} · ${zeitText(e.erstellt)}</div></div>
-      ${p.urteil && html`<span class=${"pill " + (p.urteil === "tragfaehig" ? "gruen" : "gelb")} title=${p.begruendung || ""}>Daniel: ${p.urteil === "tragfaehig" ? "trägt" : p.urteil}</span>`}
-      <button class="btn klein" onClick=${() => bus.sende("ergebnis-zeigen", e.id)} title="Groß öffnen, mit dem Team weiterarbeiten"><${Icon} n="voll" g=${13} />Öffnen und weiterarbeiten</button>
+      <div class="haupt-text"><b>${e.kurztitel || e.titel}</b>
+        <div class="leise klein">${e.wer_name} · ${zeitText(e.erstellt)}${e.projekt_name ? " · " + e.projekt_name : ""}</div></div>
+      <${Pruefung} p=${e.pruefung} />
+    </div>`}
+    <div class="erg-vorschau-feld">
+      <${Inhalt} e=${e} laden=${laden} />
+      ${!(e.form === "video" || e.video) && html`<button class="btn klein gross-knopf" onClick=${() => setGross(true)} title="Über das ganze Fenster ansehen">
+        <${Icon} n="voll" g=${13} />Groß ansehen</button>`}
     </div>
-    ${hatVideo ? html`<${VideoBlock} e=${e} neuLaden=${laden} ohneDownload=${true} />`
-      : e.ansicht ? html`<div class="erg-vorschau-rahmen"><iframe src=${"/api/ergebnisse/" + e.id + "/ansicht"} sandbox="allow-scripts allow-forms allow-popups" title=${e.titel}></iframe></div>`
-      : html`<div class="erg-vorschau-text"><${Md} text=${e.inhalt || ""} /></div>`}
-    <${Downloads} e=${e} />
+    <div class="erg-vorschau-fuss">
+      <${Downloads} e=${e} />
+      ${!ohneOeffnen && html`<button class="btn klein primaer" onClick=${() => bus.sende("ergebnis-zeigen", e.id)} title="Mit dem Team am Ergebnis weiterarbeiten">
+        <${Icon} n="chat" g=${13} />Weiterarbeiten</button>`}
+    </div>
+    ${gross && html`<${GrossAnsicht} e=${e} laden=${laden} zu=${() => setGross(false)} />`}
   </div>`;
 }
 
@@ -78,3 +128,21 @@ export function VideoBlock({ e, neuLaden, ohneDownload = false }) {
   </div>`;
 }
 
+// Ein neu entstandenes Ergebnis als Zeile; "Vorschau" klappt es AN DER STELLE
+// auf (dieselbe Darstellung wie im Case), statt in ein Fenster zu springen.
+export function ErgebnisZeile({ e, neu, auf, umschalten }) {
+  return html`<div class=${"erg-zeile" + (auf ? " auf" : "")}>
+    <div class="zeile">
+      <${Avatar} wer=${e.rolle} name=${e.wer_name} g=${26} />
+      <div class="haupt-text">
+        <b>${neu && html`<span class="pill lila neu-marke">neu</span>`}${e.kurztitel || e.titel}</b>
+        <div class="leise klein">${e.wer_name} · ${zeitText(e.erstellt)}${e.projekt_name ? " · " + e.projekt_name : ""}</div>
+      </div>
+      <${Pruefung} p=${e.pruefung} />
+      <button class=${"btn klein" + (auf ? " an" : "")} onClick=${umschalten} aria-expanded=${auf}>
+        <${Icon} n=${auf ? "klein" : "auge"} g=${14} />${auf ? "Zuklappen" : "Vorschau"}</button>
+      ${e.vorgang_id && html`<a class="btn klein geist" href=${"#/inbox/" + e.vorgang_id} title="Den ganzen Case öffnen">Case</a>`}
+    </div>
+    ${auf && html`<div class="erg-zeile-vorschau"><${ErgebnisVorschau} id=${e.id} ohneKopf=${true} /></div>`}
+  </div>`;
+}
