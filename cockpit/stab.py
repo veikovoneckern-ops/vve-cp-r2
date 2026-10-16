@@ -916,22 +916,66 @@ async def pruefen(entwurf: str, a: dict[str, Any], v: dict[str, Any], quellen_te
     return {"urteil": "ungeprueft", "begruendung": "Die Prüfung hat keine lesbare Antwort geliefert.", "maengel": []}
 
 
+HINWEIS_RE = re.compile(r"^\s*(bildbeschreibung|bild|bildidee|visual|layout|typografie|typographie|gestaltung|design|"
+                        r"sprechernotiz|sprechertext|notiz|hinweis|farbwelt|stil)\b[^:]{0,40}:", re.I)
+
+
+def _ohne_md(s: str) -> str:
+    return re.sub(r"\*\*|__|\*", "", s)
+
+
+def _md_inline(s: str) -> str:
+    """Fett und kursiv aus Markdown, alles andere maskiert. Halbe "**" (ein
+    Modell schliesst sie gern nicht) fallen weg, statt als Sternchen stehen zu bleiben."""
+    t = htmlmod.escape(s)
+    t = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", t)
+    t = re.sub(r"(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])", r"<i>\1</i>", t)
+    return t.replace("**", "")
+
+
 def _folien_html(text: str, titel: str) -> str:
     folien = [f.strip() for f in re.split(r"(?m)^---\s*$", text) if f.strip()]
     teile = []
     for f in folien:
         zeilen = f.splitlines()
         kopf = next((z.lstrip("# ").strip() for z in zeilen if z.startswith("#")), "")
-        punkte = [z.lstrip("-*• ").strip() for z in zeilen if z.strip().startswith(("-", "*", "•"))]
-        rest = [z for z in zeilen if z.strip() and not z.startswith("#") and not z.strip().startswith(("-", "*", "•"))]
-        teile.append("<section><h2>" + htmlmod.escape(kopf) + "</h2>" +
-                     ("<ul>" + "".join(f"<li>{htmlmod.escape(p)}</li>" for p in punkte) + "</ul>" if punkte else "") +
-                     "".join(f"<p>{htmlmod.escape(z)}</p>" for z in rest[:4]) + "</section>")
+        punkte = [z.strip().lstrip("-*• ").strip() for z in zeilen if z.strip().startswith(("-", "*", "•"))]
+        rest = [z.strip() for z in zeilen if z.strip() and not z.startswith("#") and not z.strip().startswith(("-", "*", "•"))]
+        # Gestaltungs- und Sprecherhinweise ("Bildbeschreibung: …", "Layout & Typografie: …")
+        # sind keine Folieninhalte -- gemessen am 16.10. standen sie als Stichpunkte samt
+        # "**" mitten auf Annies Folien. Sie kommen klein und grau ans Folienende.
+        hinweis = [p for p in punkte + rest if HINWEIS_RE.match(_ohne_md(p))]
+        punkte = [p for p in punkte if p not in hinweis]
+        rest = [z for z in rest if z not in hinweis]
+        teile.append("<section><h2>" + _md_inline(kopf) + "</h2>" +
+                     ("<ul>" + "".join(f"<li>{_md_inline(p)}</li>" for p in punkte) + "</ul>" if punkte else "") +
+                     "".join(f"<p>{_md_inline(z)}</p>" for z in rest[:4]) +
+                     ("<div class='hinweis'>" + "<br>".join(_md_inline(h) for h in hinweis) + "</div>" if hinweis else "") +
+                     "</section>")
+    # Folien auf einer festen Buehne von 1280x720 gesetzt und als Ganzes auf die
+    # verfuegbare Breite SKALIERT; was nicht passt, wird kleiner gesetzt statt in
+    # der Folie zu scrollen. Veiko, 16.10.: "dann muss ich erst scrollen, um die
+    # ganze Seite zu sehen, und dann nochmal an der Seite" -- vorher hatte jede
+    # Folie eine feste Breite von 900 Punkt und einen eigenen Scrollbalken.
     return ("<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
-            f"<title>{htmlmod.escape(titel)}</title><style>body{{margin:0;font:18px system-ui;background:#EEF1F5;color:#0B1826}}"
-            "section{background:#fff;max-width:900px;aspect-ratio:16/9;margin:24px auto;padding:48px 56px;box-sizing:border-box;"
-            "border-radius:12px;box-shadow:0 4px 18px rgba(12,26,46,.1);overflow:auto}h2{font-size:34px;margin:0 0 20px;color:#2C6BB3}"
-            "li{margin:10px 0}</style>" + "".join(teile))
+            f"<title>{htmlmod.escape(titel)}</title><style>"
+            "html,body{margin:0;background:#E8ECF2;color:#0B1826;overflow-x:hidden}"
+            ".buehne{width:1280px;transform-origin:0 0;padding:16px 0}"
+            "section{width:1280px;height:720px;box-sizing:border-box;padding:64px 84px;background:#fff;margin:0 0 20px;"
+            "border-radius:18px;box-shadow:0 6px 22px rgba(12,26,46,.12);overflow:hidden;font:30px/1.38 system-ui,sans-serif;"
+            "display:flex;flex-direction:column}"
+            "h2{font-size:1.75em;line-height:1.15;margin:0 0 .6em;color:#2C6BB3}ul{margin:0;padding-left:1.1em}li{margin:.35em 0}p{margin:.4em 0}"
+            ".hinweis{margin-top:auto;font-size:15px;line-height:1.4;color:#8A94A6;font-style:italic;border-top:1px solid #E1E6EE;padding-top:8px}"
+            ".nr{margin-top:8px;font-size:16px;color:#8A94A6;text-align:right}.hinweis+.nr{margin-top:6px}"
+            "</style><div class='buehne'>"
+            + "".join(t.replace("</section>", f"<div class='nr'>{i + 1} / {len(teile)}</div></section>") for i, t in enumerate(teile))
+            + "</div><script>"
+            "function passen(){var b=document.querySelector('.buehne');var w=document.documentElement.clientWidth;"
+            "var s=Math.min(1.6,(w-32)/1280);b.style.transform='scale('+s+')';b.style.marginLeft=((w-1280*s)/2)+'px';"
+            "document.body.style.height=(b.offsetHeight*s)+'px';}"
+            "document.querySelectorAll('section').forEach(function(f){var g=30;"
+            "while(f.scrollHeight>f.clientHeight+1&&g>15){g-=1;f.style.fontSize=g+'px';}});"
+            "passen();window.addEventListener('resize',passen);</script>")
 
 
 def ansicht_html(e: dict[str, Any]) -> str | None:

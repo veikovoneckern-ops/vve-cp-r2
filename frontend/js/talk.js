@@ -92,6 +92,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
   const laufRef = useRef(false);
   const kontextRef = useRef(kontext);
   const verlaufRef = useRef(null);
+  const talkFeld = useRef(null);
   const abbruch = useRef(null);
   const freiAn = useRef(false);
   const aufn = useRef(null);
@@ -114,6 +115,9 @@ export function Talk({ zu, kontext, setKontext, start }) {
     if (start.frei) { ausKopf.current = !!start.ausKopf; if (!freiAn.current) freiStart(); }
     else if (start.durchgehen) durchgehen();
     else if (start.text) senden(start.text, [], false);
+    // Vorlage ins Feld statt gleich zu senden (Klick auf eine Aufgabe im Briefing):
+    // Veiko sagt selbst, was mit der Aufgabe passieren soll.
+    else if (start.vorlage) setTimeout(() => talkFeld.current && talkFeld.current.setzen(start.vorlage), 60);
   }, [start]);
   useEffect(() => () => { freiAn.current = false; if (aufn.current) aufn.current.abbrechen(); vorleseStopp(); bus.sende("dialog-zustand", null); }, []);
   // Der Sprechen-Knopf im Kopf zeigt, was gerade passiert, und kann beenden.
@@ -380,7 +384,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
       ${lauf && html`<div class="talk-blase ck">${lauf.text ? html`<${Md} text=${lauf.text} />` : html`<span class="leise">${lauf.status ? lauf.status.charAt(0).toUpperCase() + lauf.status.slice(1) : "Denke nach …"}</span>`}</div>`}
     </div>
     <div class="talk-eingabe">
-      <${Composer} platzhalter=${kontext ? "Frag zu „" + (kontext.titel || "").slice(0, 40) + "“ …" : "Frag oder beauftrage dein Team … („ja“ bestätigt den letzten Vorschlag)"}
+      <${Composer} feldRef=${talkFeld} platzhalter=${kontext ? "Frag zu „" + (kontext.titel || "").slice(0, 40) + "“ …" : "Frag oder beauftrage dein Team … („ja“ bestätigt den letzten Vorschlag)"}
         beimSenden=${(t, a) => eingabe(t, a, false).then(() => true)} laeuft=${!!lauf}
         beimStoppen=${() => abbruch.current && abbruch.current.abort()} entwurfKey="talk" hinweis="" />
       <${TempoSchalter} />

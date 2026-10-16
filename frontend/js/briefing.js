@@ -28,6 +28,16 @@ function Gesundheit({ g, neo }) {
   </div>`;
 }
 
+// Klick auf einen Aufgabentitel fuehrt ins Gespraech dazu (Veiko, 16.10.):
+// gibt es im Case schon ein Ergebnis, ins Ergebnisfenster mit "Weiterarbeiten";
+// sonst Talk mit dem Case (oder dem Projekt) als Bezug und der Aufgabe im Feld.
+function aufgabeOeffnen(t) {
+  if (t.ergebnis_id) { bus.sende("ergebnis-zeigen", t.ergebnis_id); return; }
+  const kontext = t.vorgang_id ? { art: "vorgang", id: t.vorgang_id, titel: t.titel }
+    : t.projekt_id ? { art: "projekt", id: t.projekt_id, titel: t.projekt_name || t.titel } : null;
+  bus.sende("talk-oeffnen", { kontext, vorlage: `Zur Aufgabe „${t.titel}“: ` });
+}
+
 export function Briefing({ lage }) {
   const [offen, setOffen] = useState(undefined);   // welches Ergebnis aufgeklappt ist; undefined = noch nicht entschieden
   // Beim Verlassen merkt sich der Server "gesehen" -- beim naechsten Besuch ist
@@ -113,7 +123,8 @@ export function Briefing({ lage }) {
           <div class="karte-kopf"><h3>Deine nächsten Aufgaben</h3><a class="rechts klein" href="#/projects/_aufgaben">alle</a></div>
           ${lage.aufgaben.length ? lage.aufgaben.map((t) => html`<div class="zeile" key=${t.id}>
             <button class="check" onClick=${() => erledigen(t)} aria-label=${"Erledigt: " + t.titel} title="Erledigt"></button>
-            <div class="haupt-text">${t.titel}
+            <div class="haupt-text"><button class="aufgabe-titel" onClick=${() => aufgabeOeffnen(t)}
+                title=${t.ergebnis_id ? "Zum Ergebnis und dem Gespräch dazu" : "In Talk an dieser Aufgabe weiterarbeiten"}>${t.titel}</button>
               <div class="leise klein">${t.projekt_name ? html`<span class="punkt" style=${"background:" + (t.projekt_farbe || "#999") + ";width:7px;height:7px;margin-right:5px"}></span>${t.projekt_name}` : "ohne Projekt"}
               ${t.quelle === "stab" ? " · vom Team" : ""}</div></div>
             ${t.faellig && html`<span class="neben">${datumText(t.faellig)}</span>`}

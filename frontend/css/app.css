@@ -1115,3 +1115,15 @@ details.eingetragen[open]>summary{margin-bottom:8px}
 .auftrag-zeile{margin:-4px 0 10px;color:var(--ink-3)}
 .auftrag-zeile summary{cursor:pointer}
 .auftrag-zeile div{margin-top:4px;color:var(--ink-2)}
+
+/* Vorschau-Groessen (16.10., zweiter Durchgang): eine Folie fuellt das Feld
+   genau (Seitenverhaeltnis der Buehne 1280x720 plus Rand), Dokumente und
+   Texte bekommen fast die ganze Fensterhoehe. Die Seite nutzt mehr Breite. */
+.erg-vorschau-rahmen.form-praesentation:not(.hoch) iframe{height:auto;aspect-ratio:16/9.55;max-height:82vh}
+.erg-vorschau-rahmen:not(.form-praesentation):not(.hoch) iframe{height:min(78vh,1100px)}
+.erg-vorschau-text:not(.hoch){max-height:min(78vh,1100px)}
+.seite{max-width:1680px}
+.raster.zwei.briefing-raster{grid-template-columns:minmax(0,2.3fr) minmax(300px,1fr)}
+@media (max-width:1100px){.raster.zwei.briefing-raster{grid-template-columns:minmax(0,1fr)}}
+.aufgabe-titel{background:none;border:0;padding:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
+.aufgabe-titel:hover{color:var(--violett);text-decoration:underline}

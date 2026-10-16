@@ -38,7 +38,7 @@ export function Pruefung({ p }) {
 // Webseite) oder Text. hoch: die Vorschau fuellt den verfuegbaren Platz (Gross ansehen).
 function Inhalt({ e, laden, hoch }) {
   if (e.form === "video" || e.video) return html`<${VideoBlock} e=${e} neuLaden=${laden} ohneDownload=${true} />`;
-  if (e.ansicht) return html`<div class=${"erg-vorschau-rahmen" + (hoch ? " hoch" : "")}>
+  if (e.ansicht) return html`<div class=${"erg-vorschau-rahmen form-" + e.form + (hoch ? " hoch" : "")}>
     <iframe src=${"/api/ergebnisse/" + e.id + "/ansicht"} sandbox="allow-scripts allow-forms allow-popups" title=${e.kurztitel || e.titel}></iframe></div>`;
   return html`<div class=${"erg-vorschau-text" + (hoch ? " hoch" : "")}><${Md} text=${e.inhalt || ""} /></div>`;
 }

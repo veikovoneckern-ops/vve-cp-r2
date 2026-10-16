@@ -174,6 +174,21 @@ async def lage():
     aufgaben = db.alle("SELECT a.*, p.name AS projekt_name, p.farbe AS projekt_farbe FROM aufgaben a "
                        "LEFT JOIN projekte p ON p.id=a.projekt_id WHERE a.status!='erledigt' AND a.archiviert=0 "
                        "ORDER BY (a.faellig='' OR a.faellig IS NULL), a.faellig, a.prio, a.erstellt DESC LIMIT 8")
+    # ergebnis_id: das passende Ergebnis aus dem Case der Aufgabe -- ein Klick auf
+    # den Titel fuehrt dann direkt ins Gespraech daran (Veiko, 16.10.). Nur wenn
+    # der Ergebnistitel ein tragendes Wort mit der Aufgabe teilt: ein Case hat oft
+    # mehrere Ergebnisse, und "E-Mail beantworten" oeffnete sonst die Recherche zu
+    # Abmahnungen, nur weil beide im selben Case lagen. Ohne Treffer geht der
+    # Klick nach Talk, mit der Aufgabe als Bezug.
+    for t in aufgaben:
+        t["ergebnis_id"] = None
+        if not t.get("vorgang_id"):
+            continue
+        woerter = set(re.findall(r"\w{5,}", (t["titel"] or "").lower()))
+        for r in db.alle("SELECT id, titel FROM ergebnisse WHERE vorgang_id=? ORDER BY erstellt DESC", (t["vorgang_id"],)):
+            if woerter & set(re.findall(r"\w{5,}", (r["titel"] or "").lower())):
+                t["ergebnis_id"] = r["id"]
+                break
     woche = time.time() - 7 * 86400
     entschieden = db.alle("SELECT stand FROM entscheidungen WHERE erledigt>? AND art!='rueckfrage'", (woche,))
     neo_lauf = [{"gespraech_id": j["gespraech_id"], "seit": j["start"]} for j in neo.JOBS.values() if not j["fertig"]]
