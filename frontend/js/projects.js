@@ -2,7 +2,7 @@
 // Dateien, Verlauf. Dazu die Uebersichten "Alle Aufgaben" und "Alle Notizen".
 // Ersetzt Projekte, Aufgaben, Notizen, Artefakte und Archiv des alten Cockpits.
 import { escEigen, html, enterBestaetigt, useState, useEffect, useRef, Icon, Avatar, Leer, Md, Modal, StandPill, bus, toast, fehlerMelden, aktualisieren,
-  zeitText, datumText, useAbruf, navigiere, kopieren, rolleName } from "./ui.js";
+  zeitText, datumText, useAbruf, navigiere, kopieren, rolleName, Ziehgriff } from "./ui.js";
 import { api, hochladen } from "./api.js";
 import { Zeitplan, Struktur } from "./projektansichten.js";
 import { Ausarbeiten } from "./inbox.js";
@@ -357,6 +357,7 @@ export function ErgebnisAnsicht({ id, zu, vorlage = "" }) {
           <ol class="klein">${e.quellen.map((q) => html`<li><a href=${q.url} target="_blank" rel="noopener">${q.titel || q.url}</a></li>`)}</ol></details>`}
       </div>
       ${chatAuf && html`<div class="erg-chat">
+        <${Ziehgriff} name="erg-chat" seite="links" />
         <div class="erg-chat-kopf"><b>Weiterarbeiten mit</b>
           <select class="eingabe bd-auswahl" value=${wer} onChange=${(x) => setWer(x.target.value)} aria-label="Mit wem weiterarbeiten">
             ${partner.length ? partner.map((m) => html`<option value=${m.id}>${m.name} · ${m.extern ? "extern, kostet Geld" : m.titel}</option>`)

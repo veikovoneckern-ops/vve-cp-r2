@@ -162,6 +162,7 @@ export function Modal({ titel, zu, children, fuss, breit, kopf }) {
       <div class="modal-kopf"><h2>${titel}</h2>${kopf || ""}<button class="btn geist icon" onClick=${zu} title="Schließen (Esc)"><${Icon} n="x" /></button></div>
       <div class="modal-inhalt">${children}</div>
       ${fuss && html`<div class="modal-fuss">${fuss}</div>`}
+      ${breit && html`<${Ziehgriff} name=${breit === "voll" ? "modal-voll" : "modal-breit"} seite="rechts" faktor=${2} />`}
     </div></div>`;
 }
 
@@ -427,4 +428,60 @@ export function escEigen(e) {
   if (e.key !== "Escape") return false;
   e.preventDefault();
   return true;
+}
+
+// ------------------------------------------------------------ Breite ziehen
+// Veiko, 17.10.2026: "bei allen Chatfenstern moechte ich die Breite der Fenster
+// verstellen koennen." EIN Griff fuer alle: er setzt eine CSS-Variable am
+// html-Element (dort sticht sie die Vorgabe im Stylesheet), gemerkt je Geraet.
+// Doppelklick nimmt die eigene Breite zurueck. Pointer Events statt nativem
+// Ziehen -- dieselbe Lehre wie im alten Cockpit an der Rail-Leiste.
+// Grenzen: [kleinste Breite in Punkt, groesster Anteil am Fenster].
+const BREITE_GRENZEN = {
+  talk: [300, 0.7], "bd-liste": [190, 0.45], "neo-liste": [160, 0.4], "neo-vorschau": [280, 0.7],
+  "erg-chat": [320, 0.75], "modal-breit": [520, 0.98], "modal-voll": [760, 0.99],
+};
+
+export function breitenLaden() {
+  for (const k of Object.keys(BREITE_GRENZEN)) {
+    try { const v = localStorage.getItem("breite-" + k); if (v) document.documentElement.style.setProperty("--" + k, v + "px"); } catch (e) { /* ohne Speicher: Vorgabe */ }
+  }
+}
+
+// seite: an welcher Kante des Elternelements der Griff sitzt. "links" heisst:
+// nach links ziehen macht breiter. faktor 2 fuer mittig stehende Fenster, die
+// an beiden Seiten wachsen.
+export function Ziehgriff({ name, seite = "rechts", faktor = 1 }) {
+  function runter(e) {
+    if (e.button !== 0) return;
+    const griff = e.currentTarget;
+    const start = griff.parentElement.getBoundingClientRect().width;
+    const x0 = e.clientX;
+    const [min, anteil] = BREITE_GRENZEN[name];
+    let w = start;
+    e.preventDefault();
+    griff.setPointerCapture(e.pointerId);
+    document.documentElement.classList.add("zieht");
+    const bewegen = (ev) => {
+      const dx = (ev.clientX - x0) * (seite === "links" ? -1 : 1) * faktor;
+      w = Math.round(Math.max(min, Math.min(window.innerWidth * anteil, start + dx)));
+      document.documentElement.style.setProperty("--" + name, w + "px");
+    };
+    const los = () => {
+      griff.removeEventListener("pointermove", bewegen);
+      griff.removeEventListener("pointerup", los);
+      griff.removeEventListener("pointercancel", los);
+      document.documentElement.classList.remove("zieht");
+      try { localStorage.setItem("breite-" + name, String(w)); } catch (x) { /* egal */ }
+    };
+    griff.addEventListener("pointermove", bewegen);
+    griff.addEventListener("pointerup", los);
+    griff.addEventListener("pointercancel", los);
+  }
+  function zurueck() {
+    document.documentElement.style.removeProperty("--" + name);
+    try { localStorage.removeItem("breite-" + name); } catch (x) { /* egal */ }
+  }
+  return html`<div class=${"ziehgriff " + seite} onPointerDown=${runter} onDblClick=${zurueck}
+    role="separator" aria-orientation="vertical" title="Ziehen: Breite ändern · Doppelklick: zurück auf die Vorgabe"></div>`;
 }

@@ -4,7 +4,7 @@
 // geteilt (die Advisors nennen sich fett am Absatzanfang) -- lesbarer als ein
 // langer Block. Einzelgespraech mit einer Person, optionaler Projektbezug,
 // Gespraeche bleiben gespeichert.
-import { html, useState, useEffect, useRef, Icon, Md, Modal, Leer, toast, fehlerMelden, navigiere, zeitText, bus, tempoSchnell, TempoSchalter } from "./ui.js";
+import { html, useState, useEffect, useRef, Icon, Md, Modal, Leer, toast, fehlerMelden, navigiere, zeitText, bus, tempoSchnell, TempoSchalter, Ziehgriff } from "./ui.js";
 import { api, strom } from "./api.js";
 import { Composer } from "./composer.js";
 
@@ -159,6 +159,7 @@ export function Board({ id }) {
 
   return html`<div class="bd">
     <aside class="bd-tisch">
+      <${Ziehgriff} name="bd-liste" seite="rechts" />
       <div class="bd-tisch-kopf">
         <h3>Am Tisch <span class="pill">${d.tisch.length} von ${d.personen.length}</span></h3>
         <span class="leise klein">Klick auf eine Person oder Gruppe holt sie an den Tisch oder nimmt sie weg.${d.aufgefrischt ? " Stand aufgefrischt " + zeitText(d.aufgefrischt) + "." : ""}</span>

@@ -11,7 +11,7 @@
 // Gespraechskennung null (jeder Satz ein neues Gespraech) und keine offenen
 // Vorschlaege (ein "ja" fuehrte nie etwas aus). Kennung und Verlauf liegen
 // deshalb zusaetzlich in Refs, die die Schleife immer aktuell liest.
-import { useEsc, html, useState, useEffect, useRef, Icon, Md, toast, fehlerMelden, aktualisieren, navigiere, rolleName, bus, talkSchalter, TalkSchalter, GlobusKnopf } from "./ui.js";
+import { useEsc, html, useState, useEffect, useRef, Icon, Md, toast, fehlerMelden, aktualisieren, navigiere, rolleName, bus, talkSchalter, TalkSchalter, GlobusKnopf, Ziehgriff } from "./ui.js";
 import { api, strom } from "./api.js";
 import { Composer } from "./composer.js";
 import { boardFrageMerken } from "./board.js";
@@ -346,6 +346,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
   function neu() { if (laufRef.current) return; setGid(null); setMsgs([]); }
 
   return html`<aside class="talk" aria-label="Talk">
+    <${Ziehgriff} name="talk" seite="links" />
     <div class="talk-kopf">
       <h2><${Icon} n="talk" g=${17} />Talk</h2>
       ${frei && html`<button class="btn klein" onClick=${() => { ausKopf.current = false; freiStopp(); }} title="Gespräch beenden (oder sag „Dialog beenden“)"><${Icon} n="stopp" g=${12} />Beenden</button>`}

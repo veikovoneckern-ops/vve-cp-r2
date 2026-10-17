@@ -3,7 +3,7 @@
 // (Matrix-Regen, solange nichts darin steht). Neo arbeitet mit echten
 // Werkzeugen als vveadmin; jeder Schritt steht aufklappbar im Verlauf.
 // Ein Auftrag laeuft auf dem Server weiter, auch wenn du die Seite wechselst.
-import { useEsc, escEigen, html, useState, useEffect, useRef, Icon, Md, Leer, toast, fehlerMelden, zeitText, dauer, navigiere, kopieren, bus } from "./ui.js";
+import { useEsc, escEigen, html, useState, useEffect, useRef, Icon, Md, Leer, toast, fehlerMelden, zeitText, dauer, navigiere, kopieren, bus, Ziehgriff } from "./ui.js";
 import { api } from "./api.js";
 import { Composer } from "./composer.js";
 import { MatrixRegen, MatrixZeichen } from "./matrix.js";
@@ -163,6 +163,7 @@ export function Neo({ id }) {
 
   return html`<div class=${"neo" + (zeigeVorschau ? " mit-vorschau" : "") + (listeOffen ? " liste-offen" : "")}>
     <aside class="neo-liste" aria-label="Gespräche mit Neo">
+      <${Ziehgriff} name="neo-liste" seite="rechts" />
       <div class="kopf"><button class="btn primaer" style="width:100%" onClick=${neuesGespraech}><${Icon} n="neu" g=${15} />Neues Gespräch</button></div>
       <div class="liste">
         ${!liste ? html`<div class="lade">Lade …</div>` : liste.map((x) => html`<div key=${x.id} style="display:flex;align-items:center">
@@ -253,6 +254,7 @@ function Vorschau({ url, neuLaden, zu, setUrl, beispiel }) {
   const [frueher, setFrueher] = useState([]);
   useEffect(() => { if (!url) api("/neo/vorschauen").then((d) => setFrueher(d.vorschauen)).catch(() => {}); }, [url]);
   return html`<aside class="neo-vorschau" aria-label="Vorschau">
+    <${Ziehgriff} name="neo-vorschau" seite="links" />
     ${url ? html`
       <div class="adresse">
         <code title=${url}>${url}</code>

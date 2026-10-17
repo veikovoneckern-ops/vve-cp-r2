@@ -3,7 +3,7 @@
 // Team und die Spalte "Weiterarbeiten" im Ergebnisfenster. Im Ergebnisfenster
 // liegt das Ergebnis im Kontext; verlangt Veiko eine Aenderung, schreibt das
 // Mitglied eine neue Fassung, Daniel prueft sie, und sie laesst sich zuruecknehmen.
-import { html, useState, useEffect, useRef, Icon, Avatar, Md, Leer, toast, fehlerMelden, navigiere, zeitText, bus, kopieren, tempoSchnell, TempoSchalter } from "./ui.js";
+import { html, useState, useEffect, useRef, Icon, Avatar, Md, Leer, toast, fehlerMelden, navigiere, zeitText, bus, kopieren, tempoSchnell, TempoSchalter, Ziehgriff } from "./ui.js";
 import { api, strom } from "./api.js";
 import { Composer } from "./composer.js";
 import { URTEIL } from "./ergebnis.js";
@@ -203,6 +203,7 @@ export function TeamGespraeche({ wer, gid }) {
   const ziel = (w, g) => navigiere("/team/chat/" + w + (g ? "/" + g : ""));
   return html`<div class="bd">
     <aside class="bd-tisch">
+      <${Ziehgriff} name="bd-liste" seite="rechts" />
       <div class="bd-tisch-kopf"><h3>Mit wem sprechen?</h3><span class="leise klein">Lokal rechnet auf deinem Server. Extern kostet Geld je Nachricht.</span></div>
       <div class="bd-personen">
         ${partner.map((p) => html`<div class=${"bd-person am" + (p.id === wer ? " einzel" : "")} key=${p.id}>

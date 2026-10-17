@@ -219,7 +219,7 @@ textarea.eingabe{resize:vertical;line-height:1.45}
 /* Modal */
 .modal-grund{position:fixed;inset:0;background:rgba(8,18,34,.45);z-index:100;display:grid;place-items:center;padding:16px}
 .modal{background:var(--surface);border-radius:14px;box-shadow:var(--sh-3);width:min(720px,100%);max-height:calc(100vh - 32px);display:flex;flex-direction:column;min-height:0}
-.modal.breit{width:min(1080px,100%)}
+.modal.breit{width:min(var(--modal-breit,1080px),100%)}
 .modal-kopf{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
 .modal-kopf h2{font-size:16px;flex:1;min-width:0}
 .modal-inhalt{padding:16px 18px;overflow:auto;min-height:0}
@@ -352,9 +352,9 @@ textarea.eingabe{resize:vertical;line-height:1.45}
 .frei-leiste .luecke{flex:1}
 
 /* ------------------------------------------------ Neo */
-.neo{display:grid;grid-template-columns:240px minmax(0,1fr);height:100%;min-height:0}
-.neo.mit-vorschau{grid-template-columns:240px minmax(0,1fr) minmax(0,1fr)}
-@media (max-width:1280px){.neo.mit-vorschau{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.neo.mit-vorschau .neo-liste{display:none}}
+.neo{display:grid;grid-template-columns:var(--neo-liste,240px) minmax(0,1fr);height:100%;min-height:0}
+.neo.mit-vorschau{grid-template-columns:var(--neo-liste,240px) minmax(0,1fr) var(--neo-vorschau,minmax(0,1fr))}
+@media (max-width:1280px){.neo.mit-vorschau{grid-template-columns:minmax(0,1fr) var(--neo-vorschau,minmax(0,1fr))}.neo.mit-vorschau .neo-liste{display:none}}
 .neo-liste{border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;background:var(--surface-2)}
 .neo-liste .kopf{padding:12px;border-bottom:1px solid var(--line)}
 .neo-liste .liste{overflow-y:auto;overflow-x:hidden;padding:6px;flex:1;min-height:0}
@@ -510,7 +510,7 @@ html.neo-vollbild .schale.mit-talk{grid-template-columns:minmax(0,1fr) var(--tal
 /* Neo neben offenem Talk: vier Spalten waeren zu eng -- die Gespraechsliste weicht
    (sie ist ueber das Listen-Symbol im Kopf erreichbar), der Kopf bleibt einzeilig. */
 @media (max-width:1800px){
-  .schale.mit-talk .neo.mit-vorschau{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .schale.mit-talk .neo.mit-vorschau{grid-template-columns:minmax(0,1fr) var(--neo-vorschau,minmax(0,1fr))}
   .schale.mit-talk .neo.mit-vorschau .neo-liste{display:none}
 }
 /* Die Ersatzknoepfe (Liste, neues Gespraech) stehen GENAU DANN im Kopf, wenn die
@@ -822,7 +822,7 @@ html.ki-arbeitet .logo-knopf{filter:drop-shadow(0 0 .6px rgba(0,0,0,.75)) drop-s
 /* ------------------------------------------------ Advisory Board (board.js)
    Links der Tisch, rechts das Gespraech. Jede Antwort ist in Sprechblasen je
    Advisor geteilt; die Farbe des Avatars steht fuer die Gruppe. */
-.bd{display:grid;grid-template-columns:330px minmax(0,1fr);height:100%;min-height:0}
+.bd{display:grid;grid-template-columns:var(--bd-liste,330px) minmax(0,1fr);height:100%;min-height:0}
 .bd-tisch{border-right:1px solid var(--line);background:var(--surface);display:flex;flex-direction:column;min-height:0}
 .bd-tisch-kopf{padding:14px 14px 8px;display:flex;flex-direction:column;gap:2px}
 .bd-tisch-kopf h3{font-size:15px;display:flex;align-items:center;gap:8px}
@@ -893,7 +893,7 @@ html.ki-arbeitet .logo-knopf{filter:drop-shadow(0 0 .6px rgba(0,0,0,.75)) drop-s
    hier mit Vorrang festgeschrieben, fuer beide Avatar-Arten. */
 .avatar,.bd-ava{display:inline-grid!important;place-items:center!important;flex-direction:row!important;line-height:1!important;text-align:center;padding:0!important}
 /* Board neben offenem Talk: der Tisch gibt Breite ab, damit das Gespraech lesbar bleibt. */
-@media (max-width:1600px){.schale.mit-talk .bd{grid-template-columns:250px minmax(0,1fr)}.schale.mit-talk .bd-person-haupt>.bd-name small{display:none}}
+@media (max-width:1600px){.schale.mit-talk .bd{grid-template-columns:var(--bd-liste,250px) minmax(0,1fr)}.schale.mit-talk .bd-person-haupt>.bd-name small{display:none}}
 
 /* ------------------------------------------------ Aufbau anklickbar, Detailfenster, WatchDog */
 .sb-treffer rect{fill:transparent;cursor:pointer;stroke:transparent;stroke-width:2;transition:stroke .12s,fill .12s}
@@ -1022,10 +1022,10 @@ html.ki-arbeitet .logo-knopf{filter:drop-shadow(0 0 .6px rgba(0,0,0,.75)) drop-s
    die Spalte "Weiterarbeiten" im Ergebnisfenster. Verlauf und Eingabe teilen sich
    die Hoehe; min-height:0, sonst waechst die Spalte mit dem Gespraech und die
    SEITE scrollt statt des Verlaufs (dieselbe Falle wie bei Neo im alten Cockpit). */
-.modal.voll{width:min(1560px,100%);height:calc(100vh - 32px)}
+.modal.voll{width:min(var(--modal-voll,1560px),100%);height:calc(100vh - 32px)}
 .modal.voll .modal-inhalt{display:flex;flex-direction:column;flex:1}
 .erg-raster{min-height:0}
-.erg-raster.mit-chat{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(360px,1fr);gap:16px;flex:1;min-height:0}
+.erg-raster.mit-chat{display:grid;grid-template-columns:minmax(0,1fr) var(--erg-chat,minmax(360px,44%));gap:16px;flex:1;min-height:0}
 .erg-raster.mit-chat .erg-text{overflow:auto;min-height:0;padding-right:6px}
 .erg-chat{display:flex;flex-direction:column;min-height:0;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);overflow:hidden}
 .erg-chat-kopf{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
@@ -1228,3 +1228,14 @@ details.eingetragen[open]>summary{margin-bottom:8px}
 .ll-erkl{margin:12px 0 0}
 @media (max-width:1000px){.ll-raster{grid-template-columns:minmax(0,1fr)}.ll-zahlen{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:600px){.ll-form{grid-template-columns:minmax(0,1fr)}.ll-kopf{flex-direction:column}.ll-marken{max-width:none}}
+
+/* Breite ziehen (17.10.2026): ein Griff an der Kante jedes Chatfensters. Sitzt
+   INNEN an der Kante (erg-chat und modal schneiden ueberstehenden Inhalt ab). */
+.talk,.bd-tisch,.neo-liste,.neo-vorschau,.erg-chat,.modal{position:relative}
+.ziehgriff{position:absolute;top:0;bottom:0;width:8px;cursor:col-resize;z-index:6;touch-action:none}
+.ziehgriff.rechts{right:0}.ziehgriff.links{left:0}
+.ziehgriff::after{content:"";position:absolute;top:0;bottom:0;left:3px;width:2px;border-radius:2px;background:transparent;transition:background .15s}
+.ziehgriff:hover::after,html.zieht .ziehgriff::after{background:var(--violett)}
+html.zieht,html.zieht *{cursor:col-resize!important;user-select:none!important}
+html.zieht iframe{pointer-events:none}
+@media (max-width:820px),(pointer:coarse){.ziehgriff{display:none}}
