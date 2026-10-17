@@ -28,6 +28,7 @@ AKTIONEN = {
     "aufgabe_erledigt": ("aufgabe_id",),
     "aufgabe_aendern": ("aufgabe_id",),
     "zeigen": ("ziel",),
+    "oeffnen": ("art",),   # dazu id ODER titel (oeffnen_aufloesen)
     "bild": ("prompt",),
     "visualisierung": ("beschreibung",),
     "ausarbeiten": ("auftrag",),
@@ -65,7 +66,9 @@ AUFTRAG_AN_TEAM = re.compile(r"\b(lass|lasst|lassen)\b.{0,60}\b(team|neo|jason|c
 # das Modell allein koennte eine Zustimmung erfinden.
 ZUSTIMMUNG_IM_SATZ = re.compile(
     r"\b(ja|okay|ok|einverstanden|gerne?|bitte|du kannst|kannst du|sag (ihm|ihr|jason|\w+) .{0,20}soll|"
-    r"leg\w*|anlegen|lege|mach\w*|erstell\w*|übernimm|uebernimm|bestätig\w*|freigeb\w*|soll(en)? .{0,30}(anlegen|machen|erstellen|übernehmen))\b",
+    r"leg\w*|anlegen|lege|mach\w*|erstell\w*|übernimm|uebernimm|bestätig\w*|freigeb\w*|soll(en)? .{0,30}(anlegen|machen|erstellen|übernehmen)|"
+    # Befehle zum Eintragen (17.10.2026, Veiko: "es soll die Dinge machen, die ich sage")
+    r"trag\w*|eintragen|markier\w*|änder\w*|aender\w*|setz\w*|verschieb\w*|notier\w*|hak\w*|schreib\w* .{0,20}(auf|ein|dazu))\b",
     re.I)
 _ABLEHNUNG = re.compile(r"\b(nein|nee|lieber nicht|nicht anlegen|nicht machen|ablehnen|stopp)\b", re.I)
 
@@ -103,7 +106,8 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"zeigen","ziel":"ueberblick|aufgaben|zeitplan|struktur|notizen|ergebnisse|verlauf|dateien","projekt_id":"p…"} -- öffnet eine Ansicht des Projekts sofort, ohne Rückfrage (ändert nichts)
 - {"aktion":"bild","prompt":"ausführliche Bildbeschreibung auf ENGLISCH (Motiv, Stil, Licht, Perspektive)","titel":"kurzer deutscher Titel","format":"quadrat|quer|hoch","vorlage":"z-image"} -- erzeugt ein Bild auf dem eigenen Server. Vorlage IMMER z-image (etwa 15 Sekunden), auch für fotorealistische Bilder; qwen nur, wenn lesbarer Text im Bild stehen soll; flux2 nur, wenn Veiko ausdrücklich höchste Qualität verlangt (dauert mehrere Minuten). Läuft sofort.
 - {"aktion":"visualisierung","beschreibung":"was dargestellt werden soll, mit allen Inhalten (Schritte, Begriffe, Zahlen) auf Deutsch","titel":"kurzer Titel"} -- zeichnet ein Schaubild (Ablauf, Mindmap, Diagramm, Vergleich). Läuft sofort.
-- {"aktion":"zeigen","ziel":"board|briefing|inbox|projects|team|neo|system|watchdog|brainstrom|exo"} -- öffnet einen Bereich des Cockpits sofort. Will Veiko „mit dem Advisory Board sprechen“: ziel board. Stellt er dabei schon eine Frage ans Board, gib sie als "frage" mit -- das Board antwortet dann selbst, du antwortest nicht an seiner Stelle.
+- {"aktion":"oeffnen","art":"ergebnis|langlauf|aufgabe|vorgang|projekt|notiz","id":"r…|l…|t…|v…|p…|n… aus LAGE/KONTEXT","titel":"der Titel, wie Veiko ihn nennt"} -- öffnet GENAU DIESES eine Ding sofort, ohne Rückfrage (ändert nichts): „öffne das Ergebnis zu X“ = art ergebnis, „zeig mir den Langläufer X“ = art langlauf. Das Ergebnis eines Langläufers steht in LANGLÄUFER als „Ergebnis r…“. Kennst du die id nicht sicher, lass sie weg und gib nur den titel -- das Cockpit sucht dann selbst.
+- {"aktion":"zeigen","ziel":"board|briefing|inbox|projects|team|neo|system|watchdog|brainstrom|exo|langlauf|aktionen|modelle|einstellungen"} -- öffnet einen Bereich des Cockpits sofort. Will Veiko „mit dem Advisory Board sprechen“: ziel board. Stellt er dabei schon eine Frage ans Board, gib sie als "frage" mit -- das Board antwortet dann selbst, du antwortest nicht an seiner Stelle.
 - {"aktion":"ausarbeiten","rolle":"stratege|buch|designer|video","form":"text|aufstellung|konzept|dokument|webseite|praesentation|video","auftrag":"…","recherche":"Suchanfrage oder null","vorgang_id":"v… oder null","projekt_id":"p… oder null"}
 - {"aktion":"merken","art":"person|organisation|begriff|hoerfehler|aussprache","begriff":"…","bedeutung":"…"} -- aussprache: wie das Cockpit ein (meist englisches) Wort VORLESEN soll, in deutscher Lautschrift, z. B. begriff "Slides", bedeutung "Slaids".
 - {"aktion":"notiz","text":"…","projekt_id":"p… oder null"}
@@ -121,10 +125,11 @@ PFLICHT: Jede Antwort, die mit „Soll ich das so machen?“ endet, trägt den a
 AUSNAHME ausarbeiten und neo bei einem klaren Auftrag: Sagt Veiko ausdrücklich, dass das Team oder Neo etwas tun soll („Lass das Team eine Präsentation erstellen“, „Neo, bau …“), ist das schon die Bestätigung. Dann KEINE Frage, sondern ein kurzer Satz, wer sich woran macht -- und IMMER der aktionen-Block dazu. Ohne Block passiert nichts; ein solcher Satz ohne Block wäre gelogen.
 Sagt Veiko „ja“ auf deinen Vorschlag, gehört derselbe Vorschlag als aktionen-Block in deine Antwort.
 ZUSTIMMUNG IM SATZ: Verlangt Veikos LETZTE Nachricht selbst ausdrücklich genau diese Aktion („leg das Projekt an“, „sag Jason, er soll es anlegen“, „ja, die Aufgabe kannst du anlegen“), dann setze in dieser Aktion "zugestimmt": true -- auch wenn die Nachricht noch eine weitere Frage enthält. Dann KEINE Rückfrage dazu, sondern ein kurzer Satz, was passiert; das Cockpit führt es aus. Ohne ausdrücklichen Wunsch in seiner letzten Nachricht nie "zugestimmt".
+EIN KLARER BEFEHL IST DIE ZUSTIMMUNG (Veiko, 17.10.: „es soll die Dinge machen, die ich sage“): „trag ein …“, „leg eine Aufgabe an …“, „markier … als erledigt“, „verschieb … auf Freitag“, „notier dir …“, „mach ein Projekt …“ -- dann "zugestimmt": true und ein kurzer Satz, was passiert. Nachfragen nur, wenn etwas wirklich unklar ist (welche Aufgabe gemeint ist, welches Datum).
 AUSNAHME bild und visualisierung: die laufen sofort los, das Ergebnis erscheint gleich im Gespräch zum Ansehen und Herunterladen. Sag nur kurz „Ich erstelle dir das Bild, es erscheint gleich hier.“ bzw. „… die Visualisierung …“ -- keine Frage. Beziehen sie sich auf das Gespräch oder KONTEXT, nimm dessen Inhalte in prompt bzw. beschreibung auf.
 AUSNAHME BrainStrom und ExO (brainstrom, brainstrom_antwort, brainstrom_genug, brainstrom_weg, exo): laufen sofort. Sag nur kurz, was passiert („Ich gebe deine Antwort an BrainStrom.“) -- KEINE Frage und nicht selbst die nächste BrainStrom-Frage erfinden; die stellt BrainStrom, das Cockpit liest sie vor. Ist Veiko in BrainStrom und antwortet auf die aktuelle Frage, ist das IMMER brainstrom_antwort.
 DIE NOTABSCHALTUNG (Kill Switch, Safety Shutdown) gibt es NIE über das Gespräch, auch nicht auf ausdrücklichen Wunsch: sag, dass sie nur über die Knöpfe im WatchDog geht, und biete an, den WatchDog zu öffnen.
-AUSNAHME zeigen: das öffnet nur eine Ansicht und passiert sofort. Dann KEINE Frage, sondern ein kurzer Satz wie „Ich öffne dir das Advisory Board.“ Reichst du eine Frage ans Board weiter, sag „Ich gebe deine Frage ans Advisory Board weiter.“ und antworte nicht selbst an seiner Stelle.
+AUSNAHME zeigen und oeffnen: das öffnet nur eine Ansicht und passiert sofort. Dann KEINE Frage, sondern ein kurzer Satz wie „Ich öffne dir das Advisory Board.“ Schreibst du „ich öffne“ oder „ich zeige dir“, MUSS der Block mit zeigen oder oeffnen in derselben Antwort stehen -- ohne ihn öffnet sich nichts, und der Satz wäre gelogen. Reichst du eine Frage ans Board weiter, sag „Ich gebe deine Frage ans Advisory Board weiter.“ und antworte nicht selbst an seiner Stelle.
 Wenn Veiko eine offene Entscheidung bestätigt oder ablehnt, gehört genau EINE passende entscheiden-Aktion in den Block, nicht mehr.
 aufgabe_erledigt nur, wenn Veiko sagt, dass er etwas erledigt hat. Überfällig heißt nicht erledigt.
 Schaut Veiko auf ein PROJEKT (siehe KONTEXT), dann geht es um dieses Projekt, solange er nichts anderes sagt: neue Aufgaben, Notizen und Ausarbeitungen gehören dorthin. Will er etwas sehen („zeig mir die Aufgaben“), nimm zeigen.
@@ -164,7 +169,7 @@ def lage_text() -> str:
     neu = stab.neu_entstanden()
     if neu:
         teile.append("NEU ENTSTANDEN (letzte sieben Tage, zuletzt bearbeitete zuerst -- so steht es auch im Briefing):\n" + "\n".join(
-            f"- {e['titel'][:90]} (von {e['wer_name']}, bearbeitet {_zeit(e['bearbeitet'])}"
+            f"- {e['id']}: {e['titel'][:90]} (von {e['wer_name']}, bearbeitet {_zeit(e['bearbeitet'])}"
             + (f", Projekt {e['projekt_name']}" if e.get("projekt_name") else "") + f"): {e['urteil_text']}" for e in neu))
     # Dieselbe Auswahl wie "Läuft gerade" im Briefing. Ist sie leer, steht das da --
     # ohne den Satz nannte Talk am 16.10. Erledigtes als "läuft gerade".
@@ -184,6 +189,17 @@ def lage_text() -> str:
         teile.append("OFFENE AUFGABEN:\n" + "\n".join(
             f"- {a['id']}: {a['titel']}" + (f" [{a['name']}]" if a.get("name") else "") +
             (f" fällig {a['faellig']}" if a.get("faellig") else "") for a in auf))
+    # Langlaeufer mit ihrem Ergebnis (17.10.2026): "oeffne das Ergebnis zu Mensch &
+    # Oekonomie" braucht die Kennung des Ergebnisses, und die stand nirgends.
+    try:
+        from . import langlauf
+        ll = langlauf.liste()[:8]
+    except Exception:  # noqa: BLE001 -- die Lage darf nie am Langlaeufer scheitern
+        ll = []
+    if ll:
+        teile.append("LANGLÄUFER (zuletzt zuerst):\n" + "\n".join(
+            f"- {x['id']}: {x['titel']} ({x['stand']}" + (f", {x['fertig']} von {x['etappen']} {x.get('etappen_name') or 'Etappen'}" if x.get("etappen") else "")
+            + (f", Ergebnis {x['ergebnis_id']}" if x.get("ergebnis_id") else ", noch kein Ergebnis") + ")" for x in ll))
     teile.append("PROJEKTE:\n" + stab.projektliste_text())
     teile.append("GEDÄCHTNIS:\n" + stab.gedaechtnis_text())
     return "\n\n".join(teile)
@@ -281,7 +297,78 @@ ZIELE = {"ueberblick": "Überblick", "aufgaben": "Aufgaben", "zeitplan": "Zeitpl
          "verlauf": "Verlauf", "dateien": "Dateien"}
 # Bereiche des Cockpits, die Talk ohne Projekt oeffnen kann.
 BEREICHE = {"board": "Advisory Board", "briefing": "Briefing", "inbox": "Inbox", "projects": "Projects", "team": "Team",
-            "neo": "Neo", "system": "System", "watchdog": "WatchDog", "brainstrom": "BrainStrom", "exo": "ExO"}
+            "neo": "Neo", "system": "System", "watchdog": "WatchDog", "brainstrom": "BrainStrom", "exo": "ExO",
+            "langlauf": "Langläufer", "aktionen": "Current Actions", "modelle": "Stab & Modelle", "einstellungen": "Einstellungen"}
+
+# ---------------------------------------------------------------- Oeffnen
+# Veiko, 17.10.2026: "Oeffnen wir mal das Ergebnis von dem Auftrag zu Mensch und
+# Oekonomie" -- Talk sagte zweimal "Ich oeffne dir das Ergebnisfenster" und es
+# oeffnete sich nichts. Es gab nur "zeigen" (ganze Bereiche, Projekt-Reiter),
+# kein einzelnes Ergebnis; und ein Satz ohne Block fiel niemandem auf. Jetzt:
+# oeffnen fuer einzelne Dinge, und das Cockpit sucht selbst ueber den Titel,
+# wenn das Modell keine sichere Kennung hat.
+OEFFNEN_TABELLE = {"ergebnis": ("ergebnisse", "titel"), "langlauf": ("langlaeufe", "titel"), "aufgabe": ("aufgaben", "titel"),
+                   "vorgang": ("vorgaenge", "titel"), "projekt": ("projekte", "name"), "notiz": ("notizen", "titel")}
+OEFFNEN_NAME = {"ergebnis": "Ergebnis", "langlauf": "Langläufer", "aufgabe": "Aufgabe", "vorgang": "Case", "projekt": "Projekt", "notiz": "Notiz"}
+_ART_WORT = (("ergebnis", r"ergebnis|resultat|kapitel|dokument|präsentation|praesentation|video|text"),
+             ("langlauf", r"langläufer|langlaeufer|langlauf"), ("aufgabe", r"aufgabe|todo"),
+             ("vorgang", r"\bcase|vorgang"), ("projekt", r"projekt"), ("notiz", r"notiz"))
+_FUELL = {"öffne", "öffnen", "oeffne", "oeffnen", "zeig", "zeige", "zeigen", "mal", "bitte", "dem", "den", "das", "der", "die",
+          "von", "zum", "zur", "und", "mir", "wir", "uns", "ergebnis", "auftrag", "auftrags", "langläufer", "aufgabe", "projekt",
+          "fenster", "doch", "noch", "einmal", "kannst", "du", "ich", "möchte", "will", "sehen", "ansehen", "auf", "mach"}
+
+
+def _stamm(w: str) -> str:
+    # "Videos" soll "Video" finden, "Kapiteln" "Kapitel" -- grob, aber fuer Titel reicht es.
+    for end in ("en", "es", "er", "e", "s", "n"):
+        if len(w) > 4 and w.endswith(end):
+            return w[: -len(end)]
+    return w
+
+
+def _woerter(t: str) -> set[str]:
+    t = (t or "").lower().replace("&", " und ")
+    return {_stamm(w) for w in re.findall(r"[a-zäöüß0-9]{3,}", t) if w not in _FUELL}
+
+
+def oeffnen_suchen(text: str, art: str | None = None) -> dict[str, Any] | None:
+    """Das Ding, dessen Titel am besten zu Veikos Worten passt. Nur bei einem
+    klaren Treffer (mindestens zwei gemeinsame Woerter, bzw. alle Woerter eines
+    kurzen Titels) -- lieber nichts oeffnen als das Falsche."""
+    gesucht = _woerter(text)
+    if not gesucht:
+        return None
+    if not art:
+        for a, muster in _ART_WORT:
+            if re.search(muster, text or "", re.I):
+                art = a
+                break
+    arten = [art] if art in OEFFNEN_TABELLE else ["ergebnis", "langlauf", "projekt", "aufgabe", "vorgang"]
+    bestes, punkte = None, 0.0
+    for a in arten:
+        tab, feld = OEFFNEN_TABELLE[a]
+        ordnung = "erstellt" if tab != "projekte" else "rowid"
+        for z in db.alle(f"SELECT id, {feld} AS t FROM {tab} ORDER BY {ordnung} DESC LIMIT 300"):
+            w = _woerter(z["t"])
+            if not w:
+                continue
+            gemein = len(gesucht & w)
+            if gemein >= min(2, len(gesucht)) or (gemein >= 1 and gemein == len(w)):
+                p = gemein + gemein / len(w)   # bei Gleichstand der kuerzere, genauere Titel; sonst der neueste (Reihenfolge)
+                if p > punkte:
+                    bestes, punkte = {"art": a, "id": z["id"], "titel": z["t"]}, p
+    return bestes
+
+
+def oeffnen_aufloesen(a: dict[str, Any], text: str = "") -> dict[str, Any] | None:
+    art = a.get("art")
+    if art in OEFFNEN_TABELLE and a.get("id"):
+        tab, feld = OEFFNEN_TABELLE[art]
+        z = db.holen(tab, str(a["id"]))
+        if z:
+            return {"art": art, "id": z["id"], "titel": z.get(feld) or ""}
+    # Keine oder falsche Kennung: ueber den Titel des Modells, sonst ueber Veikos Worte.
+    return oeffnen_suchen(str(a.get("titel") or ""), art) or (oeffnen_suchen(text, art) if text else None)
 
 
 def beschriften(a: dict[str, Any]) -> str | None:
@@ -318,6 +405,9 @@ def beschriften(a: dict[str, Any]) -> str | None:
     if art == "zeigen":
         name = ZIELE.get(a.get("ziel")) or BEREICHE.get(a.get("ziel"))
         return name and f"Zeigen: {name}"
+    if art == "oeffnen":
+        # Aufgeloest wird erst in senden() (mit Veikos Worten als Rueckfall).
+        return f"Öffnen: {OEFFNEN_NAME.get(a.get('art'), 'Ansicht')} {str(a.get('titel') or a.get('id') or '')[:80]}".strip()
     if art == "ausarbeiten":
         return f"{stab.rollen_name(a.get('rolle') or 'stratege')} ausarbeiten lassen: {a['auftrag'][:90]}"
     if art == "merken":
@@ -518,7 +608,38 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
                 v["label"] = beschriften(v) or v["label"]
     # "Zeigen" aendert nichts -- das Cockpit fuehrt es sofort aus, ohne Knopf.
     zeigen = [v for v in vorschlaege if v["aktion"] == "zeigen" and (v.get("projekt_id") or v.get("ziel") in BEREICHE)]
-    vorschlaege = [v for v in vorschlaege if v["aktion"] != "zeigen"]
+    oeffnen_roh = [v for v in vorschlaege if v["aktion"] == "oeffnen"]
+    vorschlaege = [v for v in vorschlaege if v["aktion"] not in ("zeigen", "oeffnen")]
+    oeffnen = [o for o in (oeffnen_aufloesen(v, text) for v in oeffnen_roh[:1]) if o]
+    # Angekuendigt, aber nichts geschickt (17.10.2026: zweimal "Ich oeffne dir das
+    # Ergebnisfenster", und nichts geschah). Erst gezielt den Block nachfordern,
+    # dann selbst ueber den Titel suchen, sonst ehrlich sagen, dass nichts aufging.
+    will_oeffnen = re.search(r"\b(öffne|oeffne|öffnen|oeffnen|zeig(e)? mir|aufmachen|mach\w* .{0,40}\bauf)\b", text, re.I)
+    sagt_oeffnen = re.search(r"\b(ich )?(öffne|oeffne|zeige) (dir|ich)\b", sichtbar, re.I)
+    if not zeigen and not oeffnen and (sagt_oeffnen or will_oeffnen):
+        if sagt_oeffnen and not oeffnen_roh:
+            try:
+                roh = await llm.chat(modell, system, verlauf + [{"role": "assistant", "content": gesamt}, {"role": "user", "content":
+                    "Du hast angekündigt, etwas zu öffnen, aber keinen ```aktionen-Block geschickt. Antworte jetzt NUR mit dem Block "
+                    "(zeigen oder oeffnen) für genau das, was Veiko sehen will, ohne weiteren Text."}], temperatur=0.1, num_ctx=24576)
+                _, nach = vorschlaege_aus(roh if "```aktionen" in roh else "```aktionen\n" + roh + "\n```")
+                zeigen = [v for v in nach if v["aktion"] == "zeigen" and (v.get("projekt_id") or v.get("ziel") in BEREICHE)][:1]
+                oeffnen = [o for o in (oeffnen_aufloesen(v, text) for v in nach if v["aktion"] == "oeffnen") if o][:1]
+            except llm.ModellFehler:
+                pass
+        if not zeigen and not oeffnen:
+            treffer = oeffnen_suchen(text)
+            if treffer:
+                oeffnen = [treffer]
+        if not zeigen and not oeffnen and sagt_oeffnen:
+            sichtbar = re.sub(r"[^.!?\n]*\b(öffne|oeffne|zeige) (dir|ich)\b[^.!?\n]*[.!?]?", "", sichtbar).strip()
+            sichtbar = (sichtbar + "\n\nIch habe nichts gefunden, das ich öffnen kann. Sag mir bitte den Titel, so wie er im Cockpit steht.").strip()
+    if oeffnen:
+        o = oeffnen[0]
+        satz = f"Ich öffne dir {('den ' if o['art'] in ('langlauf', 'vorgang') else 'die ' if o['art'] in ('aufgabe', 'notiz') else 'das ')}{OEFFNEN_NAME[o['art']]} „{o['titel'][:90]}“."
+        # Den Satz des Modells durch den genauen ersetzen -- es soll dastehen, WAS aufgeht.
+        rest = re.sub(r"[^.!?\n]*\b(öffne|oeffne|zeige) (dir|ich)\b[^.!?\n]*[.!?]?", "", sichtbar).strip()
+        sichtbar = (satz + ("\n\n" + rest if rest else "")).strip()
     # Bilder und Visualisierungen kosten nur Rechenzeit: sofort starten, Ergebnis im Gespraech.
     from . import medien
     medien_jobs = []
@@ -626,7 +747,8 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     db.ausfuehren("UPDATE gespraeche SET geaendert=? WHERE id=?", (time.time(), gid))
     yield {"typ": "fertig", "text": sichtbar, "vorschlaege": vorschlaege, "nachricht_id": mid, "modell": modell, "medien": medien_jobs,
            "zeigen": [{"ziel": v["ziel"], "projekt_id": v.get("projekt_id") if v.get("ziel") in ZIELE else None,
-                       "frage": str(v.get("frage") or "")[:2000] or None} for v in zeigen[:1]]}
+                       "frage": str(v.get("frage") or "")[:2000] or None} for v in zeigen[:1]],
+           "oeffnen": oeffnen[:1]}
 
 
 async def vorschlaege_ausfuehren(nachricht_id: int, indizes: list[int]) -> list[dict[str, Any]]:

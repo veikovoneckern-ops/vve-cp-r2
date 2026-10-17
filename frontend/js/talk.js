@@ -160,7 +160,14 @@ export function Talk({ zu, kontext, setKontext, start }) {
       setMsgs((m) => [...m, { id: fertig.nachricht_id, rolle: "ck", text: fertig.text, vorschlaege: fertig.vorschlaege, medien: fertig.medien || [] }]);
       // "Zeig mir …": aendert nichts, deshalb sofort und ohne Knopf.
       const z = (fertig.zeigen || [])[0];
-      if (z && z.projekt_id) navigiere("/projects/" + z.projekt_id + (z.ziel && z.ziel !== "ueberblick" ? "/" + z.ziel : ""));
+      // "Oeffne das Ergebnis zu …": genau dieses eine Ding (gespraech.oeffnen_aufloesen).
+      const o = (fertig.oeffnen || [])[0];
+      if (o) {
+        if (o.art === "ergebnis") bus.sende("ergebnis-zeigen", o.id);
+        else if (o.art === "aufgabe") bus.sende("aufgabe-zeigen", o.id);
+        else if (o.art === "notiz") bus.sende("notiz-zeigen", o.id);
+        else navigiere({ langlauf: "/langlauf/", vorgang: "/inbox/", projekt: "/projects/" }[o.art] + o.id);
+      } else if (z && z.projekt_id) navigiere("/projects/" + z.projekt_id + (z.ziel && z.ziel !== "ueberblick" ? "/" + z.ziel : ""));
       else if (z && z.ziel) {
         // Ein Bereich des Cockpits; eine mitgegebene Frage ans Board stellt das Board selbst.
         if (z.ziel === "board" && z.frage) boardFrageMerken(z.frage);
