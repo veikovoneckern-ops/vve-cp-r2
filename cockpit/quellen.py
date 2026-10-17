@@ -18,7 +18,7 @@ Fall fuer die Abwaegung "braucht das Netzwissen?". Lokal, ohne fremden Dienst.
 - YouTube-Video: die Abschrift (youtube-transcript-api). yt-dlp bekam am 17.10.
   fuer Untertitel "429 Too Many Requests", diese Schnittstelle nicht.
 - YouTube-Kanal oder Playlist: zu viele Folgen fuer eine Antwort (Peter
-  Diamandis: 909, je rund zwei Stunden) -- das macht youtube.py im Hintergrund.
+  Diamandis: 909, je rund zwei Stunden) -- das macht dossier.py im Hintergrund.
 """
 from __future__ import annotations
 
@@ -86,7 +86,7 @@ def _titel(h: str) -> str:
 # zwei Dutzend Abschriften geholt und nach der ersten Sperre weiter angeklopft
 # hatten. Seither drei Riegel: (1) nach einer Sperre 24 Stunden GAR KEINE
 # Abfrage mehr (jede weitere verlaengert die Sperre), (2) eine schon geholte
-# Abschrift kommt aus den Unterlagen statt von YouTube, (3) youtube.py wartet
+# Abschrift kommt aus den Unterlagen statt von YouTube, (3) dossier.py wartet
 # zwischen Folgen deutlich laenger.
 SPERRE_STUNDEN = 24
 
@@ -104,7 +104,7 @@ def sperre_bis() -> float:
 
 def _gespeichert(video_id: str) -> str | None:
     from . import db
-    # Eine gespeicherte Abschrift (youtube._datei) beginnt mit Titel, Adresse, Leerzeile.
+    # Eine gespeicherte Abschrift (dossier._datei) beginnt mit Titel, Adresse, Leerzeile.
     # Das Dossier enthaelt dieselbe Adresse auch -- deshalb muss sie GENAU in Zeile 2 stehen.
     url = f"https://www.youtube.com/watch?v={video_id}"
     for z in db.alle("SELECT text FROM dateien WHERE text LIKE ? ORDER BY erstellt DESC LIMIT 5", (f"%{url}%",)):
@@ -175,6 +175,15 @@ async def lesen(url: str, grenze: int = SEITE_GRENZE) -> dict[str, Any]:
                 return {"url": url, "titel": titel or "YouTube-Video", "art": "youtube", "text": "", "hinweis": str(e).replace(" Gesperrt", "")}
         if YT_SAMMLUNG.search(url):
             return {"url": url, "titel": "YouTube-Kanal", "art": "youtube-kanal", "text": "", "hinweis": ""}
+        if "podcasts.apple.com" in url:
+            from .podcast import feed_aus_link
+            try:
+                feed = await feed_aus_link(url)
+            except Exception:  # noqa: BLE001
+                feed = None
+            if feed:
+                return {"url": url, "titel": "Podcast", "art": "podcast", "feed": feed, "text": "", "hinweis": ""}
+            return {"url": url, "titel": "", "art": "fehler", "text": "", "hinweis": "zu diesem Apple-Podcasts-Link gibt es keinen öffentlichen Feed"}
         try:
             r = await c.get(url)
         except httpx.HTTPError as e:
@@ -182,6 +191,9 @@ async def lesen(url: str, grenze: int = SEITE_GRENZE) -> dict[str, Any]:
         if r.status_code >= 400:
             return {"url": url, "titel": "", "art": "fehler", "text": "", "hinweis": f"die Seite antwortet mit HTTP {r.status_code}"}
         typ = r.headers.get("content-type", "")
+        # Ein Podcast-Feed (RSS mit Ton-Anhaengen) ist eine Sammlung, keine Seite.
+        if ("xml" in typ or "rss" in typ) and b"<enclosure" in r.content[:400000] and b"<rss" in r.content[:2000]:
+            return {"url": url, "titel": "Podcast", "art": "podcast", "feed": url, "text": "", "hinweis": ""}
         if "html" in typ or not typ:
             t = html_zu_text(r.text)
             return {"url": url, "titel": _titel(r.text), "art": "seite", "text": t[:grenze],
@@ -198,9 +210,9 @@ async def lesen(url: str, grenze: int = SEITE_GRENZE) -> dict[str, Any]:
 
 async def einbinden(text: str, ziel: dict[str, Any]) -> tuple[str, list[str]]:
     """Fuer Talk, Team-Chat und Board: alle Links aus Veikos Nachricht lesen.
-    Gibt den Systemtext und Statuszeilen zurueck. Ein YouTube-Kanal startet
-    youtube.py im Hintergrund (ziel: projekt_id, aufgabe_id, langlauf_id,
-    gespraech_id, wer) -- die Antwort sagt Veiko, dass und wie lange."""
+    Gibt den Systemtext und Statuszeilen zurueck. Ein YouTube-Kanal oder ein
+    Podcast startet dossier.py im Hintergrund (ziel: projekt_id, aufgabe_id,
+    langlauf_id, gespraech_id, wer) -- die Antwort sagt Veiko, dass und wie lange."""
     urls = links(text)
     if not urls:
         return "", []
@@ -208,22 +220,25 @@ async def einbinden(text: str, ziel: dict[str, Any]) -> tuple[str, list[str]]:
     teile, status = [], []
     fokus = URL_RE.sub("", text).strip()
     for i, q in enumerate(gelesen):
-        if q["art"] == "youtube-kanal":
-            from . import youtube
+        if q["art"] in ("youtube-kanal", "podcast"):
+            from . import dossier
+            was = "YOUTUBE-KANAL" if q["art"] == "youtube-kanal" else "PODCAST"
             try:
-                j = await youtube.starten(q["url"], fokus, ziel, youtube.anzahl_aus(text),
-                                          zusatz="\n\n".join(x["text"][:6000] for x in gelesen if x["text"]))
-                status.append(f"YouTube: {j['anzahl']} Folgen werden im Hintergrund abgeschrieben")
-                teile.append(f"[L{i + 1}] YOUTUBE-KANAL {q['url']}: Das Cockpit hat gerade einen Hintergrundauftrag gestartet "
+                zusatz = "\n\n".join(x["text"][:6000] for x in gelesen if x["text"])
+                j = (await dossier.kanal(q["url"], fokus, ziel, dossier.anzahl_aus(text), zusatz) if q["art"] == "youtube-kanal"
+                     else await dossier.podcast_feed(q["feed"], fokus, ziel, dossier.anzahl_aus(text), zusatz))
+                status.append(f"{j['kanal']}: {j['anzahl']} Folgen werden im Hintergrund abgeschrieben")
+                teile.append(f"[L{i + 1}] {was} {q['url']}: Das Cockpit hat gerade einen Hintergrundauftrag gestartet "
                              f"(sichtbar unter Current Actions): die neuesten {j['anzahl']} von {j['gesamt']} Folgen werden abgeschrieben "
-                             f"und lokal zusammengefasst, Dauer etwa {j['minuten']} Minuten. Daraus entsteht das Dossier „{j['dossier_titel']}“ "
+                             f"und lokal zusammengefasst, Dauer etwa {j['minuten']} Minuten"
+                             + "".join(f" ({n})" for n in j["notizen"]) + f". Daraus entsteht das Dossier „{j['dossier_titel']}“ "
                              + ("im Material dieses Langläufers. " if ziel.get("langlauf_id") else "als Unterlage. ")
                              + "Sobald es fertig ist, meldet sich das Cockpit hier im Gespräch. Sag Veiko das ehrlich. Schreibe den Text, "
                              "der auf den Folgen beruhen soll, NOCH NICHT und leg dafür noch keine Etappe an -- du kennst die Folgen erst, "
                              "wenn das Dossier da ist. Frag nicht nach, ob du anfangen sollst; das Cockpit startet bereits.")
             except RuntimeError as e:
-                status.append(f"YouTube-Kanal nicht abrufbar: {e}")
-                teile.append(f"[L{i + 1}] YOUTUBE-KANAL {q['url']}: konnte nicht gelesen werden ({e}). Sag Veiko das so.")
+                status.append(f"{was.capitalize()} nicht abrufbar: {e}")
+                teile.append(f"[L{i + 1}] {was} {q['url']}: konnte nicht gelesen werden ({e}). Sag Veiko das so.")
             continue
         if q["text"]:
             status.append(f"gelesen: {q['titel'] or q['url']} ({len(q['text']):,} Zeichen)".replace(",", "."))

@@ -52,15 +52,68 @@ def stand(jid: str) -> dict[str, Any] | None:
     return None
 
 
+# ------------------------------------------------------------ Grafikspeicher freigeben
+# Veiko, 17.10.2026: "warum arbeitet sehr oft nur die eine RTX-Karte?" Gemessen:
+# ComfyUI lief seit 30 Stunden mit leerer Warteschlange und hielt auf Karte 2
+# 20 GB Modelle fest. Ollama fand dort keinen Platz und rechnete Langlaeufer,
+# Recherche, Talk und Team nacheinander auf Karte 1. Deshalb gibt ComfyUI den
+# Speicher frei, sobald ein paar Minuten nichts mehr fuer Bilder oder Video
+# lief (POST /free, ComfyUIs eigener Weg). Der Preis: das naechste Bild laedt
+# sein Modell neu (Sekunden bei Z-Image, bei HunyuanVideo laenger).
+LEERLAUF_SEK = 180
+COMFY_ZULETZT = {"zeit": 0.0, "frei": True}
+
+
+def comfy_benutzt() -> None:
+    COMFY_ZULETZT.update(zeit=time.time(), frei=False)
+
+
+async def comfy_freigeben() -> bool:
+    try:
+        async with httpx.AsyncClient(timeout=20) as cl:
+            q = (await cl.get(f"{COMFY}/queue")).json()
+            if q.get("queue_running") or q.get("queue_pending"):
+                return False
+            r = await cl.post(f"{COMFY}/free", json={"unload_models": True, "free_memory": True})
+        if r.status_code < 400:
+            COMFY_ZULETZT["frei"] = True
+            print("[medien] ComfyUI hat seinen Grafikspeicher freigegeben", flush=True)
+            return True
+    except (httpx.HTTPError, ValueError):
+        pass
+    return False
+
+
+async def aufraeum_schleife() -> None:
+    """Alle 60 s: liegt die letzte Bild-/Videoarbeit LEERLAUF_SEK zurueck und laeuft
+    nichts mehr, Speicher freigeben. Nach dem Start des Dienstes einmal sofort --
+    ComfyUI haelt seine Modelle auch ueber einen Neustart des Cockpits hinweg."""
+    from . import folienbilder, video
+    await asyncio.sleep(30)
+    COMFY_ZULETZT["frei"] = False
+    while True:
+        try:
+            laeuft = (any(not t.done() for t in video.LAUFEND.values()) or any(not t.done() for t in folienbilder.LAUFEND.values())
+                      or any(j.get("stand") == "laeuft" for j in JOBS.values()))
+            if not laeuft and not COMFY_ZULETZT["frei"] and time.time() - COMFY_ZULETZT["zeit"] > LEERLAUF_SEK:
+                await comfy_freigeben()
+        except Exception:  # noqa: BLE001 -- eine Aufraeumschleife darf nie sterben
+            pass
+        await asyncio.sleep(60)
+
+
 # ------------------------------------------------------------ Bild (ComfyUI)
-async def comfy_bild(cl: httpx.AsyncClient, prompt: str, vorlage: str, breite: int, hoehe: int) -> bytes:
+async def comfy_bild(cl: httpx.AsyncClient, prompt: str, vorlage: str, breite: int, hoehe: int, negativ: str | None = None) -> bytes:
     """Ein Bild aus ComfyUI, als PNG. Geteilt mit den Folienbildern
     (folienbilder.py) -- zwei Kopien dieses Ablaufs liefen beim naechsten
     ComfyUI-Update auseinander. Wirft RuntimeError mit Klartextgrund."""
+    comfy_benutzt()
     v = VORLAGEN.get(vorlage) or VORLAGEN["z-image"]
     graph = json.loads(json.dumps(v["graph"]))
     k = v["knoten"]
     graph[k["prompt"]]["inputs"]["text"] = prompt
+    if negativ and k.get("negativ") and k["negativ"] in graph:
+        graph[k["negativ"]]["inputs"]["text"] = negativ
     for knoten in [k["groesse"], *v.get("groesseAuch", [])]:
         graph[knoten]["inputs"]["width"], graph[knoten]["inputs"]["height"] = breite, hoehe
     graph[k["seed"]]["inputs"][k["seedFeld"]] = random.randint(1, 2**48)

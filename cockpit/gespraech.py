@@ -460,7 +460,8 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     if re.search(r"beirat|board|vordenker", text, re.I):
         system += "\n\n" + beirat_text()
     denken, zusatz = llm.tempo(schnell)
-    system += "\n\n" + zusatz
+    from . import dossier
+    system += "\n\n" + zusatz + "\n\n" + dossier.ANWEISUNG
     modell = await llm.modell_waehlen(llm.vorgabe("talk"), "qwen3.6:27b", "qwen3:30b-a3b", "llama3.3:70b")
     if not modell:
         yield {"typ": "fehler", "text": "Kein lokales Modell für das Gespräch installiert."}
@@ -612,6 +613,13 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
         sichtbar = (sichtbar + "\n\nNoch nicht ausgeführt: " + "; ".join(v["label"] for v in offen) + ". Soll ich das so machen?").strip()
     if llm.fremdschrift(sichtbar):
         sichtbar = llm.FREMDSCHRIFT.sub("", sichtbar)
+    # Recherche-Dossier auf Zuruf (dossier.py, 17.10.2026)
+    from . import dossier
+    _z = zuordnung(gid)
+    sichtbar, recherche = await dossier.aus_antwort(sichtbar, {"projekt_id": _z.get("projekt_id") or ((kontext or {}).get("id") if (kontext or {}).get("art") == "projekt" else None),
+                                                               "aufgabe_id": _z.get("aufgabe_id"), "gespraech_id": gid, "wer": "assistent"})
+    if recherche:
+        sichtbar = (sichtbar + "\n\n" + recherche[0]).strip()
     sichtbar += stab.netz_fuss(quellen)
     mid = db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",
                         (gid, "assistent", sichtbar, json.dumps({"vorschlaege": vorschlaege, "modell": modell, "medien": medien_jobs}, ensure_ascii=False), time.time()))

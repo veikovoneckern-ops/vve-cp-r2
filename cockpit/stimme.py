@@ -168,6 +168,25 @@ def _erkennen(pfad: str, vorlage: str) -> tuple[str, str]:
     raise RuntimeError(f"Spracherkennung fehlgeschlagen: {letzter}")
 
 
+def abschreiben_datei(pfad: str) -> tuple[str, str]:
+    """Lange Tonaufnahmen (Podcast-Folgen, podcast.py): Sprache selbst erkennen,
+    kein Hoerhilfe-Text, schneller Suchlauf (beam 1) -- bei zwei Stunden Ton zaehlt
+    das Tempo mehr als das letzte Prozent. Blockierend, im Thread aufrufen.
+    Gibt (Text, Sprache) zurueck. Dasselbe Modell wie die Spracheingabe, kein zweites."""
+    reihenfolge = [WHISPER_GERAET, "cpu"] if WHISPER_GERAET != "cpu" else ["cpu"]
+    letzter: Exception | None = None
+    for geraet in reihenfolge:
+        try:
+            m = _modell(geraet)
+            segmente, info = m.transcribe(pfad, language=None, vad_filter=True, beam_size=1)
+            return " ".join(s.text.strip() for s in segmente).strip(), getattr(info, "language", "") or ""
+        except Exception as e:  # noqa: BLE001
+            letzter = e
+            with _mlock:
+                _modelle.pop(geraet, None)
+    raise RuntimeError(f"Abschrift fehlgeschlagen: {letzter}")
+
+
 async def hoeren(roh: bytes, vorlage: str = "") -> dict[str, Any]:
     if len(roh) < 800:
         return {"text": "", "hinweis": "Die Aufnahme war zu kurz."}

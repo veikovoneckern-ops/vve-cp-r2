@@ -106,6 +106,8 @@ async def _szene(c: httpx.AsyncClient, prompt: str) -> bytes:
         g[k["negativ"]]["inputs"]["text"] = "text, letters, watermark, logo, blurry, distorted faces, low quality"
     g[k["groesse"]]["inputs"].update(width=BREITE, height=HOEHE, length=SZENE_BILDER)
     g[k["seed"]]["inputs"][k["seedFeld"]] = random.randint(1, 2**48)
+    from . import medien
+    medien.comfy_benutzt()
     r = await c.post(f"{COMFY}/prompt", json={"prompt": g, "client_id": "vve-cockpit-r2-video"})
     if r.status_code >= 400:
         raise RuntimeError(f"ComfyUI lehnt ab: {r.text[:200]}")

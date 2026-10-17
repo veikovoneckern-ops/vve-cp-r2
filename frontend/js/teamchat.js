@@ -49,7 +49,8 @@ const EXTERN_NAMEN = [["dario", /\b(dario|claude)\b/i], ["elon", /\b(elon|grok)\
 // Waehrend des Schreibens: Fassung und Langlaeufer-Bloecke nicht roh zeigen.
 // Was davon wirklich uebernommen wurde, steht danach unter der fertigen Antwort.
 const ohneBloecke = (t) => t.replace(/<<<FASSUNG>>>[\s\S]*/, "\n\n_… schreibt die neue Fassung …_")
-  .replace(/<<<(HINWEIS|UEBERARBEITEN|NEUE_ETAPPEN)>>>[\s\S]*/, "\n\n_… gibt die Anweisung an den Langläufer …_");
+  .replace(/<<<(HINWEIS|UEBERARBEITEN|NEUE_ETAPPEN)>>>[\s\S]*/, "\n\n_… gibt die Anweisung an den Langläufer …_")
+  .replace(/<<<RECHERCHE>>>[\s\S]*/, "\n\n_… startet die Recherche …_");
 function genannteExterne(text) { return EXTERN_NAMEN.filter(([, re]) => re.test(text || "")).map(([id]) => id); }
 
 // wer: Kennung des Mitglieds; gid: Gespraech oder null; ergebnisId/projektId: Kontext.

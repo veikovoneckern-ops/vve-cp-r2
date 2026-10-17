@@ -135,7 +135,8 @@ async def senden(gid: str | None, text: str, mit: list[str] | None, projekt_id: 
         return
     from . import stab
     denken, zusatz = llm.tempo(schnell)
-    system = system_text(ids, len(ids) == 1, pk) + "\n\n" + zusatz
+    from . import dossier
+    system = system_text(ids, len(ids) == 1, pk) + "\n\n" + zusatz + "\n\n" + dossier.ANWEISUNG
     quellen: list[dict[str, str]] = []
     if denken:
         yield {"typ": "status", "text": "prüft, ob das Internet hilft …"}
@@ -164,6 +165,10 @@ async def senden(gid: str | None, text: str, mit: list[str] | None, projekt_id: 
         return
     if llm.fremdschrift(gesamt):
         gesamt = llm.FREMDSCHRIFT.sub("", gesamt)
+    gesamt, recherche = await dossier.aus_antwort(gesamt, {"projekt_id": projekt_id or z.get("projekt_id"), "aufgabe_id": z.get("aufgabe_id"),
+                                                          "gespraech_id": gid, "wer": "board"})
+    if recherche:
+        gesamt = gesamt.strip() + "\n\n" + recherche[0]
     gesamt = gesamt.strip() + stab.netz_fuss(quellen)
     mid = db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",
                         (gid, "board", gesamt.strip(), json.dumps({"mit": ids, "modell": modell}, ensure_ascii=False), time.time()))

@@ -153,6 +153,11 @@ def _stab_text() -> str:
     return "\n".join(leute)
 
 
+def _folien_anweisung() -> str:
+    from .folien import ANWEISUNG
+    return ANWEISUNG
+
+
 def _ergebnis_text(e: dict[str, Any]) -> str:
     p = e.get("pruefung") or {}
     return (f"DAS ERGEBNIS, AN DEM IHR ARBEITET: „{e['titel']}“ (Form: {e['form']}, erstellt von {stab.rollen_name(e['rolle'])})\n"
@@ -165,7 +170,8 @@ def _ergebnis_text(e: dict[str, Any]) -> str:
             "antwortest du ohne Fassung."
             + (" Bei dieser Präsentation wird aus einer Zeile 'Bild: <Bildbeschreibung>' am Folienende ein echtes Bild "
                "gerechnet (eine je Folie, ohne Schrift im Bild). Will Veiko Bilder, setze solche Zeilen; behalte vorhandene "
-               "unverändert, wenn das Bild bleiben soll." if e.get("form") == "praesentation" else
+               "unverändert, wenn das Bild bleiben soll. Für jede neue Fassung gelten diese Folienregeln:\n" + _folien_anweisung()
+               if e.get("form") == "praesentation" else
                " Wünscht Veiko ein Bild, setze an die Stelle eine eigene Zeile 'Bild: <Bildbeschreibung>' -- daraus wird ein "
                "echtes Bild gerechnet und in Ansicht und Word-Datei eingebaut. Beschreibe ein Bild nie nur im Text."
                if e.get("form") in ("text", "aufstellung", "konzept", "dokument") else ""))
@@ -286,7 +292,8 @@ async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
     z = zuordnung(gid)
     if z.get("projekt_id") and not kontext.get("projekt_id"):
         kontext["projekt_id"] = z["projekt_id"]
-    system = system_text(wer, kontext) + "\n\n" + zusatz
+    from . import dossier
+    system = system_text(wer, kontext) + "\n\n" + zusatz + "\n\n" + dossier.ANWEISUNG
     if z.get("aufgabe_id"):
         system += "\n\n" + aufgabe_text(z["aufgabe_id"])
 
@@ -383,6 +390,14 @@ async def _antwort(gid: str, wer: str, system: str, verlauf: list[dict[str, str]
         gesamt, getan = langlauf.chat_anweisungen(kontext["langlauf_id"], gesamt, wer)
         if getan:
             yield {"typ": "status", "text": "Übernommen: " + "; ".join(getan)}
+    # Recherche-Dossier auf Zuruf (dossier.py, 17.10.2026)
+    from . import dossier
+    from .gespraech import zuordnung as _zuordnung
+    gesamt, recherche = await dossier.aus_antwort(gesamt, {"projekt_id": kontext.get("projekt_id"), "aufgabe_id": _zuordnung(gid).get("aufgabe_id"),
+                                                           "langlauf_id": kontext.get("langlauf_id"), "gespraech_id": gid, "wer": wer})
+    if recherche:
+        getan = getan + recherche
+        yield {"typ": "status", "text": recherche[0]}
     prosa, fassung = fassung_trennen(gesamt)
     if fassung and quellen:
         fassung += stab.netz_fuss(quellen)   # die Fassung traegt ihre Quellen selbst, wie in der Pipeline
@@ -419,7 +434,8 @@ async def _antwort(gid: str, wer: str, system: str, verlauf: list[dict[str, str]
     if getan:
         # Was wirklich ausgeloest wurde, steht unter der Antwort -- vom Code
         # geschrieben, nicht vom Modell behauptet.
-        prosa = (prosa or "Erledigt.") + "\n\n**Im Langläufer übernommen:**\n" + "\n".join("- " + g for g in getan)
+        prosa = (prosa or "Erledigt.") + ("\n\n**Im Langläufer übernommen:**\n" if kontext.get("langlauf_id") else "\n\n**Ausgelöst:**\n") \
+            + "\n".join("- " + g for g in getan)
         daten["langlauf"] = getan
     prosa += stab.netz_fuss(quellen)
     mid = db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",

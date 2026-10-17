@@ -74,10 +74,8 @@ FORM_ANWEISUNG = {
     "webseite": "Liefere eine vollstaendige, eigenstaendige HTML-Seite (inline CSS, kein externes Skript) in EINEM ```html-Block. Davor zwei Saetze, was die Seite zeigt.",
     "dokument": "Liefere ein vollständiges, gegliedertes Dokument in Markdown (Titel mit #, Abschnitte mit ##, Listen, Tabellen wo sinnvoll). Es wird als Word-Datei ausgegeben -- schreib es so, dass man es direkt weitergeben kann.",
     # Die Zeile "Bild:" rechnet folienbilder.py zu einem echten Bild auf der Folie (16.10.2026).
-    "praesentation": "Liefere Folien in Markdown. Trenne Folien mit einer Zeile, die nur '---' enthaelt. Jede Folie: '# Titel' und hoechstens fuenf Stichpunkte. "
-                     "Wo ein Bild die Aussage traegt (Titelfolie und etwa jede zweite Folie), setze ans Folienende GENAU EINE Zeile "
-                     "'Bild: <ausfuehrliche Bildbeschreibung: Motiv, Stil, Licht, Farben>' -- daraus wird ein echtes Bild gerechnet. "
-                     "Keine Schrift, keine Logos und keine echten Personen im Bild beschreiben.",
+    # Folientypen und Design (folien.py, 17.10.2026); die Zeile "Bild:" rechnet folienbilder.py.
+    "praesentation": "",
     # Aus dem Drehbuch rechnet video.py danach ein echtes Video (16.10.2026).
     "video": video.DREHBUCH_ANWEISUNG,
 }
@@ -87,6 +85,8 @@ FORM_ANWEISUNG = {
 BILD_HINWEIS = (" Verlangt der Auftrag Bilder, Illustrationen oder Grafiken, setze an die passende Stelle eine eigene Zeile "
                 "'Bild: <ausfuehrliche Bildbeschreibung: Motiv, Stil, Licht, Farben>' -- daraus wird ein echtes Bild gerechnet und "
                 "eingebaut. Beschreibe das Bild NIE nur im Text. Keine Schrift, keine Logos, keine echten Personen im Bild.")
+from . import folien as _folien  # noqa: E402 -- folien.py importiert stab nur in Funktionen
+FORM_ANWEISUNG["praesentation"] = _folien.ANWEISUNG
 for _f in ("text", "aufstellung", "konzept", "dokument"):
     FORM_ANWEISUNG[_f] += BILD_HINWEIS
 
@@ -910,6 +910,13 @@ async def pruefen(entwurf: str, a: dict[str, Any], v: dict[str, Any], quellen_te
              + (f"QUELLEN, die der Bearbeiter hatte:\n{quellen_text[:30000]}\n\n" if quellen_text else
                 "(Der Bearbeiter hatte keine Internetquellen.)\n\n")
              + f"ERGEBNIS:\n{entwurf[:60000]}")
+    if a.get("form") == "praesentation":
+        # Folienregeln (folien.py, 17.10.2026): die Gestaltung macht das Cockpit,
+        # die Qualitaet einer Folie entscheidet sich an diesen Punkten.
+        frage += ("\n\nDAS IST EINE PRÄSENTATION. Prüfe zusätzlich als Mangel: Überschriften, die nur ein Thema statt einer "
+                  "Aussage sind; Folien mit deutlich mehr als 30 Wörtern sichtbarem Text (Notizen zählen nicht); fehlende "
+                  "'Typ:'-Zeilen; drei punkte-Folien hintereinander; Bildbeschreibungen, die Schrift, Zahlen oder Logos im Bild verlangen; Zitate, die nicht wörtlich im Material oder in den "
+                  "Quellen stehen (ein bekannter Spruch ist nicht automatisch von der genannten Person); Tipp- und Rechtschreibfehler.")
     # Erster Versuch mit Nachdenken (gruendlicher), der zweite ohne: Denken und
     # JSON zusammen liefern bei manchen Modellen gelegentlich einen leeren Text --
     # oder Ollama bricht ab ("token repeat limit reached", gemessen am 16.10.: das
@@ -951,62 +958,9 @@ def _md_inline(s: str) -> str:
 
 
 def _folien_html(text: str, titel: str, eid: str | None = None) -> str:
-    from . import folienbilder
-    folien = [f.strip() for f in folienbilder.folien_roh(text)]
-    teile = []
-    for f in folien:
-        # Ein gerechnetes Folienbild (folienbilder.py) steht rechts; eingebettet,
-        # weil der abgeschottete Rahmen keine angemeldeten Anfragen stellen darf.
-        wunsch = folienbilder.bild_prompt(f)
-        roh = folienbilder.vorhanden(eid, wunsch) if eid else None
-        # Ein gewuenschtes Bild, das noch fehlt, steht als Platzhalter da --
-        # nie als Beschreibung im Text (Veiko, 16.10.: "ich will ein Bild in
-        # der ppt und nicht die Beschreibung, wie es aussehen soll").
-        bild = (f"<img class='bild' alt='' src='{folienbilder.daten_uri(roh)}'>" if roh else
-                "<div class='bild kommt'>Bild wird gerechnet …</div>" if wunsch else "")
-        zeilen = f.splitlines()
-        kopf = next((z.lstrip("# ").strip() for z in zeilen if z.startswith("#")), "")
-        punkte = [z.strip().lstrip("-*• ").strip() for z in zeilen if z.strip().startswith(("-", "*", "•"))]
-        rest = [z.strip() for z in zeilen if z.strip() and not z.startswith("#") and not z.strip().startswith(("-", "*", "•"))]
-        # Gestaltungs- und Sprecherhinweise ("Bildbeschreibung: …", "Layout & Typografie: …")
-        # sind Regieanweisungen, kein Ergebnis -- sie erscheinen auf keiner Folie
-        # (Veiko, 16.10.: "ich will ein Bild und nicht die Beschreibung, wie es
-        # aussehen soll"). Im Text des Ergebnisses bleiben sie stehen, dort
-        # kann man sie im Chat aendern lassen.
-        hinweis = [p for p in punkte + rest if HINWEIS_RE.match(_ohne_md(p))]
-        punkte = [p for p in punkte if p not in hinweis]
-        rest = [z for z in rest if z not in hinweis]
-        teile.append(("<section class='mitbild'>" + bild if bild else "<section>") + "<h2>" + _md_inline(kopf) + "</h2>" +
-                     ("<ul>" + "".join(f"<li>{_md_inline(p)}</li>" for p in punkte) + "</ul>" if punkte else "") +
-                     "".join(f"<p>{_md_inline(z)}</p>" for z in rest[:4]) +
-                     "</section>")
-    # Folien auf einer festen Buehne von 1280x720 gesetzt und als Ganzes auf die
-    # verfuegbare Breite SKALIERT; was nicht passt, wird kleiner gesetzt statt in
-    # der Folie zu scrollen. Veiko, 16.10.: "dann muss ich erst scrollen, um die
-    # ganze Seite zu sehen, und dann nochmal an der Seite" -- vorher hatte jede
-    # Folie eine feste Breite von 900 Punkt und einen eigenen Scrollbalken.
-    return ("<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
-            f"<title>{htmlmod.escape(titel)}</title><style>"
-            "html,body{margin:0;background:#E8ECF2;color:#0B1826;overflow-x:hidden}"
-            ".buehne{width:1280px;transform-origin:0 0;padding:16px 0}"
-            "section{width:1280px;height:720px;box-sizing:border-box;padding:64px 84px;background:#fff;margin:0 0 20px;"
-            "border-radius:18px;box-shadow:0 6px 22px rgba(12,26,46,.12);overflow:hidden;font:30px/1.38 system-ui,sans-serif;"
-            "display:flex;flex-direction:column}"
-            "h2{font-size:1.75em;line-height:1.15;margin:0 0 .6em;color:#2C6BB3}ul{margin:0;padding-left:1.1em}li{margin:.35em 0}p{margin:.4em 0}"
-            ".hinweis{margin-top:auto;font-size:15px;line-height:1.4;color:#8A94A6;font-style:italic;border-top:1px solid #E1E6EE;padding-top:8px}"
-            ".nr{margin-top:auto;padding-top:8px;font-size:16px;color:#8A94A6;text-align:right}"
-            "section{position:relative}section.mitbild{padding-right:calc(40% + 52px)}"
-            ".bild{position:absolute;top:0;right:0;bottom:0;width:40%;height:100%;object-fit:cover}"
-            ".bild.kommt{display:flex;align-items:center;justify-content:center;background:#EEF2F7;color:#8A94A6;font-size:22px}"
-            "</style><div class='buehne'>"
-            + "".join(t.replace("</section>", f"<div class='nr'>{i + 1} / {len(teile)}</div></section>") for i, t in enumerate(teile))
-            + "</div><script>"
-            "function passen(){var b=document.querySelector('.buehne');var w=document.documentElement.clientWidth;"
-            "var s=Math.min(1.6,(w-32)/1280);b.style.transform='scale('+s+')';b.style.marginLeft=((w-1280*s)/2)+'px';"
-            "document.body.style.height=(b.offsetHeight*s)+'px';}"
-            "document.querySelectorAll('section').forEach(function(f){var g=30;"
-            "while(f.scrollHeight>f.clientHeight+1&&g>15){g-=1;f.style.fontSize=g+'px';}});"
-            "passen();window.addEventListener('resize',passen);</script>")
+    # Dieselbe Zerlegung und dasselbe Design wie die PowerPoint (folien.py, 17.10.2026).
+    from . import folien
+    return folien.zu_html(titel, text, eid)
 
 
 def _hat_bildzeile(text: str) -> bool:

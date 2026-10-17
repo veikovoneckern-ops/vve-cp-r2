@@ -43,7 +43,17 @@ from . import db
 from .konfig import MEDIEN_DIR
 
 BILD_ZEILE = re.compile(r"^\s*[-*•]?\s*\**\s*(bildbeschreibung|bildidee|bild|visual|image)\b[^:]{0,30}:\s*\**\s*(.+)$", re.I)
-ZUSATZ = ", hochwertige Präsentationsillustration, klare Komposition, ruhige Farben, ohne Schrift, ohne Text, ohne Logos"
+# Bis 17.10.2026 ging die DEUTSCHE Beschreibung samt "ohne Schrift" an Z-Image --
+# und das Modell malte deutsche Woerter als verstuemmelte Schrift ins Bild
+# ("Ein vied eet Keim", "Verbüћgt ezer Mensch" in der ExO-Praesentation).
+# Jetzt: das lokale Modell schreibt fuer ALLE Bilder einer Praesentation auf
+# einmal englische Bildanweisungen in EINEM Stil (_kunstregie), gerechnet wird
+# mit Qwen-Image und einer Liste dessen, was NICHT ins Bild soll.
+ZUSATZ = (", premium editorial illustration for a keynote presentation, cinematic lighting, clean composition, "
+          "generous negative space, high detail, no text")
+NEGATIV = ("text, letters, words, typography, caption, title, label, signage, watermark, logo, signature, numbers, "
+           "blurry, low quality, deformed, distorted hands, extra fingers, cluttered")
+VORLAGE, VORLAGE_ERSATZ = "qwen", "z-image"
 LAUFEND: dict[str, asyncio.Task] = {}
 MAX_BILDER = 20
 
@@ -140,17 +150,52 @@ def _als_jpeg(png: bytes) -> bytes:
     return out.getvalue()
 
 
+async def _kunstregie(eid: str, liste: list[str]) -> list[str]:
+    """Deutsche Bildbeschreibungen -> englische Bildanweisungen in EINEM Stil fuer
+    die ganze Praesentation. Faellt das Modell aus, gehen die deutschen Texte mit
+    englischem Zusatz raus (schlechter, aber kein Abbruch)."""
+    from . import llm
+    e = db.holen("ergebnisse", eid) or {}
+    modell = await llm.modell_waehlen(llm.vorgabe("arbeit"), llm.vorgabe("talk"), "qwen3.6:27b")
+    if not modell:
+        return liste
+    frage = (f"PRÄSENTATION: {e.get('titel') or ''}\n\nBILDWÜNSCHE (deutsch, in dieser Reihenfolge):\n"
+             + "\n".join(f"{i + 1}. {p}" for i, p in enumerate(liste))
+             + "\n\nDu bist Art Director. Lege EINEN gemeinsamen visuellen Stil für alle Bilder fest (Bildsprache, Farbpalette, "
+               "Licht, Materialien -- passend zu einem eleganten, dunkelblau-warmen Business-Design) und schreibe für jeden "
+               "Wunsch eine englische Bildanweisung für ein Bildmodell: konkretes Motiv, Komposition (Platz links oder rechts "
+               "für Text, wo sinnvoll), Perspektive, Licht, Stil. 40 bis 80 Wörter je Bild. NIEMALS Text, Buchstaben, Zahlen, "
+               "Schilder, Logos oder Bildschirme mit Schrift; keine echten, erkennbaren Personen. Antworte NUR mit JSON: "
+               '{"stil": "der gemeinsame Stil auf Englisch", "bilder": ["Anweisung 1", "..."]}')
+    try:
+        d = llm.json_aus(await llm.chat(modell, "", [{"role": "user", "content": frage}], json_format=True,
+                                        temperatur=0.4, denken=False, timeout=300)) or {}
+    except llm.ModellFehler:
+        return liste
+    bilder = [str(b).strip() for b in (d.get("bilder") or []) if str(b).strip()]
+    if len(bilder) != len(liste):
+        return liste
+    stil = str(d.get("stil") or "").strip()
+    return [f"{b}. Style: {stil}" if stil else b for b in bilder]
+
+
 async def _lauf(eid: str, liste: list[str]) -> None:
     from . import medien
     t0 = time.time()
-    _stand_setzen(eid, stand="rechnet", anzahl=len(liste), fertig=0, fehler=None, start=t0)
+    _stand_setzen(eid, stand="rechnet", anzahl=len(liste), fertig=0, fehler=None, start=t0, schritt="Art Direction: Bildstil festlegen")
     fehler = 0
     try:
+        englisch = await _kunstregie(eid, liste)
         async with httpx.AsyncClient(timeout=60) as c:
             for i, p in enumerate(liste):
                 _stand_setzen(eid, schritt=f"Bild {i + 1} von {len(liste)}", fertig=i)
                 try:
-                    png = await medien.comfy_bild(c, p + ZUSATZ, "z-image", 1344, 768)
+                    try:
+                        png = await medien.comfy_bild(c, englisch[i] + ZUSATZ, VORLAGE, 1344, 768, NEGATIV)
+                    except RuntimeError as x:
+                        print(f"[folienbilder] {eid} Bild {i + 1} mit {VORLAGE} gescheitert ({x}) -- nehme {VORLAGE_ERSATZ}", flush=True)
+                        png = await medien.comfy_bild(c, englisch[i] + ZUSATZ, VORLAGE_ERSATZ, 1344, 768, NEGATIV)
+                    # Abgelegt unter der DEUTSCHEN Beschreibung -- daran findet der Einbau das Bild.
                     datei(eid, p).write_bytes(await asyncio.to_thread(_als_jpeg, png))
                 except Exception as x:  # noqa: BLE001 -- ein Bild darf scheitern, die anderen nicht
                     fehler += 1

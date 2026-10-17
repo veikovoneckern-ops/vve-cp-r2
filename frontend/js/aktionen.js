@@ -26,7 +26,7 @@ const ABBRUCH = {
   neo: "Neos Auftrag abbrechen? Was er schon geändert hat, bleibt.",
   gespraech: "Antwort abbrechen? Die Frage bleibt im Gespräch stehen.",
   revision: "Modell-Vergleich abbrechen? Fertige Vergleiche bleiben gespeichert.",
-  youtube: "YouTube-Auftrag abbrechen? Fertige Abschriften bleiben als Unterlagen, und aus den fertigen Folgen entsteht trotzdem ein Dossier.",
+  dossier: "Recherche abbrechen? Fertige Abschriften bleiben als Unterlagen, und aus dem Fertigen entsteht trotzdem ein Dossier.",
 };
 
 function Steuerknopf({ z, aktion, neu }) {

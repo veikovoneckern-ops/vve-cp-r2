@@ -371,6 +371,10 @@ export function ErgebnisAnsicht({ id, zu, vorlage = "" }) {
               <button class=${!ansicht ? "an" : ""} onClick=${() => setAnsicht(false)}>Text</button></div>` : ""}
             ${!(e.form === "video" || e.video) && html`<button class="btn klein" style=${e.ansicht ? "" : "margin-left:auto"} onClick=${() => setGross(true)} title="Über das ganze Fenster ansehen">
               <${Icon} n="voll" g=${13} />Groß ansehen</button>`}
+            ${e.form === "praesentation" && html`<button class="btn klein" title="Dario (Claude) überarbeitet Text und Folienaufbau -- kostet Geld, du gibst es im Chat frei"
+              onClick=${() => { setChatAuf(true); setChatVorlage((v) => ({ n: ((v && v.n) || 0) + 1,
+                text: "Dario, überarbeite diese Präsentation nach den Folienregeln: jede Überschrift eine klare Aussage, höchstens 30 Wörter je Folie, das Gesprochene in die Notizen, abwechslungsreiche Folientypen, starke Bildideen. Liefere die vollständige neue Fassung." })); }}>
+              <${Icon} n="stift" g=${13} />Mit Dario ausarbeiten</button>`}
           </div>
           <${Downloads} e=${e} />
         </div>

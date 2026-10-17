@@ -217,41 +217,10 @@ def folien(md: str) -> list[dict[str, object]]:
 
 
 def zu_pptx(titel: str, md: str, eid: str | None = None) -> bytes:
-    """eid: das Ergebnis, dessen gerechnete Folienbilder (folienbilder.py)
-    rechts auf die Folie kommen. Bild- und Gestaltungszeilen ("Bild: …")
-    sind Regieanweisungen und keine Stichpunkte -- sie fallen hier heraus."""
-    from pptx import Presentation
-    from pptx.util import Inches, Pt
-
-    from . import folienbilder
-    from .stab import HINWEIS_RE, _ohne_md
-
-    roh_folien = folienbilder.folien_roh(md)
-    prs = Presentation()
-    prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)
-    titelfolie = prs.slides.add_slide(prs.slide_layouts[0])
-    titelfolie.shapes.title.text = titel or "Präsentation"
-    if len(titelfolie.placeholders) > 1:
-        titelfolie.placeholders[1].text = time.strftime("%d.%m.%Y")
-    for n, f in enumerate(folien(md)):
-        s = prs.slides.add_slide(prs.slide_layouts[1])
-        s.shapes.title.text = str(f["titel"])
-        inhalt = s.placeholders[1]
-        bild = folienbilder.vorhanden(eid, folienbilder.bild_prompt(roh_folien[n])) if eid and n < len(roh_folien) else None
-        if bild:
-            # Text links, Bild rechts -- wie in der Vorschau.
-            inhalt.left, inhalt.width = Inches(0.6), Inches(7.0)
-            s.shapes.add_picture(BytesIO(bild), Inches(7.9), Inches(1.6), width=Inches(5.0))
-        rahmen = inhalt.text_frame
-        rahmen.clear()
-        punkte = [p for p in f["punkte"] if not HINWEIS_RE.match(_ohne_md(str(p)))]  # type: ignore[union-attr]
-        for i, punkt in enumerate(punkte):
-            p = rahmen.paragraphs[0] if i == 0 else rahmen.add_paragraph()
-            p.text = str(punkt)
-            p.font.size = Pt(20)
-    puffer = BytesIO()
-    prs.save(puffer)
-    return puffer.getvalue()
+    """Seit 17.10.2026 mit echtem Design und Folientypen (folien.py); vorher eine
+    weisse Standardfolie mit Stichpunkten je Folie."""
+    from . import folien
+    return folien.zu_pptx(titel, md, eid)
 
 
 # ------------------------------------------------------------ HTML
