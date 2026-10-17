@@ -5,7 +5,9 @@ import { escEigen, html, enterBestaetigt, useState, useEffect, useRef, Icon, Ava
 import { api } from "./api.js";
 import { TeamGespraeche } from "./teamchat.js";
 
-const TABS = [["mitglieder", "Mitglieder"], ["gedaechtnis", "Memory"], ["vertrauen", "Freigaben"]];
+// "Freigaben" stehen seit dem 17.10.2026 auf der Seite Einstellungen (einstellungen.js);
+// der Tab fuehrt dorthin, damit ein alter Link nicht ins Leere geht.
+const TABS = [["mitglieder", "Mitglieder"], ["gedaechtnis", "Memory"]];
 
 // #/team/chat/<wer>[/<gespraech>] ist das Gespraech mit einem Mitglied.
 export function Team({ id, rest = [] }) {
@@ -14,13 +16,13 @@ export function Team({ id, rest = [] }) {
 }
 
 function TeamTabs({ id }) {
+  useEffect(() => { if (id === "vertrauen") navigiere("/einstellungen"); }, [id]);
   const [tab, setTab] = useState(id && TABS.some((t) => t[0] === id) ? id : "mitglieder");
   useEffect(() => { bus.sende("talk-kontext", null); }, []);
   return html`<div class="seite">
     <div class="tabs" role="tablist">${TABS.map(([k, t]) => html`<button role="tab" aria-selected=${tab === k} class=${tab === k ? "an" : ""} onClick=${() => setTab(k)}>${t}</button>`)}</div>
     ${tab === "mitglieder" && html`<${Mitglieder} />`}
     ${tab === "gedaechtnis" && html`<${Gedaechtnis} />`}
-    ${tab === "vertrauen" && html`<${Vertrauen} />`}
   </div>`;
 }
 
@@ -201,7 +203,7 @@ function StimmeZeile({ d, setzen }) {
     </div></div>`;
 }
 
-function Vertrauen() {
+export function Vertrauen() {
   const [d, laden] = useAbruf("/einstellungen", 0, []);
   if (!d) return html`<div class="lade">Lade …</div>`;
   async function setzen(daten) {
@@ -216,7 +218,7 @@ function Vertrauen() {
           <button class=${d.vertrauen[k] === "fragen" ? "an" : ""} onClick=${() => setzen({ vertrauen: { [k]: "fragen" } })}>erst fragen</button></div>
       </div>`)}
       <div class="zeile"><div class="haupt-text"><b>Cloud-Modelle, Mails verschicken</b><div class="leise klein">Kostet Geld oder geht nach außen</div></div><span class="pill gelb">immer fragen</span></div>
-      <div class="zeile"><div class="haupt-text"><b>Löschen, Code einspielen, Server ändern</b><div class="leise klein">Nur du, im Bereich System oder über Neo</div></div><span class="pill rot">nie vom Team</span></div>
+      <div class="zeile"><div class="haupt-text"><b>Löschen, Code einspielen, Server ändern</b><div class="leise klein">Nur du, auf der Seite Maschine oder über Neo</div></div><span class="pill rot">nie vom Team</span></div>
     </section>
     <section class="karte">
       <div class="karte-kopf"><h3>Team in dieser Fassung</h3></div>

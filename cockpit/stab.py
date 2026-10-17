@@ -165,7 +165,7 @@ def rollen_name(rid: str | None) -> str:
 
 async def modell_fuer(rid: str, rueckfall: str) -> str | None:
     r = rolle(rid)
-    return await llm.modell_waehlen(r.get("modell"), rueckfall, MODELL_ARBEIT, "qwen3.6:27b", "qwen3:30b-a3b")
+    return await llm.modell_waehlen(r.get("modell"), rueckfall, llm.vorgabe("arbeit"), "qwen3.6:27b", "qwen3:30b-a3b")
 
 
 def projekt_finden(wert: Any) -> str | None:
@@ -326,7 +326,7 @@ async def einordnen(v: dict[str, Any]) -> None:
         db.aendern("vorgaenge", v["id"], {"stand": "fertig"}, wer="system")
         db.ereignis(v["id"], "system", "fehler", "Zum Vorgang gibt es keine Notiz mehr.")
         return
-    modell = await modell_fuer("pmo", MODELL_STAB)
+    modell = await modell_fuer("pmo", llm.vorgabe("stab"))
     if not modell:
         raise llm.ModellFehler("Kein passendes lokales Modell installiert.")
     laeuft("pmo", "ordnet ein", v["id"])
@@ -818,7 +818,7 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
     rid = a.get("rolle") or "stratege"
     form = a.get("form") or "text"
     r = rolle(rid)
-    modell = await modell_fuer(rid, MODELL_ARBEIT)
+    modell = await modell_fuer(rid, llm.vorgabe("arbeit"))
     if not modell:
         raise llm.ModellFehler("Kein passendes lokales Modell installiert.")
     vid = v["id"]
@@ -901,7 +901,7 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
 
 
 async def pruefen(entwurf: str, a: dict[str, Any], v: dict[str, Any], quellen_text: str = "") -> dict[str, Any]:
-    modell = await modell_fuer("kritiker", MODELL_ARBEIT)
+    modell = await modell_fuer("kritiker", llm.vorgabe("arbeit"))
     if not modell:
         return {"urteil": "ungeprueft", "begruendung": "Kein Modell für die Prüfung installiert."}
     # Daniel bekommt DIESELBEN Quellen wie der Bearbeiter. Ohne sie pruefte er

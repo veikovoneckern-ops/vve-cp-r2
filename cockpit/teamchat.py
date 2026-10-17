@@ -273,7 +273,7 @@ async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
     # bekommen ueber den Proxy kein eigenes Suchwerkzeug.
     quellen: list[dict[str, str]] = []
     if denken:
-        planer = await llm.modell_waehlen(MODELL_TALK, "qwen3.6:27b", "qwen3:30b-a3b")
+        planer = await llm.modell_waehlen(llm.vorgabe("talk"), "qwen3.6:27b", "qwen3:30b-a3b")
         if planer:
             yield {"typ": "status", "text": "prüft, ob das Internet hilft …"}
             quellen = await stab.netzwissen(planer, verlauf)
@@ -311,7 +311,7 @@ async def _antwort(gid: str, wer: str, system: str, verlauf: list[dict[str, str]
                 gesamt = await _cloud_chat(wer, modell or "", system, verlauf)
             yield {"typ": "text", "t": gesamt}
         else:
-            modell = await stab.modell_fuer(wer, MODELL_TALK)
+            modell = await stab.modell_fuer(wer, llm.vorgabe("talk"))
             if not modell:
                 yield {"typ": "fehler", "text": "Kein lokales Modell installiert."}
                 return

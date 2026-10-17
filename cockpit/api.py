@@ -129,6 +129,14 @@ async def lage_gesehen():
     return {"ok": True}
 
 
+async def _optimierung_zahl() -> int:
+    from . import revision
+    try:
+        return len(await revision.vorschlaege())
+    except Exception:  # noqa: BLE001 -- das Briefing darf daran nicht scheitern
+        return 0
+
+
 @router.get("/lage")
 async def lage():
     ents = db.alle("SELECT e.*, v.titel AS vorgang_titel, v.projekt_id FROM entscheidungen e "
@@ -196,6 +204,9 @@ async def lage():
                 "cases": db.wert("SELECT COUNT(*) FROM vorgaenge WHERE erstellt>? AND quelle!='alt'", (gesehen,)),
                 "erledigt": sum(1 for x in erledigt if x["zeit"] > gesehen)},
         "aufgaben": aufgaben, "gesundheit": stab.gesundheit(), "neo_laeuft": neo_lauf,
+        # Modell-Revision: belegte Vorschlaege zum Umstellen (17.10.2026) -- das Briefing
+        # sagt es, damit Veiko nicht erst die Seite Stab & Modelle oeffnen muss.
+        "optimierung": await _optimierung_zahl(),
         # Antworten, die gerade auf dem Server entstehen -- auch wenn das Fenster zu ist.
         "gespraeche_laufen": [{"gespraech_id": g, "art": s["art"], "wer": s["wer"],
                                "wer_name": teamchat.wer_name(s["wer"]) if s["wer"] else ("Talk" if s["art"] == "talk" else "Advisory Board"),
@@ -1589,7 +1600,7 @@ async def modelle_uebersicht(frisch: int = 0):
         neu = {"fehler": str(e), "familien": []}
     from .konfig import MODELL_ARBEIT, MODELL_TALK
     modellkatalog.einordnen(neu, inst_gb, db.alle("SELECT id, name, titel, art, modell FROM team WHERE aktiv=1"),
-                            {"arbeit": MODELL_ARBEIT, "talk": MODELL_TALK})
+                            {"arbeit": llm.vorgabe("arbeit"), "talk": llm.vorgabe("talk")})
     return {"installiert": installiert, "vram": vram, "frei_gb": ((s or {}).get("disk_gb") or {}).get("free"),
             "empfehlungen": modellkatalog.vorschlaege(katalog, vram) + modellkatalog.neu_vorschlaege(neu, 8),
             "neu": neu, "katalog_stand": katalog and katalog.get("zeit"), "laden": modellkatalog.LADEN,
@@ -1636,3 +1647,45 @@ async def langlauf_steuern(lid: str, aktion: str, request: Request):
         return langlauf.steuern(lid, aktion, d)
     except (TypeError, ValueError) as e:
         raise HTTPException(409, str(e))
+
+
+# ================================================================ Modell-Revision
+# Das Cockpit sucht selbst nach besseren Modellen und belegt jeden Vorschlag mit
+# einer Messung (Veiko, 17.10.2026). Details: revision.py.
+@router.get("/revision")
+async def revision_uebersicht():
+    from . import modellkatalog, revision, systeminfo
+    s = await systeminfo.status()
+    vram = systeminfo._vram_gesamt(s)
+    inst = modellkatalog.lokal_gb()
+    try:
+        neu = await modellkatalog.neu_bei_ollama(False, vram)
+        modellkatalog.einordnen(neu, inst, db.alle("SELECT id, name, titel, art, modell FROM team WHERE aktiv=1"),
+                                {"arbeit": llm.vorgabe("arbeit"), "talk": llm.vorgabe("talk")})
+    except Exception:  # noqa: BLE001
+        neu = None
+    return {"stand": revision.stand(), "bestand": await revision.bestand(), "vorschlaege": await revision.vorschlaege(),
+            "laden": revision.laden_vorschlaege(neu), "neue_rollen": revision.neue_rollen(neu),
+            "messungen": db.alle("SELECT * FROM messungen ORDER BY zeit DESC LIMIT 20"),
+            "umgestellt": (db.einstellung("revision_umgestellt", []) or [])[:10],
+            "installiert": sorted(n for n in inst if not revision._nicht_text(n)), "vram": vram,
+            "laeuft_download": modellkatalog.LADEN}
+
+
+@router.post("/revision/{aktion}")
+async def revision_aktion(aktion: str, request: Request):
+    from . import revision
+    d = await _koerper(request)
+    try:
+        if aktion == "start":
+            return {"gestartet": revision.starten(True), "stand": revision.stand()}
+        if aktion == "umstellen":
+            return revision.umstellen(str(d.get("platz") or ""), str(d.get("modell") or ""), d.get("messung"))
+        if aktion == "zurueck":
+            return revision.zuruecknehmen(str(d.get("platz") or ""))
+        if aktion == "verwerfen":
+            revision.verwerfen(str(d.get("messung") or ""))
+            return {"ok": True}
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    raise HTTPException(404, "Unbekannte Aktion")

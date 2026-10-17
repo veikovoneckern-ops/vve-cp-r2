@@ -33,7 +33,7 @@ _TASKS: dict[str, asyncio.Task] = {}
 
 
 async def modell() -> str | None:
-    return await llm.modell_waehlen(MODELL_ARBEIT, "qwen3.6:27b", "qwen3:30b-a3b", "llama3.3:70b")
+    return await llm.modell_waehlen(llm.vorgabe("arbeit"), "qwen3.6:27b", "qwen3:30b-a3b", "llama3.3:70b")
 
 
 def _stand_text() -> str:

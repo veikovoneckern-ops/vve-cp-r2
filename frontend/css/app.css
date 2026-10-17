@@ -1239,3 +1239,21 @@ details.eingetragen[open]>summary{margin-bottom:8px}
 html.zieht,html.zieht *{cursor:col-resize!important;user-select:none!important}
 html.zieht iframe{pointer-events:none}
 @media (max-width:820px),(pointer:coarse){.ziehgriff{display:none}}
+
+/* Stab & Modelle (17.10.2026): Besetzung und Modell-Revision */
+.mo-wahl{min-height:32px;font-size:12.5px;max-width:260px}
+.mo-warn{color:var(--signal);margin-top:4px;max-width:340px}
+.mo-rev-kopf{display:flex;gap:14px;align-items:center;margin-bottom:12px}
+.mo-rev-kopf .vf-spin{display:inline-block;vertical-align:-2px;margin-right:4px}
+.mo-umgestellt{margin-top:10px;border-top:1px solid var(--line-2);padding-top:6px}
+.mo-messung{border-top:1px solid var(--line-2)}
+.mo-messung:first-of-type{border-top:0}
+.mo-messung-kopf{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;padding:9px 2px;cursor:pointer}
+.mo-messung-kopf>span:first-child{flex:1;min-width:240px}
+.mo-messung-leib{padding:0 4px 12px}
+.mo-einzeln{border-left:3px solid var(--line);padding:4px 0 4px 10px;margin:8px 0;display:flex;flex-direction:column;gap:4px}
+.mo-zwei{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:6px}
+.mo-zwei p{white-space:pre-wrap;color:var(--ink-2);margin:4px 0 0}
+.mo-rollen-modelle{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.mo-rollen-modell{display:inline-flex;gap:6px;align-items:center;background:var(--surface-2);border-radius:8px;padding:4px 8px}
+@media (max-width:700px){.mo-zwei{grid-template-columns:minmax(0,1fr)}.mo-rev-kopf{flex-direction:column;align-items:flex-start}}

@@ -106,6 +106,13 @@ CREATE INDEX IF NOT EXISTS verbrauch_zeit ON verbrauch(zeit);
 -- in Etappen, mit Zwischenpruefung durch Dario oder Demmis im Rahmen eines Budgets.
 -- Alles Veraenderliche steht in "daten" (JSON), damit ein Neustart mitten im Lauf
 -- genau dort weitermacht, wo die letzte fertige Etappe aufhoerte.
+-- Modell-Revision (17.10.2026): je verdecktem Vergleich zweier Modelle auf einer
+-- echten Aufgabe eine Zeile. Belegt jeden Umstell-Vorschlag mit einer Messung.
+CREATE TABLE IF NOT EXISTS messungen (
+  id TEXT PRIMARY KEY, zeit REAL, platz TEXT, bisher TEXT, kandidat TEXT, aufgaben INTEGER DEFAULT 0,
+  siege_kandidat INTEGER DEFAULT 0, siege_bisher INTEGER DEFAULT 0, gleich INTEGER DEFAULT 0,
+  tps_bisher REAL, tps_kandidat REAL, dauer_bisher REAL, dauer_kandidat REAL, richter TEXT, daten TEXT DEFAULT '{}'
+);
 CREATE TABLE IF NOT EXISTS langlaeufe (
   id TEXT PRIMARY KEY, vorgang_id TEXT, projekt_id TEXT, titel TEXT, art TEXT, stand TEXT,
   budget REAL DEFAULT 0, daten TEXT DEFAULT '{}', erstellt REAL, geaendert REAL

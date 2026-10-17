@@ -93,7 +93,9 @@ function Sicherheit({ s }) {
     ${offen.length > 0 && html`<${Kachel} titel="Betroffene Regeln">${offen.map((z) => html`<div class="mono klein">${z}</div>`)}</${Kachel}>`}`;
 }
 
-export function WatchDog() {
+// eingebettet (17.10.2026): auf der Seite Maschine unter der Server-Sektion -- dann ohne
+// den doppelten Teil "Aufbau und Wartung" und ohne eigenen Talk-Bezug.
+export function WatchDog({ eingebettet = false } = {}) {
   const d = useDetails({ mitSystem: false });
   const { det, notfall, wdLaden } = d;
   const [teil, setTeil] = useState(null);
@@ -103,7 +105,7 @@ export function WatchDog() {
   useEffect(() => { const i = setInterval(() => { if (!document.hidden) wdLaden(); }, 8000); return () => clearInterval(i); }, []);
   const z = wdZustand(wd);
   // Talk weiss, dass Veiko auf den WatchDog schaut (gespraech.kontext_text).
-  useEffect(() => { bus.sende("talk-kontext", { art: "watchdog", id: "watchdog", titel: "WatchDog" }); return () => bus.sende("talk-kontext", null); }, []);
+  useEffect(() => { if (eingebettet) return undefined; bus.sende("talk-kontext", { art: "watchdog", id: "watchdog", titel: "WatchDog" }); return () => bus.sende("talk-kontext", null); }, []);
   return html`<div class="sv-innen wd">
     <div class=${"wd-kopf " + z.st}>
       <i class=${"kopf-ampel " + (z.st === "unbekannt" ? "" : z.st)}></i>
@@ -113,11 +115,12 @@ export function WatchDog() {
       <button class="btn klein" onClick=${() => { d.detLaden(true); wdLaden(); }}><${Icon} n="neu_laden" g=${12} />Neu prüfen</button>
     </div>
     ${!det ? html`<div class="lade">WatchDog und Sicherheits-Check werden gefragt …</div>` : html`
-      <${Gruppe} titel="Maschine" unter="GPU-Temperatur und Notfall-Automatik"><${Maschine} wd=${wd} notfall=${notfall} /></${Gruppe}>
+      <${Gruppe} titel="Schutz" unter="GPU-Temperatur und Notfall-Automatik"><${Maschine} wd=${wd} notfall=${notfall} /></${Gruppe}>
       <${Gruppe} titel="Sicherheit" unter="Firewall, Anmeldeversuche, Auto-Updates"><${Sicherheit} s=${s} /></${Gruppe}>`}
-    <div class="sv-gruppe"><b>Aufbau und Wartung</b><em>dasselbe wie in der Server-Sektion oben</em></div>
+    ${!eingebettet && html`<div class="sv-gruppe"><b>Aufbau und Wartung</b><em>dasselbe wie in der Server-Sektion oben</em></div>
     <${Auftrag} a=${det && det.auftrag} schliessen=${d.auftragSchliessen} />
     <${AufbauReihe} d=${d} beiKlick=${setTeil} />
     ${teil && s && html`<${AufbauDetail} teil=${teil} s=${s} karten=${det && det.karten} wd=${wd} notfall=${notfall} zu=${() => setTeil(null)} />`}
+    `}
   </div>`;
 }

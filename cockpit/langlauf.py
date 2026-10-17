@@ -225,7 +225,7 @@ def _plan_text(d: dict[str, Any], art: str) -> str:
 async def _planen(l: dict[str, Any]) -> None:
     d, art, vid = l["daten"], l["art"], l["vorgang_id"]
     rid = d["rolle"]
-    modell = await stab.modell_fuer(rid, MODELL_ARBEIT)
+    modell = await stab.modell_fuer(rid, llm.vorgabe("arbeit"))
     if not modell:
         raise llm.ModellFehler("Kein passendes lokales Modell installiert.")
     stab.laeuft(rid, f"plant den Langläufer „{l['titel']}“", vid)
@@ -270,7 +270,7 @@ def _etappen_kontext(d: dict[str, Any], e: dict[str, Any], art: str) -> str:
 async def _etappe(l: dict[str, Any], e: dict[str, Any]) -> None:
     d, art, vid = l["daten"], l["art"], l["vorgang_id"]
     rid = d["rolle"]
-    modell = await stab.modell_fuer(rid, MODELL_ARBEIT)
+    modell = await stab.modell_fuer(rid, llm.vorgabe("arbeit"))
     if not modell:
         raise llm.ModellFehler("Kein passendes lokales Modell installiert.")
     n, gesamt = ARTEN[art]["etappe"], len(d["etappen"])
@@ -438,7 +438,7 @@ async def _extern_pruefen(l: dict[str, Any], letzte: list[dict[str, Any]], schlu
 async def _nachbessern(l: dict[str, Any], e: dict[str, Any], kritik: str) -> None:
     d, art, vid = l["daten"], l["art"], l["vorgang_id"]
     rid = d["rolle"]
-    modell = await stab.modell_fuer(rid, MODELL_ARBEIT)
+    modell = await stab.modell_fuer(rid, llm.vorgabe("arbeit"))
     n = ARTEN[art]["etappe"]
     stab.laeuft(rid, f"Langläufer: bessert {n} {e['nr']} nach", vid)
     neu = await stab._chat_robust(modell, _system(rid, art), [{"role": "user", "content":

@@ -10,7 +10,7 @@ function gruss() {
   return h < 11 ? "Guten Morgen" : h < 17 ? "Hallo" : h < 22 ? "Guten Abend" : "Noch wach";
 }
 
-function Gesundheit({ g, neo }) {
+function Gesundheit({ g, neo, optimierung }) {
   if (!g) return null;
   const jetzt = Date.now() / 1000;
   const syncAlt = g.sync && jetzt - g.sync > 1800;
@@ -24,6 +24,7 @@ function Gesundheit({ g, neo }) {
       ${!g.stab_aktiv ? "Team pausiert" : g.letzter_lauf ? `Team: letzter Durchgang ${zeitText(g.letzter_lauf)}` : "Team startet …"}</span>
     ${laeuft && html`<span><i class="punkt lila"></i>${rolleName(laeuft.wer)} ${laeuft.was}</span>`}
     ${neo && neo.length > 0 && html`<span><i class="punkt lila"></i><a href=${"#/neo/" + neo[0].gespraech_id}>Neo arbeitet</a> seit ${zeitText(neo[0].seit).replace("vor ", "")}</span>`}
+    ${optimierung > 0 && html`<span><i class="punkt"></i><a href="#/modelle/optimierung">${optimierung === 1 ? "1 Modell-Vorschlag" : optimierung + " Modell-Vorschläge"}</a>, gemessen</span>`}
     ${g.letzter_fehler && html`<span class="leise" title=${g.letzter_fehler}>Letzter Fehler: ${g.letzter_fehler.slice(0, 70)}</span>`}
   </div>`;
 }
@@ -75,7 +76,7 @@ export function Briefing({ lage }) {
         <button class="btn primaer" onClick=${() => bus.sende("talk-oeffnen", { text: "Was liegt an?" })}><${Icon} n="talk" g=${15} />Was liegt an?</button>
       </div>
     </div>
-    <${Gesundheit} g=${lage.gesundheit} neo=${lage.neo_laeuft} />
+    <${Gesundheit} g=${lage.gesundheit} neo=${lage.neo_laeuft} optimierung=${lage.optimierung} />
     <div class="raster zwei briefing-raster">
       <div>
         ${ents.length > 0 && html`<section class="karte">

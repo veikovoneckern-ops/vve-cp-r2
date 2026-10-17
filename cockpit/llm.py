@@ -307,3 +307,20 @@ async def geladene_modelle() -> list[dict[str, Any]]:
         return r.json().get("models", [])
     except (httpx.HTTPError, ValueError):
         return []
+
+
+# ---------------------------------------------------------------- Vorgaben
+# Welche Modelle ohne eigene Wahl rechnen (17.10.2026, Modell-Revision): Talk,
+# die Rollen ohne eigenes Modell, Jason beim Einordnen, Neo. Bis dahin standen
+# sie fest in der Konfiguration -- ein Knopf "Umstellen" haette nichts gehabt,
+# das er aendern kann. Die Konfiguration bleibt die Vorgabe; was Veiko auf der
+# Seite "Stab & Modelle" waehlt, sticht sie.
+VORGABEN = {"talk": "Talk, Board und Gesprächsplanung", "arbeit": "Rollen ohne eigenes Modell (Clayton, Daniel …)",
+            "stab": "Jason beim Einordnen, falls ohne eigenes Modell", "neo": "Neo, falls ohne eigenes Modell"}
+
+
+def vorgabe(art: str) -> str:
+    from . import db, konfig
+    w = (db.einstellung("modell_vorgaben", {}) or {}).get(art)
+    return w or {"talk": konfig.MODELL_TALK, "arbeit": konfig.MODELL_ARBEIT,
+                 "stab": konfig.MODELL_STAB, "neo": konfig.MODELL_NEO}[art]

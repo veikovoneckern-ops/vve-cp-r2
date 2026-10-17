@@ -1,63 +1,22 @@
-// SYSTEM -- oben die Server-Sektion (Aufbau, Updates, Dienste, Modelle,
-// Messwerte), immer aufgeklappt; darunter, was zu DIESER Fassung gehoert:
-// Stab-Pipeline, Daten, Einstellungen. Die Kaestchen in der Kopfzeile fuehren
-// hierher -- ein Ort, ein Weg (vorher klappte die Sektion als Ebene ueber der
-// gerade offenen Ansicht auf und musste wieder zugeklappt werden).
-import { html, useState, useEffect, Icon, toast, fehlerMelden, aktualisieren, zeitText, useAbruf, bus } from "./ui.js";
-import { api } from "./api.js";
+// MASCHINE (bis 17.10.2026 "System") -- alles zum Server an einem Ort: oben die
+// Server-Sektion (Aufbau, Updates, Sicherungen, Software, Messwerte), darunter
+// der WatchDog (Temperatur, Notabschaltung, Sicherheit). Die Kaestchen in der
+// Kopfzeile fuehren hierher.
+//
+// Neu geordnet (Veiko, 17.10.2026: "viele Punkte zu System und Setup sind auf
+// unterschiedliche Ansichten verteilt"): der WatchDog hatte eine eigene Seite mit
+// einer zweiten Kopie von Aufbau und Wartung; Team-Pipeline, Daten und Konto
+// stehen jetzt unter Einstellungen, Modelle und Verbrauch unter Stab & Modelle.
+// Die Kennung bleibt "system", damit alte Links und die Kopfzeile weiter passen.
+import { html, useEffect, bus } from "./ui.js";
 import { ServerSektion } from "./server.js";
+import { WatchDog } from "./watchdog.js";
 
-function Wert({ name, wert, warn }) {
-  return html`<div class="messwert"><span class="leise">${name}</span><b style=${warn ? "color:var(--signal)" : ""}>${wert ?? "nicht verfügbar"}</b></div>`;
-}
-
-export function System({ konto, thema, gesundheit }) {
-  const [d, laden] = useAbruf("/system", 30000, []);
-  const [laeuft, setLaeuft] = useState("");
+export function System({ gesundheit }) {
   useEffect(() => { bus.sende("talk-kontext", null); }, []);
-
-  async function abgleich() {
-    setLaeuft("abgleich");
-    try {
-      const r = await api("/system/abgleich", { methode: "POST" });
-      const n = r.neu; const summe = Object.values(n).reduce((a, b) => a + b, 0);
-      toast(summe ? `Übernommen: ${n.projekte} Projekte, ${n.aufgaben} Aufgaben, ${n.notizen + n.plaud} Notizen, ${n.vorgaenge} Cases.` : "Nichts Neues im alten Cockpit.");
-      laden(); aktualisieren();
-    } catch (x) { fehlerMelden(x); }
-    setLaeuft("");
-  }
-  const g = d ? d.stab || {} : {};
-  const e = d ? d.einstellungen || {} : {};
-
   return html`<div class="seite">
     <${ServerSektion} gesundheit=${gesundheit} />
-    <div class="sv-gruppe"><b>Diese Fassung</b><em>Team-Pipeline, Daten, Einstellungen</em></div>
-    ${d && html`<div class="raster-gleich drei">
-      <section class="karte"><div class="karte-kopf"><h3>Team-Pipeline</h3></div>
-        <${Wert} name="Team" wert=${g.stab_aktiv ? "an" : "aus"} />
-        <${Wert} name="Letzter Durchgang" wert=${g.letzter_lauf ? zeitText(g.letzter_lauf) : "noch keiner"} />
-        <${Wert} name="Gerade" wert=${g.laeuft ? g.laeuft.was : "nichts"} />
-        <${Wert} name="Plaud-Abruf" wert=${g.sync ? zeitText(g.sync) : "unbekannt"} warn=${g.sync && Date.now() / 1000 - g.sync > 1800} />
-        <${Wert} name="Letzte Notiz" wert=${g.letzte_datei ? zeitText(g.letzte_datei) : "unbekannt"} />
-        ${g.letzter_fehler && html`<div class="fehlerbox" style="margin-top:8px">${g.letzter_fehler}</div>`}
-        <div class="knopfreihe karte-fuss"><button class="btn klein" onClick=${async () => { await api("/system/durchgang", { methode: "POST" }); toast("Team-Durchgang angestoßen."); }}><${Icon} n="play" g=${13} />Jetzt einen Durchgang</button></div>
-      </section>
-      <section class="karte"><div class="karte-kopf"><h3>Daten</h3></div>
-        ${Object.entries(d.db).map(([k, v]) => html`<${Wert} name=${k[0].toUpperCase() + k.slice(1)} wert=${v} />`)}
-        <${Wert} name="Abgleich mit altem Cockpit" wert=${e.letzter_abgleich ? zeitText(e.letzter_abgleich) : "nie"} />
-        <div class="knopfreihe karte-fuss"><button class="btn klein" disabled=${laeuft === "abgleich"} onClick=${abgleich} title="Holt nur, was es hier noch nicht gibt.">
-          <${Icon} n="neu_laden" g=${13} />${laeuft === "abgleich" ? "Gleiche ab …" : "Mit altem Cockpit abgleichen"}</button></div>
-      </section>
-      <section class="karte"><div class="karte-kopf"><h3>Einstellungen</h3></div>
-        <${Wert} name="Angemeldet als" wert=${konto.benutzer} />
-        <${Wert} name="Mikrofon im Browser" wert=${window.isSecureContext ? "möglich" : "nur über https"} warn=${!window.isSecureContext} />
-        ${!window.isSecureContext && html`<div class="hinweisbox" style="margin-top:8px">Öffne das Cockpit über <b>https://vveorgxais.tail4ca1ab.ts.net:8443</b>.</div>`}
-        <div class="knopfreihe karte-fuss">
-          <button class="btn klein" onClick=${thema}><${Icon} n="mond" g=${13} />Hell / Dunkel</button>
-          <button class="btn klein" onClick=${() => { try { localStorage.removeItem("vvec_thema"); } catch (x) { /* egal */ } delete document.documentElement.dataset.theme; }}>Wie das System</button>
-          <button class="btn klein gefahr" onClick=${() => api("/konto/abmelden", { methode: "POST" }).then(() => location.reload())}><${Icon} n="raus" g=${13} />Abmelden</button>
-        </div>
-      </section>
-    </div>`}
+    <div class="sv-gruppe maschine-wd"><b>WatchDog</b><em>Temperatur, Notabschaltung und Sicherheit -- läuft unabhängig vom Cockpit</em></div>
+    <${WatchDog} eingebettet=${true} />
   </div>`;
 }

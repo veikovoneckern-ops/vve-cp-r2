@@ -701,7 +701,7 @@ async def senden(gid: str, text: str, anhaenge: list[str]) -> str:
     if g and (not g.get("titel") or g["titel"] == "Neues Gespräch"):
         db.ausfuehren("UPDATE gespraeche SET titel=? WHERE id=?", (text.strip().splitlines()[0][:70] if text.strip() else "Gespräch", gid))
     team = db.holen("team", "cockpit") or {}
-    modell = await llm.modell_waehlen(team.get("modell"), MODELL_NEO, "qwen3-coder:30b", "qwen3.6:27b")
+    modell = await llm.modell_waehlen(team.get("modell"), llm.vorgabe("neo"), "qwen3-coder:30b", "qwen3.6:27b")
     if not modell:
         raise ValueError("Für Neo ist kein lokales Modell installiert.")
     jid = db.neue_id("j")

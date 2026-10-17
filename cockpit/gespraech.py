@@ -447,7 +447,7 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
         system += "\n\n" + beirat_text()
     denken, zusatz = llm.tempo(schnell)
     system += "\n\n" + zusatz
-    modell = await llm.modell_waehlen(MODELL_TALK, "qwen3.6:27b", "qwen3:30b-a3b", "llama3.3:70b")
+    modell = await llm.modell_waehlen(llm.vorgabe("talk"), "qwen3.6:27b", "qwen3:30b-a3b", "llama3.3:70b")
     if not modell:
         yield {"typ": "fehler", "text": "Kein lokales Modell für das Gespräch installiert."}
         return

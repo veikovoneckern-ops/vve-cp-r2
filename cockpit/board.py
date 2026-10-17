@@ -123,7 +123,7 @@ async def senden(gid: str | None, text: str, mit: list[str] | None, projekt_id: 
     verlauf = [{"role": "user" if m["rolle"] == "du" else "assistant", "content": m["text"]}
                for m in reversed(db.alle("SELECT rolle, text FROM nachrichten WHERE gespraech_id=? ORDER BY id DESC LIMIT 14", (gid,)))]
     pk = kontext_text({"art": "projekt", "id": projekt_id}) if projekt_id else ""
-    modell = await llm.modell_waehlen(MODELL_TALK, "qwen3.6:27b", "qwen3:30b-a3b", "llama3.3:70b")
+    modell = await llm.modell_waehlen(llm.vorgabe("talk"), "qwen3.6:27b", "qwen3:30b-a3b", "llama3.3:70b")
     if not modell:
         yield {"typ": "fehler", "text": "Kein lokales Modell installiert."}
         return

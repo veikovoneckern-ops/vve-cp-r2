@@ -18,7 +18,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from cockpit import anmeldung, importer, langlauf, stab
+from cockpit import anmeldung, importer, langlauf, revision, stab
 from cockpit.api import router
 from cockpit.konfig import FRONTEND, HOST, PORT
 
@@ -34,9 +34,12 @@ async def lebenszeit(app: FastAPI):
     aufgabe = asyncio.create_task(stab.schleife())
     # Langlaeufer (17.10.2026): eigene Schleife, teilt sich die Sperre mit der Pipeline.
     lang = asyncio.create_task(langlauf.schleife())
+    # Modell-Revision (17.10.2026): nachts einmal messen, ob es bessere Modelle gibt.
+    rev = asyncio.create_task(revision.schleife())
     yield
     aufgabe.cancel()
     lang.cancel()
+    rev.cancel()
 
 
 app = FastAPI(title="VvE Cockpit", lifespan=lebenszeit, docs_url=None, redoc_url=None)

@@ -131,7 +131,7 @@ def _svg_pruefen(text: str) -> str | None:
 
 
 async def _visualisierung(j: dict[str, Any], beschreibung: str) -> None:
-    modell = await llm.modell_waehlen(MODELL_NEO, "qwen3-coder:30b", "qwen3.8:27b")
+    modell = await llm.modell_waehlen(llm.vorgabe("neo"), "qwen3-coder:30b", "qwen3.8:27b")
     if not modell:
         j.update(stand="fehler", fehler="Kein lokales Modell installiert.")
         return
