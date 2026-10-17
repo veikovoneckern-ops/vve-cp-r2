@@ -9,6 +9,10 @@ import { Ausarbeiten } from "./inbox.js";
 import { TeamChat, gespraechsPartner } from "./teamchat.js";
 import { Composer } from "./composer.js";
 import { VideoBlock, FolienbilderBlock, Downloads, Pruefung, GrossAnsicht, ErgebnisZeile, einarbeitenText } from "./ergebnis.js";
+import { langlaufStarten } from "./langlauf.js";
+import { gespraechOeffnen } from "./zuordnung.js";
+
+const GESPRAECH_ART = { talk: "Talk", team: "Team-Chat", neo: "Neo", board: "Board" };
 
 const FARBEN = ["#2C6BB3", "#0E9377", "#C07C12", "#E0392B", "#7C3AED", "#D0458F", "#0E7490", "#647388"];
 
@@ -82,7 +86,8 @@ function NeuesProjekt({ zu, fertig }) {
   <//>`;
 }
 
-function AufgabeZeile({ t, nachher, mitProjekt }) {
+// bezug (nur auf der Projektseite): Langlaeufer und zugeordnete Gespraeche dieser Aufgabe.
+function AufgabeZeile({ t, nachher, mitProjekt, bezug }) {
   const [bearb, setBearb] = useState(false);
   const [titel, setTitel] = useState(t.titel);
   async function setzen(daten, meldung) {
@@ -100,11 +105,15 @@ function AufgabeZeile({ t, nachher, mitProjekt }) {
       <div class="leise klein">
         ${mitProjekt && (t.projekt_name ? html`<a href=${"#/projects/" + t.projekt_id} style="color:inherit">${t.projekt_name}</a>` : "ohne Projekt")}
         ${t.quelle === "stab" ? html`${mitProjekt ? " · " : ""}vom Team${t.vorgang_id ? html` (<a href=${"#/inbox/" + t.vorgang_id} style="color:inherit" title="Die ursprüngliche Notiz und was das Team daraus gemacht hat">Herkunft</a>)` : ""}` : ""}
+        ${bezug && bezug.langlauf && html` <a class="pill lila" href=${"#/langlauf/" + bezug.langlauf.id} title="Läuft als Langläufer">Langläufer ${bezug.langlauf.fertig}/${bezug.langlauf.etappen || "?"}</a>`}
+        ${bezug && bezug.gespraeche > 0 && html` <span class="pill" title="Zugeordnete Gespräche -- Liste im Überblick">${bezug.gespraeche} Gespräch${bezug.gespraeche === 1 ? "" : "e"}</span>`}
       </div>
     </div>
     <input type="date" class="eingabe" style="width:auto;min-height:30px;padding:2px 6px;font-size:12px" value=${t.faellig || ""} aria-label="Fällig am"
       onChange=${(e) => setzen({ faellig: e.target.value })} />
     <button class="btn klein geist icon" title="Bearbeiten" aria-label="Bearbeiten" onClick=${() => setBearb(true)}><${Icon} n="stift" g=${14} /></button>
+    ${!erledigt && html`<button class="btn klein geist icon" title="Als Langläufer starten: das Team arbeitet die Aufgabe in Etappen ab, mit Zwischenprüfung" aria-label="Als Langläufer starten"
+      onClick=${() => langlaufStarten({ projekt_id: t.projekt_id || "", aufgabe_id: t.id, aufgabe_titel: t.titel, titel: t.titel, auftrag: t.notiz || t.titel })}><${Icon} n="langlauf" g=${14} /></button>`}
     <button class="btn klein geist icon" title="Archivieren" aria-label="Archivieren" onClick=${async () => {
       try { await api("/aufgaben/" + t.id, { methode: "DELETE" }); toast("Archiviert.", { aktion: { text: "Rückgängig", fn: () => setzen({ archiviert: 0 }) } }); nachher(); } catch (e) { fehlerMelden(e); }
     }}><${Icon} n="archiv" g=${14} /></button>
@@ -178,6 +187,11 @@ function Projekt({ id, reiter }) {
   const p = d.projekt;
   const offen = d.aufgaben.filter((t) => t.status !== "erledigt");
   const erledigt = d.aufgaben.filter((t) => t.status === "erledigt");
+  // Je Aufgabe: laufender Langlaeufer und Zahl zugeordneter Gespraeche (17.10.2026).
+  const langlaeufe = d.langlaeufe || [];
+  const gespraeche = d.gespraeche || [];
+  const bezug = (t) => ({ langlauf: langlaeufe.find((l) => l.aufgabe_id === t.id && l.stand !== "abgebrochen"),
+    gespraeche: gespraeche.filter((g) => g.aufgabe_id === t.id).length });
 
   async function aendern(daten, meldung) {
     try { await api("/projekte/" + id, { methode: "PATCH", daten }); if (meldung) toast(meldung); laden(); aktualisieren(); } catch (e) { fehlerMelden(e); }
@@ -204,6 +218,8 @@ function Projekt({ id, reiter }) {
       </div>
       <div class="knopfreihe">
         <button class="btn" onClick=${() => setAusarbeiten(true)}><${Icon} n="stift" g=${15} />Ausarbeiten lassen</button>
+        <button class="btn" title="Ein langes Vorhaben zu diesem Projekt in Etappen durchlaufen lassen, mit Zwischenprüfung"
+          onClick=${() => langlaufStarten({ projekt_id: id, titel: "", auftrag: p.ziel || "" })}><${Icon} n="langlauf" g=${15} />Als Langläufer</button>
         <select class="eingabe" style="width:auto" value=${p.status} aria-label="Status" onChange=${(e) => aendern({ status: e.target.value }, "Status geändert.")}>
           <option value="aktiv">aktiv</option><option value="pausiert">pausiert</option><option value="abgeschlossen">abgeschlossen</option><option value="archiviert">archiviert</option>
         </select>
@@ -214,10 +230,21 @@ function Projekt({ id, reiter }) {
     ${tab === "ueberblick" && html`<div class="raster zwei">
       <section class="karte"><div class="karte-kopf"><h3>Offene Aufgaben</h3><span class="pill">${offen.length}</span></div>
         <${NeueAufgabe} projektId=${id} nachher=${laden} />
-        ${offen.length ? offen.slice(0, 12).map((t) => html`<${AufgabeZeile} key=${t.id} t=${t} nachher=${laden} />`) : html`<${Leer}>Keine offenen Aufgaben.</${Leer}>`}
+        ${offen.length ? offen.slice(0, 12).map((t) => html`<${AufgabeZeile} key=${t.id} t=${t} nachher=${laden} bezug=${bezug(t)} />`) : html`<${Leer}>Keine offenen Aufgaben.</${Leer}>`}
         ${offen.length > 12 && html`<button class="btn klein geist" onClick=${() => setTab("aufgaben")}>Alle ${offen.length} zeigen</button>`}
       </section>
       <div>
+        ${(langlaeufe.length > 0 || gespraeche.length > 0) && html`<section class="karte">
+          <div class="karte-kopf"><h3>Langläufer und Gespräche</h3><span class="leise klein">was zu diesem Projekt läuft und besprochen wurde</span></div>
+          ${langlaeufe.map((l) => html`<div class="zeile" key=${l.id}><${Icon} n="langlauf" g=${15} />
+            <div class="haupt-text"><a href=${"#/langlauf/" + l.id} style="color:inherit"><b>${l.titel}</b></a>
+              <div class="leise klein">${l.art_name} · ${l.fertig} von ${l.etappen || "?"} ${l.etappen_name}${l.aufgabe_id ? " · zu einer Aufgabe" : ""}</div></div>
+            <span class=${"pill" + (l.stand === "fertig" ? " gruen" : l.stand === "wartet" ? " gelb" : l.stand === "laeuft" || l.stand === "plant" ? " lila" : "")}>${{ plant: "plant", laeuft: "läuft", wartet: "wartet auf dich", pausiert: "pausiert", fehler: "hängt", fertig: "fertig", abgebrochen: "abgebrochen" }[l.stand] || l.stand}</span></div>`)}
+          ${gespraeche.slice(0, 12).map((g) => html`<div class="zeile" key=${g.id}><${Icon} n="chat" g=${15} />
+            <div class="haupt-text"><a href="#" style="color:inherit" onClick=${(e) => { e.preventDefault(); gespraechOeffnen(g, bus); }}><b>${g.titel}</b></a>
+              <div class="leise klein">${GESPRAECH_ART[g.art] || g.art}${g.wer_name ? " mit " + g.wer_name : ""}${g.aufgabe_titel ? " · Aufgabe: " + g.aufgabe_titel : ""} · ${g.anzahl} Nachrichten</div></div>
+            <span class="neben">${zeitText(g.geaendert)}</span></div>`)}
+        </section>`}
         <${UnterlagenKarte} projektId=${id} name=${p.name} nachher=${laden} />
         <section class="karte"><div class="karte-kopf"><h3>Ziel</h3></div>
           <textarea class="eingabe" rows="2" onKeyDown=${enterBestaetigt} placeholder="Ein Satz: Was soll mit diesem Projekt erreicht werden? Hilft dem Team beim Einordnen." value=${p.ziel || ""}
@@ -231,9 +258,9 @@ function Projekt({ id, reiter }) {
     </div>`}
     ${tab === "aufgaben" && html`<section class="karte">
       <${NeueAufgabe} projektId=${id} nachher=${laden} />
-      ${offen.map((t) => html`<${AufgabeZeile} key=${t.id} t=${t} nachher=${laden} />`)}
+      ${offen.map((t) => html`<${AufgabeZeile} key=${t.id} t=${t} nachher=${laden} bezug=${bezug(t)} />`)}
       ${erledigt.length > 0 && html`<details style="margin-top:10px"><summary class="leise klein" style="cursor:pointer">${erledigt.length} erledigt</summary>
-        ${erledigt.map((t) => html`<${AufgabeZeile} key=${t.id} t=${t} nachher=${laden} />`)}</details>`}
+        ${erledigt.map((t) => html`<${AufgabeZeile} key=${t.id} t=${t} nachher=${laden} bezug=${bezug(t)} />`)}</details>`}
       ${!d.aufgaben.length && html`<${Leer} titel="Noch keine Aufgaben." />`}
     </section>`}
     ${tab === "zeitplan" && html`<${Zeitplan} projekt=${p} aufgaben=${d.aufgaben} laden=${laden} />`}

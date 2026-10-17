@@ -4,6 +4,7 @@
 // geteilt (die Advisors nennen sich fett am Absatzanfang) -- lesbarer als ein
 // langer Block. Einzelgespraech mit einer Person, optionaler Projektbezug,
 // Gespraeche bleiben gespeichert.
+import { Zuordnung } from "./zuordnung.js";
 import { html, useState, useEffect, useRef, Icon, Md, Modal, Leer, toast, fehlerMelden, navigiere, zeitText, bus, tempoSchnell, TempoSchalter, Ziehgriff } from "./ui.js";
 import { api, strom } from "./api.js";
 import { Composer } from "./composer.js";
@@ -198,6 +199,7 @@ export function Board({ id }) {
           : html`<span class="bd-modus"><span class="bd-stapel">${d.tisch.slice(0, 5).map((i) => nach[i] && html`<${Avatar} p=${nach[i]} g=${26} />`)}</span>
               Runde mit <b>${d.tisch.length}</b> am Tisch</span>`}
         <span class="luecke"></span>
+        <${Zuordnung} gid=${id} />
         <select class="eingabe bd-auswahl" value=${projekt} onChange=${(e) => setProjekt(e.target.value)} title="Optional: ein Projekt, über das gesprochen wird">
           <option value="">Ohne Projektbezug</option>${projekte.map((p) => html`<option value=${p.id}>${p.name}</option>`)}</select>
         <select class="eingabe bd-auswahl" value=${id || ""} onChange=${(e) => navigiere(e.target.value ? "/board/" + e.target.value : "/board")} title="Frühere Gespräche">

@@ -3,6 +3,7 @@
 // (Matrix-Regen, solange nichts darin steht). Neo arbeitet mit echten
 // Werkzeugen als vveadmin; jeder Schritt steht aufklappbar im Verlauf.
 // Ein Auftrag laeuft auf dem Server weiter, auch wenn du die Seite wechselst.
+import { Zuordnung } from "./zuordnung.js";
 import { useEsc, escEigen, html, useState, useEffect, useRef, Icon, Md, Leer, toast, fehlerMelden, zeitText, dauer, navigiere, kopieren, bus, Ziehgriff } from "./ui.js";
 import { api } from "./api.js";
 import { Composer } from "./composer.js";
@@ -182,6 +183,7 @@ export function Neo({ id }) {
           ${titelBearb !== null ? html`<input class="eingabe" value=${titelBearb} autofocus onInput=${(e) => setTitelBearb(e.target.value)} onBlur=${titelSpeichern}
               onKeyDown=${(e) => { if (e.key === "Enter") titelSpeichern(); if (escEigen(e)) setTitelBearb(null); }} />`
             : html`<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:text" title="Doppelklick zum Umbenennen" onDblClick=${() => g && setTitelBearb(g.gespraech.titel)}>${g ? g.gespraech.titel : "Neo"}</span>`}</h2>
+        <${Zuordnung} gid=${id} klein=${true} />
         ${team && html`<select class="eingabe" style="width:auto;min-height:32px;font-size:12.5px" value=${neoModell || ""} onChange=${(e) => modellSetzen(e.target.value)} aria-label="Neos Modell" title="Womit Neo rechnet">
           <option value="">Vorgabe (qwen3-coder-neo)</option>
           ${team.modelle.filter((m) => !m.includes("embed")).map((m) => html`<option value=${m}>${m}</option>`)}</select>`}

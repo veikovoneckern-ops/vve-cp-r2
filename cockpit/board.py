@@ -122,7 +122,13 @@ async def senden(gid: str | None, text: str, mit: list[str] | None, projekt_id: 
                   (gid, "du", text, json.dumps({"mit": ids, "projekt_id": projekt_id}, ensure_ascii=False), time.time()))
     verlauf = [{"role": "user" if m["rolle"] == "du" else "assistant", "content": m["text"]}
                for m in reversed(db.alle("SELECT rolle, text FROM nachrichten WHERE gespraech_id=? ORDER BY id DESC LIMIT 14", (gid,)))]
+    # Zugeordnetes Projekt und Aufgabe (17.10.2026): gespeichert am Gespraech.
+    from .gespraech import aufgabe_text, zuordnung
+    z = zuordnung(gid)
+    projekt_id = projekt_id or z.get("projekt_id")
     pk = kontext_text({"art": "projekt", "id": projekt_id}) if projekt_id else ""
+    if z.get("aufgabe_id"):
+        pk = (pk + "\n\n" if pk else "") + aufgabe_text(z["aufgabe_id"])
     modell = await llm.modell_waehlen(llm.vorgabe("talk"), "qwen3.6:27b", "qwen3:30b-a3b", "llama3.3:70b")
     if not modell:
         yield {"typ": "fehler", "text": "Kein lokales Modell installiert."}

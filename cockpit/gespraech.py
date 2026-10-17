@@ -443,6 +443,10 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
         verlauf.append({"role": "user" if m["rolle"] == "du" else "assistant", "content": m["text"]})
     system = (SYSTEM.replace("{STIMME}", STIMME_ZUSATZ if stimme else "") +
               f"\n\nHEUTE: {time.strftime('%A, %d.%m.%Y %H:%M')}\n\nLAGE:\n{lage_text()}\n\n{kontext_text(kontext)}")
+    # Zugeordnetes Projekt und Aufgabe (17.10.2026) -- gilt fuer jede Nachricht dieses Gespraechs.
+    zt = zuordnung_text(gid, (kontext or {}).get("id") if (kontext or {}).get("art") == "projekt" else None)
+    if zt:
+        system += "\n\n" + zt
     if re.search(r"beirat|board|vordenker", text, re.I):
         system += "\n\n" + beirat_text()
     denken, zusatz = llm.tempo(schnell)
@@ -614,3 +618,66 @@ async def vorschlaege_ausfuehren(nachricht_id: int, indizes: list[int]) -> list[
     daten["vorschlaege"] = vs
     db.ausfuehren("UPDATE nachrichten SET daten=? WHERE id=?", (json.dumps(daten, ensure_ascii=False), nachricht_id))
     return ergebnisse
+
+
+# ---------------------------------------------------------------- Zuordnung
+# Jedes Gespraech (Talk, Team-Chat, Neo, Board) kann einem Projekt und einer
+# Aufgabe zugeordnet werden (Veiko, 17.10.2026: "einzelne Chats Projekten und
+# Aufgaben zuordnen, damit mein Setup gut funktioniert"). Gespeichert wird im
+# vorhandenen Feld gespraeche.kontext -- dieselbe Stelle, an der Team-Chat und
+# Board ihr Projekt schon immer trugen; keine neue Tabelle, keine zweite Wahrheit.
+# Wirkung: das Modell bekommt Projekt und Aufgabe als Bezug in jeder Antwort,
+# und die Projektseite zeigt das Gespraech.
+def zuordnung(gid: str | None) -> dict[str, Any]:
+    g = db.holen("gespraeche", gid) if gid else None
+    k = (g or {}).get("kontext") or {}
+    return {"projekt_id": k.get("projekt_id"), "aufgabe_id": k.get("aufgabe_id")} if isinstance(k, dict) else {}
+
+
+def zuordnen(gid: str, projekt_id: str | None, aufgabe_id: str | None) -> dict[str, Any]:
+    g = db.holen("gespraeche", gid)
+    if not g:
+        raise ValueError("Gespräch nicht gefunden.")
+    if aufgabe_id:
+        a = db.holen("aufgaben", aufgabe_id)
+        if not a:
+            raise ValueError("Aufgabe nicht gefunden.")
+        projekt_id = projekt_id or a.get("projekt_id")
+    if projekt_id and not db.holen("projekte", projekt_id):
+        raise ValueError("Projekt nicht gefunden.")
+    k = g.get("kontext") if isinstance(g.get("kontext"), dict) else {}
+    k = {**k, "projekt_id": projekt_id or None, "aufgabe_id": aufgabe_id or None}
+    db.ausfuehren("UPDATE gespraeche SET kontext=? WHERE id=?", (json.dumps(k, ensure_ascii=False), gid))
+    return beschriftung(k)
+
+
+def beschriftung(k: dict[str, Any]) -> dict[str, Any]:
+    p = db.holen("projekte", k["projekt_id"]) if k.get("projekt_id") else None
+    a = db.holen("aufgaben", k["aufgabe_id"]) if k.get("aufgabe_id") else None
+    return {"projekt_id": k.get("projekt_id"), "aufgabe_id": k.get("aufgabe_id"),
+            "projekt_name": (p or {}).get("name"), "aufgabe_titel": (a or {}).get("titel")}
+
+
+def aufgabe_text(aufgabe_id: str | None) -> str:
+    a = db.holen("aufgaben", aufgabe_id) if aufgabe_id else None
+    if not a:
+        return ""
+    teile = [f"DIESES GESPRÄCH GEHÖRT ZUR AUFGABE: {a['titel']} (Stand: {a.get('status')}"
+             + (f", fällig {a['faellig']}" if a.get("faellig") else "") + ")"]
+    if (a.get("notiz") or "").strip():
+        teile.append("Notiz zur Aufgabe: " + a["notiz"].strip()[:2000])
+    teile.append("Richte deine Antworten auf diese Aufgabe aus, solange Veiko nichts anderes sagt.")
+    return "\n".join(teile)
+
+
+def zuordnung_text(gid: str | None, schon_projekt: str | None = None) -> str:
+    """Bezug fuer das Modell. schon_projekt: das Projekt, das ohnehin im Kontext
+    steht -- dann nicht ein zweites Mal anhaengen."""
+    z = zuordnung(gid)
+    teile = []
+    if z.get("projekt_id") and z["projekt_id"] != schon_projekt:
+        teile.append(kontext_text({"art": "projekt", "id": z["projekt_id"]}).replace(
+            "VEIKO SCHAUT GERADE AUF DAS PROJEKT", "DIESES GESPRÄCH GEHÖRT ZUM PROJEKT"))
+    if z.get("aufgabe_id"):
+        teile.append(aufgabe_text(z["aufgabe_id"]))
+    return "\n\n".join(t for t in teile if t)

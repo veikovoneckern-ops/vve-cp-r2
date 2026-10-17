@@ -100,7 +100,7 @@ def ansicht(l: dict[str, Any]) -> dict[str, Any]:
             "etappen": len(et), "fertig": sum(1 for e in et if e.get("stand") == "fertig"),
             "kosten": round(d.get("kosten") or 0, 4), "pruefer": d.get("pruefer"), "pruef_alle": d.get("pruef_alle"),
             "rolle": d.get("rolle"), "rolle_name": stab.rollen_name(d.get("rolle")),
-            "grund": d.get("grund"), "fehler": d.get("fehler"), "ergebnis_id": d.get("ergebnis_id"),
+            "grund": d.get("grund"), "fehler": d.get("fehler"), "ergebnis_id": d.get("ergebnis_id"), "aufgabe_id": d.get("aufgabe_id"),
             "pruefungen": len(d.get("pruefungen") or []),
             "arbeitet": bool(jetzt.get("vorgang_id") and jetzt.get("vorgang_id") == l.get("vorgang_id")),
             "was": jetzt.get("was") if jetzt.get("vorgang_id") == l.get("vorgang_id") else None}
@@ -118,10 +118,16 @@ def einzeln(lid: str) -> dict[str, Any] | None:
 
 # ---------------------------------------------------------------- Anlegen und Steuern
 def anlegen(titel: str, auftrag: str, art: str, projekt_id: str | None, pruefer: str, pruef_alle: int,
-            budget: float, rolle: str | None = None) -> dict[str, Any]:
+            budget: float, rolle: str | None = None, aufgabe_id: str | None = None) -> dict[str, Any]:
     titel, auftrag = (titel or "").strip()[:120], (auftrag or "").strip()
     if len(auftrag) < 20:
         raise ValueError("Beschreib das Vorhaben in ein paar Sätzen -- daraus plant das Team die Etappen.")
+    # Aus einer Aufgabe gestartet (17.10.2026): das Projekt kommt von der Aufgabe,
+    # und die Aufgabe bekommt eine Zeile in ihre Notiz -- dort sucht Veiko zuerst.
+    aufgabe = db.holen("aufgaben", aufgabe_id) if aufgabe_id else None
+    if aufgabe_id and not aufgabe:
+        raise ValueError("Aufgabe nicht gefunden.")
+    projekt_id = projekt_id or (aufgabe or {}).get("projekt_id")
     if art not in ARTEN:
         raise ValueError("Unbekannte Art.")
     if pruefer not in PRUEFER:
@@ -139,14 +145,24 @@ def anlegen(titel: str, auftrag: str, art: str, projekt_id: str | None, pruefer:
     db.einfuegen("langlaeufe", {
         "id": lid, "vorgang_id": vid, "projekt_id": projekt_id, "titel": titel, "art": art, "stand": "plant",
         "budget": max(0.0, float(budget or 0)), "erstellt": time.time(), "geaendert": time.time(),
-        "daten": {"auftrag": auftrag, "rolle": rolle, "pruefer": pruefer, "pruef_alle": max(1, min(10, int(pruef_alle or 3))),
+        "daten": {"auftrag": auftrag, "rolle": rolle, "pruefer": pruefer, "pruef_alle": max(1, min(10, int(pruef_alle or 3))), "aufgabe_id": aufgabe_id,
                   "etappen": [], "hinweise": [], "pruefungen": [], "kosten": 0.0, "fehlversuche": 0}})
     db.ereignis(vid, "du", "auftrag",
                 f"Langläufer gestartet: {ARTEN[art]['name']}, {stab.rollen_name(rolle)} arbeitet, "
                 f"{'Dario' if pruefer == 'dario' else 'Demmis'} prüft nach je {pruef_alle} {ARTEN[art]['mehrzahl']}, "
                 f"Budget $ {float(budget or 0):.2f}.")
+    _aufgabe_vermerken(aufgabe_id, f"Läuft als Langläufer „{titel}“ ({ARTEN[art]['name']}) -- Fortschritt auf der Seite Langläufer.")
     wecken()
     return einzeln(lid) or {}
+
+
+def _aufgabe_vermerken(aufgabe_id: str | None, zeile: str) -> None:
+    """Eine Zeile oben in die Notiz der Aufgabe -- mit Datum, nichts wird ersetzt."""
+    a = db.holen("aufgaben", aufgabe_id) if aufgabe_id else None
+    if not a:
+        return
+    neu = f"{time.strftime('%d.%m.%Y')}: {zeile}" + ("\n" + a["notiz"] if (a.get("notiz") or "").strip() else "")
+    db.aendern("aufgaben", aufgabe_id, {"notiz": neu, "geaendert": time.time()}, wer="langlauf")
 
 
 def steuern(lid: str, aktion: str, d: dict[str, Any]) -> dict[str, Any]:
@@ -501,6 +517,7 @@ def _abschliessen(l: dict[str, Any], vorlaeufig: bool = False) -> str | None:
     if not vorlaeufig:
         d["ergebnis_id"] = eid
         d["grund"] = None
+        _aufgabe_vermerken(d.get("aufgabe_id"), f"Langläufer „{l['titel']}“ fertig: {len(fertig)} Etappen -- Ergebnis „{titel}“ unter Ergebnisse des Projekts.")
         _speichern(l, stand="fertig")
         stab._auftrag_erledigt(vid)
         stab.stand_berechnen(vid)

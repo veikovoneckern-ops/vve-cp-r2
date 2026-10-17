@@ -17,8 +17,8 @@ const STAND = {
 const URTEIL = { weiter: ["gruen", "trägt -- weiter"], nachbessern: ["gelb", "nachgebessert"], anhalten: ["rot", "angehalten"] };
 const PRUEFER = { dario: "Dario (Claude)", demmis: "Demmis (Gemini)" };
 
-function Neu({ zu, fertig, d }) {
-  const [f, setF] = useState({ titel: "", auftrag: "", art: "buch", rolle: "", projekt_id: "", pruefer: "dario", pruef_alle: 3, budget: 5 });
+function Neu({ zu, fertig, d, vorlage }) {
+  const [f, setF] = useState({ titel: "", auftrag: "", art: "buch", rolle: "", projekt_id: "", aufgabe_id: "", pruefer: "dario", pruef_alle: 3, budget: 5, ...(vorlage || {}) });
   const [projekte, setProjekte] = useState([]);
   const [sendet, setSendet] = useState(false);
   useEffect(() => { api("/projekte").then((x) => setProjekte(x.projekte || [])).catch(() => {}); }, []);
@@ -58,6 +58,7 @@ function Neu({ zu, fertig, d }) {
       <label>Budget für die Prüfungen (US-$)
         <input class="eingabe" type="number" min="0" step="0.5" value=${f.budget} onInput=${s("budget")} /></label>
     </div>
+    ${f.aufgabe_id && html`<p class="hinweisbox klein" style="margin-top:12px">Gehört zur Aufgabe <b>${f.aufgabe_titel || ""}</b>. Sie bekommt Start und Ergebnis als Zeile in ihre Notiz; ihr Stand bleibt deine Entscheidung.</p>`}
     <p class="leise klein ll-erkl">Das Team schreibt lokal auf deinem Server -- das kostet nichts. Geld kosten nur die Zwischenprüfungen durch
       ${f.pruefer === "dario" ? " Dario" : " Demmis"}. <b>Das Budget ist deine Zustimmung:</b> so viel dürfen sie insgesamt kosten; vor jeder Prüfung
       wird geschätzt, und reicht der Rest nicht, läuft es lokal weiter, ohne zu fragen. Angehalten wird nur, wenn der Prüfer sagt, dass es
@@ -159,9 +160,11 @@ function Detail({ id, neuLaden }) {
 
 export function Langlaeufer({ id }) {
   const [d, laden] = useAbruf("/langlaeufe", 15000);
-  const [neu, setNeu] = useState(false);
-  const [wahl, setWahl] = useState(id || null);
-  useEffect(() => { if (id) setWahl(id); }, [id]);
+  // Aus Projekt oder Aufgabe gestartet (langlaufStarten): Formular gleich offen und vorbelegt.
+  const [neu, setNeu] = useState(() => id === "neu" && !!naechsteVorlage);
+  const [vorlage] = useState(() => { const v = naechsteVorlage; naechsteVorlage = null; return v; });
+  const [wahl, setWahl] = useState(id && id !== "neu" ? id : null);
+  useEffect(() => { if (id && id !== "neu") setWahl(id); }, [id]);
   if (!d) return html`<div class="seite"><div class="lade">Lade Langläufer …</div></div>`;
   const aktuell = wahl || (d.langlaeufe[0] && d.langlaeufe[0].id);
   return html`<div class="seite ll">
@@ -176,7 +179,7 @@ export function Langlaeufer({ id }) {
         ${aktuell && html`<${Detail} id=${aktuell} neuLaden=${laden} />`}
       </div>`
       : html`<div class="karte"><p class="leise">Noch kein Langläufer. „Neuer Langläufer“ startet einen -- zum Beispiel ein Buch mit zwölf Kapiteln.</p></div>`}
-    ${neu && html`<${Neu} d=${d} zu=${() => setNeu(false)} fertig=${(nid) => { setNeu(false); setWahl(nid); laden(); }} />`}
+    ${neu && html`<${Neu} d=${d} vorlage=${vorlage} zu=${() => setNeu(false)} fertig=${(nid) => { setNeu(false); setWahl(nid); laden(); }} />`}
   </div>`;
 }
 
@@ -187,4 +190,13 @@ function FrageKnopf({ text, frage, ja, tun: aktion }) {
     <button class="btn klein primaer" onClick=${() => { setAuf(false); aktion(); }}>${ja}</button>
     <button class="btn klein geist" onClick=${() => setAuf(false)}>Nein</button></span>`;
   return html`<button class="btn klein" onClick=${() => setAuf(true)}>${text}</button>`;
+}
+
+// Aus einem Projekt oder einer Aufgabe heraus starten (17.10.2026): Projekt,
+// Aufgabe, Titel und Auftrag stehen schon im Formular. Gemerkt in einer
+// Modulvariablen statt in der Adresse -- ein langer Auftragstext gehoert nicht in die URL.
+let naechsteVorlage = null;
+export function langlaufStarten(vorlage) {
+  naechsteVorlage = vorlage || {};
+  location.hash = "#/langlauf/neu";
 }

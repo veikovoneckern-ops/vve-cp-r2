@@ -11,6 +11,7 @@
 // Gespraechskennung null (jeder Satz ein neues Gespraech) und keine offenen
 // Vorschlaege (ein "ja" fuehrte nie etwas aus). Kennung und Verlauf liegen
 // deshalb zusaetzlich in Refs, die die Schleife immer aktuell liest.
+import { Zuordnung } from "./zuordnung.js";
 import { useEsc, html, useState, useEffect, useRef, Icon, Md, toast, fehlerMelden, aktualisieren, navigiere, rolleName, bus, talkSchalter, TalkSchalter, GlobusKnopf, Ziehgriff } from "./ui.js";
 import { api, strom } from "./api.js";
 import { Composer } from "./composer.js";
@@ -112,6 +113,8 @@ export function Talk({ zu, kontext, setKontext, start }) {
   useEffect(() => {
     if (!start || start.n === letzterStart.current) return;
     letzterStart.current = start.n;
+    // Ein zugeordnetes Gespraech von der Projektseite aus wieder oeffnen (17.10.2026).
+    if (start.gid) { setGid(start.gid); return; }
     if (start.frei) { ausKopf.current = !!start.ausKopf; if (!freiAn.current) freiStart(); }
     else if (start.durchgehen) durchgehen();
     else if (start.text) senden(start.text, [], false);
@@ -349,6 +352,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
     <${Ziehgriff} name="talk" seite="links" />
     <div class="talk-kopf">
       <h2><${Icon} n="talk" g=${17} />Talk</h2>
+      <${Zuordnung} gid=${gid} klein=${true} />
       ${frei && html`<button class="btn klein" onClick=${() => { ausKopf.current = false; freiStopp(); }} title="Gespräch beenden (oder sag „Dialog beenden“)"><${Icon} n="stopp" g=${12} />Beenden</button>`}
       <button class="btn geist icon" onClick=${neu} title="Neues Gespräch" aria-label="Neues Gespräch"><${Icon} n="neu" g=${17} /></button>
       <button class="btn geist icon" onClick=${zu} title="Schließen (Esc)" aria-label="Talk schließen"><${Icon} n="x" /></button>

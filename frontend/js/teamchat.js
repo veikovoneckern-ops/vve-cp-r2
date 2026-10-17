@@ -3,6 +3,7 @@
 // Team und die Spalte "Weiterarbeiten" im Ergebnisfenster. Im Ergebnisfenster
 // liegt das Ergebnis im Kontext; verlangt Veiko eine Aenderung, schreibt das
 // Mitglied eine neue Fassung, Daniel prueft sie, und sie laesst sich zuruecknehmen.
+import { Zuordnung } from "./zuordnung.js";
 import { html, useState, useEffect, useRef, Icon, Avatar, Md, Leer, toast, fehlerMelden, navigiere, zeitText, bus, kopieren, tempoSchnell, TempoSchalter, Ziehgriff } from "./ui.js";
 import { api, strom } from "./api.js";
 import { Composer } from "./composer.js";
@@ -219,6 +220,7 @@ export function TeamGespraeche({ wer, gid }) {
           <span class="bd-modus"><${Avatar} wer=${aktiv.id} name=${aktiv.name} g=${26} />Gespräch mit <b>${aktiv.name}</b>
             ${aktiv.extern && html`<span class="pill gelb">kostet Geld</span>`}${aktiv.extern && aktiv.schluessel === false && html`<span class="pill rot">kein Schlüssel</span>`}</span>
           <span class="luecke"></span>
+          <${Zuordnung} gid=${gid} />
           <select class="eingabe bd-auswahl" value=${gid || ""} onChange=${(e) => ziel(wer, e.target.value)} title="Frühere Gespräche">
             <option value="">Neues Gespräch</option>${liste.map((g) => html`<option value=${g.id}>${g.titel} · ${zeitText(g.geaendert)}</option>`)}</select>
           ${gid && html`<button class="btn klein geist icon" title="Gespräch aus der Liste nehmen" onClick=${async () => {

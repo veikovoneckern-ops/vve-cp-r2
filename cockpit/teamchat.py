@@ -266,7 +266,15 @@ async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
             inhalt += "\n\n" + anh
         verlauf.append({"role": "user" if m["rolle"] == "du" else "assistant", "content": inhalt or "(leer)"})
     denken, zusatz = llm.tempo(schnell)
+    # Zugeordnetes Projekt/Aufgabe (17.10.2026): gespeichert am Gespraech, gilt
+    # auch, wenn das Fenster selbst keinen Projektbezug mitschickt.
+    from .gespraech import aufgabe_text, zuordnung
+    z = zuordnung(gid)
+    if z.get("projekt_id") and not kontext.get("projekt_id"):
+        kontext["projekt_id"] = z["projekt_id"]
     system = system_text(wer, kontext) + "\n\n" + zusatz
+    if z.get("aufgabe_id"):
+        system += "\n\n" + aufgabe_text(z["aufgabe_id"])
 
     # Internet im gruendlichen Modus -- auch fuer die Externen: die Suche plant
     # ein LOKALES Modell, es kostet also nichts extra, und die Cloud-Anbieter
@@ -290,6 +298,7 @@ async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
     for xid in sprecher:
         yield {"typ": "wer", "wer": xid}
         xsys = (system_text(xid, kontext) + "\n\n" + zusatz + netz +
+                ("\n\n" + aufgabe_text(z["aufgabe_id"]) if z.get("aufgabe_id") else "") +
                 f"\n\nDICH HAT {wer_name(wer).upper()} AUS VEIKOS TEAM AUF VEIKOS WUNSCH IN DIESES GESPRÄCH GEHOLT. "
                 "Erledige Veikos letzte Nachricht selbst und vollständig hier im Gespräch -- nicht als Vorschlag, "
                 "was jemand anderes tun könnte. Bei einer Korrektur: nenne jede Fundstelle mit Zitat und Verbesserung.")

@@ -469,6 +469,9 @@ async def projekt(pid: str):
                              "ORDER BY geaendert DESC LIMIT 60", (pid,)),
         "dateien": db.alle("SELECT id, name, typ, groesse, erstellt FROM dateien WHERE projekt_id=? ORDER BY erstellt DESC", (pid,)),
         "unterprojekte": db.alle("SELECT id, name FROM projekte WHERE eltern_id=?", (pid,)),
+        # Zugeordnete Gespraeche und Langlaeufer (17.10.2026).
+        "gespraeche": gespraeche_von(pid),
+        "langlaeufe": _langlaeufe_von(pid),
     }
 
 
@@ -1625,7 +1628,7 @@ async def langlauf_anlegen(request: Request):
     try:
         return langlauf.anlegen(str(d.get("titel") or ""), str(d.get("auftrag") or ""), str(d.get("art") or "buch"),
                                 d.get("projekt_id") or None, str(d.get("pruefer") or "dario"),
-                                int(d.get("pruef_alle") or 3), float(d.get("budget") or 0), d.get("rolle"))
+                                int(d.get("pruef_alle") or 3), float(d.get("budget") or 0), d.get("rolle"), d.get("aufgabe_id") or None)
     except (TypeError, ValueError) as e:
         raise HTTPException(400, str(e))
 
@@ -1689,3 +1692,45 @@ async def revision_aktion(aktion: str, request: Request):
     except ValueError as e:
         raise HTTPException(409, str(e))
     raise HTTPException(404, "Unbekannte Aktion")
+
+
+# ================================================================ Gespraeche zuordnen
+# Jedes Gespraech (Talk, Team-Chat, Neo, Board) laesst sich einem Projekt und
+# einer Aufgabe zuordnen (Veiko, 17.10.2026). Details: gespraech.zuordnen().
+@router.get("/gespraeche/{gid}/zuordnung")
+async def gespraech_zuordnung(gid: str):
+    g = db.holen("gespraeche", gid)
+    if not g:
+        raise HTTPException(404, "Gespräch nicht gefunden")
+    return gespraech.beschriftung(g.get("kontext") if isinstance(g.get("kontext"), dict) else {})
+
+
+@router.patch("/gespraeche/{gid}/zuordnung")
+async def gespraech_zuordnen(gid: str, request: Request):
+    d = await _koerper(request)
+    try:
+        return gespraech.zuordnen(gid, d.get("projekt_id") or None, d.get("aufgabe_id") or None)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+
+
+def gespraeche_von(projekt_id: str) -> list[dict[str, Any]]:
+    """Zugeordnete Gespraeche eines Projekts, mit dem Weg zurueck ins Gespraech."""
+    aus = []
+    for g in db.alle("SELECT g.id, g.art, g.titel, g.kontext, g.geaendert, (SELECT COUNT(*) FROM nachrichten n WHERE n.gespraech_id=g.id) AS anzahl "
+                     "FROM gespraeche g WHERE json_extract(g.kontext,'$.projekt_id')=? AND g.art IN ('talk','team','neo','board') "
+                     "ORDER BY g.geaendert DESC LIMIT 60", (projekt_id,)):
+        k = g.get("kontext") if isinstance(g.get("kontext"), dict) else {}
+        if not g["anzahl"]:
+            continue
+        a = db.holen("aufgaben", k["aufgabe_id"]) if k.get("aufgabe_id") else None
+        wer = k.get("wer")
+        aus.append({"id": g["id"], "art": g["art"], "titel": g["titel"], "geaendert": g["geaendert"], "anzahl": g["anzahl"],
+                    "wer": wer, "wer_name": teamchat.wer_name(wer) if wer else None,
+                    "aufgabe_id": k.get("aufgabe_id"), "aufgabe_titel": (a or {}).get("titel")})
+    return aus
+
+
+def _langlaeufe_von(projekt_id: str) -> list[dict[str, Any]]:
+    from . import langlauf
+    return langlauf.liste(projekt_id)
