@@ -50,10 +50,17 @@ BILD_ZEILE = re.compile(r"^\s*[-*•]?\s*\**\s*(bildbeschreibung|bildidee|bild|v
 # einmal englische Bildanweisungen in EINEM Stil (_kunstregie), gerechnet wird
 # mit Qwen-Image und einer Liste dessen, was NICHT ins Bild soll.
 ZUSATZ = (", premium editorial illustration for a keynote presentation, cinematic lighting, clean composition, "
-          "generous negative space, high detail, no text")
+          "generous negative space, high detail, purely pictorial, wordless")   # nicht "no text": das Wort zieht Schrift an
 NEGATIV = ("text, letters, words, typography, caption, title, label, signage, watermark, logo, signature, numbers, "
            "blurry, low quality, deformed, distorted hands, extra fingers, cluttered")
 VORLAGE, VORLAGE_ERSATZ = "qwen", "z-image"
+# Jedes fertige Bild wird ANGESEHEN, bevor es zaehlt (Veiko, 17.10.2026: "die
+# Bilder werden immer noch mit massiven Fehlern generiert ... viele Schreibfehler").
+# Eine Anweisung "no text" allein haelt ein Bildmodell nicht zuverlaessig ein;
+# ein lokales Modell, das sehen kann, prueft auf Schrift und grobe Fehler, und das
+# Bild wird mit neuem Zufallswert neu gerechnet -- hoechstens VERSUCHE Mal.
+PRUEF_MODELL = "gemma4:e4b"
+VERSUCHE = 3
 LAUFEND: dict[str, asyncio.Task] = {}
 MAX_BILDER = 20
 
@@ -150,6 +157,76 @@ def _als_jpeg(png: bytes) -> bytes:
     return out.getvalue()
 
 
+PRUEF_FRAGE = ("Inspect this image carefully. Answer ONLY with JSON: "
+               '{"text": true or false, "defekt": true or false, "was": "short reason in German"}. '
+               '"text" is true if ANY letters, words, numbers, captions, labels, signs, logos, code, or pseudo-writing '
+               "appear anywhere, even small or blurry. \"defekt\" is true if there are clearly deformed hands, faces "
+               "or bodies, melted or broken objects, or the image is mostly empty or muddy.")
+
+
+async def bild_pruefen(png: bytes) -> str | None:
+    """Der Mangel in Klartext, oder None, wenn das Bild in Ordnung ist -- oder wenn
+    nicht geprueft werden konnte (dann zaehlt das Bild, statt alles anzuhalten)."""
+    modell = await llm.modell_waehlen(PRUEF_MODELL)
+    if not modell:
+        return None
+
+    def klein() -> str:
+        from PIL import Image
+        b = Image.open(BytesIO(png)).convert("RGB")
+        b.thumbnail((896, 896))
+        out = BytesIO()
+        b.save(out, "JPEG", quality=85)
+        return base64.b64encode(out.getvalue()).decode("ascii")
+    try:
+        bild = await asyncio.to_thread(klein)
+        d = llm.json_aus(await llm.chat(modell, "", [{"role": "user", "content": PRUEF_FRAGE, "images": [bild]}],
+                                        json_format=True, temperatur=0, denken=False, num_ctx=4096, timeout=120)) or {}
+    except (llm.ModellFehler, OSError, ValueError):
+        return None
+    if d.get("text") is True:
+        return "Schrift im Bild" + (f" ({d.get('was')})" if d.get("was") else "")
+    if d.get("defekt") is True:
+        return "grober Bildfehler" + (f" ({d.get('was')})" if d.get("was") else "")
+    return None
+
+
+_ENTSCHAERFEN = re.compile(r"\b(digital|data|code|coding|binary|matrix|screens?|monitors?|displays?|interfaces?|holograms?|"
+                           r"holographic|dashboards?|charts?|graphs?|documents?|papers?|books?|quote|quotation|symbols?)\b", re.I)
+RUHIG = (". Calm, uncluttered background: soft gradients, light and atmosphere only -- no screens, no panels, "
+         "no glyphs, digits or patterns that could look like writing")
+
+
+async def medien_bild(c: httpx.AsyncClient, prompt: str, vorlage: str, breite: int, hoehe: int) -> bytes:
+    from . import medien
+    return await medien.comfy_bild(c, prompt, vorlage, breite, hoehe, NEGATIV)
+
+
+async def bild_ohne_fehler(c: httpx.AsyncClient, prompt: str, breite: int = 1344, hoehe: int = 768,
+                           melden=None) -> tuple[bytes, str | None]:
+    """Ein Bild rechnen, ansehen, bei Schrift oder groben Fehlern neu rechnen.
+    Gibt das Bild und -- falls auch der letzte Versuch einen Mangel hatte -- den
+    Mangel zurueck. EIN Weg fuer Folien, Texte und Video (video.py)."""
+    png, mangel = b"", None
+    for versuch in range(VERSUCHE):
+        # Ab dem zweiten Versuch entschaerft: Woerter wie "digital", "data", "screen"
+        # rufen Bildschirme mit Zeichenkolonnen hervor (gemessen 17.10.: dreimal
+        # Code-Zeilen hinter der "Autoritaetsfalle", trotz Verbot).
+        p = prompt if versuch == 0 else (_ENTSCHAERFEN.sub("", prompt) + RUHIG)
+        try:
+            png = await medien_bild(c, p + ZUSATZ, VORLAGE, breite, hoehe)
+        except RuntimeError as x:
+            print(f"[folienbilder] {VORLAGE} gescheitert ({x}) -- nehme {VORLAGE_ERSATZ}", flush=True)
+            png = await medien_bild(c, p + ZUSATZ, VORLAGE_ERSATZ, breite, hoehe)
+        if melden:
+            melden(f"prüft das Bild (Versuch {versuch + 1} von {VERSUCHE})")
+        mangel = await bild_pruefen(png)
+        if not mangel:
+            return png, None
+        print(f"[folienbilder] Versuch {versuch + 1}: {mangel} -- rechne neu", flush=True)
+    return png, mangel
+
+
 async def _kunstregie(eid: str, liste: list[str]) -> list[str]:
     e = db.holen("ergebnisse", eid) or {}
     return await kunstregie(e.get("titel") or "", liste, "PRÄSENTATION")
@@ -170,14 +247,20 @@ async def kunstregie(titel: str, liste: list[str], art: str = "PRÄSENTATION", z
                "Licht, Materialien -- passend zu einem eleganten, dunkelblau-warmen Business-Design) und schreibe für jeden "
                "Wunsch eine englische Bildanweisung für ein Bildmodell: konkretes Motiv, Komposition (Platz links oder rechts "
                "für Text, wo sinnvoll), Perspektive, Licht, Stil. 40 bis 80 Wörter je Bild. NIEMALS Text, Buchstaben, Zahlen, "
-               "Schilder, Logos oder Bildschirme mit Schrift; keine echten, erkennbaren Personen. " + zusatz + "Antworte NUR mit JSON: "
+               "Schilder, Logos oder Bildschirme mit Schrift; keine echten, erkennbaren Personen. Auch keine Anführungszeichen "
+               "oder andere Satzzeichen als Bildmotiv, keine Zahlen- oder Code-Kolonnen, keine Dokumente, Bücher mit "
+               "sichtbaren Seiten, Diagramme mit Beschriftung oder Tafeln -- daraus macht ein Bildmodell verstümmelte Schrift. "
+               "Übernimm Begriffe aus dem Wunsch NICHT wörtlich in Anführungszeichen; setze sie in ein Bild um "
+               "(„Autoritätsfalle“ → eine Figur, die einer leuchtenden, hohlen Hülle folgt). " + zusatz + "Antworte NUR mit JSON: "
                '{"stil": "der gemeinsame Stil auf Englisch", "bilder": ["Anweisung 1", "..."]}')
     try:
         d = llm.json_aus(await llm.chat(modell, "", [{"role": "user", "content": frage}], json_format=True,
                                         temperatur=0.4, denken=False, timeout=300)) or {}
     except llm.ModellFehler:
         return liste
-    bilder = [str(b).strip() for b in (d.get("bilder") or []) if str(b).strip()]
+    # Anfuehrungszeichen raus: was in Anfuehrungszeichen steht, malt ein Bildmodell
+    # gern als Schriftzug (gemessen: "überwachtes Modell" -> "überwachges Modell").
+    bilder = [re.sub(r"[\"“”„‚‘’«»]", "", str(b)).strip() for b in (d.get("bilder") or []) if str(b).strip()]
     if len(bilder) != len(liste):
         return liste
     stil = str(d.get("stil") or "").strip()
@@ -189,17 +272,17 @@ async def _lauf(eid: str, liste: list[str]) -> None:
     t0 = time.time()
     _stand_setzen(eid, stand="rechnet", anzahl=len(liste), fertig=0, fehler=None, start=t0, schritt="Art Direction: Bildstil festlegen")
     fehler = 0
+    maengel: list[str] = []   # Bilder, die auch nach allen Versuchen noch einen Mangel hatten
     try:
         englisch = await _kunstregie(eid, liste)
         async with httpx.AsyncClient(timeout=60) as c:
             for i, p in enumerate(liste):
                 _stand_setzen(eid, schritt=f"Bild {i + 1} von {len(liste)}", fertig=i)
                 try:
-                    try:
-                        png = await medien.comfy_bild(c, englisch[i] + ZUSATZ, VORLAGE, 1344, 768, NEGATIV)
-                    except RuntimeError as x:
-                        print(f"[folienbilder] {eid} Bild {i + 1} mit {VORLAGE} gescheitert ({x}) -- nehme {VORLAGE_ERSATZ}", flush=True)
-                        png = await medien.comfy_bild(c, englisch[i] + ZUSATZ, VORLAGE_ERSATZ, 1344, 768, NEGATIV)
+                    png, mangel = await bild_ohne_fehler(c, englisch[i], melden=lambda s, i=i: _stand_setzen(
+                        eid, schritt=f"Bild {i + 1} von {len(liste)}: {s}"))
+                    if mangel:
+                        maengel.append(f"Bild {i + 1}: {mangel}")
                     # Abgelegt unter der DEUTSCHEN Beschreibung -- daran findet der Einbau das Bild.
                     datei(eid, p).write_bytes(await asyncio.to_thread(_als_jpeg, png))
                 except Exception as x:  # noqa: BLE001 -- ein Bild darf scheitern, die anderen nicht
@@ -207,7 +290,7 @@ async def _lauf(eid: str, liste: list[str]) -> None:
                     print(f"[folienbilder] {eid} Bild {i + 1}: {x}", flush=True)
         _stand_setzen(eid, stand="fertig" if not fehler else "fehler", fertig=len(liste) - fehler,
                       fehler=(f"{fehler} von {len(liste)} Bildern ließen sich nicht rechnen." if fehler else None),
-                      dauer_s=round(time.time() - t0))
+                      maengel=maengel or None, dauer_s=round(time.time() - t0))
     except Exception as x:  # noqa: BLE001
         _stand_setzen(eid, stand="fehler", fehler=f"{x.__class__.__name__}: {str(x)[:300]}")
     finally:

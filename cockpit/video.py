@@ -338,10 +338,9 @@ async def _lauf(eid: str, drehbuch: dict[str, Any]) -> None:
                     teile.append({"art": "clip", "roh": await _szene(c, prompt), "ton": ton, **s})
                 else:
                     _stand_setzen(eid, schritt=f"Szene {i + 1} von {len(szenen)}: Bild wird gerechnet")
-                    try:
-                        roh = await medien.comfy_bild(c, prompt + folienbilder.ZUSATZ, folienbilder.VORLAGE, 1344, 768, folienbilder.NEGATIV)
-                    except RuntimeError:
-                        roh = await medien.comfy_bild(c, prompt + folienbilder.ZUSATZ, folienbilder.VORLAGE_ERSATZ, 1344, 768, folienbilder.NEGATIV)
+                    # Derselbe Weg wie bei Folien: rechnen, ansehen, bei Schrift neu rechnen.
+                    roh, _ = await folienbilder.bild_ohne_fehler(c, prompt, melden=lambda x, i=i: _stand_setzen(
+                        eid, schritt=f"Szene {i + 1} von {len(szenen)}: {x}"))
                     teile.append({"art": "bild", "roh": roh, "ton": ton, **s})
         _stand_setzen(eid, schritt="schneidet zusammen", fertig=len(szenen))
         laenge = await asyncio.to_thread(_zusammensetzen, teile, datei(eid), drehbuch.get("titel") or "")
