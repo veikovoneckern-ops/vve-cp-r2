@@ -143,6 +143,16 @@ async def senden(gid: str | None, text: str, mit: list[str] | None, projekt_id: 
         if quellen:
             system += "\n\n" + stab.netz_system(quellen)
             yield {"typ": "status", "text": f"{len(quellen)} Quellen aus dem Netz gelesen, das Board berät …"}
+    # Links in der Nachricht werden immer geoeffnet (quellen.py, 17.10.2026).
+    from . import quellen as verlinkt
+    if verlinkt.links(text):
+        yield {"typ": "status", "text": "öffnet die Links aus deiner Nachricht …"}
+        ltext, lstatus = await verlinkt.einbinden(text, {"projekt_id": projekt_id or z.get("projekt_id"), "aufgabe_id": z.get("aufgabe_id"),
+                                                         "gespraech_id": gid, "wer": "board"})
+        if ltext:
+            system += "\n\n" + ltext
+        if lstatus:
+            yield {"typ": "status", "text": "; ".join(lstatus)}
     gesamt = ""
     try:
         with llm.taetig("Das Advisory Board antwortet dir"):

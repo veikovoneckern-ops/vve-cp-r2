@@ -13,3 +13,8 @@ python-docx==1.2.0
 python-pptx
 nvidia-cublas-cu12
 nvidia-cudnn-cu12==9.*
+# Links in Gespraechen lesen und YouTube-Folgen abschreiben (quellen.py, youtube.py, 17.10.2026).
+# yt-dlp nur fuer die Folgenliste; die Abschriften ueber youtube-transcript-api, weil
+# YouTube die Untertitel-Abfrage von yt-dlp am 17.10. mit 429 sperrte.
+yt-dlp
+youtube-transcript-api

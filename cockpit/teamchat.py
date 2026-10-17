@@ -303,6 +303,19 @@ async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
                 system += "\n\n" + stab.netz_system(quellen)
                 yield {"typ": "status", "text": f"{len(quellen)} Quellen aus dem Netz gelesen …"}
 
+    # Links in Veikos Nachricht werden IMMER geoeffnet (quellen.py, 17.10.2026) --
+    # auch bei "Schnelle Antwort": ein Link ist ein ausdruecklicher Auftrag.
+    from . import quellen as verlinkt
+    ltext = ""
+    if verlinkt.links(text):
+        yield {"typ": "status", "text": "öffnet die Links aus deiner Nachricht …"}
+        ltext, lstatus = await verlinkt.einbinden(text, {"projekt_id": kontext.get("projekt_id"), "aufgabe_id": z.get("aufgabe_id"),
+                                                         "langlauf_id": kontext.get("langlauf_id"), "gespraech_id": gid, "wer": wer})
+        if ltext:
+            system += "\n\n" + ltext
+        if lstatus:
+            yield {"typ": "status", "text": "; ".join(lstatus)}
+
     sprecher = [x for x in (extern or []) if x in EXTERNE] if not ist_extern(wer) else []
     if not sprecher:
         async for e in _antwort(gid, wer, system, verlauf, kontext, text, quellen, denken):
@@ -311,7 +324,7 @@ async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
     netz = ("\n\n" + stab.netz_system(quellen)) if quellen else ""
     for xid in sprecher:
         yield {"typ": "wer", "wer": xid}
-        xsys = (system_text(xid, kontext) + "\n\n" + zusatz + netz +
+        xsys = (system_text(xid, kontext) + "\n\n" + zusatz + netz + (("\n\n" + ltext) if ltext else "") +
                 ("\n\n" + aufgabe_text(z["aufgabe_id"]) if z.get("aufgabe_id") else "") +
                 f"\n\nDICH HAT {wer_name(wer).upper()} AUS VEIKOS TEAM AUF VEIKOS WUNSCH IN DIESES GESPRÄCH GEHOLT. "
                 "Erledige Veikos letzte Nachricht selbst und vollständig hier im Gespräch -- nicht als Vorschlag, "

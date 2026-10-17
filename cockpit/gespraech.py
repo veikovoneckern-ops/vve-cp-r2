@@ -475,6 +475,19 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
         if quellen:
             system += "\n\n" + stab.netz_system(quellen)
             yield {"typ": "status", "text": f"{len(quellen)} Quellen aus dem Netz gelesen …"}
+    # Links in der Nachricht werden immer geoeffnet, auch ohne Globus (quellen.py):
+    # ein Link ist ein ausdruecklicher Auftrag, keine Frage des Netz-Schalters.
+    from . import quellen as verlinkt
+    if verlinkt.links(text):
+        yield {"typ": "status", "text": "öffnet die Links aus deiner Nachricht …"}
+        k = kontext or {}
+        z = zuordnung(gid)
+        ltext, lstatus = await verlinkt.einbinden(text, {"projekt_id": z.get("projekt_id") or (k.get("id") if k.get("art") == "projekt" else None),
+                                                         "aufgabe_id": z.get("aufgabe_id"), "gespraech_id": gid, "wer": "assistent"})
+        if ltext:
+            system += "\n\n" + ltext
+        if lstatus:
+            yield {"typ": "status", "text": "; ".join(lstatus)}
     if denken:
         yield {"typ": "status", "text": "denkt gründlich nach …"}
     gesamt = ""

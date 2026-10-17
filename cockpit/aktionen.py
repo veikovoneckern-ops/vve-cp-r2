@@ -30,7 +30,7 @@ from . import db, llm, modellkatalog, stab
 ART_NAME = {"download": "Download", "pipeline": "Team-Pipeline", "langlauf": "Langläufer", "video": "Video",
             "folienbilder": "Bilder für ein Ergebnis", "medien": "Bild aus dem Gespräch", "neo": "Neo",
             "gespraech": "Antwort im Gespräch", "revision": "Modell-Revision", "verfahren": "Verfahren",
-            "system": "Server-Auftrag"}
+            "system": "Server-Auftrag", "youtube": "YouTube-Dossier"}
 
 
 def _titel_ergebnis(eid: str) -> str:
@@ -127,6 +127,21 @@ def sammeln(gespraeche: dict[str, dict[str, Any]], wer_name) -> dict[str, Any]:
                         "schritt": s.get("status") or "antwortet", "start": s.get("start"), "stand": "laeuft",
                         "link": link, "talk_gid": gid if s.get("art") == "talk" else None, "steuerung": ["abbrechen"]})
 
+    # YouTube-Dossiers (youtube.py, 17.10.2026)
+    from . import youtube
+    for y in list(youtube.JOBS.values()):
+        z = {"id": "youtube:" + y["id"], "art": "youtube", "titel": y["dossier_titel"], "wer": "Cockpit", "stand": y["stand"],
+             "schritt": y["schritt"] + (f" · {y['ohne']} ohne Abschrift" if y.get("ohne") else ""), "start": y["start"],
+             "prozent": round(y["fertig"] / y["anzahl"] * 100) if y["anzahl"] else None,
+             "teile": f"{y['fertig']} von {y['anzahl']} Folgen", "fehler": y.get("fehler"),
+             "link": f"/api/dateien/{y['dossier_id']}" if y.get("dossier_id") else None}
+        if y["stand"] == "laeuft":
+            z["steuerung"] = ["abbrechen"]
+            laufend.append(z)
+        elif y.get("ende") and jetzt - y["ende"] < 3600:
+            z["steuerung"] = []
+            beendet.append(z)
+
     # Revision, Verfahren, Server-Auftrag
     from . import revision, systeminfo, verfahren
     rs = revision.stand()
@@ -180,6 +195,11 @@ def steuern(aid: str, aktion: str, gespraeche: dict[str, dict[str, Any]]) -> dic
         if not s or not s.get("_aufgabe"):
             raise ValueError("Läuft schon nicht mehr.")
         s["_aufgabe"].cancel()
+        return {"ok": True}
+    if art == "youtube":
+        from . import youtube
+        if not youtube.abbrechen(ref):
+            raise ValueError("Läuft schon nicht mehr.")
         return {"ok": True}
     if art == "revision":
         from . import revision
