@@ -102,6 +102,14 @@ CREATE TABLE IF NOT EXISTS verbrauch (
   tok_ein INTEGER DEFAULT 0, tok_aus INTEGER DEFAULT 0, dauer_s REAL DEFAULT 0, geschaetzt INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS verbrauch_zeit ON verbrauch(zeit);
+-- Langlaeufer (17.10.2026): ein langes Vorhaben (Buch, langes Dokument, langes Video)
+-- in Etappen, mit Zwischenpruefung durch Dario oder Demmis im Rahmen eines Budgets.
+-- Alles Veraenderliche steht in "daten" (JSON), damit ein Neustart mitten im Lauf
+-- genau dort weitermacht, wo die letzte fertige Etappe aufhoerte.
+CREATE TABLE IF NOT EXISTS langlaeufe (
+  id TEXT PRIMARY KEY, vorgang_id TEXT, projekt_id TEXT, titel TEXT, art TEXT, stand TEXT,
+  budget REAL DEFAULT 0, daten TEXT DEFAULT '{}', erstellt REAL, geaendert REAL
+);
 """
 
 with _lock:

@@ -21,7 +21,7 @@ from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFil
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from . import anmeldung, db, gespraech, importer, llm, neo, stab, stimme, teamchat
-from .konfig import (ALT_BACKEND, ALT_COCKPIT_URL, ALT_STATE, SEARX, STATUS_URL, UPLOADS,
+from .konfig import (ALT_BACKEND, ALT_TOKEN, ALT_COCKPIT_URL, ALT_STATE, SEARX, STATUS_URL, UPLOADS,
                      VORSCHAU_DIR)
 
 router = APIRouter(prefix="/api")
@@ -1594,3 +1594,45 @@ async def modelle_uebersicht(frisch: int = 0):
             "empfehlungen": modellkatalog.vorschlaege(katalog, vram) + modellkatalog.neu_vorschlaege(neu, 8),
             "neu": neu, "katalog_stand": katalog and katalog.get("zeit"), "laden": modellkatalog.LADEN,
             "erfasst_seit": db.wert("SELECT MIN(zeit) FROM verbrauch WHERE art='lokal'")}
+
+
+# ================================================================ Langlaeufer
+# Ein langes Vorhaben in Etappen, mit Zwischenpruefung durch Dario oder Demmis
+# im Rahmen eines Budgets (Veiko, 17.10.2026). Details: langlauf.py.
+@router.get("/langlaeufe")
+async def langlaeufe_liste(projekt_id: str = ""):
+    from . import langlauf
+    return {"langlaeufe": langlauf.liste(projekt_id or None), "arten": langlauf.ARTEN,
+            "rollen": [{"id": r, "name": stab.rollen_name(r)} for r in stab.ROLLEN_FUER_ARBEIT if r != "pmo"],
+            "preise": _preise(), "zugang_extern": bool(ALT_TOKEN)}
+
+
+@router.post("/langlaeufe")
+async def langlauf_anlegen(request: Request):
+    from . import langlauf
+    d = await _koerper(request)
+    try:
+        return langlauf.anlegen(str(d.get("titel") or ""), str(d.get("auftrag") or ""), str(d.get("art") or "buch"),
+                                d.get("projekt_id") or None, str(d.get("pruefer") or "dario"),
+                                int(d.get("pruef_alle") or 3), float(d.get("budget") or 0), d.get("rolle"))
+    except (TypeError, ValueError) as e:
+        raise HTTPException(400, str(e))
+
+
+@router.get("/langlaeufe/{lid}")
+async def langlauf_einzeln(lid: str):
+    from . import langlauf
+    l = langlauf.einzeln(lid)
+    if not l:
+        raise HTTPException(404, "Langläufer nicht gefunden")
+    return l
+
+
+@router.post("/langlaeufe/{lid}/{aktion}")
+async def langlauf_steuern(lid: str, aktion: str, request: Request):
+    from . import langlauf
+    d = await _koerper(request)
+    try:
+        return langlauf.steuern(lid, aktion, d)
+    except (TypeError, ValueError) as e:
+        raise HTTPException(409, str(e))

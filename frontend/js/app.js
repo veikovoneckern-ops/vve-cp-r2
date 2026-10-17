@@ -17,12 +17,15 @@ import { LeisteNav, useLeiste, FENSTER } from "./leiste.js";
 import { WatchDog } from "./watchdog.js";
 import { Verbrauch } from "./verbrauch.js";
 import { Modelle } from "./modelle.js";
+import { Langlaeufer } from "./langlauf.js";
 import { BrainStrom, ExO } from "./verfahren.js";
 
 const BEREICHE = [
   { id: "briefing", titel: "Briefing", icon: "briefing", unter: "Was jetzt zählt" },
   { id: "inbox", titel: "Inbox", icon: "inbox", unter: "Alles, was hereinkommt" },
   { id: "projects", titel: "Projects", icon: "projects", unter: "Vorhaben, Aufgaben, Ergebnisse" },
+  // Lange Vorhaben in Etappen mit Zwischenpruefung durch Dario oder Demmis (17.10.).
+  { id: "langlauf", titel: "Langläufer", icon: "langlauf", unter: "Buch, langes Dokument, langes Video -- läuft durch" },
   { id: "neo", titel: "Neo", icon: "neo", unter: "Cockpit Engineer", neo: true },
   { id: "team", titel: "Team", icon: "team", unter: "Dein KI-Team" },
   { id: "board", titel: "Advisory Board", kurz: "Board", icon: "board", unter: "Deine Advisors" },
@@ -277,6 +280,7 @@ function App() {
         ${r.bereich === "watchdog" && html`<${WatchDog} />`}
         ${r.bereich === "verbrauch" && html`<${Verbrauch} />`}
         ${r.bereich === "modelle" && html`<${Modelle} />`}
+        ${r.bereich === "langlauf" && html`<${Langlaeufer} id=${r.id} />`}
       </main>
     </div>
     ${talk && html`<${Talk} zu=${() => setTalk(false)} kontext=${kontext} setKontext=${setKontext} start=${talkStart} />`}

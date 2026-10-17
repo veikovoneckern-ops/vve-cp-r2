@@ -1085,7 +1085,7 @@ async def durchgang() -> dict[str, Any]:
             finally:
                 laeuft(None)
         offene = [v for v in db.alle("SELECT * FROM vorgaenge WHERE stand IN ('in_arbeit','wartet') AND auftrag IS NOT NULL "
-                                     "AND versuche<3 ORDER BY geaendert") if auftrag_offen(v)]
+                                     "AND versuche<3 ORDER BY geaendert") if auftrag_offen(v) and not auftrag_offen(v).get("langlauf")]
         for v in offene[:1]:
             try:
                 await ausarbeiten(v)

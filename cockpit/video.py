@@ -55,7 +55,7 @@ DREHBUCH_ANWEISUNG = (
     "Bleib bei dem, was die Notiz verlangt, und erfinde keine Fakten.")
 
 
-def drehbuch_aus(text: str) -> dict[str, Any] | None:
+def drehbuch_aus(text: str, grenze: int = MAX_SZENEN) -> dict[str, Any] | None:
     m = re.search(r"```json\s*(\{[\s\S]*?\})\s*```", text or "")
     if not m:
         return None
@@ -64,7 +64,7 @@ def drehbuch_aus(text: str) -> dict[str, Any] | None:
     except ValueError:
         return None
     szenen = [s for s in (d.get("szenen") or []) if isinstance(s, dict) and str(s.get("bild") or "").strip()
-              and str(s.get("text") or "").strip()][:MAX_SZENEN]
+              and str(s.get("text") or "").strip()][:grenze]
     if not szenen:
         return None
     return {"titel": str(d.get("titel") or "Erklärvideo")[:120],
@@ -217,7 +217,8 @@ def starten(eid: str, drehbuch: dict[str, Any] | None = None) -> bool:
     if drehbuch is None:
         # Zuerst der AKTUELLE Inhalt: wurde das Drehbuch im Ergebnisfenster
         # ueberarbeitet, soll "neu rechnen" die neue Fassung nehmen.
-        drehbuch = drehbuch_aus(e.get("inhalt") or "") or ((e.get("medien") or {}).get("video") or {}).get("drehbuch")
+        # Grenze hoch: ein Langlaeufer-Video (langlauf.py) hat weit mehr als 16 Szenen.
+        drehbuch = drehbuch_aus(e.get("inhalt") or "", 400) or ((e.get("medien") or {}).get("video") or {}).get("drehbuch")
     if not drehbuch:
         return False
     _stand_setzen(eid, drehbuch=drehbuch, stand="rechnet", schritt="wartet auf den Start")

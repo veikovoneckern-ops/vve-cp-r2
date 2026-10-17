@@ -18,7 +18,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from cockpit import anmeldung, importer, stab
+from cockpit import anmeldung, importer, langlauf, stab
 from cockpit.api import router
 from cockpit.konfig import FRONTEND, HOST, PORT
 
@@ -32,8 +32,11 @@ async def lebenszeit(app: FastAPI):
     except Exception as e:  # noqa: BLE001 -- ohne alten Bestand soll es trotzdem starten
         print(f"Abgleich mit dem alten Cockpit gescheitert: {e}", flush=True)
     aufgabe = asyncio.create_task(stab.schleife())
+    # Langlaeufer (17.10.2026): eigene Schleife, teilt sich die Sperre mit der Pipeline.
+    lang = asyncio.create_task(langlauf.schleife())
     yield
     aufgabe.cancel()
+    lang.cancel()
 
 
 app = FastAPI(title="VvE Cockpit", lifespan=lebenszeit, docs_url=None, redoc_url=None)
