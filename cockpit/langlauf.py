@@ -113,12 +113,14 @@ def einzeln(lid: str) -> dict[str, Any] | None:
     d = l.get("daten") or {}
     return {**ansicht(l), "auftrag": d.get("auftrag"), "etappenliste": d.get("etappen") or [],
             "pruefungsliste": d.get("pruefungen") or [], "hinweise": d.get("hinweise") or [],
-            "extern_aus": d.get("extern_aus")}
+            "extern_aus": d.get("extern_aus"),
+            "material": [{**m, "titel": s[0]} for m in _material_sauber(d.get("material")) for s in [_material_stueck(m)] if s]}
 
 
 # ---------------------------------------------------------------- Anlegen und Steuern
 def anlegen(titel: str, auftrag: str, art: str, projekt_id: str | None, pruefer: str, pruef_alle: int,
-            budget: float, rolle: str | None = None, aufgabe_id: str | None = None) -> dict[str, Any]:
+            budget: float, rolle: str | None = None, aufgabe_id: str | None = None,
+            material: Any = None) -> dict[str, Any]:
     titel, auftrag = (titel or "").strip()[:120], (auftrag or "").strip()
     if len(auftrag) < 20:
         raise ValueError("Beschreib das Vorhaben in ein paar Sätzen -- daraus plant das Team die Etappen.")
@@ -134,6 +136,7 @@ def anlegen(titel: str, auftrag: str, art: str, projekt_id: str | None, pruefer:
         raise ValueError("Zwischenprüfung durch Dario oder Demmis.")
     rolle = rolle if rolle in stab.ROLLEN_FUER_ARBEIT else ARTEN[art]["rolle"]
     titel = titel or auftrag[:80]
+    material = _material_sauber(material)
     # Der Vorgang traegt den Langlaeufer im Briefing, im Verlauf und am Ergebnis.
     v = stab.aus_text(f"Langläufer „{titel}“: {auftrag}", quelle="langlauf", projekt_id=projekt_id)
     vid = v["id"] if isinstance(v, dict) else v
@@ -146,14 +149,152 @@ def anlegen(titel: str, auftrag: str, art: str, projekt_id: str | None, pruefer:
         "id": lid, "vorgang_id": vid, "projekt_id": projekt_id, "titel": titel, "art": art, "stand": "plant",
         "budget": max(0.0, float(budget or 0)), "erstellt": time.time(), "geaendert": time.time(),
         "daten": {"auftrag": auftrag, "rolle": rolle, "pruefer": pruefer, "pruef_alle": max(1, min(10, int(pruef_alle or 3))), "aufgabe_id": aufgabe_id,
+                  "material": material,
                   "etappen": [], "hinweise": [], "pruefungen": [], "kosten": 0.0, "fehlversuche": 0}})
+    namen = [s[0] for s in (_material_stueck(m) for m in material) if s]
     db.ereignis(vid, "du", "auftrag",
                 f"Langläufer gestartet: {ARTEN[art]['name']}, {stab.rollen_name(rolle)} arbeitet, "
                 f"{'Dario' if pruefer == 'dario' else 'Demmis'} prüft nach je {pruef_alle} {ARTEN[art]['mehrzahl']}, "
-                f"Budget $ {float(budget or 0):.2f}.")
+                f"Budget $ {float(budget or 0):.2f}."
+                + (f"\nBaut auf: " + "; ".join(namen) if namen else ""))
     _aufgabe_vermerken(aufgabe_id, f"Läuft als Langläufer „{titel}“ ({ARTEN[art]['name']}) -- Fortschritt auf der Seite Langläufer.")
     wecken()
     return einzeln(lid) or {}
+
+
+# ---------------------------------------------------------------- Was schon dazugehoert
+# Veiko (17.10.2026): "wenn ich aus einem Projekt oder einer Aufgabe einen
+# Langlaeufer mache, sollen schon entstandene Ergebnisse und Unterlagen mit
+# angezeigt werden, so dass ich auswaehlen kann, was alles schon dazugehoert."
+# Gespeichert werden nur Verweise (art, id); gelesen wird beim Planen und je
+# Etappe der AKTUELLE Inhalt -- eine im Team-Chat ueberarbeitete Fassung zaehlt.
+MATERIAL_ARTEN = ("ergebnis", "gespraech", "datei", "notiz")
+MATERIAL_JE_STUECK = 30000
+MATERIAL_PLAN = 80000      # beim Planen darf es viel sein (Fenster 65.536 Token)
+MATERIAL_ETAPPE = 40000    # je Etappe kommen Plan, vorige Etappe und Vorgang dazu
+GESPRAECH_ART = {"talk": "Talk", "team": "Team-Chat", "neo": "Neo", "board": "Board"}
+
+
+def bestand(projekt_id: str | None, aufgabe_id: str | None) -> list[dict[str, Any]]:
+    """Alles, was zu Projekt bzw. Aufgabe schon da ist, mit Vorauswahl.
+    Aus einer Aufgabe: vorgewaehlt ist, was an DIESER Aufgabe haengt (ihr Case,
+    ihre Notiz, ihr zugeordnete Gespraeche) plus die lesbaren Unterlagen des Projekts.
+    Aus dem Projekt: alle Ergebnisse, Gespraeche und Unterlagen; Notizen nie
+    vorgewaehlt -- dort liegen oft Dutzende Plaud-Mitschnitte."""
+    aufgabe = db.holen("aufgaben", aufgabe_id) if aufgabe_id else None
+    projekt_id = projekt_id or (aufgabe or {}).get("projekt_id")
+    if not projekt_id:
+        return []
+    from .api import gespraeche_von, kurztitel
+    aus: list[dict[str, Any]] = []
+    for r in db.alle("SELECT id, titel, form, rolle, vorgang_id, erstellt, length(inhalt) AS laenge FROM ergebnisse "
+                     "WHERE projekt_id=? ORDER BY erstellt DESC LIMIT 60", (projekt_id,)):
+        vor = (bool(aufgabe.get("vorgang_id")) and r["vorgang_id"] == aufgabe.get("vorgang_id")) if aufgabe else True
+        aus.append({"art": "ergebnis", "id": r["id"], "titel": kurztitel(r), "zeit": r["erstellt"], "laenge": r["laenge"] or 0,
+                    "unter": f"{stab.rollen_name(r['rolle'])} · {r['form'] or 'text'}", "vorgewaehlt": vor})
+    for g in gespraeche_von(projekt_id):
+        vor = (g.get("aufgabe_id") == aufgabe_id) if aufgabe else True
+        aus.append({"art": "gespraech", "id": g["id"], "titel": g["titel"] or "Gespräch", "zeit": g["geaendert"], "laenge": None,
+                    "unter": f"{GESPRAECH_ART.get(g['art'], g['art'])}{' mit ' + g['wer_name'] if g.get('wer_name') else ''} · {g['anzahl']} Nachrichten",
+                    "vorgewaehlt": bool(vor)})
+    for f in db.alle("SELECT id, name, erstellt, length(text) AS laenge FROM dateien WHERE projekt_id=? ORDER BY erstellt DESC LIMIT 60",
+                     (projekt_id,)):
+        aus.append({"art": "datei", "id": f["id"], "titel": f["name"], "zeit": f["erstellt"], "laenge": f["laenge"] or 0,
+                    "unter": "Unterlage" if f["laenge"] else "Unterlage (Inhalt nicht lesbar)", "vorgewaehlt": bool(f["laenge"])})
+    for n in db.alle("SELECT id, titel, quelle, erstellt, length(text) AS laenge FROM notizen WHERE projekt_id=? "
+                     "ORDER BY erstellt DESC LIMIT 60", (projekt_id,)):
+        aus.append({"art": "notiz", "id": n["id"], "titel": n["titel"] or "Notiz", "zeit": n["erstellt"], "laenge": n["laenge"] or 0,
+                    "unter": f"Notiz ({n['quelle'] or 'eingabe'})", "vorgewaehlt": bool(aufgabe and aufgabe.get("notiz_id") == n["id"])})
+    return aus
+
+
+def _material_sauber(material: Any) -> list[dict[str, str]]:
+    aus, gesehen = [], set()
+    for m in material if isinstance(material, list) else []:
+        if not isinstance(m, dict) or m.get("art") not in MATERIAL_ARTEN or not str(m.get("id") or "").strip():
+            continue
+        k = (m["art"], str(m["id"]))
+        if k not in gesehen:
+            gesehen.add(k)
+            aus.append({"art": k[0], "id": k[1]})
+    return aus[:40]
+
+
+def _material_stueck(m: dict[str, str]) -> tuple[str, str] | None:
+    """(Ueberschrift, Inhalt) eines Verweises -- None, wenn es ihn nicht mehr gibt."""
+    if m["art"] == "ergebnis":
+        r = db.holen("ergebnisse", m["id"])
+        return (f"Ergebnis „{r['titel']}“ von {stab.rollen_name(r['rolle'])}", r.get("inhalt") or "") if r else None
+    if m["art"] == "datei":
+        f = db.holen("dateien", m["id"])
+        return (f"Unterlage „{f['name']}“", f.get("text") or "(Inhalt nicht lesbar)") if f else None
+    if m["art"] == "notiz":
+        n = db.holen("notizen", m["id"])
+        return (f"Notiz „{n.get('titel') or ''}“", n.get("text") or n.get("kurz") or "") if n else None
+    g = db.holen("gespraeche", m["id"])
+    if not g:
+        return None
+    t = "\n".join(f"{'Veiko' if x['rolle'] == 'du' else 'Antwort'}: {x['text']}" for x in
+                  db.alle("SELECT rolle, text FROM nachrichten WHERE gespraech_id=? ORDER BY zeit", (m["id"],)))
+    # Bei langen Gespraechen zaehlt das Ende -- dort steht, worauf man sich geeinigt hat.
+    return (f"Gespräch „{g.get('titel') or ''}“", t if len(t) <= MATERIAL_JE_STUECK else "…" + t[-MATERIAL_JE_STUECK:])
+
+
+def material_text(material: Any, grenze: int) -> str:
+    teile, rest = [], grenze
+    for m in _material_sauber(material):
+        s = _material_stueck(m)
+        if not s or rest < 500:
+            continue
+        inhalt = s[1].strip()[:min(MATERIAL_JE_STUECK, rest)]
+        teile.append(f"===== {s[0]} =====\n{inhalt}")
+        rest -= len(inhalt)
+    if not teile:
+        return ""
+    return ("VORHANDENES MATERIAL (Veiko hat es diesem Vorhaben zugeordnet): baue darauf auf, übernimm Brauchbares "
+            "(Gliederung, Figuren, Begriffe, fertige Passagen, Entscheidungen aus Gesprächen), widersprich ihm nicht "
+            "ohne Grund und schreibe nichts neu, was dort schon gut gelöst ist.\n\n" + "\n\n".join(teile))
+
+
+VORSCHLAG = """Du bereitest für Veiko von Eckern einen LANGLÄUFER vor: ein langes Vorhaben, das sein lokales KI-Team in Etappen abarbeitet.
+Schlage die Felder des Anlageformulars vor, gestützt auf Projekt, Aufgabe und das vorhandene Material. Antworte AUSSCHLIESSLICH mit JSON:
+{{"art": "{arten}", "titel": "kurzer Werktitel", "auftrag": "das Vorhaben in 5 bis 12 Sätzen: Inhalt, Zielgruppe, Ton, Länge, Aufbau, und was aus dem Material übernommen werden soll", "rolle": "{rollen}", "pruef_alle": 3, "begruendung": "ein Satz für Veiko, warum so"}}
+Regeln: Deutsch. Erfinde keine Fakten; steht etwas nicht im Material (z. B. Zielgruppe), schreib „noch offen: …“ in den Auftrag statt zu raten.
+Arten: {arten_text}. Rollen: {rollen_text}. pruef_alle zwischen 1 und 10 (kürzere Werke öfter prüfen)."""
+
+
+async def vorschlag(projekt_id: str | None, aufgabe_id: str | None, material: Any) -> dict[str, Any]:
+    """Vorschlag fuer die Felder des Formulars -- schnell (Talk-Modell, ohne Denkphase),
+    weil Veiko vor dem Formular wartet. Nichts wird angelegt; jedes Feld bleibt aenderbar."""
+    aufgabe = db.holen("aufgaben", aufgabe_id) if aufgabe_id else None
+    projekt_id = projekt_id or (aufgabe or {}).get("projekt_id")
+    p = db.holen("projekte", projekt_id) if projekt_id else None
+    if not p and not aufgabe:
+        raise ValueError("Für einen Vorschlag braucht es ein Projekt oder eine Aufgabe.")
+    rollen = [r for r in stab.ROLLEN_FUER_ARBEIT if r != "pmo"]
+    system = VORSCHLAG.format(arten="|".join(ARTEN), rollen="|".join(rollen),
+                              arten_text=", ".join(f"{k} = {a['name']}" for k, a in ARTEN.items()),
+                              rollen_text=", ".join(f"{r} = {stab.rollen_name(r)}" for r in rollen))
+    teile = []
+    if p:
+        teile.append(f"PROJEKT: {p['name']}" + (f"\nZiel: {p['ziel']}" if p.get("ziel") else ""))
+    if aufgabe:
+        teile.append(f"AUFGABE: {aufgabe['titel']}" + (f"\nNotiz: {aufgabe['notiz']}" if (aufgabe.get("notiz") or "").strip() else ""))
+    teile.append(material_text(material, 40000) or "Kein Material ausgewählt.")
+    modell = llm.vorgabe("talk")
+    j = llm.json_aus(await llm.chat(modell, system + "\n\nGEDÄCHTNIS (nur zum Verstehen von Namen):\n" + stab.gedaechtnis_text(),
+                                    [{"role": "user", "content": "\n\n".join(teile)}], json_format=True,
+                                    temperatur=0.3, denken=False, num_ctx=32768, timeout=300))
+    if not isinstance(j, dict) or not str(j.get("auftrag") or "").strip():
+        raise llm.ModellFehler("Der Vorschlag war nicht lesbar.")
+    try:
+        pa = max(1, min(10, int(j.get("pruef_alle") or 3)))
+    except (TypeError, ValueError):
+        pa = 3
+    art = j.get("art") if j.get("art") in ARTEN else "dokument"
+    return {"art": art, "titel": stab._kurz(j.get("titel"), 120), "auftrag": str(j.get("auftrag")).strip()[:4000],
+            "rolle": j.get("rolle") if j.get("rolle") in rollen else ARTEN[art]["rolle"], "pruef_alle": pa,
+            "begruendung": stab._kurz(j.get("begruendung"), 400), "modell": modell}
 
 
 def _aufgabe_vermerken(aufgabe_id: str | None, zeile: str) -> None:
@@ -248,8 +389,10 @@ async def _planen(l: dict[str, Any]) -> None:
     n = ARTEN[art]["etappe"]
     extra = (f" Jeder {n} ist etwa eine Minute Video (rund {SZENEN_JE_AKT} Szenen zu je 5 Sekunden)." if art == "video" else
              " Jede Etappe wird 1.500 bis 5.000 Wörter lang.")
+    mt = material_text(d.get("material"), MATERIAL_PLAN)
     frage = (f"VORHABEN: {d['auftrag']}\n\n{stab._vorgang_kontext(db.holen('vorgaenge', vid) or {'id': vid})[:20000]}\n\n"
-             f"PLANE das Vorhaben in Etappen ({n}). Antworte AUSSCHLIESSLICH mit JSON: "
+             + (mt + "\n\nIst im Material schon eine Gliederung oder sind schon Teile fertig, übernimm sie in den Plan, statt neu zu erfinden.\n\n" if mt else "")
+             + f"PLANE das Vorhaben in Etappen ({n}). Antworte AUSSCHLIESSLICH mit JSON: "
              '{"titel": "...", "etappen": [{"titel": "...", "inhalt": "was hineingehört, drei bis fünf Sätze"}]}. '
              f"Zwischen 3 und {MAX_ETAPPEN} Etappen, so viele, wie das Vorhaben wirklich braucht.{extra} "
              "Wenn das Vorhaben eine Länge nennt (Seiten, Minuten, Kapitel), halte dich daran.")
@@ -273,6 +416,9 @@ def _etappen_kontext(d: dict[str, Any], e: dict[str, Any], art: str) -> str:
     kurz = "\n".join(f"{x['nr']}. {x['titel']}: {x.get('kurz') or ''}" for x in fertig)
     vorige = fertig[-1].get("text", "")[-6000:] if fertig else ""
     teile = [f"VORHABEN: {d['auftrag']}", "GESAMTPLAN:\n" + _plan_text(d, art)]
+    mt = material_text(d.get("material"), MATERIAL_ETAPPE)
+    if mt:
+        teile.append(mt)
     if kurz:
         teile.append("BISHER GESCHRIEBEN (Kurzfassungen):\n" + kurz)
     if vorige:

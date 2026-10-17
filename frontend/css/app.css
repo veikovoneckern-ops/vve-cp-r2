@@ -1226,6 +1226,21 @@ details.eingetragen[open]>summary{margin-bottom:8px}
 .ll-form label{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:600;color:var(--ink-2)}
 .ll-form label.breit{grid-column:1/-1}
 .ll-erkl{margin:12px 0 0}
+/* Was schon dazugehoert (17.10.2026): Vorschlagszeile und Ankreuzliste im Anlageformular. */
+.ll-vorschlag{display:flex;align-items:center;gap:10px;margin:14px 0 0;padding:9px 12px;border:1px solid var(--line-2);border-radius:10px;background:var(--surface-2)}
+.ll-vorschlag .ll-jetzt{margin:0}
+.ll-mat-bereich{margin-top:14px}
+.ll-mat-bereich h4{margin:0 0 8px;font-size:14px}
+.ll-material{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px;max-height:340px;overflow-y:auto;padding-right:4px}
+.ll-mat-gruppe{min-width:0;border:1px solid var(--line-2);border-radius:10px;padding:6px 10px}
+.ll-mat-kopf{display:flex;align-items:center;gap:8px;padding:2px 0 4px}
+.ll-mat-kopf .luecke{flex:1}
+.ll-mat-zeile{display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-top:1px solid var(--line-2);cursor:pointer;font-weight:400}
+.ll-mat-zeile input{margin-top:3px;flex:none}
+.ll-mat-zeile .haupt-text{display:flex;flex-direction:column;min-width:0}
+.ll-mat-zeile .haupt-text>span:first-child{overflow-wrap:anywhere}
+.ll-auftrag ul{margin:4px 0 0 18px;padding:0}
+@media (max-width:700px){.ll-material{grid-template-columns:minmax(0,1fr)}.ll-vorschlag{flex-wrap:wrap}}
 @media (max-width:1000px){.ll-raster{grid-template-columns:minmax(0,1fr)}.ll-zahlen{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:600px){.ll-form{grid-template-columns:minmax(0,1fr)}.ll-kopf{flex-direction:column}.ll-marken{max-width:none}}
 

@@ -6,7 +6,7 @@
 // Die Seite beantwortet drei Fragen: Wie weit ist es? Was haben die Pruefer
 // gesagt? Was hat es bisher gekostet? Eingreifen ist moeglich (Hinweis an das
 // Team, Pause, Budget), aber nie noetig -- ausser, ein Pruefer haelt an.
-import { html, useState, useEffect, Icon, toast, fehlerMelden, zeitText, Md, Modal, bus, useAbruf } from "./ui.js";
+import { html, useState, useEffect, useRef, Icon, toast, fehlerMelden, zeitText, Md, Modal, bus, useAbruf } from "./ui.js";
 import { api } from "./api.js";
 
 const usd = (n) => "$ " + (n || 0).toFixed(2).replace(".", ",");
@@ -17,17 +17,79 @@ const STAND = {
 const URTEIL = { weiter: ["gruen", "trägt -- weiter"], nachbessern: ["gelb", "nachgebessert"], anhalten: ["rot", "angehalten"] };
 const PRUEFER = { dario: "Dario (Claude)", demmis: "Demmis (Gemini)" };
 
+// "Was schon dazugehoert" (17.10.2026): Ergebnisse, Gespraeche, Unterlagen und
+// Notizen des Projekts zum Ankreuzen. Das Team liest beim Planen und je Etappe
+// den aktuellen Inhalt des Angekreuzten (langlauf.material_text).
+const MATERIAL_GRUPPEN = [["ergebnis", "Ergebnisse"], ["gespraech", "Gespräche"], ["datei", "Unterlagen"], ["notiz", "Notizen"]];
+const schluessel = (m) => m.art + ":" + m.id;
+
+function Material({ bestand, wahl, setWahl }) {
+  const umschalten = (k) => { const n = new Set(wahl); n.has(k) ? n.delete(k) : n.add(k); setWahl(n); };
+  const gruppe = (art, an) => { const n = new Set(wahl); bestand.filter((m) => m.art === art).forEach((m) => an ? n.add(schluessel(m)) : n.delete(schluessel(m))); setWahl(n); };
+  return html`<div class="ll-material">
+    ${MATERIAL_GRUPPEN.map(([art, name]) => {
+      const liste = bestand.filter((m) => m.art === art);
+      if (!liste.length) return "";
+      const gewaehlt = liste.filter((m) => wahl.has(schluessel(m))).length;
+      return html`<div class="ll-mat-gruppe" key=${art}>
+        <div class="ll-mat-kopf"><b>${name}</b><span class="leise klein">${gewaehlt} von ${liste.length}</span><span class="luecke"></span>
+          <button class="btn klein geist" onClick=${() => gruppe(art, gewaehlt < liste.length)}>${gewaehlt < liste.length ? "alle" : "keine"}</button></div>
+        ${liste.map((m) => html`<label class="ll-mat-zeile" key=${schluessel(m)}>
+          <input type="checkbox" checked=${wahl.has(schluessel(m))} onChange=${() => umschalten(schluessel(m))} />
+          <span class="haupt-text"><span>${m.titel}</span><span class="leise klein">${m.unter}${m.zeit ? " · " + zeitText(m.zeit) : ""}</span></span></label>`)}
+      </div>`;
+    })}
+  </div>`;
+}
+
 function Neu({ zu, fertig, d, vorlage }) {
   const [f, setF] = useState({ titel: "", auftrag: "", art: "buch", rolle: "", projekt_id: "", aufgabe_id: "", pruefer: "dario", pruef_alle: 3, budget: 5, ...(vorlage || {}) });
   const [projekte, setProjekte] = useState([]);
   const [sendet, setSendet] = useState(false);
+  const [bestand, setBestand] = useState(null);
+  const [wahl, setWahl] = useState(new Set());
+  const [vs, setVs] = useState(null);   // Vorschlag: null | {laeuft} | {begruendung, modell} | {fehler}
+  // Was Veiko selbst getippt/gewaehlt hat, ueberschreibt kein Vorschlag.
+  const angefasst = useRef(new Set());
+  const vsNr = useRef(0);
   useEffect(() => { api("/projekte").then((x) => setProjekte(x.projekte || [])).catch(() => {}); }, []);
-  const s = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const s = (k) => (e) => { const v = e.target.value; angefasst.current.add(k); setF((x) => ({ ...x, [k]: v })); };
   const vorgabeRolle = (d.arten[f.art] || {}).rolle;
+  const material = () => (bestand || []).filter((m) => wahl.has(schluessel(m))).map((m) => ({ art: m.art, id: m.id }));
+
+  async function vorschlagHolen(mat) {
+    const nr = ++vsNr.current;
+    setVs({ laeuft: true });
+    try {
+      const v = await api("/langlaeufe/vorschlag", { methode: "POST", daten: { projekt_id: f.projekt_id, aufgabe_id: f.aufgabe_id, material: mat } });
+      if (nr !== vsNr.current) return;
+      setF((x) => { const n = { ...x }; for (const k of ["art", "titel", "auftrag", "rolle", "pruef_alle"]) if (v[k] && !angefasst.current.has(k)) n[k] = v[k]; return n; });
+      setVs({ begruendung: v.begruendung, modell: v.modell });
+    } catch (e) { if (nr === vsNr.current) setVs({ fehler: e.message || String(e) }); }
+  }
+
+  // Bestand je Projekt laden; aus Projekt oder Aufgabe gestartet gleich einen Vorschlag holen.
+  const ersterVorschlag = useRef(!!(vorlage && (vorlage.projekt_id || vorlage.aufgabe_id)));
+  useEffect(() => {
+    if (!f.projekt_id && !f.aufgabe_id) { setBestand([]); setWahl(new Set()); return; }
+    let weg = false;
+    setBestand(null);
+    api(`/langlaeufe/bestand?projekt_id=${encodeURIComponent(f.projekt_id || "")}&aufgabe_id=${encodeURIComponent(f.aufgabe_id || "")}`)
+      .then((x) => {
+        if (weg) return;
+        const b = x.bestand || [];
+        const vor = new Set(b.filter((m) => m.vorgewaehlt).map(schluessel));
+        setBestand(b); setWahl(vor);
+        if (ersterVorschlag.current) { ersterVorschlag.current = false; vorschlagHolen(b.filter((m) => vor.has(schluessel(m))).map((m) => ({ art: m.art, id: m.id }))); }
+      })
+      .catch((e) => { if (!weg) { setBestand([]); fehlerMelden(e); } });
+    return () => { weg = true; };
+  }, [f.projekt_id]);
+
   async function los() {
     setSendet(true);
     try {
-      const r = await api("/langlaeufe", { methode: "POST", daten: { ...f, rolle: f.rolle || vorgabeRolle } });
+      const r = await api("/langlaeufe", { methode: "POST", daten: { ...f, rolle: f.rolle || vorgabeRolle, material: material() } });
       toast("Langläufer gestartet. Er plant jetzt die Etappen.");
       fertig(r.id);
     } catch (e) { fehlerMelden(e); setSendet(false); }
@@ -58,6 +120,21 @@ function Neu({ zu, fertig, d, vorlage }) {
       <label>Budget für die Prüfungen (US-$)
         <input class="eingabe" type="number" min="0" step="0.5" value=${f.budget} onInput=${s("budget")} /></label>
     </div>
+    ${(f.projekt_id || f.aufgabe_id) && html`<div class="ll-vorschlag">
+      ${vs && vs.laeuft ? html`<span class="ll-jetzt"><span class="vf-spin"></span>Das Cockpit liest das Material und schlägt die Felder vor …</span>`
+        : vs && vs.fehler ? html`<span class="klein">Vorschlag nicht verfügbar: ${vs.fehler}</span>`
+        : vs ? html`<span class="klein"><b>Vorschlag eingesetzt</b> (${vs.modell}) -- jedes Feld bleibt änderbar; was du selbst geändert hast, bleibt stehen.${vs.begruendung ? " " + vs.begruendung : ""}</span>`
+        : html`<span class="leise klein">Das Cockpit kann Art, Titel, Vorhaben und Rolle aus Projekt und Material vorschlagen.</span>`}
+      <span class="luecke"></span>
+      <button class="btn klein" disabled=${!!(vs && vs.laeuft) || bestand === null} onClick=${() => vorschlagHolen(material())}>
+        <${Icon} n="stift" g=${13} />${vs && !vs.laeuft ? "Neu vorschlagen" : "Vorschlag machen"}</button>
+    </div>
+    <section class="ll-mat-bereich">
+      <h4>Was schon dazugehört <span class="leise klein">-- das Team baut darauf auf und liest den aktuellen Stand</span></h4>
+      ${bestand === null ? html`<div class="lade">Lade, was zum Projekt schon da ist …</div>`
+        : bestand.length ? html`<${Material} bestand=${bestand} wahl=${wahl} setWahl=${setWahl} />`
+        : html`<p class="leise klein">Zu diesem Projekt gibt es noch keine Ergebnisse, Gespräche, Unterlagen oder Notizen.</p>`}
+    </section>`}
     ${f.aufgabe_id && html`<p class="hinweisbox klein" style="margin-top:12px">Gehört zur Aufgabe <b>${f.aufgabe_titel || ""}</b>. Sie bekommt Start und Ergebnis als Zeile in ihre Notiz; ihr Stand bleibt deine Entscheidung.</p>`}
     <p class="leise klein ll-erkl">Das Team schreibt lokal auf deinem Server -- das kostet nichts. Geld kosten nur die Zwischenprüfungen durch
       ${f.pruefer === "dario" ? " Dario" : " Demmis"}. <b>Das Budget ist deine Zustimmung:</b> so viel dürfen sie insgesamt kosten; vor jeder Prüfung
@@ -137,6 +214,8 @@ function Detail({ id, neuLaden }) {
           onKeyDown=${(e) => { if (e.key === "Enter" && hinweis.trim()) { tun("hinweis", { text: hinweis }, "Hinweis gilt ab der nächsten Etappe."); setHinweis(""); } }} />
         <button class="btn klein" disabled=${!hinweis.trim()} onClick=${() => { tun("hinweis", { text: hinweis }, "Hinweis gilt ab der nächsten Etappe."); setHinweis(""); }}>Mitgeben</button></div>` : ""}
       <details class="klein ll-auftrag"><summary>Das Vorhaben</summary><p>${l.auftrag}</p></details>
+      ${(l.material || []).length > 0 && html`<details class="klein ll-auftrag"><summary>Baut auf ${l.material.length} ${l.material.length === 1 ? "Stück" : "Stücke"} Material</summary>
+        <ul>${l.material.map((m) => html`<li key=${m.art + m.id}>${m.titel}</li>`)}</ul></details>`}
     </div>
 
     ${l.pruefungsliste.length > 0 && html`<section class="karte">

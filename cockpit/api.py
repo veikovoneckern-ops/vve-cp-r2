@@ -1628,9 +1628,31 @@ async def langlauf_anlegen(request: Request):
     try:
         return langlauf.anlegen(str(d.get("titel") or ""), str(d.get("auftrag") or ""), str(d.get("art") or "buch"),
                                 d.get("projekt_id") or None, str(d.get("pruefer") or "dario"),
-                                int(d.get("pruef_alle") or 3), float(d.get("budget") or 0), d.get("rolle"), d.get("aufgabe_id") or None)
+                                int(d.get("pruef_alle") or 3), float(d.get("budget") or 0), d.get("rolle"), d.get("aufgabe_id") or None,
+                                d.get("material"))
     except (TypeError, ValueError) as e:
         raise HTTPException(400, str(e))
+
+
+# Was zu Projekt/Aufgabe schon da ist (zum Ankreuzen) und ein Vorschlag fuer die
+# Felder (17.10.2026). Vor /langlaeufe/{lid} stehen lassen, sonst faengt die
+# Kennungs-Route "bestand" ab.
+@router.get("/langlaeufe/bestand")
+async def langlauf_bestand(projekt_id: str = "", aufgabe_id: str = ""):
+    from . import langlauf
+    return {"bestand": langlauf.bestand(projekt_id or None, aufgabe_id or None)}
+
+
+@router.post("/langlaeufe/vorschlag")
+async def langlauf_vorschlag(request: Request):
+    from . import langlauf
+    d = await _koerper(request)
+    try:
+        return await langlauf.vorschlag(d.get("projekt_id") or None, d.get("aufgabe_id") or None, d.get("material"))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except llm.ModellFehler as e:
+        raise HTTPException(503, f"Kein Vorschlag möglich: {e}")
 
 
 @router.get("/langlaeufe/{lid}")
