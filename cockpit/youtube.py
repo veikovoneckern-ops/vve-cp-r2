@@ -35,10 +35,16 @@ from . import db, llm, stab
 
 VORGABE_FOLGEN = 40
 MAX_FOLGEN = 200
-PAUSE_SEK = 6
+# Zwischen zwei Abschriften (17.10.2026: 6 s fuehrten nach zwoelf Folgen zur Sperre).
+PAUSE_SEK = 35
 DOSSIER_ZEICHEN = 60000
 JOBS: dict[str, dict[str, Any]] = {}
 _TASKS: dict[str, asyncio.Task] = {}
+
+
+def _pause() -> float:
+    import random
+    return PAUSE_SEK + random.uniform(0, 20)
 
 
 def anzahl_aus(text: str) -> int:
@@ -74,14 +80,17 @@ def _liste(url: str) -> tuple[str, list[dict[str, Any]], Any]:
 
 
 async def starten(url: str, fokus: str, ziel: dict[str, Any], anzahl: int, zusatz: str = "") -> dict[str, Any]:
+    from .quellen import sperre_bis, zeit_text
+    if sperre_bis() > time.time():
+        raise RuntimeError(f"YouTube hat diesen Server für Abschriften gesperrt; das Cockpit fragt bis {zeit_text(sperre_bis())} Uhr bewusst nicht")
     kanal, folgen, gesamt = await asyncio.to_thread(_liste, url)
     folgen = folgen[:anzahl]
     jid = db.neue_id("y")
     j = {"id": jid, "url": url, "kanal": kanal, "anzahl": len(folgen), "gesamt": gesamt, "fertig": 0, "ohne": 0,
          "stand": "laeuft", "schritt": "beginnt", "start": time.time(), "ziel": ziel, "fehler": None,
          "dossier_titel": f"YouTube-Dossier: {kanal} ({len(folgen)} Folgen)",
-         # gemessen am 17.10.: knapp eine Minute je zweistuendiger Folge (Abschrift, Pause, Kurzfassung)
-         "minuten": max(2, len(folgen))}
+         # je Folge: gut 30 s Kurzfassung (gemessen 17.10.) plus die Pause gegen Sperren
+         "minuten": max(2, round(len(folgen) * 1.3))}
     JOBS[jid] = j
     _TASKS[jid] = asyncio.create_task(_lauf(j, folgen, fokus, zusatz))
     return j
@@ -97,32 +106,29 @@ def abbrechen(jid: str) -> bool:
 
 
 async def _lauf(j: dict[str, Any], folgen: list[dict[str, Any]], fokus: str, zusatz: str) -> None:
-    from .quellen import abschrift
+    from .quellen import _gespeichert, abschrift
     ziel = j["ziel"]
     pid = ziel.get("projekt_id")
     je = max(500, min(2500, DOSSIER_ZEICHEN // max(1, len(folgen))))
     modell = await llm.modell_waehlen(llm.vorgabe("talk"), llm.vorgabe("arbeit"), "qwen3.6:27b")
     kurz: list[str] = []
-    gesperrt = 0
     try:
         for i, f in enumerate(folgen):
             j["schritt"] = f"Folge {i + 1} von {len(folgen)}: Abschrift „{f['titel'][:70]}“"
+            schon = _gespeichert(f["id"])          # einmal geholt = nie wieder bei YouTube fragen
             try:
-                text = await asyncio.to_thread(abschrift, f["id"])
-                gesperrt = 0
+                text = schon or await asyncio.to_thread(abschrift, f["id"])
             except RuntimeError as e:
-                if "blockiert" in str(e):
-                    gesperrt += 1
-                    if gesperrt >= 3:
-                        raise RuntimeError("YouTube sperrt diesen Server gerade für Abschriften. Das Dossier enthält, was bis hierher kam.")
-                    j["schritt"] = "YouTube bremst -- eine Minute Pause"
-                    await asyncio.sleep(60)
-                    continue
+                if "Gesperrt" in str(e):
+                    # Sofort aufhoeren: jede weitere Anfrage verlaengert die Sperre
+                    # (17.10.2026: drei Anlaeufe nach der ersten Sperre waren zu viel).
+                    raise RuntimeError(str(e).replace(" Gesperrt", "") + " Das Dossier enthält, was bis hierher kam.")
                 j["ohne"] += 1
-                await asyncio.sleep(PAUSE_SEK)
+                await asyncio.sleep(_pause())
                 continue
             url = f"https://www.youtube.com/watch?v={f['id']}"
-            _datei(f"YouTube {kanal_kurz(j)} -- {f['titel']}.txt", f"{f['titel']}\n{url}\n\n{text}", pid, ziel.get("aufgabe_id"))
+            if not schon:
+                _datei(f"YouTube {kanal_kurz(j)} -- {f['titel']}.txt", f"{f['titel']}\n{url}\n\n{text}", pid, ziel.get("aufgabe_id"))
             if modell:
                 j["schritt"] = f"Folge {i + 1} von {len(folgen)}: Kurzfassung"
                 with llm.taetig(f"YouTube-Dossier: fasst Folge {i + 1} von {len(folgen)} zusammen"):
@@ -139,7 +145,8 @@ async def _lauf(j: dict[str, Any], folgen: list[dict[str, Any]], fokus: str, zus
                         k = f"(Kurzfassung gescheitert: {e})"
                 kurz.append(f"## {f['titel']}\n{url}\n\n{k.strip()[:je + 400]}")
             j["fertig"] += 1
-            await asyncio.sleep(PAUSE_SEK)
+            if not schon:
+                await asyncio.sleep(_pause())
         j["stand"] = "fertig"
     except asyncio.CancelledError:
         j["stand"] = "abgebrochen"

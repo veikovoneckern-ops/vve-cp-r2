@@ -81,8 +81,51 @@ def _titel(h: str) -> str:
     return re.sub(r"\s+", " ", htmlmod.unescape(m.group(1))).strip()[:160] if m else ""
 
 
+# YouTube sperrte am 17.10.2026 die Abschrift-Schnittstelle fuer diesen Server
+# ("IpBlocked"), nachdem Tests und ein 200-Folgen-Auftrag in kurzer Zeit gut
+# zwei Dutzend Abschriften geholt und nach der ersten Sperre weiter angeklopft
+# hatten. Seither drei Riegel: (1) nach einer Sperre 24 Stunden GAR KEINE
+# Abfrage mehr (jede weitere verlaengert die Sperre), (2) eine schon geholte
+# Abschrift kommt aus den Unterlagen statt von YouTube, (3) youtube.py wartet
+# zwischen Folgen deutlich laenger.
+SPERRE_STUNDEN = 24
+
+
+def zeit_text(ts: float) -> str:
+    import datetime
+    from zoneinfo import ZoneInfo
+    return datetime.datetime.fromtimestamp(ts, ZoneInfo("Europe/Berlin")).strftime("%d.%m. %H:%M")
+
+
+def sperre_bis() -> float:
+    from . import db
+    return float(db.einstellung("youtube_sperre_bis", 0) or 0)
+
+
+def _gespeichert(video_id: str) -> str | None:
+    from . import db
+    # Eine gespeicherte Abschrift (youtube._datei) beginnt mit Titel, Adresse, Leerzeile.
+    # Das Dossier enthaelt dieselbe Adresse auch -- deshalb muss sie GENAU in Zeile 2 stehen.
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    for z in db.alle("SELECT text FROM dateien WHERE text LIKE ? ORDER BY erstellt DESC LIMIT 5", (f"%{url}%",)):
+        kopf, _, rest = (z.get("text") or "").partition("\n\n")
+        zeilen = kopf.split("\n")
+        if len(zeilen) == 2 and zeilen[1].strip() == url and rest.strip():
+            return rest
+    return None
+
+
 def abschrift(video_id: str) -> str:
     """Die Abschrift eines Videos (blockierend -- im Thread aufrufen). Wirft RuntimeError mit Klartextgrund."""
+    import time as _t
+    from . import db
+    alt = _gespeichert(video_id)
+    if alt:
+        return alt
+    bis = sperre_bis()
+    if bis > _t.time():
+        raise RuntimeError(f"YouTube hat diesen Server für Abschriften gesperrt; das Cockpit fragt bis "
+                           f"{zeit_text(bis)} Uhr bewusst nicht (jede Anfrage verlängert die Sperre). Gesperrt")
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
     except ImportError:
@@ -91,13 +134,19 @@ def abschrift(video_id: str) -> str:
         api = YouTubeTranscriptApi()
         try:
             t = api.fetch(video_id, languages=["de", "en"])
-        except Exception:  # noqa: BLE001 -- keine de/en-Spur: irgendeine nehmen
-            liste = api.list(video_id)
-            t = next(iter(liste)).fetch()
+        except Exception as e1:  # noqa: BLE001
+            # Nur wenn es schlicht keine de/en-Spur gibt, eine andere nehmen. Vorher
+            # wurde auch bei einer Sperre ein zweites Mal gefragt.
+            if "NoTranscript" not in e1.__class__.__name__:
+                raise
+            t = next(iter(api.list(video_id))).fetch()
     except Exception as e:  # noqa: BLE001
         name = e.__class__.__name__
         if "Blocked" in name or "TooMany" in name or "429" in str(e):
-            raise RuntimeError("YouTube blockiert gerade Abfragen von diesem Server (zu viele in kurzer Zeit).")
+            db.einstellung_setzen("youtube_sperre_bis", _t.time() + SPERRE_STUNDEN * 3600)
+            print(f"[quellen] YouTube sperrt Abschriften ({name}) -- {SPERRE_STUNDEN} h keine Abfrage", flush=True)
+            raise RuntimeError(f"YouTube hat diesen Server gerade für Abschriften gesperrt; das Cockpit fragt jetzt "
+                               f"{SPERRE_STUNDEN} Stunden lang nicht mehr. Gesperrt")
         if "Disabled" in name or "NoTranscript" in name:
             raise RuntimeError("Für dieses Video gibt es keine Abschrift.")
         raise RuntimeError(f"Abschrift nicht abrufbar ({name}).")
@@ -123,7 +172,7 @@ async def lesen(url: str, grenze: int = SEITE_GRENZE) -> dict[str, Any]:
                 return {"url": url, "titel": titel or "YouTube-Video", "art": "youtube", "text": t[:grenze],
                         "hinweis": f"gekürzt auf {grenze} von {len(t)} Zeichen" if len(t) > grenze else ""}
             except RuntimeError as e:
-                return {"url": url, "titel": titel or "YouTube-Video", "art": "youtube", "text": "", "hinweis": str(e)}
+                return {"url": url, "titel": titel or "YouTube-Video", "art": "youtube", "text": "", "hinweis": str(e).replace(" Gesperrt", "")}
         if YT_SAMMLUNG.search(url):
             return {"url": url, "titel": "YouTube-Kanal", "art": "youtube-kanal", "text": "", "hinweis": ""}
         try:
