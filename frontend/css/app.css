@@ -1205,9 +1205,14 @@ details.eingetragen[open]>summary{margin-bottom:8px}
 
 /* Langlaeufer (17.10.2026): Liste links, gewaehlter Lauf rechts. Erklaertexte
    ueber die volle Breite (Veiko: schmale Textspalten kosten zu viel Hoehe). */
-.ll-kopf{display:flex;gap:16px;align-items:flex-start;margin-bottom:14px}
-.ll-kopf p{flex:1;margin:0}
-.ll-raster{display:grid;grid-template-columns:minmax(0,320px) minmax(0,1fr);gap:14px;align-items:start}
+/* Verdichtet am 17.10.2026 (Veiko: "mehr Platz fuer die wesentlichen Inhalte"):
+   Erklaertext hinter einem Aufklapper, Liste schmaler, Kennzahlen als eine Zeile. */
+.ll-kopf{display:flex;gap:16px;align-items:flex-start;justify-content:space-between;margin-bottom:10px}
+.ll-info{flex:1;min-width:0;color:var(--ink-3)}
+.ll-info summary{cursor:pointer;padding:6px 0}
+.ll-info p{margin:4px 0 0;max-width:900px}
+.ll-raster{display:grid;grid-template-columns:minmax(0,250px) minmax(0,1fr);gap:12px;align-items:start}
+.ll-zeile .leise.klein{font-size:11.5px}
 .ll-liste{display:flex;flex-direction:column;gap:8px;min-width:0}
 .ll-zeile{text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer;font:inherit;color:inherit;min-width:0}
 .ll-zeile.an{border-color:var(--violett);box-shadow:0 0 0 1px var(--violett)}
@@ -1219,10 +1224,13 @@ details.eingetragen[open]>summary{margin-bottom:8px}
 .ll-nebenbei{display:flex;flex-direction:column}
 .ll-nebenbei .ll-jetzt{align-items:flex-start;overflow-wrap:anywhere}
 .ll-detail .fehlerbox,.ll-detail .hinweisbox{margin-bottom:10px}
-.ll-zahlen{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:6px 0 12px}
-.ll-zahlen>div{display:flex;flex-direction:column;gap:2px;background:var(--surface-2);border-radius:8px;padding:8px 10px;min-width:0}
-.ll-zahlen .btn{align-self:flex-start;margin-top:4px}
-.ll-budget{display:flex;gap:6px;margin-top:4px}.ll-budget input{width:90px;min-height:30px}
+.ll-zahlen{display:flex;flex-wrap:wrap;align-items:center;gap:4px 18px;margin:2px 0 6px;font-size:13px;color:var(--ink-3)}
+.ll-zahlen b{color:var(--ink)}
+.ll-zahlen>span{display:inline-flex;align-items:center;gap:6px;min-width:0}
+.ll-budget{display:inline-flex;gap:6px}.ll-budget input{width:90px;min-height:30px}
+.ll-aufklapper{display:flex;flex-wrap:wrap;gap:0 18px}
+.ll-aufklapper .ll-auftrag{margin-top:4px}
+.ll-aufklapper details[open]{flex-basis:100%;order:9}
 .ll-hinweis{display:flex;gap:8px}.ll-hinweis input{flex:1}
 .ll-auftrag{margin-top:10px}.ll-auftrag p{white-space:pre-wrap}
 .ll-etappe{border-top:1px solid var(--line-2)}
@@ -1255,8 +1263,13 @@ details.eingetragen[open]>summary{margin-bottom:8px}
 .ll-mat-zeile .haupt-text>span:first-child{overflow-wrap:anywhere}
 .ll-auftrag ul{margin:4px 0 0 18px;padding:0}
 @media (max-width:700px){.ll-material{grid-template-columns:minmax(0,1fr)}.ll-vorschlag{flex-wrap:wrap}}
-@media (max-width:1000px){.ll-raster{grid-template-columns:minmax(0,1fr)}.ll-zahlen{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:600px){.ll-form{grid-template-columns:minmax(0,1fr)}.ll-kopf{flex-direction:column}.ll-marken{max-width:none}}
+@media (max-width:1000px){.ll-raster{grid-template-columns:minmax(0,1fr)}
+  /* Gestapelt waere die Liste ein hoher Block ueber allem: hier eine waagerechte Leiste. */
+  .ll-liste{flex-direction:row;overflow-x:auto;padding-bottom:4px;scroll-snap-type:x proximity}
+  .ll-zeile{flex:0 0 min(260px,78vw);scroll-snap-align:start}}
+/* Telefon: die Marken eines Kapitels unter den Titel statt daneben -- daneben ragten sie ueber den Rand. */
+@media (max-width:820px){.ll-etappe-kopf{flex-wrap:wrap}.ll-marken{max-width:none;flex-basis:100%;justify-content:flex-start;padding-left:36px}}
+@media (max-width:600px){.ll-form{grid-template-columns:minmax(0,1fr)}.ll-kopf{align-items:center}}
 
 /* Breite ziehen (17.10.2026): ein Griff an der Kante jedes Chatfensters. Sitzt
    INNEN an der Kante (erg-chat und modal schneiden ueberstehenden Inhalt ab). */
@@ -1386,7 +1399,13 @@ html.zieht iframe{pointer-events:none}
 /* Die tatsaechliche Hoehe setzt LanglaufChat (langlauf.js) nach dem freien Platz bis
    zum Bildschirmrand; die Regel unten gilt nur, bis das Skript gelaufen ist. Ein am
    Rand festgehaltenes Eingabefeld (sticky) verdeckte den Verlauf -- nicht wieder so. */
-.ll-chat>.karte-kopf{padding:12px 16px 10px;margin:0;border-bottom:1px solid var(--line)}
+.ll-chat>.karte-kopf{padding:8px 16px;margin:0;border-bottom:1px solid var(--line)}
+/* Eingabe kompakter: Schalter neben "Antworten vorlesen" in einer Zeile, ohne den
+   Tastenhinweis darunter -- jede gesparte Zeile geht an den Verlauf. */
+.ll-chat .tc-eingabe{display:flex;flex-wrap:wrap;align-items:center;gap:2px 16px;padding:6px 12px 6px}
+.ll-chat .tc-eingabe>.composer{flex:1 1 100%}
+.ll-chat .composer-hinweis{display:none}
+.ll-chat .tc-vorlesen{margin-top:0}
 .ll-chat>.karte-kopf .bd-auswahl{flex:1;max-width:420px}
 /* Hoechstens so hoch, nicht fest so hoch (Veiko, 17.10.: der leere Abschnitt
    war viel zu hoch). Der Verlauf waechst mit dem Gespraech und scrollt ab der Grenze. */

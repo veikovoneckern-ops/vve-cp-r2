@@ -202,6 +202,8 @@ function Detail({ id, neuLaden }) {
   };
   const [farbe, standText] = standAnzeige(l);
   const aktiv = ["plant", "laeuft", "wartet"].includes(l.stand);
+  // Kennzahlen als EINE Zeile statt vier grosser Kacheln, die drei Aufklapper
+  // nebeneinander (Veiko, 17.10.2026: "mehr Platz fuer die wesentlichen Inhalte").
   return html`<div class="ll-detail">
     <div class="karte">
       <div class="karte-kopf"><h3>${l.titel}</h3><span class=${"pill " + farbe}>${standText}</span>
@@ -219,19 +221,21 @@ function Detail({ id, neuLaden }) {
       ${l.fehler && html`<div class="fehlerbox"><b>${l.stand === "fehler" ? "Angehalten nach drei Fehlversuchen." : "Letzter Schritt gescheitert, wird wiederholt."}</b> ${l.fehler}</div>`}
       ${l.extern_aus && html`<div class="hinweisbox klein">${l.extern_aus}</div>`}
       <div class="ll-zahlen">
-        <div><span class="leise klein">Fortschritt</span><b>${l.fertig} von ${l.etappen || "?"} ${l.etappen_name}</b></div>
-        <div><span class="leise klein">Arbeitet</span><b>${l.rolle_name}</b></div>
-        <div><span class="leise klein">Prüft nach je ${l.pruef_alle} ${l.pruef_alle == 1 ? l.etappe_name : l.etappen_name}</span><b>${PRUEFER[l.pruefer] || l.pruefer}</b></div>
-        <div><span class="leise klein">Kosten / Budget</span><b>${usd(l.kosten)} / ${usd(l.budget)}</b>
-          ${budget === null ? html`<button class="btn klein" onClick=${() => setBudget(l.budget)}>ändern</button>`
+        <span><b>${l.fertig} von ${l.etappen || "?"}</b> ${l.etappen_name}</span>
+        <span>schreibt <b>${l.rolle_name}</b></span>
+        <span>prüft <b>${PRUEFER[l.pruefer] || l.pruefer}</b> nach je ${l.pruef_alle} ${l.pruef_alle == 1 ? l.etappe_name : l.etappen_name}</span>
+        <span><b>${usd(l.kosten)}</b> von ${usd(l.budget)}
+          ${budget === null ? html`<button class="btn klein geist" onClick=${() => setBudget(l.budget)}>Budget ändern</button>`
             : html`<span class="ll-budget"><input class="eingabe" type="number" min="0" step="0.5" value=${budget} onInput=${(e) => setBudget(e.target.value)} />
-              <button class="btn klein primaer" onClick=${() => { tun("budget", { budget }, "Budget gespeichert."); setBudget(null); }}>OK</button></span>`}</div>
+              <button class="btn klein primaer" onClick=${() => { tun("budget", { budget }, "Budget gespeichert."); setBudget(null); }}>OK</button></span>`}</span>
       </div>
-      <details class="klein ll-auftrag"><summary>Das Vorhaben</summary><p>${l.auftrag}</p></details>
-      ${(l.material || []).length > 0 && html`<details class="klein ll-auftrag"><summary>Baut auf ${l.material.length} ${l.material.length === 1 ? "Stück" : "Stücke"} Material</summary>
-        <ul>${l.material.map((m) => html`<li key=${m.art + m.id}>${m.titel}</li>`)}</ul></details>`}
-      ${(l.hinweise || []).length > 0 && html`<details class="klein ll-auftrag"><summary>${l.hinweise.length} Hinweise gelten für die weiteren ${l.etappen_name}</summary>
-        <ul>${l.hinweise.slice().reverse().map((h, i) => html`<li key=${i}><b>${h.von}:</b> ${h.text}</li>`)}</ul></details>`}
+      <div class="ll-aufklapper">
+        <details class="klein ll-auftrag"><summary>Das Vorhaben</summary><p>${l.auftrag}</p></details>
+        ${(l.material || []).length > 0 && html`<details class="klein ll-auftrag"><summary>${l.material.length} ${l.material.length === 1 ? "Stück" : "Stücke"} Material</summary>
+          <ul>${l.material.map((m) => html`<li key=${m.art + m.id}>${m.titel}</li>`)}</ul></details>`}
+        ${(l.hinweise || []).length > 0 && html`<details class="klein ll-auftrag"><summary>${l.hinweise.length} Hinweise für die weiteren ${l.etappen_name}</summary>
+          <ul>${l.hinweise.slice().reverse().map((h, i) => html`<li key=${i}><b>${h.von}:</b> ${h.text}</li>`)}</ul></details>`}
+      </div>
     </div>
 
     <${LanglaufChat} l=${l} neuLaden=${() => { laden(); neuLaden(); }} />
@@ -327,10 +331,11 @@ export function Langlaeufer({ id }) {
   const aktuell = wahl || (d.langlaeufe[0] && d.langlaeufe[0].id);
   return html`<div class="seite ll">
     <div class="ll-kopf">
-      <p class="leise">Ein langes Vorhaben -- ein Buch, ein langes Dokument, ein langes Video -- läuft hier in Etappen durch. Das Team schreibt lokal,
+      <details class="ll-info klein"><summary>So arbeitet ein Langläufer</summary>
+        <p class="leise">Ein langes Vorhaben -- ein Buch, ein langes Dokument, ein langes Video -- läuft hier in Etappen durch. Das Team schreibt lokal,
         Daniel prüft jede Etappe, und alle paar Etappen liest Dario oder Demmis mit und gibt Hinweise für den Rest. Du musst nicht eingreifen;
-        angehalten wird nur, wenn ein Prüfer deine Entscheidung braucht.</p>
-      <button class="btn primaer" onClick=${() => setNeu(true)}><${Icon} n="plus" g=${15} />Neuer Langläufer</button>
+        angehalten wird nur, wenn ein Prüfer deine Entscheidung braucht.</p></details>
+      <button class="btn primaer klein" onClick=${() => setNeu(true)}><${Icon} n="plus" g=${14} />Neuer Langläufer</button>
     </div>
     ${d.langlaeufe.length ? html`<div class="ll-raster">
         <div class="ll-liste">${d.langlaeufe.map((l) => html`<${Zeile} key=${l.id} l=${l} an=${l.id === aktuell} waehlen=${setWahl} />`)}</div>
