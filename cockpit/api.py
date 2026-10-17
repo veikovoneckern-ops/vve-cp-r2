@@ -813,8 +813,8 @@ async def extern_modell(xid: str, request: Request):
 
 
 @router.get("/teamchat")
-async def teamchat_liste(wer: str = "", ergebnis_id: str = ""):
-    return {"gespraeche": teamchat.gespraeche(wer or None, ergebnis_id or None)}
+async def teamchat_liste(wer: str = "", ergebnis_id: str = "", langlauf_id: str = ""):
+    return {"gespraeche": teamchat.gespraeche(wer or None, ergebnis_id or None, langlauf_id or None)}
 
 
 @router.get("/teamchat/{gid}")
@@ -909,7 +909,8 @@ async def teamchat_senden(request: Request):
     dateien = [str(x) for x in (d.get("dateien") or [])][:8]
     if not text and not dateien:
         raise HTTPException(400, "Es fehlt die Nachricht.")
-    kontext = {"projekt_id": d.get("projekt_id") or None, "ergebnis_id": d.get("ergebnis_id") or None}
+    kontext = {"projekt_id": d.get("projekt_id") or None, "ergebnis_id": d.get("ergebnis_id") or None,
+               "langlauf_id": d.get("langlauf_id") or None}
     wer = str(d.get("wer") or "")
     # extern: die Externen, die Veiko in DIESER Nachricht dazuholt UND fuer die er im
     # Fenster die Kosten freigegeben hat. Ohne diese Liste ruft der Server keinen an.

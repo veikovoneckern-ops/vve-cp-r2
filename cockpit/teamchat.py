@@ -191,6 +191,13 @@ def system_text(wer: str, kontext: dict[str, Any]) -> str:
         e = db.holen("ergebnisse", kontext["ergebnis_id"])
         if e:
             teile.append(_ergebnis_text(e))
+    if kontext.get("langlauf_id"):
+        # Gespraech ueber einen Langlaeufer (17.10.2026): Plan, Stand, Hinweise und
+        # die drei Bloecke, mit denen das Mitglied etwas ausloesen kann.
+        from . import langlauf
+        lk = langlauf.chat_kontext(kontext["langlauf_id"])
+        if lk:
+            teile.append(lk)
     return "\n\n".join(teile)
 
 
@@ -218,7 +225,7 @@ def fassung_trennen(text: str) -> tuple[str, str | None]:
 
 
 # ---------------------------------------------------------------- Gespraeche
-def gespraeche(wer: str | None = None, ergebnis_id: str | None = None) -> list[dict[str, Any]]:
+def gespraeche(wer: str | None = None, ergebnis_id: str | None = None, langlauf_id: str | None = None) -> list[dict[str, Any]]:
     sql = ("SELECT g.id, g.titel, g.geaendert, g.kontext, (SELECT COUNT(*) FROM nachrichten n WHERE n.gespraech_id=g.id) AS anzahl "
            "FROM gespraeche g WHERE g.art='team'")
     args: list[Any] = []
@@ -228,6 +235,9 @@ def gespraeche(wer: str | None = None, ergebnis_id: str | None = None) -> list[d
     if ergebnis_id:
         sql += " AND json_extract(g.kontext,'$.ergebnis_id')=?"
         args.append(ergebnis_id)
+    if langlauf_id:
+        sql += " AND json_extract(g.kontext,'$.langlauf_id')=?"
+        args.append(langlauf_id)
     return db.alle(sql + " ORDER BY g.geaendert DESC LIMIT 40", args)
 
 
@@ -242,7 +252,11 @@ async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
     if not ist_extern(wer) and not db.holen("team", wer):
         yield {"typ": "fehler", "text": f"Unbekanntes Teammitglied: {wer}"}
         return
-    kontext = {k: kontext.get(k) for k in ("projekt_id", "ergebnis_id") if kontext.get(k)}
+    kontext = {k: kontext.get(k) for k in ("projekt_id", "ergebnis_id", "langlauf_id") if kontext.get(k)}
+    if kontext.get("langlauf_id") and not kontext.get("projekt_id"):
+        l0 = db.holen("langlaeufe", kontext["langlauf_id"]) or {}
+        if l0.get("projekt_id"):
+            kontext["projekt_id"] = l0["projekt_id"]
     if kontext.get("ergebnis_id") and not kontext.get("projekt_id"):
         e0 = db.holen("ergebnisse", kontext["ergebnis_id"]) or {}
         if e0.get("projekt_id"):
@@ -350,6 +364,12 @@ async def _antwort(gid: str, wer: str, system: str, verlauf: list[dict[str, str]
     if llm.fremdschrift(gesamt):
         gesamt = llm.FREMDSCHRIFT.sub("", gesamt)
 
+    getan: list[str] = []
+    if kontext.get("langlauf_id"):
+        from . import langlauf
+        gesamt, getan = langlauf.chat_anweisungen(kontext["langlauf_id"], gesamt, wer)
+        if getan:
+            yield {"typ": "status", "text": "Übernommen: " + "; ".join(getan)}
     prosa, fassung = fassung_trennen(gesamt)
     if fassung and quellen:
         fassung += stab.netz_fuss(quellen)   # die Fassung traegt ihre Quellen selbst, wie in der Pipeline
@@ -383,6 +403,11 @@ async def _antwort(gid: str, wer: str, system: str, verlauf: list[dict[str, str]
     elif fassung:
         # Fassung ohne Ergebnis im Kontext: einfach im Text stehen lassen.
         prosa = gesamt.replace(FASSUNG_AUF, "").replace(FASSUNG_ZU, "").strip()
+    if getan:
+        # Was wirklich ausgeloest wurde, steht unter der Antwort -- vom Code
+        # geschrieben, nicht vom Modell behauptet.
+        prosa = (prosa or "Erledigt.") + "\n\n**Im Langläufer übernommen:**\n" + "\n".join("- " + g for g in getan)
+        daten["langlauf"] = getan
     prosa += stab.netz_fuss(quellen)
     mid = db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",
                         (gid, wer, prosa, json.dumps(daten, ensure_ascii=False), time.time()))

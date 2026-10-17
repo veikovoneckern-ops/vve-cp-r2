@@ -8,6 +8,7 @@
 // Team, Pause, Budget), aber nie noetig -- ausser, ein Pruefer haelt an.
 import { html, useState, useEffect, useRef, Icon, toast, fehlerMelden, zeitText, Md, Modal, bus, useAbruf } from "./ui.js";
 import { api } from "./api.js";
+import { TeamChat, gespraechsPartner } from "./teamchat.js";
 
 const usd = (n) => "$ " + (n || 0).toFixed(2).replace(".", ",");
 const STAND = {
@@ -176,7 +177,6 @@ function Etappe({ e, name }) {
 
 function Detail({ id, neuLaden }) {
   const [l, laden] = useAbruf("/langlaeufe/" + id, 10000, [id]);
-  const [hinweis, setHinweis] = useState("");
   const [budget, setBudget] = useState(null);
   if (!l) return html`<div class="lade">Lade …</div>`;
   const tun = async (aktion, daten, text) => {
@@ -209,14 +209,14 @@ function Detail({ id, neuLaden }) {
             : html`<span class="ll-budget"><input class="eingabe" type="number" min="0" step="0.5" value=${budget} onInput=${(e) => setBudget(e.target.value)} />
               <button class="btn klein primaer" onClick=${() => { tun("budget", { budget }, "Budget gespeichert."); setBudget(null); }}>OK</button></span>`}</div>
       </div>
-      ${aktiv || l.stand === "pausiert" ? html`<div class="ll-hinweis">
-        <input class="eingabe" value=${hinweis} placeholder="Hinweis an das Team für die nächsten Etappen (optional) …" onInput=${(e) => setHinweis(e.target.value)}
-          onKeyDown=${(e) => { if (e.key === "Enter" && hinweis.trim()) { tun("hinweis", { text: hinweis }, "Hinweis gilt ab der nächsten Etappe."); setHinweis(""); } }} />
-        <button class="btn klein" disabled=${!hinweis.trim()} onClick=${() => { tun("hinweis", { text: hinweis }, "Hinweis gilt ab der nächsten Etappe."); setHinweis(""); }}>Mitgeben</button></div>` : ""}
       <details class="klein ll-auftrag"><summary>Das Vorhaben</summary><p>${l.auftrag}</p></details>
       ${(l.material || []).length > 0 && html`<details class="klein ll-auftrag"><summary>Baut auf ${l.material.length} ${l.material.length === 1 ? "Stück" : "Stücke"} Material</summary>
         <ul>${l.material.map((m) => html`<li key=${m.art + m.id}>${m.titel}</li>`)}</ul></details>`}
+      ${(l.hinweise || []).length > 0 && html`<details class="klein ll-auftrag"><summary>${l.hinweise.length} Hinweise gelten für die weiteren ${l.etappen_name}</summary>
+        <ul>${l.hinweise.slice().reverse().map((h, i) => html`<li key=${i}><b>${h.von}:</b> ${h.text}</li>`)}</ul></details>`}
     </div>
+
+    <${LanglaufChat} l=${l} neuLaden=${() => { laden(); neuLaden(); }} />
 
     ${l.pruefungsliste.length > 0 && html`<section class="karte">
       <div class="karte-kopf"><h3>Zwischenprüfungen</h3><span class="leise klein">${l.pruefungsliste.length} · zusammen ${usd(l.kosten)}</span></div>
@@ -235,6 +235,40 @@ function Detail({ id, neuLaden }) {
         : html`<p class="leise">${l.stand === "plant" ? "Der Plan entsteht gerade …" : "Noch kein Plan."}</p>`}
     </section>
   </div>`;
+}
+
+// Das Gespraech zum Langlaeufer (17.10.2026, Veiko: "ueber den Zwischenpruefungen
+// ein vollfunktionsfaehiges Chatfenster fuer weitere Anweisungen und Dialog").
+// Es ist der Team-Chat (teamchat.js) mit dem Langlaeufer als Bezug -- derselbe
+// Weg wie im Ergebnisfenster: Anhaenge, Diktat, Externe dazuholen, Vorlesen.
+// Ersetzt die fruehere einfache Hinweis-Zeile (Bauregel 2). Eine Anweisung wird
+// Hinweis fuer die weiteren Etappen, Ueberarbeitung fertiger Etappen oder neue
+// Etappen (langlauf.chat_anweisungen); was uebernommen wurde, steht unter der Antwort.
+function LanglaufChat({ l, neuLaden }) {
+  const [team, setTeam] = useState(null);
+  const [wer, setWer] = useState(l.rolle || "buch");
+  const [gid, setGid] = useState(undefined);
+  useEffect(() => { api("/team").then(setTeam).catch(() => setTeam({ team: [], externe: [] })); }, []);
+  useEffect(() => { setWer(l.rolle || "buch"); }, [l.id]);
+  useEffect(() => {
+    setGid(undefined);
+    api(`/teamchat?wer=${encodeURIComponent(wer)}&langlauf_id=${encodeURIComponent(l.id)}`)
+      .then((x) => setGid(x.gespraeche[0] ? x.gespraeche[0].id : null)).catch(() => setGid(null));
+  }, [wer, l.id]);
+  const partner = gespraechsPartner(team);
+  const n = l.etappen_name;
+  return html`<section class="karte ll-chat">
+    <div class="karte-kopf"><h3>Gespräch zum Langläufer</h3>
+      <select class="eingabe bd-auswahl" value=${wer} onChange=${(e) => setWer(e.target.value)} aria-label="Mit wem sprechen">
+        ${partner.length ? partner.map((m) => html`<option value=${m.id}>${m.name} · ${m.extern ? "extern, kostet Geld" : m.id === l.rolle ? "schreibt diesen Langläufer" : m.titel}</option>`)
+          : html`<option value=${wer}>${l.rolle_name}</option>`}</select>
+      ${gid && html`<button class="btn klein geist" onClick=${() => setGid(null)} title="Neues Gespräch zu diesem Langläufer"><${Icon} n="neu" g=${13} />Neu</button>`}
+      ${(l.nacharbeit || []).length > 0 && html`<span class="pill lila">${l.nacharbeit.length} zur Überarbeitung vorgemerkt</span>`}</div>
+    ${team && gid !== undefined ? html`<${TeamChat} key=${wer + ":" + (gid || "neu")} wer=${wer} partnerListe=${partner} gid=${gid} langlaufId=${l.id}
+        projektId=${l.projekt_id || ""} beiGespraech=${setGid}
+        leerText=${`Frag nach dem Stand, gib Anweisungen für die weiteren ${n}, lass fertige ${n} überarbeiten oder weitere anhängen. Unterlagen über das Plus. Was davon im Langläufer ankommt, steht jeweils unter der Antwort.`} />`
+      : html`<div class="lade">Lade …</div>`}
+  </section>`;
 }
 
 export function Langlaeufer({ id }) {

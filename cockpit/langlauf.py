@@ -113,6 +113,7 @@ def einzeln(lid: str) -> dict[str, Any] | None:
     d = l.get("daten") or {}
     return {**ansicht(l), "auftrag": d.get("auftrag"), "etappenliste": d.get("etappen") or [],
             "pruefungsliste": d.get("pruefungen") or [], "hinweise": d.get("hinweise") or [],
+            "nacharbeit": d.get("nacharbeit") or [],
             "extern_aus": d.get("extern_aus"),
             "material": [{**m, "titel": s[0]} for m in _material_sauber(d.get("material")) for s in [_material_stueck(m)] if s]}
 
@@ -651,6 +652,23 @@ def _abschliessen(l: dict[str, Any], vorlaeufig: bool = False) -> str | None:
                 + json.dumps(drehbuch, ensure_ascii=False, indent=1) + "\n```")
     else:
         text = f"# {titel}\n\n" + "\n\n".join(e.get("text", "") for e in fertig)
+    alt = d.get("ergebnis_id") if not vorlaeufig else None
+    if alt and db.holen("ergebnisse", alt):
+        # Nach Nacharbeit aus dem Gespraech: dasselbe Ergebnis bekommt eine neue
+        # Fassung (zuruecknehmbar ueber das Protokoll) statt eines zweiten Buchs.
+        # Ein Video wird dabei NICHT neu gerechnet (Stunden) -- "Neu rechnen" am Ergebnis.
+        db.aendern("ergebnisse", alt, {"inhalt": text, "pruefung": pruefung}, wer=d["rolle"], vorgang_id=vid,
+                   aktion="überarbeitet (Langläufer)")
+        d["ergebnis_veraltet"] = False
+        if art != "video":
+            from . import folienbilder
+            if "dokument" in folienbilder.MIT_BILDERN:
+                folienbilder.starten(alt)
+        db.ereignis(vid, d["rolle"], "info", "Ergebnis mit den überarbeiteten Etappen aktualisiert.")
+        _speichern(l, stand="fertig")
+        stab._auftrag_erledigt(vid)
+        stab.stand_berechnen(vid)
+        return alt
     eid = stab.ergebnis_speichern(v, a, text, d["rolle"], d.get("modell") or "lokal", [], pruefung)
     if art == "video" and not vorlaeufig:
         if video.starten(eid, drehbuch):
@@ -676,6 +694,17 @@ async def schritt(l: dict[str, Any]) -> None:
     d = l["daten"]
     if l["stand"] == "plant" or not d.get("etappen"):
         await _planen(l)
+        return
+    # Aus dem Gespraech vorgemerkte Ueberarbeitungen (chat_anweisungen) zuerst --
+    # Veiko hat sie ausdruecklich verlangt, sie warten nicht hinter neuen Etappen.
+    if d.get("nacharbeit"):
+        x = d["nacharbeit"][0]
+        e = next((e for e in d["etappen"] if e["nr"] == x["nr"] and e.get("stand") == "fertig"), None)
+        if e:
+            await _nachbessern(l, e, f"{x.get('von') or 'Veiko'}: {x['was']}")
+        d["nacharbeit"] = d["nacharbeit"][1:]
+        d["ergebnis_veraltet"] = True
+        _speichern(l)
         return
     offen = [e for e in d["etappen"] if e.get("stand") != "fertig"]
     fertig = [e for e in d["etappen"] if e.get("stand") == "fertig"]
@@ -746,3 +775,104 @@ async def schleife() -> None:
             await asyncio.wait_for(_weck.wait(), timeout=TAKT_SEK)
         except asyncio.TimeoutError:
             pass
+
+
+# ---------------------------------------------------------------- Gespraech ueber den Langlaeufer
+# Veiko, 17.10.2026: "ueber den Zwischenpruefungen ein vollfunktionsfaehiges
+# Chatfenster, mit dem ich weitere Anweisungen und Dialog zu dem Langlaeufer
+# fuehren kann." Es ist der Team-Chat (teamchat.py, ein Gespraechsweg) mit dem
+# Langlaeufer als Bezug. Was im Gespraech nur besprochen wird, aendert nichts;
+# was das Mitglied in einen der drei Bloecke unten schreibt, wird ausgefuehrt --
+# derselbe Grundsatz wie <<<FASSUNG>>> im Ergebnisfenster: das Modell markiert,
+# der Code fuehrt aus, und im Chat steht, was uebernommen wurde.
+ANWEISUNG_RE = re.compile(r"<<<(HINWEIS|UEBERARBEITEN|NEUE_ETAPPEN)>>>\s*(.*?)\s*(?:<<<ENDE>>>|$)", re.S)
+
+
+def chat_kontext(lid: str) -> str:
+    l = holen(lid)
+    if not l:
+        return ""
+    d, art = l["daten"], l["art"]
+    n, nn = ARTEN[art]["etappe"], ARTEN[art]["mehrzahl"]
+    etappen = "\n".join(f"{e['nr']}. {e['titel']} [{'fertig' if e.get('stand') == 'fertig' else 'offen'}]: {(e.get('kurz') if e.get('stand') == 'fertig' else e.get('inhalt')) or ''}" for e in d.get("etappen") or [])
+    pr = "\n".join(f"- {p['name']} zu {n} {p['von']}–{p['bis']} ({p['urteil']}): {p.get('begruendung') or ''}"
+                   for p in (d.get("pruefungen") or [])[-3:])
+    offen = "; ".join(f"{n} {x['nr']}: {x['was']}" for x in d.get("nacharbeit") or [])
+    return (f"DER LANGLÄUFER, ÜBER DEN IHR SPRECHT: „{l['titel']}“ ({ARTEN[art]['name']}, schreibt: {stab.rollen_name(d.get('rolle'))}, "
+            f"Stand: {l['stand']}, {sum(1 for e in d.get('etappen') or [] if e.get('stand') == 'fertig')} von {len(d.get('etappen') or [])} {nn} fertig).\n"
+            f"VORHABEN: {d.get('auftrag')}\n\nPLAN ({nn}, mit Kurzfassung des Fertigen):\n{etappen or '(noch kein Plan)'}\n\n"
+            + (_hinweise_text(d) + "\n\n" if d.get("hinweise") else "")
+            + (f"LETZTE ZWISCHENPRÜFUNGEN:\n{pr}\n\n" if pr else "")
+            + (f"BEREITS ZUR ÜBERARBEITUNG VORGEMERKT: {offen}\n\n" if offen else "")
+            + "WAS DU AUSLÖSEN KANNST -- nur, wenn Veiko es will (eine Frage oder Diskussion löst nichts aus). Schreib dazu "
+            "einen Satz, was passiert, und danach den Block; das Cockpit führt ihn aus und meldet es im Gespräch:\n"
+            f"1. Eine Anweisung für alle weiteren {nn} (Ton, Inhalt, Länge, was zu vermeiden ist):\n"
+            "<<<HINWEIS>>>\ndie Anweisung in einem bis drei klaren Sätzen\n<<<ENDE>>>\n"
+            f"2. Fertige {nn} überarbeiten lassen (je Zeile Nummer, Doppelpunkt, was genau zu ändern ist):\n"
+            "<<<UEBERARBEITEN>>>\n3: Beispiel aus der Pflege statt aus der Industrie\n<<<ENDE>>>\n"
+            f"3. Weitere {nn} am Ende anhängen (je Zeile Titel, zwei Bindestriche, was hineingehört):\n"
+            "<<<NEUE_ETAPPEN>>>\nTitel -- Inhalt in zwei Sätzen\n<<<ENDE>>>\n"
+            f"Den Text der {nn} schreibst du hier NICHT selbst -- das macht der Langläufer im Hintergrund, mit Plan, "
+            "Hinweisen und Daniels Prüfung. Behaupte nie, etwas sei geändert, ohne den Block zu schreiben.")
+
+
+def chat_anweisungen(lid: str, text: str, wer: str) -> tuple[str, list[str]]:
+    """Fuehrt die Bloecke aus einer Antwort aus. Gibt den Text ohne Bloecke und
+    die Liste dessen zurueck, was uebernommen wurde (fuer den Chat)."""
+    l = holen(lid)
+    if not l:
+        return text, []
+    d, art, vid = l["daten"], l["art"], l["vorgang_id"]
+    n = ARTEN[art]["etappe"]
+    von = "Veiko" if wer == d.get("rolle") else f"Veiko über {wer.capitalize() if wer in ('dario', 'elon', 'demmis') else stab.rollen_name(wer)}"
+    getan: list[str] = []
+    beendet = l["stand"] in ("abgebrochen",)
+    for art_b, inhalt in ANWEISUNG_RE.findall(text):
+        inhalt = inhalt.strip()
+        if not inhalt:
+            continue
+        if art_b == "HINWEIS":
+            d.setdefault("hinweise", []).append({"zeit": time.time(), "von": von, "text": stab._kurz(inhalt, 2000)})
+            db.ereignis(vid, "du", "antwort", f"Hinweis für die nächsten Etappen (aus dem Gespräch): {inhalt}")
+            getan.append(f"Hinweis gilt für alle weiteren {ARTEN[art]['mehrzahl']}: „{stab._kurz(inhalt, 160)}“")
+        elif art_b == "UEBERARBEITEN":
+            fertig = {e["nr"] for e in d.get("etappen") or [] if e.get("stand") == "fertig"}
+            for zeile in inhalt.splitlines():
+                m = re.match(r"\s*(?:\w+\s+)?(\d+)\s*[:.)-]\s*(.+)", zeile)
+                if not m:
+                    continue
+                nr, was = int(m.group(1)), m.group(2).strip()
+                if not any(e["nr"] == nr for e in d.get("etappen") or []):
+                    getan.append(f"{n} {nr} gibt es nicht -- nichts geändert")
+                    continue
+                if nr not in fertig:
+                    getan.append(f"{n} {nr} ist noch nicht fertig -- die Anweisung gilt dort als Hinweis")
+                    d.setdefault("hinweise", []).append({"zeit": time.time(), "von": von, "text": f"Für {n} {nr}: {stab._kurz(was, 600)}"})
+                    continue
+                d.setdefault("nacharbeit", []).append({"nr": nr, "was": stab._kurz(was, 800), "von": von, "zeit": time.time()})
+                getan.append(f"{n} {nr} wird überarbeitet: {stab._kurz(was, 120)}")
+        elif art_b == "NEUE_ETAPPEN":
+            et = d.setdefault("etappen", [])
+            for zeile in inhalt.splitlines():
+                titel, _, was = zeile.strip().lstrip("-*• ").partition("--")
+                if not titel.strip() or len(et) >= MAX_ETAPPEN:
+                    continue
+                et.append({"nr": len(et) + 1, "titel": stab._kurz(titel.strip(), 120), "inhalt": stab._kurz(was.strip(), 800), "stand": "offen"})
+                getan.append(f"Neues {n} {len(et)} angehängt: {stab._kurz(titel.strip(), 80)}")
+    if not getan:
+        return text, []
+    if beendet:
+        getan.append("Der Langläufer ist abgebrochen -- vorgemerkt, aber er läuft erst nach „Fortsetzen“ weiter")
+    elif l["stand"] == "fertig" and (d.get("nacharbeit") or any(e.get("stand") != "fertig" for e in d.get("etappen") or [])):
+        # Ein fertiger Langlaeufer laeuft fuer die Nacharbeit wieder an; am Ende
+        # wird sein Ergebnis AKTUALISIERT (zuruecknehmbar), nicht ein zweites angelegt.
+        d["stand_vorher"] = None
+        _speichern(l, stand="laeuft")
+        getan.append("Der Langläufer läuft dafür wieder an; danach wird das Ergebnis aktualisiert")
+    else:
+        _speichern(l)
+    if l["stand"] == "pausiert":
+        getan.append("Er ist pausiert -- es geht los, sobald du „Fortsetzen“ drückst")
+    wecken()
+    rest = ANWEISUNG_RE.sub("", text).strip()
+    return rest, getan

@@ -46,12 +46,16 @@ function Nachricht({ m, partner, beiRueckgaengig }) {
 // Fassung zum Korrekturlesen"). Die Externen antworten dann selbst im selben
 // Gespraech (teamchat.senden mit extern) -- nach einmaliger Kostenfreigabe.
 const EXTERN_NAMEN = [["dario", /\b(dario|claude)\b/i], ["elon", /\b(elon|grok)\b/i], ["demmis", /\b(demmis|demis|gemini)\b/i]];
+// Waehrend des Schreibens: Fassung und Langlaeufer-Bloecke nicht roh zeigen.
+// Was davon wirklich uebernommen wurde, steht danach unter der fertigen Antwort.
+const ohneBloecke = (t) => t.replace(/<<<FASSUNG>>>[\s\S]*/, "\n\n_… schreibt die neue Fassung …_")
+  .replace(/<<<(HINWEIS|UEBERARBEITEN|NEUE_ETAPPEN)>>>[\s\S]*/, "\n\n_… gibt die Anweisung an den Langläufer …_");
 function genannteExterne(text) { return EXTERN_NAMEN.filter(([, re]) => re.test(text || "")).map(([id]) => id); }
 
 // wer: Kennung des Mitglieds; gid: Gespraech oder null; ergebnisId/projektId: Kontext.
 // beiFassung(): das Ergebnisfenster laedt danach neu. beiGespraech(gid): neue Kennung merken.
 // beiTaetig({name, status} | null): was gerade passiert -- fuer die Anzeige im Fensterkopf.
-export function TeamChat({ wer, partnerListe, gid, ergebnisId = "", projektId = "", beiFassung, beiGespraech, leerText, beiTaetig, vorlage }) {
+export function TeamChat({ wer, partnerListe, gid, ergebnisId = "", projektId = "", langlaufId = "", beiFassung, beiGespraech, leerText, beiTaetig, vorlage }) {
   const [msgs, setMsgs] = useState([]);
   const [lauf, setLauf] = useState(null);
   const [vorlesenAn, setVorlesenAn] = useState(() => { try { return localStorage.getItem("tc-vorlesen") === "1"; } catch (e) { return false; } });
@@ -116,7 +120,7 @@ export function TeamChat({ wer, partnerListe, gid, ergebnisId = "", projektId = 
     const fertige = [];
     bus.sende("ki-start");
     try {
-      await strom("/teamchat/senden", { gespraech_id: gid || null, wer, text, dateien, ergebnis_id: ergebnisId || null, projekt_id: projektId || null,
+      await strom("/teamchat/senden", { gespraech_id: gid || null, wer, text, dateien, ergebnis_id: ergebnisId || null, projekt_id: projektId || null, langlauf_id: langlaufId || null,
         schnell: tempoSchnell(), extern }, (e) => {
         if (e.typ === "start") neuGid = e.gespraech_id;
         else if (e.typ === "wer") setLauf({ wer: e.wer, text: "", status: `${partner(e.wer).name} wird dazugeholt …` });
@@ -161,12 +165,12 @@ export function TeamChat({ wer, partnerListe, gid, ergebnisId = "", projektId = 
         : `${ich.name} rechnet lokal auf deinem Server. Tippen, diktieren (Mikrofon) oder Unterlagen anhängen.`)}</${Leer}>`}
       ${msgs.map((m) => html`<${Nachricht} key=${m.id} m=${m} partner=${partner} beiRueckgaengig=${ergebnisId ? rueckgaengig : null} />`)}
       ${lauf && html`<div class="bd-beitrag"><${Avatar} wer=${lauf.wer || wer} name=${partner(lauf.wer || wer).name} g=${30} />
-        <div class="bd-blase"><b>${partner(lauf.wer || wer).name}</b>${lauf.text ? html`<${Md} text=${lauf.text.replace(/<<<FASSUNG>>>[\s\S]*/, "\n\n_… schreibt die neue Fassung …_")} />`
+        <div class="bd-blase"><b>${partner(lauf.wer || wer).name}</b>${lauf.text ? html`<${Md} text=${ohneBloecke(lauf.text)} />`
           : html`<div class="bd-denkt">${lauf.status || `${partner(lauf.wer || wer).name} denkt nach …`}</div>`}
           ${lauf.text && lauf.status && html`<div class="leise klein" style="margin-top:6px">${lauf.status}</div>`}</div></div>`}
       ${!lauf && nach && html`<div class="bd-beitrag"><${Avatar} wer=${nach.wer || wer} name=${partner(nach.wer || wer).name} g=${30} />
         <div class="bd-blase"><b>${partner(nach.wer || wer).name}</b> <span class="leise klein">arbeitet noch · seit ${zeitText(nach.start).replace("vor ", "")}</span>
-          ${nach.text ? html`<${Md} text=${nach.text.replace(/<<<FASSUNG>>>[\s\S]*/, "\n\n_… schreibt die neue Fassung …_")} />`
+          ${nach.text ? html`<${Md} text=${ohneBloecke(nach.text)} />`
             : html`<div class="bd-denkt">${nach.status || `${partner(nach.wer || wer).name} denkt nach …`}</div>`}
           <div class="leise klein" style="margin-top:6px">Du kannst das Fenster schließen. Die Antwort wird fertig gerechnet und erscheint hier.</div></div></div>`}
     </div>
@@ -182,9 +186,9 @@ export function TeamChat({ wer, partnerListe, gid, ergebnisId = "", projektId = 
       <div class="knopfreihe" style="margin-top:8px"><button class="btn primaer klein" onClick=${() => { const w = wartet; setWartet(null); setKostenOk(true); setTimeout(() => sendenFrei(w.text, w.dateien), 0); }}>Für dieses Gespräch erlauben und senden</button>
         <button class="btn klein geist" onClick=${() => { feld.current && feld.current.setzen(wartet.text); setWartet(null); }}>Abbrechen</button></div></div>`}
     <div class="tc-eingabe">
-      <${Composer} feldRef=${feld} platzhalter=${ergebnisId ? `Sag ${ich.name}, was am Ergebnis passieren soll …` : `Schreib ${ich.name} …`}
+      <${Composer} feldRef=${feld} platzhalter=${ergebnisId ? `Sag ${ich.name}, was am Ergebnis passieren soll …` : langlaufId ? `Sag ${ich.name}, was am Langläufer passieren soll …` : `Schreib ${ich.name} …`}
         beimSenden=${senden} laeuft=${!!lauf || !!nach} beimStoppen=${() => { if (lauf) { abbruch.current && abbruch.current.abort(); } else if (nach) { api("/gespraech/" + gid + "/abbrechen", { methode: "POST" }).then(lade).catch(() => {}); } }}
-        projektId=${projektId} entwurfKey=${"tc:" + wer + ":" + (ergebnisId || gid || "")} zeilen=${2} />
+        projektId=${projektId} entwurfKey=${"tc:" + wer + ":" + (ergebnisId || langlaufId || gid || "")} zeilen=${2} />
       <${TempoSchalter} />
       <label class="klein leise tc-vorlesen"><input type="checkbox" checked=${vorlesenAn} onChange=${(e) => setVorlesenAn(e.target.checked)} />Antworten vorlesen</label>
     </div>
