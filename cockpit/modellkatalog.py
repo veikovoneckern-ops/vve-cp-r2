@@ -405,6 +405,8 @@ def neu_vorschlaege(neu: dict[str, Any] | None, anzahl: int = 3) -> list[dict[st
     for f in (neu or {}).get("familien") or []:
         if not f.get("verwandt"):
             continue
+        if (f.get("einordnung") or {}).get("aelter"):
+            continue
         offen = [x for x in f["ausgaben"] if not x.get("installiert")]
         if not offen:
             continue
@@ -426,6 +428,114 @@ def neu_vorschlaege(neu: dict[str, Any] | None, anzahl: int = 3) -> list[dict[st
             continue
         kandidaten.append((rang, {"stufe": "einspielen", "titel": f"Neu bei Ollama: {a['name']}",
                                   "warum": f"{grund} {a['gb']} GB, {a['passt']}. {f['beschreibung'][:120]} "
-                                           "Ungetestet -- erst laden und messen, dann ersetzen.",
+                                           f"{_einordnung_text(f)}Ungetestet -- erst laden und messen, dann ersetzen.",
                                   "aktion": {"art": "modell", "name": a["name"], "text": "Laden"}}))
     return [k for _, k in sorted(kandidaten, key=lambda x: x[0])][:anzahl]
+
+
+# ------------------------------------------------- Einordnung neuer Modelle
+# Veiko, 17.10.2026: zu jedem neuen Modell will er wissen, WELCHES installierte
+# es ersetzen koennte, fuer WELCHE Rolle im Team es taugt -- oder welche NEUE
+# Rolle es abdecken koennte. Die Antwort ist eine Ableitung aus Faehigkeiten
+# (von ollama.com), Groesse und dem, was hier laeuft -- keine Messung. Deshalb
+# steht im Text "koennte", und bei allem bleibt "ungetestet".
+_FAEHIG_AUFGABE = {"thinking": "denken", "tools": "werkzeuge", "vision": "bilder"}
+# Was es im Team noch nicht gibt: Faehigkeit -> (Rollenname, wofuer). Nur
+# Faehigkeiten, fuer die heute keine Rolle zustaendig ist.
+_NEUE_ROLLE = {
+    "vision": ("Dokumenten- und Bildleser", "liest Scans, Fotos, Folien und Screenshots und macht daraus Text, den das Team weiterverarbeitet"),
+    "decision": ("Entscheidungsvorbereiter", "wägt bei offenen Entscheidungen die Optionen ab und schlägt eine begründete Wahl vor"),
+    "audio": ("Zuhörer", "versteht Sprachaufnahmen direkt, auch Tonfall und mehrere Sprecher -- ohne Umweg über die Abschrift"),
+}
+
+
+def _aufgaben_fuer(f: dict[str, Any], gb: float) -> list[str]:
+    faeh = f.get("faehigkeiten") or []
+    auf = [_FAEHIG_AUFGABE[x] for x in faeh if x in _FAEHIG_AUFGABE]
+    if "coder" in f["familie"] or "devstral" in f["familie"]:
+        auf.insert(0, "code")
+    if gb <= 10:
+        auf.append("schnell")
+    elif "decision" not in faeh or auf:
+        auf.append("allgemein")
+    return list(dict.fromkeys(auf))
+
+
+def einordnen(neu: dict[str, Any] | None, inst_gb: dict[str, float], team: list[dict[str, Any]],
+              modelle: dict[str, str]) -> None:
+    """Haengt an jede neue Familie {ersetzt, rollen, neue_rolle}.
+
+    team: Zeilen der Tabelle team (id, name, titel, art, modell).
+    modelle: Bedienung -> Modell, das sie ohne eigene Wahl nimmt
+             ("arbeit", "talk").
+    """
+    namen = {a["id"]: a["name"] for a in AUFGABEN}
+    bester = {}
+    for a in AUFGABEN:
+        bester[a["id"]] = next((_tag(k) for k in a["kandidaten"] if _tag(k) in inst_gb), None)
+    abgedeckt = {"vision": False, "decision": False, "audio": False}
+    for t in team:
+        if t.get("art") == "bilder":
+            abgedeckt["vision"] = True
+    for f in (neu or {}).get("familien") or []:
+        offen = [x for x in f["ausgaben"] if not x.get("installiert")] or f["ausgaben"]
+        a = offen[-1] if offen else None
+        if not a:
+            continue
+        gb = a["gb"] or 0
+        aufgaben = _aufgaben_fuer(f, gb)
+        wurzel = familie_wurzel(f["familie"])
+        # 1. Ersatz: zuerst ein installiertes Modell derselben Familie in
+        #    aehnlicher Groesse, sonst das heute beste fuer die Hauptaufgabe --
+        #    aber nur, wenn das neue nicht drastisch kleiner ist (ein 3B-Modell
+        #    ersetzt kein 27B-Modell, es kann es hoechstens entlasten).
+        ersetzt, aelter = [], False
+        v_neu = _version(f["familie"])
+        gleich = [(n, g) for n, g in inst_gb.items()
+                  if familie_wurzel(n.split(":")[0]) == wurzel and g > 1 and gb >= 0.6 * g]
+        # Eine AELTERE Generation ersetzt keine neuere (qwen3.5 nicht qwen3.6).
+        if v_neu is not None and gleich:
+            neuer_inst = [n for n, _ in gleich if (_version(n.split(":")[0]) or 0) > v_neu]
+            if neuer_inst:
+                aelter, gleich = True, []
+        if gleich:
+            ersetzt = [min(gleich, key=lambda x: abs(x[1] - gb))[0]]
+        elif not aelter:
+            for auf in aufgaben:
+                b = bester.get(auf)
+                if b and gb >= 0.6 * inst_gb.get(b, 0):
+                    ersetzt = [b]
+                    break
+        # 2. Rollen: wer heute mit dem ersetzten Modell rechnet, oder wessen
+        #    Aufgabenart das neue Modell abdeckt -- aber nur, wenn es nicht
+        #    deutlich kleiner ist als das, womit die Rolle heute rechnet.
+        rollen = []
+        for t in team:
+            eigen = t.get("modell") or modelle.get("arbeit")
+            gross_genug = gb >= 0.6 * inst_gb.get(eigen, 0)
+            if gross_genug and (eigen in ersetzt or (t.get("art") in aufgaben and t.get("art") != "allgemein")):
+                rollen.append(f"{t['name']} ({t.get('titel') or ''})".replace(" ()", ""))
+        if not aelter and (modelle.get("talk") in ersetzt or (_re.search(r"-a\d+b", a["name"]) and gb <= 30)):
+            rollen.append("Talk (Gespräch mit dem Cockpit)")
+        if aelter:
+            rollen = []
+        # 3. Neue Rolle: eine Faehigkeit, fuer die es heute niemanden gibt.
+        neue = None
+        for x in ("decision", "vision", "audio"):
+            if x in (f.get("faehigkeiten") or []) and not abgedeckt.get(x):
+                neue = {"name": _NEUE_ROLLE[x][0], "wofuer": _NEUE_ROLLE[x][1]}
+                break
+        f["einordnung"] = {"aufgaben": [namen[x] for x in aufgaben if x in namen], "ersetzt": ersetzt,
+                           "rollen": list(dict.fromkeys(rollen)), "neue_rolle": neue, "aelter": aelter}
+
+
+def _einordnung_text(f: dict[str, Any]) -> str:
+    e = f.get("einordnung") or {}
+    teile = []
+    if e.get("ersetzt"):
+        teile.append("Könnte " + ", ".join(e["ersetzt"]) + " ersetzen.")
+    if e.get("rollen"):
+        teile.append("Geeignet für " + ", ".join(e["rollen"]) + ".")
+    if e.get("neue_rolle"):
+        teile.append(f"Neue Rolle denkbar: {e['neue_rolle']['name']}.")
+    return (" ".join(teile) + " ") if teile else ""

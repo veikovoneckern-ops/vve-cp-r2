@@ -82,7 +82,7 @@ def bs_stand() -> dict[str, Any]:
     s = {**bs_leer(), **(db.einstellung("brainstrom") or {})}
     if s["laeuft"] and not _laeuft_noch("brainstrom"):
         # Der Dienst wurde mitten im Schritt neu gestartet -- ehrlich sagen statt ewig "denkt nach".
-        s.update(laeuft=False, fehler="Der Schritt wurde unterbrochen (Dienst neu gestartet). Bitte noch einmal.")
+        s.update(laeuft=False, fehler_zeit=time.time(), fehler="Der Schritt wurde unterbrochen (Dienst neu gestartet). Bitte noch einmal.")
         db.einstellung_setzen("brainstrom", s)
     return s
 
@@ -174,7 +174,7 @@ async def _bs_schritt(art: str) -> None:
             s["funde"] = [f for f in (d.get("funde") if isinstance(d, dict) else []) or [] if isinstance(f, dict)]
         s["fehler"] = None
     except Exception as f:  # noqa: BLE001 -- ein Fehlschlag soll angezeigt werden, nicht den Dienst stoeren
-        s["fehler"] = str(f) or f.__class__.__name__
+        s["fehler"] = str(f) or f.__class__.__name__; s["fehler_zeit"] = time.time()
         if art == "entwurf":
             s["phase"] = "wege"   # die Wege bleiben waehlbar, statt in einem leeren Schritt zu haengen
     # Zwischendurch "Neu anfangen"? Dann nichts ueberschreiben.
@@ -342,7 +342,7 @@ def exo_leer() -> dict[str, Any]:
 def exo_stand() -> dict[str, Any]:
     s = {**exo_leer(), **(db.einstellung("exo") or {})}
     if s["laeuft"] and not _laeuft_noch("exo"):
-        s.update(laeuft=False, fehler="Die Analyse wurde unterbrochen (Dienst neu gestartet). Bitte noch einmal.")
+        s.update(laeuft=False, fehler_zeit=time.time(), fehler="Die Analyse wurde unterbrochen (Dienst neu gestartet). Bitte noch einmal.")
         db.einstellung_setzen("exo", s)
     return s
 
@@ -391,7 +391,7 @@ async def _exo_lauf() -> None:
             raise llm.ModellFehler("Keine verwertbare Antwort erhalten.")
         s.update(stand=d, modell=m, fehler=None, angelegt=[], ergebnis_id=None)
     except Exception as f:  # noqa: BLE001
-        s["fehler"] = str(f)
+        s["fehler"] = str(f); s["fehler_zeit"] = time.time()
     if (db.einstellung("exo") or {}).get("seit") != seit:
         return
     s["laeuft"] = False
@@ -516,3 +516,20 @@ def kurz_fuer_talk() -> str:
     if s["phase"] == "fertig":
         return "Der Entwurf steht auf dem Bildschirm. Soll ich ihn prüfen lassen oder als Projekt mit Aufgaben übernehmen?"
     return ""
+
+
+def fehler_weg(art: str) -> dict[str, Any]:
+    """Blendet eine alte Fehlermeldung aus, ohne sonst etwas anzufassen.
+
+    Anlass (17.10.2026): auf der ExO-Seite stand drei Tage lang "Ollama
+    antwortet 500: llama-server binary not found" -- ein Fehler aus genau den
+    Minuten, in denen Ollama aktualisiert wurde. Er blieb stehen, weil nur ein
+    neuer Lauf ihn ersetzte, und sah aus wie ein aktueller Defekt.
+    """
+    if art == "exo":
+        s = exo_stand()
+    else:
+        s = bs_stand()
+    s.update(fehler=None, fehler_zeit=None)
+    db.einstellung_setzen("exo" if art == "exo" else "brainstrom", s)
+    return s

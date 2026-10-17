@@ -65,11 +65,21 @@ function Arbeit({ text, seit }) {
   </div>`;
 }
 
-function Fehler({ text }) {
+// Eine Fehlermeldung bleibt stehen, bis ein neuer Lauf sie ersetzt -- deshalb
+// steht dabei, WANN sie entstand, und ein Knopf blendet sie aus. Sonst sieht
+// ein Fehler von vorgestern aus wie ein Defekt von jetzt (17.10.2026: ExO
+// zeigte drei Tage lang einen Fehler aus den Minuten eines Ollama-Updates).
+function Fehler({ text, zeit, weg }) {
   if (!text) return null;
   const bild = /multimodal/i.test(text);
-  return html`<div class="fehlerbox"><b>${bild ? "Das eingestellte Modell kann keine Bilder lesen." : "Das lokale Modell hat nicht geliefert."}</b><br />${text}
-    ${!bild && html`<br /><span class="klein">Ein zweiter Versuch hilft bei einem Zeitablauf oft schon.</span>`}</div>`;
+  const update = /binary not found|llama-server/i.test(text);
+  const wann = zeit ? new Date(zeit * 1000).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+  return html`<div class="fehlerbox"><b>${bild ? "Das eingestellte Modell kann keine Bilder lesen."
+      : update ? "Ollama wurde in diesem Moment gerade aktualisiert." : "Das lokale Modell hat nicht geliefert."}</b>${wann ? html` <span class="klein">(${wann} Uhr)</span>` : ""}
+    <br />${update ? "Während eines Updates ist Ollama ein paar Sekunden lang nicht einsatzbereit. Das ist vorbei -- einfach noch einmal starten." : text}
+    ${!bild && !update && html`<br /><span class="klein">Ein zweiter Versuch hilft bei einem Zeitablauf oft schon.</span>`}
+    ${update && html`<details class="klein"><summary>Genaue Meldung</summary>${text}</details>`}
+    ${weg && html`<div style="margin-top:6px"><button class="btn klein" onClick=${weg}>Meldung ausblenden</button></div>`}</div>`;
 }
 
 function Fuss({ modell, children }) {
@@ -123,7 +133,7 @@ export function BrainStrom() {
     </div>
     <${Schritte} namen=${["Thema", "Fragen", "Wege", "Entwurf"]} jetzt=${stufe} />
     <div class="vf-leib">
-      <${Fehler} text=${s.fehler} />
+      <${Fehler} text=${s.fehler} zeit=${s.fehler_zeit} weg=${() => bs("fehler-weg")} />
       ${s.fehler && !s.laeuft && s.letzte_art && html`<div style="margin:-4px 0 12px"><button class="btn klein" onClick=${() => bs("nochmal")}><${Icon} n="neu_laden" g=${12} />Noch einmal versuchen</button></div>`}
       ${s.verlauf.length > 0 && s.phase !== "start" && html`<div class="vf-verlauf">${s.verlauf.map((v, i) => html`<div class="vf-vz" key=${i}>
         <span class="f">${v.frage}</span><span class="a">${v.antwort}</span></div>`)}</div>`}
@@ -223,7 +233,7 @@ export function ExO() {
       ${u === "projekt" && html`<${ProjektWahl} wert=${p} projekte=${projekte} setzen=${setPid} />`}
     </div>
     <div class="vf-leib">
-      <${Fehler} text=${s.fehler} />
+      <${Fehler} text=${s.fehler} zeit=${s.fehler_zeit} weg=${() => ex("fehler-weg")} />
       ${s.laeuft ? html`<${Arbeit} text="Das lokale Modell liest den Bestand und bewertet elf Punkte — das dauert eine Weile." seit=${s.seit} />`
         : !st ? html`<div class="vf-dok">
             <h3>ExO — der Rahmen in Kürze</h3>

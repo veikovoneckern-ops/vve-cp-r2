@@ -99,6 +99,12 @@ export function Modelle() {
           <div class="mo-familie-kopf"><b class="mono">${f.familie}</b> <span class=${"pill " + farbe}>${label}</span>
             ${(f.faehigkeiten || []).map((x) => html` <span class="pill">${{ vision: "Bilder", tools: "Werkzeuge", thinking: "denkt", decision: "Entscheidungen", audio: "Ton" }[x] || x}</span>`)}</div>
           <div class="leise klein">${f.beschreibung}</div>
+          ${f.einordnung && html`<div class="mo-einordnung klein">
+            ${f.einordnung.aufgaben.length > 0 && html`<div><span class="leise">Taugt für:</span> ${f.einordnung.aufgaben.join(", ")}</div>`}
+            <div><span class="leise">Könnte ersetzen:</span> ${f.einordnung.ersetzt.length ? html`<span class="mono">${f.einordnung.ersetzt.join(", ")}</span>` : f.einordnung.aelter ? "nichts -- du hast schon eine neuere Fassung dieser Familie" : "nichts Installiertes -- käme dazu"}</div>
+            ${f.einordnung.rollen.length > 0 && html`<div><span class="leise">Im Team geeignet für:</span> ${f.einordnung.rollen.join(", ")}</div>`}
+            ${f.einordnung.neue_rolle && html`<div><span class="leise">Neue Rolle denkbar:</span> <b>${f.einordnung.neue_rolle.name}</b> -- ${f.einordnung.neue_rolle.wofuer}</div>`}
+          </div>`}
           ${f.ausgaben.map((a) => html`<div class="mo-ausgabe"><span class="mono klein">${a.name}</span><span class="leise klein">${a.gb} GB · ${a.passt}</span>
             ${a.installiert ? html`<span class="pill gruen">installiert</span>` : html`<${LadenKnopf} name=${a.name} laden=${laden} nachher=${() => holen(false)} />`}</div>`)}
         </div>`; })}</div>`

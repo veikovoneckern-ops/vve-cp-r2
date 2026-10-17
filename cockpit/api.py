@@ -1079,6 +1079,8 @@ async def brainstrom_aktion(aktion: str, request: Request):
             return await verfahren.bs_uebernehmen()
         if aktion == "nochmal":
             return verfahren.bs_nochmal()
+        if aktion == "fehler-weg":
+            return verfahren.fehler_weg("brainstrom")
     except (ValueError, llm.ModellFehler) as e:
         raise HTTPException(409, str(e))
     raise HTTPException(404, "Unbekannte Aktion")
@@ -1103,6 +1105,8 @@ async def exo_aktion(aktion: str, request: Request):
             return verfahren.exo_als_ergebnis()
         if aktion == "aufgabe":
             return verfahren.exo_aufgabe(str(d.get("text") or ""))
+        if aktion == "fehler-weg":
+            return verfahren.fehler_weg("exo")
     except ValueError as e:
         raise HTTPException(409, str(e))
     raise HTTPException(404, "Unbekannte Aktion")
@@ -1583,6 +1587,9 @@ async def modelle_uebersicht(frisch: int = 0):
         neu = await modellkatalog.neu_bei_ollama(bool(frisch), vram)
     except Exception as e:  # noqa: BLE001
         neu = {"fehler": str(e), "familien": []}
+    from .konfig import MODELL_ARBEIT, MODELL_TALK
+    modellkatalog.einordnen(neu, inst_gb, db.alle("SELECT id, name, titel, art, modell FROM team WHERE aktiv=1"),
+                            {"arbeit": MODELL_ARBEIT, "talk": MODELL_TALK})
     return {"installiert": installiert, "vram": vram, "frei_gb": ((s or {}).get("disk_gb") or {}).get("free"),
             "empfehlungen": modellkatalog.vorschlaege(katalog, vram) + modellkatalog.neu_vorschlaege(neu, 8),
             "neu": neu, "katalog_stand": katalog and katalog.get("zeit"), "laden": modellkatalog.LADEN,
