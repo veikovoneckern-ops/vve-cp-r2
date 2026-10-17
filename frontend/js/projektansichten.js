@@ -6,7 +6,7 @@
 // scheiterten drei Anlaeufe mit draggable/dragstart am echten Browser (CLAUDE.md
 // dort, "Rail-Reihenfolge"). Pointer Events sind gewoehnliche Ereignisse ohne
 // eigenen Browser-Modus und funktionieren mit Maus und Finger gleich.
-import { escEigen, html, useState, useRef, Icon, Leer, fehlerMelden, aktualisieren } from "./ui.js";
+import { escEigen, html, useState, useRef, Icon, Leer, fehlerMelden, aktualisieren, bus } from "./ui.js";
 import { api } from "./api.js";
 
 const TAG = 86400000;
@@ -79,7 +79,7 @@ export function Zeitplan({ projekt, aufgaben, laden }) {
       <div class="zp-zeile zp-projekt"><div class="zp-name"><b>${projekt.name}</b></div><div class="zp-daten leise klein">${pS ? kurz(projekt.start) : "?"} – ${pE ? kurz(projekt.ende) : "offen"}</div>
         <div class="zp-spur">${linien}<i class="zp-heute" style=${`left:${h}%`}></i>${pS && html`<span class="zp-balken projekt" style=${`left:${pct(pS)}%;width:${Math.max((pE ? pct(pE) : 100) - pct(pS), 0.6)}%;background:${projekt.farbe || "var(--steel)"}`}></span>`}</div></div>
       ${mitTermin.map(({ t, tiefe }) => html`<div class="zp-zeile" key=${t.id}>
-        <div class="zp-name" style=${`padding-left:${tiefe * 16}px`} title=${t.titel}><span class=${t.status === "erledigt" ? "erledigt" : ""}>${t.titel}</span></div>
+        <div class="zp-name" style=${`padding-left:${tiefe * 16}px`} title=${t.titel}><span class=${"zp-tt" + (t.status === "erledigt" ? " erledigt" : "")} role="button" onClick=${() => bus.sende("aufgabe-zeigen", t.id)}>${t.titel}</span></div>
         <div class="zp-daten">
           <input type="date" value=${t.start || ""} aria-label=${"Beginn: " + t.titel} onChange=${(e) => setzen(t.id, { start: e.target.value || null }, laden)} />
           <input type="date" value=${t.faellig || ""} aria-label=${"Fällig: " + t.titel} onChange=${(e) => setzen(t.id, { faellig: e.target.value }, laden)} />
@@ -87,7 +87,7 @@ export function Zeitplan({ projekt, aufgaben, laden }) {
         <${Spur} t=${t} /></div>`)}
     </div>
     ${ohne.length > 0 && html`<details class="zp-ohne"><summary>${ohne.length} ${ohne.length === 1 ? "Aufgabe" : "Aufgaben"} ohne Termin</summary>
-      ${ohne.map(({ t }) => html`<div class="zp-ohne-zeile" key=${t.id}><span>${t.titel}</span>
+      ${ohne.map(({ t }) => html`<div class="zp-ohne-zeile" key=${t.id}><span class="zp-tt" role="button" onClick=${() => bus.sende("aufgabe-zeigen", t.id)}>${t.titel}</span>
         <input type="date" aria-label=${"Fällig: " + t.titel} onChange=${(e) => setzen(t.id, { faellig: e.target.value }, laden)} /></div>`)}
     </details>`}
     ${!zeilen.length && html`<${Leer} titel="Noch keine Aufgaben." />`}
@@ -107,6 +107,9 @@ export function Zeitplan({ projekt, aufgaben, laden }) {
 // Fortschritt je Ast, alles auf- oder zuklappen.
 const ST = { W: 300, H: 42, GAP: 10, EIN: 28, ROOT_W: 210, ROOT_H: 66, X: 300 };
 
+// Nach einem Zug feuert der Browser noch einen Klick -- der soll das Aufgabenfenster
+// nicht oeffnen (gleiche Vorsicht wie railGeradeGezogen im alten Cockpit).
+let gezogenUm = 0;
 export function Struktur({ projekt, aufgaben, laden }) {
   const [zu, setZu] = useState(() => new Set());
   const [zug, setZug] = useState(null);       // { id, titel, x, y, ziel, wo }
@@ -187,6 +190,7 @@ export function Struktur({ projekt, aufgaben, laden }) {
     const los = async () => {
       removeEventListener("pointermove", zieh); removeEventListener("pointerup", los); removeEventListener("pointercancel", los);
       const z = zugRef.current; zugRef.current = null; setZug(null);
+      if (aktiv) gezogenUm = Date.now();
       if (!aktiv || !z || !z.wo || z.wo === "ungueltig") return;
       try {
         await api(`/aufgaben/${t.id}/verschieben`, { methode: "POST", daten: { ziel_id: z.ziel, wo: z.wo } });
@@ -255,14 +259,14 @@ export function Struktur({ projekt, aufgaben, laden }) {
             ${umben && umben.id === t.id
               ? html`<input class="st-umben" autofocus value=${umben.text} onInput=${(e) => setUmben({ id: t.id, text: e.target.value })}
                   onKeyDown=${(e) => { if (e.key === "Enter") umbenennen(); if (escEigen(e)) setUmben(null); }} onBlur=${umbenennen} aria-label="Neuer Titel" />`
-              : html`<span class="st-tt" onDblClick=${() => setUmben({ id: t.id, text: t.titel })}>${t.titel}</span>`}
+              : html`<span class="st-tt" role="button" title="Öffnen: Informationen, Anhänge, Langläufer" onClick=${() => { if (Date.now() - gezogenUm > 400) bus.sende("aufgabe-zeigen", t.id); }}>${t.titel}</span>`}
             ${kinder ? html`<span class=${"st-zahl" + (f === n ? " fertig" : "")} title=${`${f} von ${n} Unteraufgaben erledigt`}>${f}/${n}</span>` : ""}
             <label class=${"st-termin" + (t.faellig ? "" : " leer")} title=${t.faellig ? "Fällig am " + kurz(t.faellig) + " · ändern" : "Termin setzen"}>
               ${t.faellig ? kurz(t.faellig) : html`<${Icon} n="kalender" g=${12} />`}
               <input type="date" value=${t.faellig || ""} onChange=${(e) => setzen(t.id, { faellig: e.target.value }, laden)} aria-label=${"Fällig: " + t.titel} /></label>
             <span class="st-akte">
               <button class="st-akt" onClick=${() => { setNeu(t.id); setNeuText(""); }} title="Unteraufgabe anlegen" aria-label="Unteraufgabe anlegen"><${Icon} n="plus" g=${12} /></button>
-              <button class="st-akt" onClick=${() => setUmben({ id: t.id, text: t.titel })} title="Umbenennen" aria-label="Umbenennen"><${Icon} n="stift" g=${12} /></button>
+              <button class="st-akt" onClick=${() => bus.sende("aufgabe-zeigen", t.id)} title="Bearbeiten" aria-label="Bearbeiten"><${Icon} n="stift" g=${12} /></button>
               <button class="st-akt" onClick=${async () => { try { await api("/aufgaben/" + t.id, { methode: "DELETE" }); laden(); aktualisieren(); } catch (x) { fehlerMelden(x); } }}
                 title="Archivieren (lässt sich zurückholen)" aria-label="Archivieren"><${Icon} n="archiv" g=${12} /></button>
             </span>

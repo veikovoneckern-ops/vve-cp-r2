@@ -675,7 +675,17 @@ def aufgabe_text(aufgabe_id: str | None) -> str:
     teile = [f"DIESES GESPRÄCH GEHÖRT ZUR AUFGABE: {a['titel']} (Stand: {a.get('status')}"
              + (f", fällig {a['faellig']}" if a.get("faellig") else "") + ")"]
     if (a.get("notiz") or "").strip():
-        teile.append("Notiz zur Aufgabe: " + a["notiz"].strip()[:2000])
+        teile.append("Informationen zur Aufgabe: " + a["notiz"].strip()[:6000])
+    # Anhaenge der Aufgabe (Aufgabenfenster, 17.10.2026): wer ueber die Aufgabe
+    # spricht, soll auch die Unterlagen kennen, die Veiko dort abgelegt hat.
+    platz = 24000
+    for f in db.alle("SELECT name, text FROM dateien WHERE aufgabe_id=? ORDER BY erstellt", (aufgabe_id,)):
+        t = (f.get("text") or "").strip()
+        if platz <= 0:
+            teile.append(f"(Weitere Unterlage „{f['name']}“ -- aus Platzgründen nicht mitgeschickt.)")
+            continue
+        teile.append(f"UNTERLAGE ZUR AUFGABE „{f['name']}“:\n" + (t[:min(platz, 12000)] if t else "(Inhalt nicht lesbar.)"))
+        platz -= min(len(t), 12000)
     teile.append("Richte deine Antworten auf diese Aufgabe aus, solange Veiko nichts anderes sagt.")
     return "\n".join(teile)
 

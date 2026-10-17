@@ -19,6 +19,7 @@ import { Modelle } from "./modelle.js";
 import { Langlaeufer } from "./langlauf.js";
 import { BrainStrom, ExO } from "./verfahren.js";
 import { Aktionen } from "./aktionen.js";
+import { AufgabeFenster } from "./aufgabe.js";
 
 const BEREICHE = [
   { id: "briefing", titel: "Briefing", icon: "briefing", unter: "Was jetzt zählt" },
@@ -189,6 +190,7 @@ function App() {
   const [erfassen, setErfassen] = useState(false);
   const [lage, setLage] = useState(null);
   const [anzeige, setAnzeige] = useState(null);
+  const [aufgabe, setAufgabe] = useState(null);
   const [leiste, leisteSpeichern] = useLeiste(BEREICHE, !!(konto && konto.angemeldet));
 
   const pruefen = () => api("/konto/ich").then(setKonto).catch(() => setKonto({ angemeldet: false, fehler: true }));
@@ -215,6 +217,8 @@ function App() {
   // ergebnis-zeigen: eine Kennung, oder { id, vorlage } -- dann steht die Bitte schon im Chat (Daniels Einwände einarbeiten).
   useEffect(() => bus.an("ergebnis-zeigen", (x) => setAnzeige({ art: "ergebnis", id: (x && x.id) || x, vorlage: x && x.vorlage, n: Date.now() })), []);
   useEffect(() => bus.an("notiz-zeigen", (id) => setAnzeige({ art: "notiz", id })), []);
+  // Das Aufgabenfenster (17.10.2026): von jeder Stelle, an der eine Aufgabe steht.
+  useEffect(() => bus.an("aufgabe-zeigen", (id) => setAufgabe({ id, n: Date.now() })), []);
   useEffect(() => {
     if (!konto || !konto.angemeldet) return;
     const holen = () => api("/lage").then((d) => { setLage(d); bus.sende("lage", d); }).catch(() => {});
@@ -297,6 +301,7 @@ function App() {
     ${anzeige && anzeige.art === "ergebnis" && html`<${ErgebnisAnsicht} key=${anzeige.n} id=${anzeige.id} vorlage=${anzeige.vorlage} zu=${() => setAnzeige(null)} />`}
     ${anzeige && anzeige.art === "notiz" && html`<${NotizAnsicht} id=${anzeige.id} zu=${() => setAnzeige(null)} />`}
     ${erfassen && html`<${Erfassen} zu=${() => setErfassen(false)} />`}
+    ${aufgabe && html`<${AufgabeFenster} key=${aufgabe.n} id=${aufgabe.id} zu=${() => setAufgabe(null)} />`}
     <${Toasts} />
   </div>`;
 }

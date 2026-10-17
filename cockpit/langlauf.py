@@ -184,25 +184,28 @@ def bestand(projekt_id: str | None, aufgabe_id: str | None) -> list[dict[str, An
     vorgewaehlt -- dort liegen oft Dutzende Plaud-Mitschnitte."""
     aufgabe = db.holen("aufgaben", aufgabe_id) if aufgabe_id else None
     projekt_id = projekt_id or (aufgabe or {}).get("projekt_id")
-    if not projekt_id:
+    if not projekt_id and not aufgabe:
         return []
     from .api import gespraeche_von, kurztitel
     aus: list[dict[str, Any]] = []
-    for r in db.alle("SELECT id, titel, form, rolle, vorgang_id, erstellt, length(inhalt) AS laenge FROM ergebnisse "
+    for r in [] if not projekt_id else db.alle("SELECT id, titel, form, rolle, vorgang_id, erstellt, length(inhalt) AS laenge FROM ergebnisse "
                      "WHERE projekt_id=? ORDER BY erstellt DESC LIMIT 60", (projekt_id,)):
         vor = (bool(aufgabe.get("vorgang_id")) and r["vorgang_id"] == aufgabe.get("vorgang_id")) if aufgabe else True
         aus.append({"art": "ergebnis", "id": r["id"], "titel": kurztitel(r), "zeit": r["erstellt"], "laenge": r["laenge"] or 0,
                     "unter": f"{stab.rollen_name(r['rolle'])} · {r['form'] or 'text'}", "vorgewaehlt": vor})
-    for g in gespraeche_von(projekt_id):
+    for g in gespraeche_von(projekt_id) if projekt_id else []:
         vor = (g.get("aufgabe_id") == aufgabe_id) if aufgabe else True
         aus.append({"art": "gespraech", "id": g["id"], "titel": g["titel"] or "Gespräch", "zeit": g["geaendert"], "laenge": None,
                     "unter": f"{GESPRAECH_ART.get(g['art'], g['art'])}{' mit ' + g['wer_name'] if g.get('wer_name') else ''} · {g['anzahl']} Nachrichten",
                     "vorgewaehlt": bool(vor)})
-    for f in db.alle("SELECT id, name, erstellt, length(text) AS laenge FROM dateien WHERE projekt_id=? ORDER BY erstellt DESC LIMIT 60",
-                     (projekt_id,)):
+    # Anhaenge der Aufgabe (Aufgabenfenster) gehoeren immer dazu, auch ohne Projekt.
+    for f in db.alle("SELECT id, name, erstellt, aufgabe_id, length(text) AS laenge FROM dateien WHERE projekt_id=? OR (aufgabe_id IS NOT NULL AND aufgabe_id=?) "
+                     "ORDER BY erstellt DESC LIMIT 60", (projekt_id, aufgabe_id)):
+        an_aufgabe = bool(aufgabe_id) and f["aufgabe_id"] == aufgabe_id
         aus.append({"art": "datei", "id": f["id"], "titel": f["name"], "zeit": f["erstellt"], "laenge": f["laenge"] or 0,
-                    "unter": "Unterlage" if f["laenge"] else "Unterlage (Inhalt nicht lesbar)", "vorgewaehlt": bool(f["laenge"])})
-    for n in db.alle("SELECT id, titel, quelle, erstellt, length(text) AS laenge FROM notizen WHERE projekt_id=? "
+                    "unter": ("Anhang der Aufgabe" if an_aufgabe else "Unterlage") + ("" if f["laenge"] else " (Inhalt nicht lesbar)"),
+                    "vorgewaehlt": bool(f["laenge"])})
+    for n in [] if not projekt_id else db.alle("SELECT id, titel, quelle, erstellt, length(text) AS laenge FROM notizen WHERE projekt_id=? "
                      "ORDER BY erstellt DESC LIMIT 60", (projekt_id,)):
         aus.append({"art": "notiz", "id": n["id"], "titel": n["titel"] or "Notiz", "zeit": n["erstellt"], "laenge": n["laenge"] or 0,
                     "unter": f"Notiz ({n['quelle'] or 'eingabe'})", "vorgewaehlt": bool(aufgabe and aufgabe.get("notiz_id") == n["id"])})

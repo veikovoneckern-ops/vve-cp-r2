@@ -136,6 +136,9 @@ NACHRUESTEN = [
     # Erklaervideos (16.10.2026): Stand und Datei des gerechneten Videos am
     # Ergebnis, damit er einen Neustart des Dienstes ueberlebt (video.py).
     ("ergebnisse", "medien", "TEXT DEFAULT '{}'"),
+    # Anhaenge an einer Aufgabe (17.10.2026, Aufgabenfenster): dieselbe Ablage
+    # wie Projekt-Unterlagen, nur zusaetzlich an die Aufgabe gehaengt.
+    ("dateien", "aufgabe_id", "TEXT"),
 ]
 with _lock:
     for _tab, _spalte, _typ in NACHRUESTEN:

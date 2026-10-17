@@ -87,9 +87,10 @@ function NeuesProjekt({ zu, fertig }) {
 }
 
 // bezug (nur auf der Projektseite): Langlaeufer und zugeordnete Gespraeche dieser Aufgabe.
+// Titel und Stift oeffnen das Aufgabenfenster (aufgabe.js, 17.10.2026). Vorher
+// benannte der Stift die Aufgabe nur in der Zeile um -- Veiko: "tut sich nichts".
 function AufgabeZeile({ t, nachher, mitProjekt, bezug }) {
-  const [bearb, setBearb] = useState(false);
-  const [titel, setTitel] = useState(t.titel);
+  const oeffnen = () => bus.sende("aufgabe-zeigen", t.id);
   async function setzen(daten, meldung) {
     try { await api("/aufgaben/" + t.id, { methode: "PATCH", daten }); if (meldung) toast(meldung); nachher(); aktualisieren(); } catch (e) { fehlerMelden(e); }
   }
@@ -98,10 +99,9 @@ function AufgabeZeile({ t, nachher, mitProjekt, bezug }) {
     <button class=${"check" + (erledigt ? " an" : "")} onClick=${() => setzen({ status: erledigt ? "offen" : "erledigt" })} aria-label=${(erledigt ? "Wieder öffnen: " : "Erledigt: ") + t.titel}>
       ${erledigt ? html`<${Icon} n="check" g=${14} w=${3} />` : ""}</button>
     <div class="haupt-text">
-      ${bearb ? html`<input class="eingabe" value=${titel} autofocus onInput=${(e) => setTitel(e.target.value)}
-          onKeyDown=${(e) => { if (e.key === "Enter") { setBearb(false); if (titel.trim() && titel !== t.titel) setzen({ titel: titel.trim() }); } if (escEigen(e)) { setBearb(false); setTitel(t.titel); } }}
-          onBlur=${() => { setBearb(false); if (titel.trim() && titel !== t.titel) setzen({ titel: titel.trim() }); }} />`
-        : html`<span style=${erledigt ? "text-decoration:line-through;color:var(--ink-3)" : ""} onDblClick=${() => setBearb(true)}>${t.titel}</span>`}
+      <button class="aufgabe-titel" style=${erledigt ? "text-decoration:line-through;color:var(--ink-3)" : ""} onClick=${oeffnen}
+        title="Öffnen: Informationen, Anhänge, Langläufer, Gespräch">${t.titel}</button>
+      ${(t.notiz || "").trim() ? html`<div class="leise klein aufgabe-notiz">${t.notiz.trim().split("\n")[0].slice(0, 140)}</div>` : ""}
       <div class="leise klein">
         ${mitProjekt && (t.projekt_name ? html`<a href=${"#/projects/" + t.projekt_id} style="color:inherit">${t.projekt_name}</a>` : "ohne Projekt")}
         ${t.quelle === "stab" ? html`${mitProjekt ? " · " : ""}vom Team${t.vorgang_id ? html` (<a href=${"#/inbox/" + t.vorgang_id} style="color:inherit" title="Die ursprüngliche Notiz und was das Team daraus gemacht hat">Herkunft</a>)` : ""}` : ""}
@@ -111,7 +111,7 @@ function AufgabeZeile({ t, nachher, mitProjekt, bezug }) {
     </div>
     <input type="date" class="eingabe" style="width:auto;min-height:30px;padding:2px 6px;font-size:12px" value=${t.faellig || ""} aria-label="Fällig am"
       onChange=${(e) => setzen({ faellig: e.target.value })} />
-    <button class="btn klein geist icon" title="Bearbeiten" aria-label="Bearbeiten" onClick=${() => setBearb(true)}><${Icon} n="stift" g=${14} /></button>
+    <button class="btn klein geist icon" title="Bearbeiten: Informationen, Anhänge, Langläufer" aria-label="Bearbeiten" onClick=${oeffnen}><${Icon} n="stift" g=${14} /></button>
     ${!erledigt && html`<button class="btn klein geist icon" title="Als Langläufer starten: das Team arbeitet die Aufgabe in Etappen ab, mit Zwischenprüfung" aria-label="Als Langläufer starten"
       onClick=${() => langlaufStarten({ projekt_id: t.projekt_id || "", aufgabe_id: t.id, aufgabe_titel: t.titel, titel: t.titel, auftrag: t.notiz || t.titel })}><${Icon} n="langlauf" g=${14} /></button>`}
     <button class="btn klein geist icon" title="Archivieren" aria-label="Archivieren" onClick=${async () => {

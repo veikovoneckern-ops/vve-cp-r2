@@ -67,12 +67,15 @@ export async function strom(pfad, daten, beiZeile, signal) {
 // Hochladen mit Fortschritt. XMLHttpRequest statt fetch: fetch meldet beim
 // Senden nichts, und bei 20 MB ueber das Tailnet ist das der Unterschied
 // zwischen "es passiert etwas" und "es haengt".
-export function hochladen(datei, { projekt_id = "", fortschritt } = {}) {
+export function hochladen(datei, { projekt_id = "", aufgabe_id = "", fortschritt } = {}) {
   return new Promise((ok, nein) => {
     const fd = new FormData();
     fd.append("datei", datei, datei.name || "datei");
     const x = new XMLHttpRequest();
-    x.open("POST", "/api/dateien" + (projekt_id ? "?projekt_id=" + encodeURIComponent(projekt_id) : ""));
+    const q = new URLSearchParams();
+    if (projekt_id) q.set("projekt_id", projekt_id);
+    if (aufgabe_id) q.set("aufgabe_id", aufgabe_id);
+    x.open("POST", "/api/dateien" + (q.toString() ? "?" + q : ""));
     x.withCredentials = true;
     if (fortschritt) x.upload.onprogress = (e) => { if (e.lengthComputable) fortschritt(e.loaded / e.total); };
     x.onload = () => {

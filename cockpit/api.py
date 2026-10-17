@@ -525,6 +525,30 @@ async def aufgabe_neu(request: Request):
     return db.holen("aufgaben", tid)
 
 
+# Alles zu einer Aufgabe fuer das Aufgabenfenster (17.10.2026, Veiko: "Informationen
+# eingeben, zum Langlaeufer machen, Anhaenge mitgeben -- und das auch beim Klick
+# auf den Titel"). Nur lesen, was es schon gibt: Unterlagen, Langlaeufer,
+# zugeordnete Gespraeche und die Ergebnisse ihres Case.
+@router.get("/aufgaben/{tid}")
+async def aufgabe_einzeln(tid: str):
+    from . import langlauf
+    a = db.holen("aufgaben", tid)
+    if not a:
+        raise HTTPException(404, "Aufgabe nicht gefunden")
+    p = db.holen("projekte", a["projekt_id"]) if a.get("projekt_id") else None
+    a["projekt_name"] = (p or {}).get("name")
+    a["dateien"] = db.alle("SELECT id, name, groesse, erstellt, length(text) AS zeichen FROM dateien WHERE aufgabe_id=? ORDER BY erstellt", (tid,))
+    a["langlaeufe"] = [langlauf.ansicht(l) for l in db.alle("SELECT * FROM langlaeufe WHERE json_extract(daten,'$.aufgabe_id')=? "
+                                                             "ORDER BY geaendert DESC", (tid,))]
+    a["gespraeche"] = [{"id": g["id"], "art": g["art"], "titel": g["titel"], "geaendert": g["geaendert"],
+                        "wer": (g.get("kontext") or {}).get("wer") if isinstance(g.get("kontext"), dict) else None}
+                       for g in db.alle("SELECT id, art, titel, kontext, geaendert FROM gespraeche WHERE json_extract(kontext,'$.aufgabe_id')=? "
+                                        "ORDER BY geaendert DESC LIMIT 20", (tid,))]
+    a["ergebnisse"] = db.alle("SELECT id, titel, form, erstellt FROM ergebnisse WHERE vorgang_id=? ORDER BY erstellt DESC", (a["vorgang_id"],)) \
+        if a.get("vorgang_id") else []
+    return a
+
+
 @router.patch("/aufgaben/{tid}")
 async def aufgabe_aendern(tid: str, request: Request):
     d = await _koerper(request)
@@ -1005,8 +1029,13 @@ async def stimme_probe(stimme_id: str = ""):
 
 # ================================================================ Dateien, Stimme
 @router.post("/dateien")
-async def datei_hoch(datei: UploadFile = File(...), projekt_id: str = ""):
+async def datei_hoch(datei: UploadFile = File(...), projekt_id: str = "", aufgabe_id: str = ""):
     roh = await datei.read()
+    aufgabe = db.holen("aufgaben", aufgabe_id) if aufgabe_id else None
+    if aufgabe_id and not aufgabe:
+        raise HTTPException(404, "Aufgabe nicht gefunden")
+    if aufgabe and not projekt_id:
+        projekt_id = aufgabe.get("projekt_id") or ""
     if len(roh) > 50 * 1024 * 1024:
         raise HTTPException(413, "Die Datei ist größer als 50 MB.")
     did = db.neue_id("d")
@@ -1024,9 +1053,21 @@ async def datei_hoch(datei: UploadFile = File(...), projekt_id: str = ""):
         hinweis = f"Konnte den Inhalt nicht lesen: {e}"
     db.einfuegen("dateien", {"id": did, "name": name, "typ": datei.content_type or mimetypes.guess_type(name)[0] or "",
                              "groesse": len(roh), "pfad": str(ziel), "text": text,
-                             "projekt_id": projekt_id or None, "erstellt": time.time()})
+                             "projekt_id": projekt_id or None, "aufgabe_id": aufgabe_id or None, "erstellt": time.time()})
     return {"id": did, "name": name, "groesse": len(roh), "art": art, "zeichen": len(text),
             "hinweis": hinweis, "pfad": str(ziel)}
+
+
+# Eine Unterlage von einer Aufgabe loesen (Aufgabenfenster). Geloescht wird
+# nichts: die Datei bleibt in den Unterlagen des Projekts.
+@router.patch("/dateien/{did}")
+async def datei_aendern(did: str, request: Request):
+    d = await _koerper(request)
+    if not db.holen("dateien", did):
+        raise HTTPException(404, "Datei nicht gefunden")
+    if "aufgabe_id" in d:
+        db.ausfuehren("UPDATE dateien SET aufgabe_id=? WHERE id=?", (d.get("aufgabe_id") or None, did))
+    return {"ok": True}
 
 
 @router.get("/dateien/{did}")
