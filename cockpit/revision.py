@@ -101,7 +101,7 @@ async def plaetze() -> list[dict[str, Any]]:
                     "eigen_fehlt": bool(t.get("modell")) and t.get("modell") != wirksam})
     talk = await llm.modell_waehlen(llm.vorgabe("talk"), "qwen3.6:27b", "qwen3:30b-a3b", "llama3.3:70b")
     aus.append({"platz": "vorgabe:talk", "rolle": None, "name": "Talk", "titel": "Gespräch mit dem Cockpit, Board",
-                "art": "talk", "eigen": (db.einstellung("modell_vorgaben", {}) or {}).get("talk") or "", "modell": talk})
+                "art": "talk", "eigen": (db.einstellung("modell_vorgaben", {}) or {}).get("talk") or "", "modell": talk, "eigen_fehlt": False})
     return aus
 
 
@@ -186,7 +186,15 @@ async def kandidaten(p: dict[str, Any], inst: dict[str, float], vram: float, neu
 def _aufgaben(p: dict[str, Any]) -> list[dict[str, str]]:
     """Echte Aufgaben der Rolle aus ihren letzten Ergebnissen; sonst feste."""
     aus: list[dict[str, str]] = []
-    if p["rolle"] == "kritiker":
+    if p["rolle"] == "pmo":
+        # Jasons eigentliche Arbeit ist das Einordnen neuer Notizen -- an einer
+        # allgemeinen Frage gemessen (erster Lauf am 17.10.) sagt der Vergleich
+        # wenig darueber, ob ein anderes Modell IHN ersetzen kann.
+        for n in db.alle("SELECT * FROM notizen WHERE length(text)>200 ORDER BY erstellt DESC LIMIT 2"):
+            aus.append({"frage": f"PROJEKTE:\n{stab.projektliste_text()[:4000]}\n\nNOTIZ:\n{stab.notiz_text(n, 5000)}\n\n"
+                                 "Ordne die Notiz ein: worum geht es (zwei Sätze), zu welchem Projekt gehört sie (oder keinem), "
+                                 "und welche zwei bis drei nächsten Schritte folgen daraus? Knapp."})
+    elif p["rolle"] == "kritiker":
         for e in db.alle("SELECT titel, form, inhalt FROM ergebnisse WHERE length(inhalt)>800 ORDER BY erstellt DESC LIMIT 2"):
             aus.append({"system": stab.PRUEF_SYSTEM,
                         "frage": f"AUFTRAG: {e['titel']}\nFORM: {e['form']}\n\nERGEBNIS:\n{e['inhalt'][:9000]}"})
