@@ -349,6 +349,17 @@ def starten(von_hand: bool = True) -> bool:
     return True
 
 
+def abbrechen() -> bool:
+    """Fuer Current Actions. lauf() faengt nur Exception, ein Abbruch ist keine --
+    deshalb wird der Stand hier selbst zurueckgesetzt, sonst stuende er fuer immer
+    auf "prueft gerade"."""
+    if not _lauf or _lauf.done():
+        return False
+    _lauf.cancel()
+    _stand_setzen(laeuft=False, ende=time.time(), schritt=None, fehler="von dir abgebrochen")
+    return True
+
+
 async def schleife() -> None:
     """Nachts einmal: 02--05 Uhr deutscher Zeit, wenn das Team an ist."""
     await asyncio.sleep(60)
@@ -479,7 +490,91 @@ def laden_vorschlaege(neu: dict[str, Any] | None) -> list[dict[str, Any]]:
         if not offen:
             continue
         a = offen[-1]
-        aus.append({"name": a["name"], "gb": a["gb"], "passt": a["passt"], "rollen": e["rollen"], "ersetzt": e.get("ersetzt") or [],
+        aus.append({"name": a["name"], "gb": a["gb"], "passt": a["passt"], "rollen": e["rollen"], "plaetze": e.get("plaetze") or [],
+                    "ersetzt": e.get("ersetzt") or [],
                     "familie": f["familie"], "neuer": f.get("neuer"), "beschreibung": (f.get("beschreibung") or "")[:200]})
     aus.sort(key=lambda x: (not x["neuer"], -len(x["rollen"])))
-    return aus[:6]
+    # Zehn statt sechs, seit die Vorschlaege je Rolle im Team-Schaubild stehen:
+    # bei sechs fiel fuer die hinteren Rollen nie etwas ab.
+    return aus[:10]
+
+
+# ---------------------------------------------------------------- Team-Uebersicht
+# Veiko, 17.10.2026: "eine Uebersicht vom Team mit den Vorschlaegen, welche Rolle
+# welches Modell, ob ich es laden will und ob das vorherige dann ueberhaupt noch
+# gebraucht wird und ich es ersetzen kann." Diese beiden Funktionen liefern die
+# zwei Fragen, die die Oberflaeche dafuer nicht selbst beantworten kann.
+def geladen_ungemessen(neu: dict[str, Any] | None) -> dict[str, list[str]]:
+    """Platz -> installierte Modelle, die laut Einordnung fuer ihn taugen, fuer
+    diesen Platz aber noch nicht gemessen sind ("geladen, misst heute Nacht")."""
+    gemessen = {(m["platz"], m["kandidat"]) for m in db.alle("SELECT platz, kandidat FROM messungen")}
+    aus: dict[str, list[str]] = {}
+    for f in (neu or {}).get("familien") or []:
+        e = f.get("einordnung") or {}
+        if e.get("aelter"):
+            continue
+        for a in f["ausgaben"]:
+            if not a.get("installiert"):
+                continue
+            for p in e.get("plaetze") or []:
+                if (p, a["name"]) not in gemessen and a["name"] not in aus.get(p, []):
+                    aus.setdefault(p, []).append(a["name"])
+    return aus
+
+
+async def gebraucht_von() -> dict[str, list[dict[str, str]]]:
+    """Installiertes Modell -> wer es braucht. art "fest": wird gerade benutzt,
+    Entfernen ist gesperrt. art "hinweis": zuletzt benutzt, Entfernen geht mit
+    Rueckfrage. Was hier fehlt, wird von nichts im Cockpit gebraucht."""
+    aus: dict[str, list[dict[str, str]]] = {}
+
+    def dazu(name: str, art: str, text: str) -> None:
+        if name and not any(x["text"] == text for x in aus.get(name, [])):
+            aus.setdefault(name, []).append({"art": art, "text": text})
+
+    pl = await plaetze()
+    for p in pl:
+        dazu(p["modell"], "fest", f"rechnet für {p['name']}")
+        if p.get("eigen") and p["eigen"] != p["modell"]:
+            dazu(p["eigen"], "fest", f"bei {p['name']} eingetragen")
+    jason = next((p for p in pl if p["rolle"] == "pmo"), None)
+    for k, text in llm.VORGABEN.items():
+        # Die Vorgabe "stab" greift NUR, wenn Jason kein eigenes Modell hat
+        # (stab.py: modell_fuer("pmo", vorgabe("stab"))). Hat er eines, ist sie ein
+        # blosser Rueckfall -- und fehlt sie, springt modell_waehlen auf die
+        # Arbeits-Vorgabe. Als "fest" haette sie llama3.3:70b (42 GB) fuer immer
+        # gesperrt, obwohl seit dem 17.10. niemand mehr damit rechnet.
+        if k == "stab" and jason and jason.get("eigen") and not jason.get("eigen_fehlt"):
+            dazu(llm.vorgabe(k), "hinweis", "nur Rückfall für Jason -- er hat ein eigenes Modell")
+            continue
+        dazu(llm.vorgabe(k), "fest", f"Vorgabe: {text}")
+    for name in modellkatalog.lokal_gb():
+        if _nicht_text(name):
+            dazu(name, "fest", "Suche über Dokumente (Einbettung)")
+    # Zwei Namen, dieselben Gewichte (qwen3-coder-neo:30b ist qwen3-coder:30b mit
+    # groesserem Fenster). Wird der eine gebraucht, spart Entfernen des anderen
+    # keinen Platz -- Ollama loescht geteilte Dateien nicht. Also gesperrt.
+    digests = modellkatalog.lokal()
+    for name, dg in digests.items():
+        for anderer, dg2 in digests.items():
+            if anderer != name and dg == dg2 and any(g["art"] == "fest" for g in aus.get(anderer, [])):
+                dazu(name, "fest", f"dieselben Gewichte wie {anderer} -- Entfernen spart keinen Platz")
+    for z in db.alle("SELECT modell, MAX(zeit) AS zuletzt, COUNT(*) AS n FROM verbrauch WHERE art='lokal' AND zeit>? GROUP BY modell",
+                     (time.time() - 14 * 86400,)):
+        dazu(z["modell"], "hinweis", f"in den letzten 14 Tagen {z['n']}× benutzt")
+    return aus
+
+
+async def entfernen(name: str, trotzdem: bool = False) -> dict[str, Any]:
+    if name not in modellkatalog.lokal_gb():
+        raise ValueError("Das Modell ist nicht installiert.")
+    gruende = (await gebraucht_von()).get(name, [])
+    fest = [g["text"] for g in gruende if g["art"] == "fest"]
+    if fest:
+        raise ValueError("Wird noch gebraucht: " + "; ".join(fest) + ". Erst umstellen, dann entfernen.")
+    if gruende and not trotzdem:
+        raise ValueError("Zuletzt noch benutzt: " + "; ".join(g["text"] for g in gruende) + ".")
+    gb = modellkatalog.lokal_gb().get(name)
+    await modellkatalog.entfernen(name)
+    print(f"[revision] Modell entfernt: {name} ({gb} GB)", flush=True)
+    return {"ok": True, "gb": gb}

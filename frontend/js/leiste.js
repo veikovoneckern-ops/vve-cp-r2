@@ -32,11 +32,21 @@ export function fensterOeffnen(b) {
 }
 
 // Gespeicherte Reihenfolge auf die bekannten Bereiche anwenden: Unbekanntes
-// faellt heraus, Neues (nach einem Update) haengt hinten an.
+// faellt heraus. Neues (nach einem Update) kommt hinter den spaetesten seiner
+// Vorgaenger aus der Grundordnung -- vorher hing es ganz unten an, und ein Knopf,
+// der oben gewollt war (Current Actions, 17.10.2026), stand bei jedem mit eigener
+// Reihenfolge unten. "Spaetester" statt "direkter" Vorgaenger: so schiebt sich
+// nichts Neues vor Knoepfe, die jemand bewusst nach oben gezogen hat.
 export function ordnen(bereiche, ids) {
   const nachId = new Map(bereiche.map((b) => [b.id, b]));
-  const vorn = (ids || []).filter((id) => nachId.has(id)).map((id) => nachId.get(id));
-  return [...vorn, ...bereiche.filter((b) => !vorn.includes(b))];
+  const aus = (ids || []).filter((id) => nachId.has(id)).map((id) => nachId.get(id));
+  if (!aus.length) return [...bereiche];
+  bereiche.forEach((b, i) => {
+    if (aus.includes(b)) return;
+    const stelle = Math.max(-1, ...bereiche.slice(0, i).map((x) => aus.indexOf(x)));
+    aus.splice(stelle + 1, 0, b);
+  });
+  return aus;
 }
 
 export function useLeiste(bereiche, angemeldet) {

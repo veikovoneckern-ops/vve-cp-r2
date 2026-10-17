@@ -208,6 +208,16 @@ def kontext_text(k: dict[str, Any] | None) -> str:
     if art in ("brainstrom", "exo"):
         from . import verfahren
         return verfahren.kontext_text(art)
+    if art == "aktionen":
+        # Current Actions (17.10.2026): dieselbe Liste wie auf der Seite.
+        from . import aktionen, teamchat
+        from .api import GESPRAECH_LAEUFT
+        a = aktionen.sammeln(GESPRAECH_LAEUFT, teamchat.wer_name)
+        zeilen = [f"- {z['art_name']}: {z['titel']}" + (f" ({z['wer']})" if z.get("wer") else "")
+                  + (f", {z['schritt']}" if z.get("schritt") else "") + (f", {round(z['prozent'])} %" if z.get("prozent") is not None else "")
+                  + (", PAUSIERT" if z.get("stand") == "pausiert" else "") for z in a["laufend"]]
+        return ("VEIKO SCHAUT AUF CURRENT ACTIONS (alles, was gerade auf dem Server läuft; pausieren und abbrechen "
+                "geht dort per Knopf, nicht über Talk).\n" + ("\n".join(zeilen) if zeilen else "Gerade läuft nichts."))
     if art == "watchdog":
         from . import systeminfo
         w = systeminfo.watchdog()

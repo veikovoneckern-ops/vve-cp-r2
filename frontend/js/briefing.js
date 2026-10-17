@@ -24,7 +24,7 @@ function Gesundheit({ g, neo, optimierung }) {
       ${!g.stab_aktiv ? "Team pausiert" : g.letzter_lauf ? `Team: letzter Durchgang ${zeitText(g.letzter_lauf)}` : "Team startet …"}</span>
     ${laeuft && html`<span><i class="punkt lila"></i>${rolleName(laeuft.wer)} ${laeuft.was}</span>`}
     ${neo && neo.length > 0 && html`<span><i class="punkt lila"></i><a href=${"#/neo/" + neo[0].gespraech_id}>Neo arbeitet</a> seit ${zeitText(neo[0].seit).replace("vor ", "")}</span>`}
-    ${optimierung > 0 && html`<span><i class="punkt"></i><a href="#/modelle/optimierung">${optimierung === 1 ? "1 Modell-Vorschlag" : optimierung + " Modell-Vorschläge"}</a>, gemessen</span>`}
+    ${optimierung > 0 && html`<span><i class="punkt"></i><a href="#/modelle/uebersicht">${optimierung === 1 ? "1 Modell-Vorschlag" : optimierung + " Modell-Vorschläge"}</a>, gemessen</span>`}
     ${g.letzter_fehler && html`<span class="leise" title=${g.letzter_fehler}>Letzter Fehler: ${g.letzter_fehler.slice(0, 70)}</span>`}
   </div>`;
 }

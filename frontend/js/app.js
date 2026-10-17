@@ -18,6 +18,7 @@ import { Einstellungen } from "./einstellungen.js";
 import { Modelle } from "./modelle.js";
 import { Langlaeufer } from "./langlauf.js";
 import { BrainStrom, ExO } from "./verfahren.js";
+import { Aktionen } from "./aktionen.js";
 
 const BEREICHE = [
   { id: "briefing", titel: "Briefing", icon: "briefing", unter: "Was jetzt zählt" },
@@ -25,6 +26,10 @@ const BEREICHE = [
   { id: "projects", titel: "Projects", icon: "projects", unter: "Vorhaben, Aufgaben, Ergebnisse" },
   // Lange Vorhaben in Etappen mit Zwischenpruefung durch Dario oder Demmis (17.10.).
   { id: "langlauf", titel: "Langläufer", icon: "langlauf", unter: "Buch, langes Dokument, langes Video -- läuft durch" },
+  // Alles, was gerade laeuft, mit Pausieren/Abbrechen (Veiko, 17.10.2026). Hinter den
+  // Langlaeufern: weit oben, damit man es findet, aber nicht unter den ersten vier --
+  // die stehen auf dem Telefon in der unteren Leiste und sollen dort bleiben.
+  { id: "aktionen", titel: "Current Actions", kurz: "Actions", icon: "aktionen", unter: "Alles, was gerade läuft" },
   { id: "neo", titel: "Neo", icon: "neo", unter: "Cockpit Engineer", neo: true },
   { id: "team", titel: "Team", icon: "team", unter: "Dein KI-Team" },
   { id: "board", titel: "Advisory Board", kurz: "Board", icon: "board", unter: "Deine Advisors" },
@@ -226,7 +231,8 @@ function App() {
   const bereich = BEREICHE.find((b) => b.id === r.bereich);
   const offen = lage ? lage.entscheidungen.length : 0;
   const neoLaeuft = lage && lage.neo_laeuft && lage.neo_laeuft.length > 0;
-  const zahl = (b) => b.id === "inbox" && offen ? html`<span class="zahl">${offen}</span>` : b.neo && neoLaeuft ? html`<span class="zahl ruhig">arbeitet</span>` : null;
+  const akt = lage ? lage.aktionen || 0 : 0;
+  const zahl = (b) => b.id === "aktionen" && akt ? html`<span class="zahl ruhig">${akt}</span>` : b.id === "inbox" && offen ? html`<span class="zahl">${offen}</span>` : b.neo && neoLaeuft ? html`<span class="zahl ruhig">arbeitet</span>` : null;
   const voll = r.bereich === "inbox" || r.bereich === "neo" || r.bereich === "board";
   // Im Projekt steht oben der Projektname (wie im alten Cockpit "BVE / Projekt-Detail").
   const imProjekt = r.bereich === "projects" && r.id && !r.id.startsWith("_") && kontext && kontext.art === "projekt";
@@ -282,6 +288,7 @@ function App() {
         ${r.bereich === "brainstrom" && html`<${BrainStrom} />`}
         ${r.bereich === "exo" && html`<${ExO} />`}
         ${r.bereich === "langlauf" && html`<${Langlaeufer} id=${r.id} />`}
+        ${r.bereich === "aktionen" && html`<${Aktionen} />`}
       </main>
     </div>
     ${talk && html`<${Talk} zu=${() => setTalk(false)} kontext=${kontext} setKontext=${setKontext} start=${talkStart} />`}

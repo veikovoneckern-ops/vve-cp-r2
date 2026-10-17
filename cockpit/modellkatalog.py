@@ -179,6 +179,9 @@ def vorschlaege(stand: dict[str, Any] | None, vram_gesamt: float = 48.0) -> list
 async def _laden(name: str) -> None:
     j = LADEN[name]
     schichten: dict[str, list[int]] = {}
+    # Tempo aus den eigenen Zaehlern von Ollama, ueber ~20 s geglaettet -- eine
+    # Restzeit aus EINEM Messpunkt springt bei dieser Leitung um Stunden.
+    probe: list[tuple[float, int]] = []
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(None, connect=10)) as cl:
             async with cl.stream("POST", f"{OLLAMA}/api/pull", json={"model": name, "stream": True}) as r:
@@ -195,23 +198,101 @@ async def _laden(name: str) -> None:
                     if d.get("digest") and d.get("total"):
                         schichten[d["digest"]] = [int(d.get("completed") or 0), int(d["total"])]
                         fertig, ges = sum(v[0] for v in schichten.values()), sum(v[1] for v in schichten.values())
-                        j.update(prozent=round(fertig / ges * 100, 1), gb=round(ges / 1e9, 1))
+                        j.update(prozent=round(fertig / ges * 100, 1), gb=round(ges / 1e9, 2 if ges < 1e10 else 1), geladen_gb=round(fertig / 1e9, 2))
+                        jetzt = time.time()
+                        probe.append((jetzt, fertig))
+                        while len(probe) > 2 and jetzt - probe[0][0] > 20:
+                            probe.pop(0)
+                        dt, db_ = jetzt - probe[0][0], fertig - probe[0][1]
+                        if dt >= 5 and db_ > 0:
+                            j["mb_s"] = round(db_ / dt / 1e6, 2)
+                            j["rest_s"] = round((ges - fertig) / (db_ / dt))
                     j["schritt"] = d.get("status") or j.get("schritt")
-        j.update(stand="fertig", prozent=100, ende=time.time())
+        j.update(stand="fertig", prozent=100, ende=time.time(), rest_s=None)
         try:
             DATEI.unlink()   # naechste Pruefung frisch: das Geladene ist jetzt installiert
         except OSError:
             pass
+    except asyncio.CancelledError:
+        # Pausieren oder Abbrechen (laden_steuern). Ollama bricht den Pull ab,
+        # sobald die Verbindung zugeht; die schon geladenen Teile bleiben liegen,
+        # ein neuer Pull setzt dort fort.
+        j.update(rest_s=None, mb_s=None)
+        raise
     except httpx.HTTPError as e:
         j.update(stand="fehler", fehler=f"Ollama nicht erreichbar: {e.__class__.__name__}")
+    finally:
+        # Nur die eigene Aufgabe austragen: nach Pausieren und sofortigem
+        # Fortsetzen steht dort schon die neue.
+        if _LADE_TASKS.get(name) is asyncio.current_task():
+            _LADE_TASKS.pop(name, None)
+
+
+# Die laufenden Pull-Aufgaben, getrennt von LADEN: LADEN geht als JSON an den Browser.
+_LADE_TASKS: dict[str, asyncio.Task] = {}
 
 
 def laden_starten(name: str) -> dict[str, Any]:
     if name in LADEN and LADEN[name].get("stand") == "laeuft":
         return LADEN[name]
-    LADEN[name] = {"name": name, "stand": "laeuft", "prozent": 0, "start": time.time(), "schritt": "beginne"}
-    asyncio.create_task(_laden(name))
+    vorher = LADEN.get(name) or {}
+    # Fortsetzen nach einer Pause behaelt den Stand, damit der Balken nicht auf 0 springt.
+    LADEN[name] = {"name": name, "stand": "laeuft", "prozent": vorher.get("prozent", 0) if vorher.get("stand") == "pausiert" else 0,
+                   "gb": vorher.get("gb"), "start": vorher.get("start") if vorher.get("stand") == "pausiert" else time.time(),
+                   "schritt": "setzt fort" if vorher.get("stand") == "pausiert" else "beginne"}
+    _LADE_TASKS[name] = asyncio.create_task(_laden(name))
     return LADEN[name]
+
+
+def laden_steuern(name: str, aktion: str) -> dict[str, Any]:
+    """Pausieren, fortsetzen, abbrechen, aus der Liste nehmen (Current Actions).
+
+    Pausieren und Abbrechen beenden beide den Pull bei Ollama. Der Unterschied:
+    pausiert bleibt der Eintrag mit seinem Stand stehen und "Fortsetzen" holt
+    nur den Rest. Abgebrochen verschwindet er aus der Liste; die schon geladenen
+    Teile liegen als Teildateien in Ollamas Ablage, und ein spaeteres Laden
+    desselben Modells setzt dort fort. Wegraeumen kann sie das Cockpit nicht --
+    Ollamas Ablage gehoert dem Nutzer ollama.
+    """
+    j = LADEN.get(name)
+    if not j:
+        raise ValueError("Diesen Download gibt es nicht (mehr).")
+    t = _LADE_TASKS.get(name)
+    if aktion in ("pausieren", "abbrechen"):
+        if t and not t.done():
+            t.cancel()
+        if aktion == "pausieren":
+            if j.get("stand") != "laeuft":
+                raise ValueError("Der Download läuft nicht.")
+            j.update(stand="pausiert", schritt="pausiert", pausiert=time.time())
+        else:
+            LADEN.pop(name, None)
+        return {"ok": True}
+    if aktion == "fortsetzen":
+        if j.get("stand") not in ("pausiert", "fehler"):
+            raise ValueError("Der Download läuft schon.")
+        return laden_starten(name)
+    if aktion == "weg":
+        if j.get("stand") == "laeuft":
+            raise ValueError("Ein laufender Download wird abgebrochen, nicht weggeräumt.")
+        LADEN.pop(name, None)
+        return {"ok": True}
+    raise ValueError("Unbekannte Aktion.")
+
+
+async def entfernen(name: str) -> None:
+    """Ein Modell bei Ollama loeschen. Ob es noch jemand braucht, prueft der
+    Aufrufer (revision.gebraucht_von) -- hier wird nur geloescht."""
+    async with httpx.AsyncClient(timeout=60) as cl:
+        r = await cl.request("DELETE", f"{OLLAMA}/api/delete", json={"model": name})
+    if r.status_code == 404:
+        raise ValueError("Das Modell ist nicht (mehr) installiert.")
+    if r.status_code >= 400:
+        raise RuntimeError(f"Ollama hat das Löschen abgelehnt (HTTP {r.status_code}): {r.text[:200]}")
+    try:
+        DATEI.unlink()
+    except OSError:
+        pass
 
 
 # ---------------------------------------------------------------- Neu bei Ollama
@@ -447,6 +528,14 @@ _NEUE_ROLLE = {
     "decision": ("Entscheidungsvorbereiter", "wägt bei offenen Entscheidungen die Optionen ab und schlägt eine begründete Wahl vor"),
     "audio": ("Zuhörer", "versteht Sprachaufnahmen direkt, auch Tonfall und mehrere Sprecher -- ohne Umweg über die Abschrift"),
 }
+# Wo eine solche Rolle im Ablauf saesse (fuer das Schaubild auf Stab & Modelle):
+# "eingang" = vor Jason (bereitet Material auf), "entscheidung" = zwischen Daniel
+# und Veiko. Dazu, mit wem sie arbeiten wuerde -- Rollenkennungen aus team.
+_NEUE_ROLLE_STELLE = {
+    "vision": ("eingang", ["pmo"], "liefert Jason den Text aus Bildern und Scans, bevor er einordnet"),
+    "audio": ("eingang", ["pmo"], "hört die Plaud-Aufnahme selbst und gibt Jason Tonfall und Sprecher mit"),
+    "decision": ("entscheidung", ["kritiker"], "nimmt Daniels geprüfte Ergebnisse und bereitet dir die Entscheidung vor"),
+}
 
 
 def _aufgaben_fuer(f: dict[str, Any], gb: float) -> list[str]:
@@ -478,6 +567,11 @@ def einordnen(neu: dict[str, Any] | None, inst_gb: dict[str, float], team: list[
         if t.get("art") == "bilder":
             abgedeckt["vision"] = True
     for f in (neu or {}).get("familien") or []:
+        # "installiert" stammt aus der Pruefung bei ollama.com und ist bis zu 24 h
+        # alt. Am 17.10. bot die Uebersicht so qwen3.6:35b-a3b zum Laden an, mit
+        # dem Jason laengst rechnete. Hier wird es gegen die Platte nachgezogen.
+        for x in f["ausgaben"]:
+            x["installiert"] = _tag(x["name"]) in inst_gb
         offen = [x for x in f["ausgaben"] if not x.get("installiert")] or f["ausgaben"]
         a = offen[-1] if offen else None
         if not a:
@@ -509,24 +603,29 @@ def einordnen(neu: dict[str, Any] | None, inst_gb: dict[str, float], team: list[
         # 2. Rollen: wer heute mit dem ersetzten Modell rechnet, oder wessen
         #    Aufgabenart das neue Modell abdeckt -- aber nur, wenn es nicht
         #    deutlich kleiner ist als das, womit die Rolle heute rechnet.
-        rollen = []
+        rollen, rollen_ids = [], []
         for t in team:
             eigen = t.get("modell") or modelle.get("arbeit")
             gross_genug = gb >= 0.6 * inst_gb.get(eigen, 0)
             if gross_genug and (eigen in ersetzt or (t.get("art") in aufgaben and t.get("art") != "allgemein")):
                 rollen.append(f"{t['name']} ({t.get('titel') or ''})".replace(" ()", ""))
+                rollen_ids.append("rolle:" + t["id"])
         if not aelter and (modelle.get("talk") in ersetzt or (_re.search(r"-a\d+b", a["name"]) and gb <= 30)):
             rollen.append("Talk (Gespräch mit dem Cockpit)")
+            rollen_ids.append("vorgabe:talk")
         if aelter:
-            rollen = []
+            rollen, rollen_ids = [], []
         # 3. Neue Rolle: eine Faehigkeit, fuer die es heute niemanden gibt.
         neue = None
         for x in ("decision", "vision", "audio"):
             if x in (f.get("faehigkeiten") or []) and not abgedeckt.get(x):
-                neue = {"name": _NEUE_ROLLE[x][0], "wofuer": _NEUE_ROLLE[x][1]}
+                st = _NEUE_ROLLE_STELLE[x]
+                neue = {"name": _NEUE_ROLLE[x][0], "wofuer": _NEUE_ROLLE[x][1], "faehigkeit": x,
+                        "stelle": st[0], "mit": st[1], "wie": st[2]}
                 break
         f["einordnung"] = {"aufgaben": [namen[x] for x in aufgaben if x in namen], "ersetzt": ersetzt,
-                           "rollen": list(dict.fromkeys(rollen)), "neue_rolle": neue, "aelter": aelter}
+                           "rollen": list(dict.fromkeys(rollen)), "plaetze": list(dict.fromkeys(rollen_ids)),
+                           "neue_rolle": neue, "aelter": aelter}
 
 
 def _einordnung_text(f: dict[str, Any]) -> str:

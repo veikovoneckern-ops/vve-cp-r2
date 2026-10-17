@@ -137,6 +137,14 @@ async def _optimierung_zahl() -> int:
         return 0
 
 
+def _aktionen_zahl() -> int:
+    from . import aktionen
+    try:
+        return sum(1 for z in aktionen.sammeln(GESPRAECH_LAEUFT, teamchat.wer_name)["laufend"] if z.get("stand") != "pausiert")
+    except Exception:  # noqa: BLE001 -- das Briefing darf daran nicht scheitern
+        return 0
+
+
 @router.get("/lage")
 async def lage():
     ents = db.alle("SELECT e.*, v.titel AS vorgang_titel, v.projekt_id FROM entscheidungen e "
@@ -211,6 +219,8 @@ async def lage():
         "gespraeche_laufen": [{"gespraech_id": g, "art": s["art"], "wer": s["wer"],
                                "wer_name": teamchat.wer_name(s["wer"]) if s["wer"] else ("Talk" if s["art"] == "talk" else "Advisory Board"),
                                "start": s["start"], "status": s["status"]} for g, s in list(GESPRAECH_LAEUFT.items())],
+        # Zahl fuer den Knopf "Current Actions" in der linken Leiste.
+        "aktionen": _aktionen_zahl(),
         "woche": {
             "angenommen": sum(1 for e in entschieden if e["stand"] == "ja"),
             "entschieden": len(entschieden),
@@ -1399,6 +1409,40 @@ async def system_modell_laden_stand():
     return {"laden": modellkatalog.LADEN}
 
 
+# ================================================================ Current Actions
+# Alles, was gerade laeuft, an einer Stelle -- mit Pausieren/Abbrechen, wo das
+# sicher geht (Veiko, 17.10.2026). Details: aktionen.py.
+@router.get("/aktionen")
+async def aktionen_liste():
+    from . import aktionen
+    return aktionen.sammeln(GESPRAECH_LAEUFT, teamchat.wer_name)
+
+
+@router.post("/aktionen/steuern")
+async def aktionen_steuern(request: Request):
+    from . import aktionen
+    d = await _koerper(request)
+    try:
+        return aktionen.steuern(str(d.get("id") or ""), str(d.get("aktion") or ""), GESPRAECH_LAEUFT)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+
+
+# Ein Modell entfernen -- nur, wenn es nichts im Cockpit mehr braucht
+# (revision.gebraucht_von). Der Ersatz-Weg auf Stab & Modelle: laden, umstellen,
+# altes entfernen (Veiko, 17.10.2026).
+@router.post("/modelle/entfernen")
+async def modelle_entfernen(request: Request):
+    from . import revision
+    d = await _koerper(request)
+    try:
+        return await revision.entfernen(str(d.get("name") or ""), bool(d.get("trotzdem")))
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    except (RuntimeError, httpx.HTTPError) as e:
+        raise HTTPException(503, str(e))
+
+
 # ================================================================ Bilder und Visualisierungen aus dem Gespraech
 @router.get("/medien/{jid}")
 async def medien_stand(jid: str):
@@ -1694,7 +1738,11 @@ async def revision_uebersicht():
             "messungen": db.alle("SELECT * FROM messungen ORDER BY zeit DESC LIMIT 20"),
             "umgestellt": (db.einstellung("revision_umgestellt", []) or [])[:10],
             "installiert": sorted(n for n in inst if not revision._nicht_text(n)), "vram": vram,
-            "laeuft_download": modellkatalog.LADEN}
+            "laeuft_download": modellkatalog.LADEN,
+            # Fuer die Team-Uebersicht (17.10.2026): was schon geladen, aber fuer
+            # einen Platz noch nicht gemessen ist, und wer welches Modell noch braucht.
+            "geladen_ungemessen": revision.geladen_ungemessen(neu), "gebraucht": await revision.gebraucht_von(),
+            "groessen": inst, "extern": await teamchat.externe_liste()}
 
 
 @router.post("/revision/{aktion}")

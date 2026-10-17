@@ -1,74 +1,262 @@
 // STAB & MODELLE (17.10.2026; vorher "Modelle" und "Verbrauch" als zwei Seiten).
 //
-// Vier Reiter, in dieser Reihenfolge, weil das die Fragen sind, die man hier hat:
-//   Besetzung     Wer rechnet womit? Je Rolle und fuer Talk das Modell, das WIRKLICH
-//                 rechnet (nicht nur das eingetragene), umstellbar; dazu alles Installierte.
-//   Optimierung   Was sollte ich aendern? Vorschlaege der Modell-Revision (revision.py),
-//                 jeder mit einer Messung auf dieser Maschine belegt; was sich zu laden
-//                 lohnt; welche neue Rolle denkbar waere; was der Katalog empfiehlt.
+// Fuenf Reiter, in dieser Reihenfolge, weil das die Fragen sind, die man hier hat:
+//   Übersicht     Das Team als Schaubild: wer arbeitet mit wem, womit rechnet jede
+//                 Rolle, und je Rolle der EINE naechste Schritt (umstellen, laden,
+//                 messen) samt dem Weg zurueck. Dazu, was nicht mehr gebraucht wird.
+//   Installiert   Was auf der Platte liegt, wer es braucht, und Entfernen.
+//   Optimierung   Die Modell-Revision selbst: Laeufe, Messungen, Verlauf.
 //   Neu bei Ollama  Neueste Modelle und Nachfolger, je mit Einordnung.
 //   Verbrauch     Token und Kosten (verbrauch.js).
 //
-// Veiko (17.10.2026): "das Cockpit soll selbst sehr stringent nach Optimierungen
-// suchen ... und mir dann Vorschlaege machen." Gesucht und gemessen wird nachts von
-// selbst; umgestellt wird nie ohne Klick hier.
-import { html, useState, useEffect, Icon, toast, fehlerMelden, zeitText, navigiere } from "./ui.js";
+// Veiko, 17.10.2026 (zweite Runde): "zu aufwendig, mich zurechtzufinden und zu
+// entscheiden, was muss ich wo wie machen". Vorher lagen die Vorschlaege zum
+// Umstellen, zum Laden und die neuen Rollen auf "Optimierung", die Besetzung auf
+// einem anderen Reiter und die Downloads auf einem dritten -- fuer EINE Frage
+// ("soll Jason ein anderes Modell bekommen?") musste man drei Stellen
+// zusammenlesen. Jetzt steht alles an der Karte der Rolle; jede Sache hat EINEN
+// Ort (Bauregel 2): Vorschlaege nur in der Uebersicht, Downloads nur unter
+// Current Actions (hier nur der Balken am Knopf), Messungen nur unter Optimierung.
+//
+// Ersetzen ist ein Weg in drei Schritten, und die Karte zeigt immer nur den
+// faelligen: laden -> (messen oder gleich) umstellen -> das alte entfernen, wenn
+// es sonst niemand braucht (revision.gebraucht_von; was etwas braucht, sperrt).
+import { html, useState, useEffect, Icon, Avatar, toast, fehlerMelden, zeitText, navigiere } from "./ui.js";
 import { api } from "./api.js";
 import { Verbrauch } from "./verbrauch.js";
 
 const tok = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1).replace(".", ",") + " Mio." : n >= 1e3 ? Math.round(n / 1e3) + " Tsd." : String(n || 0));
 const zahl = (x) => (x == null ? "—" : String(Math.round(x * 10) / 10).replace(".", ","));
-const TABS = [["besetzung", "Besetzung"], ["optimierung", "Optimierung"], ["neu", "Neu bei Ollama"], ["verbrauch", "Verbrauch"]];
+const gbText = (g) => (g == null ? "?" : String(g).replace(".", ",")) + " GB";
+const TABS = [["uebersicht", "Übersicht"], ["installiert", "Installiert"], ["optimierung", "Optimierung"], ["neu", "Neu bei Ollama"], ["verbrauch", "Verbrauch"]];
 const URTEIL_KURZ = { tragfaehig: "in Ordnung", nachbessern: "mit Einwänden", rueckfrage: "mit Rückfrage", ungeprueft: "ungeprüft" };
+
+async function tun(pfad, daten, text, nachher) {
+  try { const r = await api(pfad, { methode: "POST", daten: daten || {} }); if (text) toast(text); nachher && nachher(); return r; }
+  catch (e) { fehlerMelden(e); return null; }
+}
 
 function LadenKnopf({ name, laden, nachher, text = "Laden" }) {
   const j = laden[name];
-  if (j && j.stand === "laeuft") return html`<span class="pill lila">lädt · ${j.prozent || 0} %</span>`;
+  if (j && j.stand === "laeuft") return html`<a class="pill lila" href="#/aktionen" title="Läuft -- pausieren oder abbrechen unter Current Actions">lädt · ${j.prozent || 0} %</a>`;
+  if (j && j.stand === "pausiert") return html`<a class="pill gelb" href="#/aktionen" title="Fortsetzen unter Current Actions">pausiert · ${j.prozent || 0} %</a>`;
   if (j && j.stand === "fertig") return html`<span class="pill gruen">geladen</span>`;
-  async function los() {
-    try { await api("/system/modell-laden", { methode: "POST", daten: { name } }); toast(`${name} wird geladen. Den Fortschritt siehst du unter „Neu bei Ollama“.`); nachher(); }
-    catch (e) { fehlerMelden(e); }
-  }
-  return html`<button class="btn klein primaer" onClick=${los} title=${"Bei Ollama laden: " + name}><${Icon} n="download" g=${13} />${text}</button>`;
+  return html`<button class="btn klein primaer" onClick=${() => tun("/system/modell-laden", { name }, `${name} wird geladen. Pausieren oder abbrechen: Current Actions.`, nachher)}
+    title=${"Bei Ollama laden: " + name}><${Icon} n="download" g=${13} />${text}</button>`;
 }
 
-// ------------------------------------------------------------ Besetzung
-function Besetzung({ rev, d, laden, neuLaden }) {
-  async function umstellen(p, modell) {
-    try { await api("/revision/umstellen", { methode: "POST", daten: { platz: p.platz, modell } }); toast(`${p.name} rechnet jetzt mit ${modell}.`); neuLaden(); }
-    catch (e) { fehlerMelden(e); }
+// Inline-Rueckfrage statt Browser-Box, wie FrageKnopf in langlauf.js.
+function Rueckfrage({ text, frage, ja, aktion, gefahr }) {
+  const [auf, setAuf] = useState(false);
+  if (auf) return html`<span class="knopfreihe mo-frage"><span class="klein">${frage}</span>
+    <button class=${"btn klein " + (gefahr ? "gefahr voll" : "primaer")} onClick=${() => { setAuf(false); aktion(); }}>${ja}</button>
+    <button class="btn klein geist" onClick=${() => setAuf(false)}>Nein</button></span>`;
+  return html`<button class=${"btn klein " + (gefahr ? "gefahr" : "")} onClick=${() => setAuf(true)}>${text}</button>`;
+}
+
+// Entfernen eines Modells: gesperrt, solange etwas es braucht ("fest"); bei einem
+// blossen Hinweis ("zuletzt benutzt") mit Rueckfrage, die den Hinweis nennt.
+function EntfernenKnopf({ name, gebraucht, gb, nachher }) {
+  const g = gebraucht[name] || [];
+  const fest = g.filter((x) => x.art === "fest");
+  if (fest.length) return html`<span class="leise klein" title=${fest.map((x) => x.text).join("\n")}>wird gebraucht</span>`;
+  const hinweis = g.map((x) => x.text).join("; ");
+  return html`<${Rueckfrage} text=${`Entfernen${gb ? " (" + gbText(gb) + ")" : ""}`} gefahr=${true} ja="Entfernen"
+    frage=${`${name} löschen?${hinweis ? " Achtung: " + hinweis + "." : ""} Neu laden ginge jederzeit.`}
+    aktion=${() => tun("/modelle/entfernen", { name, trotzdem: true }, `${name} entfernt.`, nachher)} />`;
+}
+
+// ------------------------------------------------------------ Übersicht
+// Wo jede Rolle im Ablauf sitzt. Unbekannte (selbst angelegte) Rollen arbeiten aus.
+const STUFE = { pmo: "planen", kritiker: "pruefen" };
+const SPALTEN = [
+  ["eingang", "Hereinkommen", "Plaud-Notizen, Mails, Capture"],
+  ["planen", "Einordnen und planen", "entscheidet, wer was macht"],
+  ["arbeiten", "Ausarbeiten", "auf Auftrag von Jason oder dir"],
+  ["pruefen", "Prüfen", "jedes Ergebnis, bevor du es siehst"],
+  ["entscheidung", "Du entscheidest", "Briefing, Inbox, Talk"],
+];
+
+// Der EINE naechste Schritt je Rolle, in dieser Reihenfolge:
+// gemessen besser > geladen, aber ungemessen > lohnt sich zu laden > nichts.
+function naechster(p, rev, laden) {
+  const gemessen = rev.vorschlaege.filter((v) => v.platz === p.platz);
+  if (gemessen.length) return { art: "gemessen", v: gemessen[0], weitere: gemessen.slice(1) };
+  const geladen = (rev.geladen_ungemessen[p.platz] || []).filter((n) => n !== p.modell);
+  if (geladen.length) return { art: "geladen", name: geladen[0], weitere: geladen.slice(1) };
+  const lad = rev.laden.filter((x) => (x.plaetze || []).includes(p.platz));
+  // Ein Download, der fuer diese Rolle laeuft, zaehlt wie "laden" -- der Knopf zeigt dann den Balken.
+  if (lad.length) return { art: "laden", x: lad[0], weitere: lad.slice(1) };
+  return null;
+}
+
+function Vorschlag({ p, n, rev, laden, neuLaden }) {
+  if (!n) return html`<div class="mo-vs ruhig klein leise">Kein besserer Kandidat bekannt. Die Revision sucht jede Nacht weiter.</div>`;
+  const umstellen = (modell, messung) => tun("/revision/umstellen", { platz: p.platz, modell, messung }, `${p.name} rechnet jetzt mit ${modell}.`, neuLaden);
+  if (n.art === "gemessen") {
+    const v = n.v;
+    return html`<div class="mo-vs gruen">
+      <div class="mo-vs-kopf"><span class="pill gruen">gemessen besser</span>${v.art === "abwaegen" ? html`<span class="pill gelb">abwägen</span>` : ""}</div>
+      <div><b class="mono">${v.kandidat}</b> statt <span class="mono">${v.bisher}</span></div>
+      <div class="leise klein">${v.warum} Gemessen ${zeitText(v.zeit)}.</div>
+      <div class="knopfreihe"><button class="btn klein primaer" onClick=${() => umstellen(v.kandidat, v.messung)}>Umstellen</button>
+        <button class="btn klein geist" onClick=${() => tun("/revision/verwerfen", { messung: v.messung }, "Verworfen.", neuLaden)}>Verwerfen</button></div></div>`;
   }
-  const gesamt = d ? d.installiert.reduce((s, m) => s + m.gb, 0) : 0;
+  if (n.art === "geladen") {
+    const st = rev.stand || {};
+    return html`<div class="mo-vs blau">
+      <div class="mo-vs-kopf"><span class="pill blau">geladen, noch nicht gemessen</span></div>
+      <div><b class="mono">${n.name}</b> ${rev.groessen[n.name] ? html`<span class="leise klein">${gbText(rev.groessen[n.name])}</span>` : ""}</div>
+      <div class="leise klein">Liegt auf dem Server und passt zu dieser Rolle. Die Revision vergleicht es heute Nacht mit echten Aufgaben von ${p.name} -- oder jetzt.</div>
+      <div class="knopfreihe"><button class="btn klein primaer" disabled=${st.laeuft} onClick=${() => tun("/revision/start", null, "Die Revision misst jetzt (einige Minuten je Vergleich).", neuLaden)}>
+          ${st.laeuft ? "misst gerade …" : "Jetzt messen"}</button>
+        <${Rueckfrage} text="Ungetestet umstellen" ja="Umstellen" frage=${`${p.name} sofort auf ${n.name} umstellen, ohne Messung? Zurück geht jederzeit.`} aktion=${() => umstellen(n.name)} /></div></div>`;
+  }
+  const x = n.x;
+  return html`<div class="mo-vs">
+    <div class="mo-vs-kopf"><span class="pill lila">${x.neuer ? "Nachfolger bei Ollama" : "neu bei Ollama"}</span><span class="pill">ungetestet</span></div>
+    <div><b class="mono">${x.name}</b> <span class="leise klein">${gbText(x.gb)} · ${x.passt}</span></div>
+    <div class="leise klein">${x.ersetzt.includes(p.modell) ? `Würde ${p.modell} ersetzen. ` : `Passt zur Arbeit von ${p.name}. `}Nach dem Laden misst die nächste Nacht, ob es für ${p.name} besser ist.</div>
+    <div class="knopfreihe"><${LadenKnopf} name=${x.name} laden=${laden} nachher=${neuLaden} /></div></div>`;
+}
+
+// Nach einer Umstellung: das vorige Modell -- noch gebraucht, oder kann weg?
+function Vorher({ p, rev, neuLaden }) {
+  const u = (rev.umgestellt || []).find((x) => x.platz === p.platz);
+  if (!u || u.zurueck || !u.vorher || u.vorher === p.modell) return null;
+  const istDa = u.vorher in rev.groessen;
+  const andere = (rev.gebraucht[u.vorher] || []).filter((g) => g.art === "fest");
+  return html`<div class="mo-vorher klein">
+    <span>Vorher: <span class="mono">${u.vorher}</span> (umgestellt ${zeitText(u.zeit)})</span>
+    <span class="knopfreihe">
+      ${!istDa ? html`<span class="leise">schon entfernt</span>`
+        : andere.length ? html`<span class="leise" title=${andere.map((g) => g.text).join("\n")}>noch gebraucht: ${andere.map((g) => g.text).join(", ")}</span>`
+        : html`<span class="pill gruen">wird nicht mehr gebraucht</span><${EntfernenKnopf} name=${u.vorher} gebraucht=${rev.gebraucht} gb=${rev.groessen[u.vorher]} nachher=${neuLaden} />`}
+      <button class="btn klein geist" onClick=${() => tun("/revision/zurueck", { platz: p.platz }, "Zurückgestellt.", neuLaden)}><${Icon} n="undo" g=${13} />Zurück</button>
+    </span></div>`;
+}
+
+function RollenKarte({ p, rev, laden, neuLaden }) {
+  const [auf, setAuf] = useState(false);
+  const n = naechster(p, rev, laden);
+  const urteile = Object.entries(p.urteile || {});
+  const weitere = n && n.weitere && n.weitere.length;
+  const zustand = !n ? "" : n.art === "gemessen" ? " hat-gruen" : n.art === "geladen" ? " hat-blau" : " hat-lila";
+  return html`<div class=${"mo-rolle" + zustand}>
+    <div class="mo-rolle-kopf">${p.rolle ? html`<${Avatar} wer=${p.rolle} name=${p.name} g=${30} />` : html`<span class="mo-talk-ico"><${Icon} n="talk" g=${16} /></span>`}
+      <div class="mo-rolle-name"><b>${p.name}</b><small>${p.titel}</small></div></div>
+    <div class="mo-modell"><span class="mono">${p.modell || "— keins —"}</span>${rev.groessen[p.modell] ? html`<span class="leise klein">${gbText(rev.groessen[p.modell])}</span>` : ""}</div>
+    ${p.eigen_fehlt && html`<div class="mo-warn klein">Eingetragen ist <b class="mono">${p.eigen}</b> -- nicht installiert, deshalb rechnet still dieses hier.</div>`}
+    <div class="leise klein mo-zahlen">${p.aufrufe ? `${p.aufrufe} Aufrufe in 30 T. · Ø ${zahl(p.dauer_mittel)} s` : "in 30 Tagen nicht aufgerufen"}${urteile.length ? " · Daniel: " + urteile.map(([u, k]) => `${k}× ${URTEIL_KURZ[u] || u}`).join(", ") : ""}</div>
+    <${Vorschlag} p=${p} n=${n} rev=${rev} laden=${laden} neuLaden=${neuLaden} />
+    <${Vorher} p=${p} rev=${rev} neuLaden=${neuLaden} />
+    <button class="mo-mehr klein" onClick=${() => setAuf(!auf)} aria-expanded=${auf}><${Icon} n=${auf ? "runter" : "rechts"} g=${12} />Details${weitere ? ` · ${weitere} weitere Vorschläge` : ""}</button>
+    ${auf && html`<div class="mo-details klein">
+      <label class="leise" for=${"wahl-" + p.platz}>Von Hand umstellen (gilt sofort):</label>
+      <select id=${"wahl-" + p.platz} class="eingabe mo-wahl" value=${p.modell || ""}
+        onChange=${(e) => tun("/revision/umstellen", { platz: p.platz, modell: e.target.value }, `${p.name} rechnet jetzt mit ${e.target.value}.`, neuLaden)}>
+        ${!p.modell && html`<option value="">— keins installiert —</option>`}
+        ${rev.installiert.map((m) => html`<option value=${m}>${m}</option>`)}</select>
+      ${weitere ? html`<div class="mo-weitere">${n.weitere.map((w) => html`<div>${w.kandidat ? html`<b class="mono">${w.kandidat}</b>: ${w.warum}`
+          : w.name ? html`<b class="mono">${w.name}</b> ${w.gb ? `(${gbText(w.gb)}, ${w.passt})` : "(geladen, ungemessen)"}` : html`<b class="mono">${w}</b> (geladen, ungemessen)`}</div>`)}</div>` : ""}
+      <div class="leise">„Ø“ ist die mittlere Wartezeit je Aufruf, Lesen und Laden eingeschlossen; das reine Schreibtempo misst die Optimierung.</div>
+    </div>`}
+  </div>`;
+}
+
+function NeueRolleKarte({ r, laden, neuLaden }) {
+  return html`<div class="mo-rolle mo-neue-rolle">
+    <div class="mo-rolle-kopf"><span class="mo-talk-ico"><${Icon} n="plus" g=${15} /></span><div class="mo-rolle-name"><b>${r.name}</b><small>denkbare neue Rolle</small></div></div>
+    <div class="leise klein">${r.wofuer}.</div>
+    ${r.wie && html`<div class="klein"><span class="leise">Arbeitet mit:</span> ${r.wie}.</div>`}
+    <div class="mo-rollen-modelle">${r.modelle.map((m) => html`<span class="mo-rollen-modell"><span class="mono klein">${m.name}</span> <span class="leise klein">${gbText(m.gb)}</span>
+      ${m.installiert ? html`<span class="pill gruen">installiert</span>` : html`<${LadenKnopf} name=${m.name} laden=${laden} nachher=${neuLaden} />`}</span>`)}</div>
+    <div class="leise klein">Einrichten heißt entscheiden, welche Aufgaben sie übernimmt -- sag es mir oder Neo.</div>
+  </div>`;
+}
+
+function ExterneReihe({ extern }) {
+  if (!extern || !extern.length) return null;
+  return html`<div class="mo-extern">
+    <div class="mo-extern-kopf"><b>Extern, auf Zuruf</b><span class="leise klein">arbeiten nie von selbst; du holst sie im Gespräch dazu, jedes Gespräch braucht einmal die Kostenfreigabe</span></div>
+    <div class="mo-extern-liste">${extern.map((x) => html`<div class="mo-extern-karte">
+      <${Avatar} wer=${x.id} name=${x.name} g=${26} /><div style="min-width:0"><b>${x.name}</b> <small class="leise">${x.titel}</small>
+        <div class="mono klein">${x.modell || x.vorgabe || "—"}${x.schluessel === false ? html` <span class="pill rot">kein Schlüssel</span>` : ""}</div></div></div>`)}</div>
+  </div>`;
+}
+
+function Uebersicht({ rev, laden, neuLaden }) {
+  if (!rev) return html`<div class="lade">Lade …</div>`;
+  const plaetze = rev.bestand.plaetze;
+  const talk = plaetze.find((p) => p.platz === "vorgabe:talk");
+  const rollen = plaetze.filter((p) => p.rolle);
+  const inSpalte = (s) => rollen.filter((p) => (STUFE[p.rolle] || "arbeiten") === s);
+  const neue = (rev.neue_rollen || []);
+  // Was es zu tun gibt, gezaehlt aus denselben Quellen wie die Karten.
+  const nae = plaetze.map((p) => naechster(p, rev, laden)).filter(Boolean);
+  const zaehl = (a) => nae.filter((x) => x.art === a).length;
+  const frei = Object.keys(rev.groessen).filter((m) => !(rev.gebraucht[m] || []).some((g) => g.art === "fest"));
+  const freiGb = frei.reduce((s, m) => s + (rev.groessen[m] || 0), 0);
+  const downloads = Object.values(laden).filter((j) => j.stand === "laeuft" || j.stand === "pausiert").length;
+  const punkte = [
+    zaehl("gemessen") && [`${zaehl("gemessen")}× umstellen`, "gemessen besser", "gruen"],
+    zaehl("geladen") && [`${zaehl("geladen")}× messen`, "schon geladen", "blau"],
+    zaehl("laden") && [`${zaehl("laden")}× laden`, "neu bei Ollama", "lila"],
+    frei.length && [`${frei.length} Modelle frei`, `${Math.round(freiGb)} GB, braucht niemand`, ""],
+  ].filter(Boolean);
   return html`
-    <section class="karte">
-      <div class="karte-kopf"><h3>Wer rechnet womit</h3><span class="leise klein">das Modell, das wirklich rechnet -- umstellen gilt sofort</span></div>
-      ${!rev ? html`<div class="lade">Lade …</div>` : html`<div class="tabelle-wrap"><table class="tabelle mo-tabelle"><thead><tr>
-          <th>Wer</th><th>Modell</th><th class="zahl">Aufrufe 30 T.</th><th class="zahl">Ø Dauer</th><th>Daniels Urteile</th></tr></thead>
-        <tbody>${rev.bestand.plaetze.map((p) => html`<tr>
-          <td><b>${p.name}</b><div class="leise klein">${p.titel}</div></td>
-          <td><select class="eingabe mo-wahl" value=${p.modell || ""} onChange=${(e) => umstellen(p, e.target.value)}>
-              ${!p.modell && html`<option value="">— keins installiert —</option>`}
-              ${rev.installiert.map((n) => html`<option value=${n}>${n}</option>`)}</select>
-            ${p.eigen_fehlt && html`<div class="mo-warn klein">Eingetragen ist <b class="mono">${p.eigen}</b> -- nicht installiert, deshalb rechnet still dieses hier.</div>`}</td>
-          <td class="zahl">${p.aufrufe || html`<span class="leise">—</span>`}</td>
-          <td class="zahl">${p.dauer_mittel != null ? zahl(p.dauer_mittel) + " s" : html`<span class="leise">—</span>`}</td>
-          <td class="klein">${Object.keys(p.urteile || {}).length ? Object.entries(p.urteile).map(([u, n]) => `${n}× ${URTEIL_KURZ[u] || u}`).join(", ") : html`<span class="leise">—</span>`}</td></tr>`)}</tbody></table></div>
-        <p class="leise klein" style="margin-top:8px">„Aufrufe“ zählt, wie oft diese Rolle mit diesem Modell gerechnet hat; „Ø Dauer“ ist die mittlere Wartezeit je Aufruf, Lesen und Laden eingeschlossen. Das reine Schreibtempo misst die Optimierung. Daniels Urteile zählen die geprüften Ergebnisse der Rolle. Mehr Zahlen stehen erst da, seit das Cockpit sie erfasst (Seite Verbrauch).</p>`}
-    </section>
-    <section class="karte">
-      <div class="karte-kopf"><h3>Installiert</h3>${d && html`<span class="leise klein">${d.installiert.length} Modelle · ${gesamt.toFixed(0)} GB${d.frei_gb ? ` · ${Math.round(d.frei_gb)} GB frei` : ""} · ${d.vram.toFixed(0)} GB auf den Grafikkarten</span>`}</div>
-      ${!d ? html`<div class="lade">Lade …</div>` : html`<div class="tabelle-wrap"><table class="tabelle mo-tabelle"><thead><tr>
-        <th>Modell</th><th class="zahl">Größe</th><th>Passt</th><th>Bestes installiertes für</th><th>Team</th><th class="zahl">Aufrufe 30 T.</th><th>Zuletzt</th></tr></thead>
-        <tbody>${d.installiert.map((m) => html`<tr>
-          <td class="mono">${m.name}${m.geladen ? html` <span class="pill lila">im Speicher</span>` : ""}</td>
-          <td class="zahl">${m.gb.toFixed(1).replace(".", ",")} GB</td>
-          <td class="leise">${m.passt.replace("passt auf ", "")}</td>
-          <td>${m.aufgaben.join(", ") || html`<span class="leise">—</span>`}</td>
-          <td>${m.team.join(", ") || html`<span class="leise">—</span>`}</td>
-          <td class="zahl">${m.aufrufe ? `${m.aufrufe} · ${tok(m.token)}` : html`<span class="leise">—</span>`}</td>
-          <td class="leise klein">${m.zuletzt ? zeitText(m.zuletzt) : "—"}</td></tr>`)}</tbody></table></div>
-        <p class="leise klein" style="margin-top:8px">Ein Strich bei „Aufrufe“ heißt noch nicht „wird nicht gebraucht“ -- gezählt wird erst seit ${d.erfasst_seit ? new Date(d.erfasst_seit * 1000).toLocaleDateString("de-DE") : "heute"}. Entfernt wird hier nichts.</p>`}
-    </section>`;
+    <div class="mo-todo karte">
+      ${punkte.length ? html`<b>Was du hier tun kannst</b>
+        <div class="mo-todo-liste">${punkte.map(([t, u, f]) => html`<span class=${"mo-todo-punkt " + f}><b>${t}</b><small>${u}</small></span>`)}</div>
+        <span class="leise klein">Die Schritte stehen an der Karte der jeweiligen Rolle -- immer nur der fällige.</span>`
+        : html`<b>Nichts zu tun.</b><span class="leise klein">Jede Rolle rechnet mit dem besten bekannten Modell. Die Revision sucht jede Nacht weiter.</span>`}
+      ${downloads > 0 && html`<a class="btn klein" href="#/aktionen"><${Icon} n="download" g=${13} />${downloads} Download${downloads > 1 ? "s" : ""} -- Current Actions</a>`}
+    </div>
+
+    <div class="mo-fluss" role="list" aria-label="Wie das Team zusammenarbeitet">
+      ${SPALTEN.map(([id, titel, unter], i) => html`<div class="mo-spalte" role="listitem">
+        <div class="mo-spalte-kopf"><span class="mo-schritt">${i + 1}</span><div><b>${titel}</b><small>${unter}</small></div></div>
+        <div class="mo-spalte-karten">
+        ${id === "eingang" && html`<div class="mo-quelle klein"><${Icon} n="inbox" g=${14} />Plaud, Mail, Capture<span class="leise">gehen an Jason</span></div>`}
+        ${id === "entscheidung" && html`<div class="mo-quelle klein"><${Icon} n="briefing" g=${14} />Veiko<span class="leise">sagt Ja, Nein, Weiter</span></div>`}
+        ${inSpalte(id).map((p) => html`<${RollenKarte} key=${p.platz} p=${p} rev=${rev} laden=${laden} neuLaden=${neuLaden} />`)}
+        ${id === "entscheidung" && talk && html`<${RollenKarte} p=${talk} rev=${rev} laden=${laden} neuLaden=${neuLaden} />`}
+        ${neue.filter((r) => (r.stelle || "arbeiten") === id).map((r) => html`<${NeueRolleKarte} key=${r.name} r=${r} laden=${laden} neuLaden=${neuLaden} />`)}
+      </div></div>`)}
+    </div>
+    <p class="leise klein mo-fluss-text">So läuft es: Jason ordnet jede neue Notiz ein und vergibt die Arbeit; Clayton, Neal, Annie und Ridley arbeiten aus; Daniel prüft jedes Ergebnis, bevor es bei dir ankommt. Neo arbeitet nur auf deinen Auftrag am Cockpit. Talk ist dein Gespräch mit allen. Gestrichelte Karten sind Rollen, die es noch nicht gibt.</p>
+    <${ExterneReihe} extern=${rev.extern} />
+
+    ${frei.length > 0 && html`<section class="karte">
+      <div class="karte-kopf"><h3>Wird von niemandem gebraucht</h3><span class="leise klein">keine Rolle, keine Vorgabe rechnet damit</span></div>
+      ${frei.sort((a, b) => rev.groessen[b] - rev.groessen[a]).map((m) => html`<div class="zeile"><div class="haupt-text"><b class="mono">${m}</b>
+          <div class="leise klein">${gbText(rev.groessen[m])}${(rev.gebraucht[m] || []).length ? " · " + rev.gebraucht[m].map((g) => g.text).join("; ") : ""}</div></div>
+        <${EntfernenKnopf} name=${m} gebraucht=${rev.gebraucht} gb=${rev.groessen[m]} nachher=${neuLaden} /></div>`)}
+      <p class="leise klein">Das alte Cockpit (Board-Stand nachts) nimmt sich selbst das erste installierte Modell aus seiner Liste -- es bricht nicht, wenn eines hier fehlt.</p>
+    </section>`}`;
+}
+
+// ------------------------------------------------------------ Installiert
+function Installiert({ d, rev, neuLaden }) {
+  if (!d || !rev) return html`<div class="lade">Lade …</div>`;
+  const gesamt = d.installiert.reduce((s, m) => s + m.gb, 0);
+  return html`<section class="karte">
+    <div class="karte-kopf"><h3>Installiert</h3><span class="leise klein">${d.installiert.length} Modelle · ${gesamt.toFixed(0)} GB${d.frei_gb ? ` · ${Math.round(d.frei_gb)} GB frei` : ""} · ${d.vram.toFixed(0)} GB auf den Grafikkarten</span></div>
+    <div class="tabelle-wrap"><table class="tabelle mo-tabelle"><thead><tr>
+      <th>Modell</th><th class="zahl">Größe</th><th>Passt</th><th>Bestes installiertes für</th><th>Gebraucht von</th><th class="zahl">Aufrufe 30 T.</th><th>Zuletzt</th><th></th></tr></thead>
+      <tbody>${d.installiert.map((m) => {
+        const g = rev.gebraucht[m.name] || [];
+        return html`<tr>
+        <td class="mono">${m.name}${m.geladen ? html` <span class="pill lila">im Speicher</span>` : ""}</td>
+        <td class="zahl">${m.gb.toFixed(1).replace(".", ",")} GB</td>
+        <td class="leise">${m.passt.replace("passt auf ", "")}</td>
+        <td>${m.aufgaben.join(", ") || html`<span class="leise">—</span>`}</td>
+        <td class="klein mo-gebraucht">${g.length ? g.map((x) => html`<div class=${x.art === "fest" ? "" : "leise"}>${x.text}</div>`) : html`<span class="pill gruen">niemand</span>`}</td>
+        <td class="zahl">${m.aufrufe ? `${m.aufrufe} · ${tok(m.token)}` : html`<span class="leise">—</span>`}</td>
+        <td class="leise klein">${m.zuletzt ? zeitText(m.zuletzt) : "—"}</td>
+        <td><${EntfernenKnopf} name=${m.name} gebraucht=${rev.gebraucht} gb=${m.gb} nachher=${neuLaden} /></td></tr>`; })}</tbody></table></div>
+    <p class="leise klein" style="margin-top:8px">Entfernen ist gesperrt, solange eine Rolle, eine Vorgabe oder die Suche das Modell braucht -- erst in der Übersicht umstellen. „Zuletzt benutzt“ fragt nur nach. Gezählt wird seit ${d.erfasst_seit ? new Date(d.erfasst_seit * 1000).toLocaleDateString("de-DE") : "heute"}.</p>
+  </section>`;
 }
 
 // ------------------------------------------------------------ Optimierung
@@ -95,53 +283,22 @@ function Messung({ m }) {
 function Optimierung({ rev, d, laden, neuLaden }) {
   if (!rev) return html`<div class="lade">Lade …</div>`;
   const st = rev.stand || {};
-  const tun = async (pfad, daten, text) => {
-    try { const r = await api("/revision/" + pfad, { methode: "POST", daten: daten || {} }); if (text) toast(text); neuLaden(); return r; }
-    catch (e) { fehlerMelden(e); }
-  };
-  const zurueckBar = new Set();
-  const umgestellt = (rev.umgestellt || []).filter((u) => { if (u.zurueck || zurueckBar.has(u.platz)) return false; zurueckBar.add(u.platz); return true; });
   return html`
     <div class="mo-rev-kopf karte">
       <div class="haupt-text">
         ${st.laeuft ? html`<b><span class="vf-spin"></span> Prüft gerade${st.geplant ? ` (${st.fertig || 0} von ${st.geplant} Vergleichen)` : ""}</b>
-            <div class="leise klein">${st.schritt || ""} -- das dauert je Vergleich einige Minuten.</div>`
+            <div class="leise klein">${st.schritt || ""} -- das dauert je Vergleich einige Minuten. Abbrechen: Current Actions.</div>`
           : html`<b>Modell-Revision</b>
-            <div class="leise klein">Sucht jede Nacht (2--5 Uhr) selbst nach besseren Modellen und misst sie mit echten Aufgaben des Teams.
+            <div class="leise klein">Sucht jede Nacht (2--5 Uhr) selbst nach besseren Modellen und misst sie mit echten Aufgaben des Teams. Was dabei herauskommt, steht an der Karte der Rolle in der Übersicht.
               ${st.ende ? ` Zuletzt ${zeitText(st.ende)}: ${st.fehler ? "gescheitert -- " + st.fehler : st.ergebnis || ""}` : " Noch kein Lauf."}</div>`}
       </div>
-      <button class="btn klein" disabled=${st.laeuft} onClick=${() => tun("start", null, "Die Revision misst jetzt. Das dauert je Vergleich einige Minuten.")}>
+      <button class="btn klein" disabled=${st.laeuft} onClick=${() => tun("/revision/start", null, "Die Revision misst jetzt. Das dauert je Vergleich einige Minuten.", neuLaden)}>
         <${Icon} n="play" g=${13} />Jetzt prüfen</button>
     </div>
 
-    <section class="karte">
-      <div class="karte-kopf"><h3>Vorschläge zum Umstellen</h3><span class="leise klein">jeder mit einer Messung auf deinem Server belegt</span></div>
-      ${rev.vorschlaege.length ? rev.vorschlaege.map((v) => html`<div class="zeile mo-empf">
-          <div class="haupt-text"><b>${v.titel}</b>${v.art === "abwaegen" ? html` <span class="pill gelb">abwägen</span>` : ""}
-            <div class="leise klein">${v.warum} Gemessen ${zeitText(v.zeit)}.</div></div>
-          <span class="knopfreihe">
-            <button class="btn klein primaer" onClick=${() => tun("umstellen", { platz: v.platz, modell: v.kandidat, messung: v.messung }, `${v.name} rechnet jetzt mit ${v.kandidat}.`)}>Umstellen</button>
-            <button class="btn klein geist" onClick=${() => tun("verwerfen", { messung: v.messung }, "Verworfen.")}>Verwerfen</button></span></div>`)
-        : html`<p class="leise">Kein Modell hat in einer Messung besser abgeschnitten als das, was gerade rechnet.${rev.messungen.length ? "" : " Gemessen wurde noch nichts -- die erste Revision läuft heute Nacht, oder „Jetzt prüfen“."}</p>`}
-      ${umgestellt.length > 0 && html`<div class="mo-umgestellt">${umgestellt.slice(0, 5).map((u) => html`<div class="zeile klein">
-          <div class="haupt-text">Umgestellt ${zeitText(u.zeit)}: <b>${u.platz.replace("rolle:", "").replace("vorgabe:", "")}</b> von <span class="mono">${u.vorher || "Vorgabe"}</span> auf <span class="mono">${u.nachher}</span></div>
-          <button class="btn klein geist" onClick=${() => tun("zurueck", { platz: u.platz }, "Zurückgestellt.")}>Zurück</button></div>`)}</div>`}
-    </section>
-
-    ${rev.laden.length > 0 && html`<section class="karte">
-      <div class="karte-kopf"><h3>Lohnt sich zu laden</h3><span class="leise klein">neu bei Ollama und passend für dein Team -- nach dem Laden misst die nächste Nacht</span></div>
-      ${rev.laden.map((x) => html`<div class="zeile mo-empf"><div class="haupt-text"><b class="mono">${x.name}</b> ${x.neuer ? html`<span class="pill lila">Nachfolger</span>` : ""}
-          <div class="leise klein">${x.gb} GB, ${x.passt}. Geeignet für ${x.rollen.join(", ")}.${x.ersetzt.length ? ` Könnte ${x.ersetzt.join(", ")} ersetzen.` : ""}</div></div>
-        <${LadenKnopf} name=${x.name} laden=${laden} nachher=${neuLaden} /></div>`)}
-    </section>`}
-
-    ${rev.neue_rollen.length > 0 && html`<section class="karte">
-      <div class="karte-kopf"><h3>Neue Rollen, die das Team brauchen könnte</h3><span class="leise klein">Fähigkeiten, für die heute niemand zuständig ist</span></div>
-      ${rev.neue_rollen.map((r) => html`<div class="zeile mo-empf"><div class="haupt-text"><b>${r.name}</b>
-          <div class="leise klein">${r.wofuer}.</div>
-          <div class="mo-rollen-modelle">${r.modelle.map((m) => html`<span class="mo-rollen-modell"><span class="mono klein">${m.name}</span> <span class="leise klein">${m.gb} GB</span>
-            ${m.installiert ? html`<span class="pill gruen">installiert</span>` : html`<${LadenKnopf} name=${m.name} laden=${laden} nachher=${neuLaden} />`}</span>`)}</div></div></div>`)}
-      <p class="leise klein">Eine neue Rolle braucht deine Entscheidung, welche Aufgaben sie übernimmt. Sag mir oder Neo, welche du willst -- dann richten wir sie ein.</p>
+    ${(rev.umgestellt || []).length > 0 && html`<section class="karte">
+      <div class="karte-kopf"><h3>Verlauf der Umstellungen</h3><span class="leise klein">zurückstellen geht an der Karte der Rolle</span></div>
+      ${rev.umgestellt.map((u) => html`<div class="zeile klein"><div class="haupt-text">${zeitText(u.zeit)}: <b>${u.platz.replace("rolle:", "").replace("vorgabe:", "")}</b> von <span class="mono">${u.vorher || "Vorgabe"}</span> auf <span class="mono">${u.nachher}</span>${u.zurueck ? html` <span class="pill">zurückgestellt</span>` : ""}</div></div>`)}
     </section>`}
 
     ${d && d.empfehlungen.length > 0 && html`<section class="karte">
@@ -159,18 +316,12 @@ function Optimierung({ rev, d, laden, neuLaden }) {
 // ------------------------------------------------------------ Neu bei Ollama
 function NeuBeiOllama({ d, laden, neuLaden, prueft, frisch }) {
   if (!d) return html`<div class="lade">Lade …</div>`;
-  const downloads = Object.values(laden).filter((j) => j.stand === "laeuft" || j.stand === "fehler");
+  const downloads = Object.values(laden).filter((j) => j.stand === "laeuft" || j.stand === "pausiert" || j.stand === "fehler");
   const familien = (d.neu && d.neu.familien) || [];
   const art = (f) => f.neuer ? ["lila", "Nachfolger"] : f.groesser ? ["gelb", "größere Ausgabe"] : f.verwandt ? ["", "aus deiner Familie"] : ["", "neu, andere Familie"];
   return html`
-    ${downloads.length > 0 && html`<section class="karte">
-      <div class="karte-kopf"><h3>Wird geladen</h3></div>
-      ${downloads.map((j) => html`<div class="zeile"><div class="haupt-text"><b class="mono">${j.name}</b>
-        <div class="leise klein">${j.stand === "fehler" ? "Abgebrochen: " + (j.fehler || "") : `${j.schritt || ""}${j.gb ? ` · ${j.gb} GB` : ""} · seit ${zeitText(j.start)}`}</div>
-        ${j.stand === "laeuft" && html`<div class="video-balken"><i style=${`width:${j.prozent || 0}%`}></i></div>`}</div>
-        ${j.stand === "fehler" ? html`<${LadenKnopf} name=${j.name} laden=${{}} nachher=${neuLaden} text="Neu versuchen" />` : html`<span class="neben">${j.prozent || 0} %</span>`}</div>`)}
-      <p class="leise klein">Die Leitung des Servers ist langsam (unter 1 MB/s); große Modelle brauchen Stunden. Ein abgebrochener Download setzt beim nächsten Versuch fort.</p>
-    </section>`}
+    ${downloads.length > 0 && html`<div class="karte mo-hinweis"><span>${downloads.length} Download${downloads.length > 1 ? "s" : ""} laufen oder warten.</span>
+      <a class="btn klein" href="#/aktionen">Current Actions -- pausieren, fortsetzen, abbrechen</a></div>`}
     <section class="karte">
       <div class="karte-kopf"><h3>Neu bei Ollama</h3><span class="leise klein">${d.neu && d.neu.zeit ? `zuletzt geprüft ${zeitText(d.neu.zeit)}` : ""}</span><span class="luecke"></span>
         <button class="btn klein" onClick=${frisch} disabled=${prueft}><${Icon} n="neu" g=${14} />${prueft ? "prüft …" : "Jetzt neu prüfen"}</button></div>
@@ -193,7 +344,8 @@ function NeuBeiOllama({ d, laden, neuLaden, prueft, frisch }) {
 
 // ------------------------------------------------------------ Seite
 export function Modelle({ tab }) {
-  const reiter = TABS.some((t) => t[0] === tab) ? tab : "besetzung";
+  // "besetzung" war bis 17.10. der erste Reiter; alte Links landen in der Übersicht.
+  const reiter = TABS.some((t) => t[0] === tab) ? tab : "uebersicht";
   const [d, setD] = useState(null);
   const [rev, setRev] = useState(null);
   const [laden, setLaden] = useState({});
@@ -203,7 +355,7 @@ export function Modelle({ tab }) {
     return api("/modelle" + (frisch ? "?frisch=1" : "")).then((x) => { setD(x); setLaden(x.laden || {}); })
       .catch(fehlerMelden).finally(() => setPrueft(false));
   };
-  const revHolen = () => api("/revision").then(setRev).catch(fehlerMelden);
+  const revHolen = () => api("/revision").then((x) => { setRev(x); setLaden(x.laeuft_download || {}); }).catch(fehlerMelden);
   const alles = () => { holen(false); revHolen(); };
   useEffect(() => { holen(false); revHolen(); }, []);
   // Laeuft ein Download oder eine Revision, alle paar Sekunden den Stand holen.
@@ -213,7 +365,7 @@ export function Modelle({ tab }) {
     if (!laedt) return undefined;
     const t = setInterval(() => api("/system/modell-laden").then((x) => {
       setLaden(x.laden || {});
-      if (!Object.values(x.laden || {}).some((j) => j.stand === "laeuft")) holen(false);
+      if (!Object.values(x.laden || {}).some((j) => j.stand === "laeuft")) alles();
     }).catch(() => {}), 5000);
     return () => clearInterval(t);
   }, [laedt]);
@@ -225,8 +377,9 @@ export function Modelle({ tab }) {
   const anzahl = rev ? rev.vorschlaege.length : 0;
   return html`<div class="seite mo">
     <div class="tabs" role="tablist">${TABS.map(([k, t]) => html`<button role="tab" aria-selected=${reiter === k} class=${reiter === k ? "an" : ""}
-      onClick=${() => navigiere("/modelle/" + k)}>${t}${k === "optimierung" && anzahl ? html` <span class="pill gruen">${anzahl}</span>` : ""}</button>`)}</div>
-    ${reiter === "besetzung" && html`<${Besetzung} rev=${rev} d=${d} laden=${laden} neuLaden=${alles} />`}
+      onClick=${() => navigiere("/modelle/" + k)}>${t}${k === "uebersicht" && anzahl ? html` <span class="pill gruen">${anzahl}</span>` : ""}</button>`)}</div>
+    ${reiter === "uebersicht" && html`<${Uebersicht} rev=${rev} laden=${laden} neuLaden=${alles} />`}
+    ${reiter === "installiert" && html`<${Installiert} d=${d} rev=${rev} neuLaden=${alles} />`}
     ${reiter === "optimierung" && html`<${Optimierung} rev=${rev} d=${d} laden=${laden} neuLaden=${alles} />`}
     ${reiter === "neu" && html`<${NeuBeiOllama} d=${d} laden=${laden} neuLaden=${alles} prueft=${prueft} frisch=${() => holen(true)} />`}
     ${reiter === "verbrauch" && html`<${Verbrauch} />`}
