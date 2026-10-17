@@ -1089,6 +1089,18 @@ a.bd-person-haupt{text-decoration:none}
 .pruef-zeile .pill:disabled{cursor:default}
 .pruef-text{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--ink-2)}
 .pruef-text ul{margin:4px 0 0;padding-left:18px}
+/* In einer Zeile (Briefing, Projekt, Inbox) liegt der aufgeklappte Kasten UEBER dem Inhalt --
+   im Fluss drueckte er den Titel auf einen Buchstaben Breite (17.10.2026). */
+.zeile .pruef-zeile{position:relative}
+.zeile .pruef-text{position:absolute;top:calc(100% + 6px);right:0;z-index:40;width:min(560px,calc(100vw - 48px));max-height:60vh;overflow-y:auto;box-shadow:0 12px 32px rgba(0,0,0,.35);cursor:auto}
+/* Auf dem Telefon: die Ergebniszeile bricht um (Titel ueber die volle Breite, Knoepfe
+   darunter), und der Kasten kommt als Feld von unten ueber der Leiste -- an der
+   Zeile verankert laege er unterhalb des Bildschirms (gemessen 17.10.: oben bei 836 von 812). */
+@media (max-width:820px){
+  .erg-zeile>.zeile{flex-wrap:wrap}
+  .erg-zeile>.zeile>.haupt-text{flex:1 1 calc(100% - 40px)}
+  .zeile .pruef-text{position:fixed;left:12px;right:12px;top:auto;bottom:calc(76px + env(safe-area-inset-bottom));width:auto;max-height:65vh;z-index:300}
+}
 .erg-vorschau-feld{position:relative}
 .gross-knopf{position:absolute;top:8px;right:8px;z-index:2;box-shadow:var(--sh-2)}
 .erg-vorschau-fuss{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
@@ -1370,7 +1382,12 @@ html.zieht iframe{pointer-events:none}
 .mo-gebraucht{min-width:180px;max-width:280px;white-space:normal}
 /* Gespraech zum Langlaeufer (17.10.2026): feste Hoehe, damit der Verlauf in der
    Karte scrollt und das Eingabefeld sichtbar bleibt, statt die Seite zu strecken. */
-.ll-chat{display:flex;flex-direction:column;padding:0;overflow:hidden}
+.ll-chat{display:flex;flex-direction:column;padding:0;overflow:hidden;overflow:clip}
+/* Das Eingabefeld bleibt am unteren Bildschirmrand stehen, solange das Gespraech
+   zu sehen ist (Veiko, 17.10.2026: "das Eingabefenster ist nicht vollstaendig zu
+   sehen" -- die Karte reichte unter den Rand). overflow:clip statt hidden, weil
+   hidden einen eigenen Scrollbereich bildet und sticky dann nichts bewirkt. */
+.ll-chat .tc-eingabe{position:sticky;bottom:0;z-index:2;background:var(--surface)}
 .ll-chat>.karte-kopf{padding:12px 16px 10px;margin:0;border-bottom:1px solid var(--line)}
 .ll-chat>.karte-kopf .bd-auswahl{flex:1;max-width:420px}
 /* Hoechstens so hoch, nicht fest so hoch (Veiko, 17.10.: der leere Abschnitt

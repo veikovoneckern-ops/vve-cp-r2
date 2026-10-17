@@ -1,7 +1,7 @@
 // ERGEBNISSE ZEIGEN -- was beide Orte brauchen, an denen Ergebnisse erscheinen:
 // das Ergebnisfenster (projects.js) und der Case in der Inbox (inbox.js).
 // Eigenes Modul, damit es den Video-Teil und die Vorschau nur einmal gibt.
-import { html, useState, useEffect, Icon, Avatar, Md, toast, fehlerMelden, zeitText, bus, kopieren, useEsc } from "./ui.js";
+import { html, useState, useEffect, useRef, Icon, Avatar, Md, toast, fehlerMelden, zeitText, bus, kopieren, useEsc } from "./ui.js";
 import { api } from "./api.js";
 
 // Downloads je Form -- dieselben Endpunkte wie im Ergebnisfenster.
@@ -31,15 +31,30 @@ export const URTEIL = {
 };
 export function einarbeitenText(p) {
   const m = (p && p.maengel) || [];
-  return "Bitte arbeite Daniels Einwände ein und schreib die vollständige neue Fassung."
+  // Ohne "vollständige neue Fassung": bei einem Langläufer-Ergebnis gehen die Einwände
+  // Kapitel für Kapitel (teamchat._langlauf_ergebnis_text), sonst schreibt das Mitglied
+  // ohnehin die ganze Fassung -- das sagt ihm seine Anweisung.
+  return "Bitte arbeite Daniels Einwände ein."
     + (m.length ? "\n" + m.map((x) => "- " + x).join("\n") : "");
 }
 export function Pruefung({ p, eid, einarbeiten }) {
   const [auf, setAuf] = useState(false);
+  const ref = useRef(null);
+  // Aufgeklappt liegt der Kasten UEBER der Zeile (CSS .zeile .pruef-text) --
+  // innerhalb der Zeile drueckte er den Titel auf einen Buchstaben Breite
+  // (Veiko, 17.10.2026). Ein Klick daneben oder Escape klappt ihn wieder zu.
+  useEffect(() => {
+    if (!auf) return;
+    const weg = (x) => { if (ref.current && !ref.current.contains(x.target)) setAuf(false); };
+    const esc = (x) => { if (x.key === "Escape") { x.stopPropagation(); setAuf(false); } };
+    document.addEventListener("pointerdown", weg);
+    document.addEventListener("keydown", esc, true);
+    return () => { document.removeEventListener("pointerdown", weg); document.removeEventListener("keydown", esc, true); };
+  }, [auf]);
   if (!p || !p.urteil) return "";
   const u = URTEIL[p.urteil] || { wort: p.urteil, farbe: "", tun: "" };
   const los = einarbeiten || (eid ? () => bus.sende("ergebnis-zeigen", { id: eid, vorlage: einarbeitenText(p) }) : null);
-  return html`<div class="pruef-zeile">
+  return html`<div class="pruef-zeile" ref=${ref}>
     <button class=${"pill " + u.farbe} onClick=${() => setAuf(!auf)} aria-expanded=${auf}
       title="Daniel (Red Team) prüft jedes Ergebnis. Klicken für seine Begründung und was du tun kannst.">${u.wort}${auf ? " ▴" : " ▾"}</button>
     ${auf && html`<div class="pruef-text klein">
