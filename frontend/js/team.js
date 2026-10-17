@@ -32,7 +32,7 @@ function Mitglieder() {
     try { await api("/team/" + m.id, { methode: "PATCH", daten }); toast(meldung); laden(); } catch (e) { fehlerMelden(e); }
   }
   return html`
-    <p class="leise" style="margin-bottom:12px;max-width:70ch">Jason ordnet jede neue Notiz ein und plant. Die anderen arbeiten, wenn eine Notiz oder du es ausdrücklich verlangst. Daniel prüft jedes Ergebnis, bevor du es siehst. Das Team rechnet lokal auf deinem Server. Dario, Elon und Demmis sind extern und kosten Geld je Nachricht. Mit jedem kannst du direkt sprechen.</p>
+    <p class="leise" style="margin-bottom:12px">Jason ordnet jede neue Notiz ein und plant. Die anderen arbeiten, wenn eine Notiz oder du es ausdrücklich verlangst. Daniel prüft jedes Ergebnis, bevor du es siehst. Das Team rechnet lokal auf deinem Server. Dario, Elon und Demmis sind extern und kosten Geld je Nachricht. Mit jedem kannst du direkt sprechen.</p>
     <div class="team-raster">${d.team.map((m) => {
       const tut = (d.laeuft && d.laeuft.wer === m.id) ? d.laeuft.was : (m.id === "cockpit" && d.neo_laeuft ? "arbeitet an einem Auftrag" : "");
       return html`<div class="karte mitglied" key=${m.id}>

@@ -1087,7 +1087,7 @@ a.bd-person-haupt{text-decoration:none}
 .pruef-zeile{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0}
 .pruef-zeile .pill{cursor:pointer;border:0;font:inherit;font-size:11.5px;font-weight:700}
 .pruef-zeile .pill:disabled{cursor:default}
-.pruef-text{max-width:60ch;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--ink-2)}
+.pruef-text{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--ink-2)}
 .pruef-text ul{margin:4px 0 0;padding-left:18px}
 .erg-vorschau-feld{position:relative}
 .gross-knopf{position:absolute;top:8px;right:8px;z-index:2;box-shadow:var(--sh-2)}
