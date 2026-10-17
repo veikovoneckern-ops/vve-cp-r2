@@ -880,6 +880,7 @@ def _im_hintergrund(erzeuger, art: str, wer: str = "") -> StreamingResponse:
                 if e.get("typ") == "start" and e.get("gespraech_id"):
                     gid = e["gespraech_id"]
                     GESPRAECH_LAEUFT[gid] = stand
+                    llm.ZWECK.set("gespraech:" + gid)   # Current Actions: welche Anfrage gehoert hierher
                 elif e.get("typ") == "text":
                     stand["text"] += e.get("t") or ""
                 elif e.get("typ") == "status":
@@ -893,6 +894,7 @@ def _im_hintergrund(erzeuger, art: str, wer: str = "") -> StreamingResponse:
         finally:
             if gid:
                 GESPRAECH_LAEUFT.pop(gid, None)
+                llm.WAS_ZWECK.pop("gespraech:" + gid, None)
             schlange.put_nowait(None)
 
     aufgabe = asyncio.create_task(pumpe())
@@ -1784,7 +1786,9 @@ async def revision_uebersicht():
             # Fuer die Team-Uebersicht (17.10.2026): was schon geladen, aber fuer
             # einen Platz noch nicht gemessen ist, und wer welches Modell noch braucht.
             "geladen_ungemessen": revision.geladen_ungemessen(neu), "gebraucht": await revision.gebraucht_von(),
-            "groessen": inst, "extern": await teamchat.externe_liste()}
+            "groessen": inst, "extern": await teamchat.externe_liste(),
+            # Abgewogene Gesamtbesetzung beider Karten (17.10.2026, revision.gesamtplan).
+            "gesamtplan": await revision.gesamtplan()}
 
 
 @router.post("/revision/{aktion}")
@@ -1798,6 +1802,12 @@ async def revision_aktion(aktion: str, request: Request):
             return revision.umstellen(str(d.get("platz") or ""), str(d.get("modell") or ""), d.get("messung"))
         if aktion == "zurueck":
             return revision.zuruecknehmen(str(d.get("platz") or ""))
+        if aktion == "plan":
+            plan = await revision.gesamtplan()
+            v = next((x for x in plan["varianten"] if x["name"] == d.get("variante")), None)
+            if not v:
+                raise ValueError("Diese Variante gibt es nicht (mehr).")
+            return {"getan": revision.plan_uebernehmen(v["zuordnung"])}
         if aktion == "verwerfen":
             revision.verwerfen(str(d.get("messung") or ""))
             return {"ok": True}

@@ -51,7 +51,25 @@ function Ansehen({ z }) {
   return null;
 }
 
-function Karte({ z, neu }) {
+// Was genau gerade fuer diese Zeile rechnet (llm.anfragen_zu). Token sind die
+// Stuecke, in denen ein Modell schreibt -- etwa drei Viertel eines Wortes.
+const zahl = (n) => Math.round(n).toLocaleString("de-DE");
+const dauer = (s) => (s < 60 ? Math.round(s) + " s" : s < 3600 ? Math.round(s / 60) + " Min." : Math.floor(s / 3600) + " Std. " + Math.round((s % 3600) / 60) + " Min.");
+function Detail({ d, zeit }) {
+  if (!d || (!d.laufend.length && !d.verlauf.length)) return null;
+  return html`<div class="ak-detail">
+    ${d.laufend.map((a) => html`<div class="ak-jetzt">
+      <span class="ak-punkt"></span>
+      <span><b class="mono">${a.modell}</b> ${a.phase}${a.was ? html` <span class="leise">· ${a.was}</span>` : ""}<br />
+        <span class="leise klein">seit ${dauer(zeit - a.seit)}${a.denk_tok && !a.tok_aus ? ` · ${zahl(a.denk_tok)} Token Denken` : ""}${a.tok_aus ? ` · ${zahl(a.tok_aus)} Token geschrieben (≈ ${zahl(a.tok_aus * 0.75)} Wörter)` : ""}${a.tempo ? ` · ${String(a.tempo).replace(".", ",")} Token/s` : ""}${a.vor && a.vor.length ? ` · davor in der Schlange: ${a.vor.join(", ")}` : ""}</span></span>
+    </div>`)}
+    ${d.verlauf.length > 0 && html`<div class="ak-verlauf"><span class="leise klein">Zuletzt fertig:</span>
+      ${d.verlauf.map((f) => html`<div class="klein"><span style=${f.fehler ? "color:var(--signal)" : "color:var(--sea)"}>${f.fehler ? "✗" : "✓"}</span>
+        ${f.was || "Anfrage"} <span class="leise">· ${f.modell} · ${dauer(f.dauer_s)}${f.tok_aus ? " · " + zahl(f.tok_aus) + " Token" : ""}${f.fehler ? " · " + f.fehler : ""} · ${zeitText(f.ende)}</span></div>`)}</div>`}
+  </div>`;
+}
+
+function Karte({ z, neu, zeit }) {
   const st = z.stand === "pausiert" ? "pausiert" : z.stand === "fehler" ? "fehler" : z.stand === "fertig" ? "fertig" : "";
   const dl = z.art === "download";
   return html`<div class=${"ak-karte " + st}>
@@ -65,6 +83,7 @@ function Karte({ z, neu }) {
       ${dl && z.stand === "laeuft" && (z.mb_s ? html`<span>${String(z.mb_s).replace(".", ",")} MB/s${z.rest_s ? " · noch etwa " + rest(z.rest_s) : ""}</span>` : html`<span>Tempo wird gemessen …</span>`)}
       ${z.start ? html`<span>seit ${zeitText(z.start).replace("vor ", "")}</span>` : ""}
     </div>
+    <${Detail} d=${z.detail} zeit=${zeit} />
     <div class="knopfreihe">${(z.steuerung || []).map((a) => html`<${Steuerknopf} key=${a} z=${z} aktion=${a} neu=${neu} />`)}<${Ansehen} z=${z} /></div>
   </div>`;
 }
@@ -86,9 +105,10 @@ export function Aktionen() {
     <div class="karte ak-ollama">
       <b>${d.laufend.length ? `${d.laufend.length} ${d.laufend.length === 1 ? "Aktion" : "Aktionen"}` : "Gerade läuft nichts."}</b>
       <span class="leise klein">${o.anfragen ? `Ollama rechnet gerade ${o.anfragen} ${o.anfragen === 1 ? "Anfrage" : "Anfragen"}${o.seit ? " (seit " + zeitText(o.seit).replace("vor ", "") + ")" : ""}` : "Ollama rechnet gerade nichts"}${(o.taetig || []).length ? ": " + o.taetig.map((t) => t.was).join(", ") : ""}.</span>
+      ${(o.ohne_zuordnung || []).length > 0 && html`<span class="leise klein">Ohne eigene Zeile: ${o.ohne_zuordnung.map((a) => `${a.modell}${a.was ? " (" + a.was + ")" : ""} seit ${dauer(d.zeit - a.seit)}`).join(", ")}</span>`}
       ${d.pipeline_wartet > 0 && html`<a class="leise klein" href="#/inbox">${d.pipeline_wartet} Cases warten auf das Team</a>`}
     </div>
-    ${d.laufend.length ? html`<div class="ak-liste">${d.laufend.map((z) => html`<${Karte} key=${z.id} z=${z} neu=${neu} />`)}</div>`
+    ${d.laufend.length ? html`<div class="ak-liste">${d.laufend.map((z) => html`<${Karte} key=${z.id} z=${z} neu=${neu} zeit=${d.zeit} />`)}</div>`
       : html`<${Leer} titel="Nichts in Arbeit">Downloads, Langläufer, Videos, Bilder, Antworten in Gesprächen, Neos Aufträge und Modell-Vergleiche erscheinen hier, sobald sie laufen.<//>`}
     ${d.beendet.length > 0 && html`<section class="karte" style="margin-top:14px">
       <div class="karte-kopf"><h3>Gerade fertig geworden</h3><span class="leise klein">letzte Stunde</span></div>

@@ -39,7 +39,7 @@ from typing import Any
 
 import httpx
 
-from . import db
+from . import db, llm
 from .konfig import MEDIEN_DIR
 
 BILD_ZEILE = re.compile(r"^\s*[-*•]?\s*\**\s*(bildbeschreibung|bildidee|bild|visual|image)\b[^:]{0,30}:\s*\**\s*(.+)$", re.I)
@@ -151,21 +151,26 @@ def _als_jpeg(png: bytes) -> bytes:
 
 
 async def _kunstregie(eid: str, liste: list[str]) -> list[str]:
-    """Deutsche Bildbeschreibungen -> englische Bildanweisungen in EINEM Stil fuer
-    die ganze Praesentation. Faellt das Modell aus, gehen die deutschen Texte mit
-    englischem Zusatz raus (schlechter, aber kein Abbruch)."""
-    from . import llm
     e = db.holen("ergebnisse", eid) or {}
+    return await kunstregie(e.get("titel") or "", liste, "PRÄSENTATION")
+
+
+async def kunstregie(titel: str, liste: list[str], art: str = "PRÄSENTATION", zusatz: str = "") -> list[str]:
+    """Bildwuensche (deutsch oder englisch) -> englische Bildanweisungen in EINEM
+    Stil fuer das ganze Werk. Ein Weg fuer Folien und Video (video.py, 17.10.2026).
+    Faellt das Modell aus, gehen die Wuensche unveraendert raus (schlechter, aber
+    kein Abbruch)."""
+    from . import llm
     modell = await llm.modell_waehlen(llm.vorgabe("arbeit"), llm.vorgabe("talk"), "qwen3.6:27b")
     if not modell:
         return liste
-    frage = (f"PRÄSENTATION: {e.get('titel') or ''}\n\nBILDWÜNSCHE (deutsch, in dieser Reihenfolge):\n"
+    frage = (f"{art}: {titel}\n\nBILDWÜNSCHE (in dieser Reihenfolge):\n"
              + "\n".join(f"{i + 1}. {p}" for i, p in enumerate(liste))
              + "\n\nDu bist Art Director. Lege EINEN gemeinsamen visuellen Stil für alle Bilder fest (Bildsprache, Farbpalette, "
                "Licht, Materialien -- passend zu einem eleganten, dunkelblau-warmen Business-Design) und schreibe für jeden "
                "Wunsch eine englische Bildanweisung für ein Bildmodell: konkretes Motiv, Komposition (Platz links oder rechts "
                "für Text, wo sinnvoll), Perspektive, Licht, Stil. 40 bis 80 Wörter je Bild. NIEMALS Text, Buchstaben, Zahlen, "
-               "Schilder, Logos oder Bildschirme mit Schrift; keine echten, erkennbaren Personen. Antworte NUR mit JSON: "
+               "Schilder, Logos oder Bildschirme mit Schrift; keine echten, erkennbaren Personen. " + zusatz + "Antworte NUR mit JSON: "
                '{"stil": "der gemeinsame Stil auf Englisch", "bilder": ["Anweisung 1", "..."]}')
     try:
         d = llm.json_aus(await llm.chat(modell, "", [{"role": "user", "content": frage}], json_format=True,
@@ -227,5 +232,5 @@ def starten(eid: str, neu: bool = False) -> int:
     # Sofort als "rechnet" vermerken: die Antwort auf das Oeffnen soll den
     # Fortschritt schon zeigen, nicht erst der naechste Abruf.
     _stand_setzen(eid, stand="rechnet", anzahl=len(liste), fertig=0, fehler=None, schritt="beginnt")
-    LAUFEND[eid] = asyncio.create_task(_lauf(eid, liste))
+    LAUFEND[eid] = asyncio.create_task(llm.mit_zweck("folienbilder:" + eid, _lauf(eid, liste)))
     return len(liste)

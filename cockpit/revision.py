@@ -345,7 +345,7 @@ def starten(von_hand: bool = True) -> bool:
     global _lauf
     if _lauf and not _lauf.done():
         return False
-    _lauf = asyncio.create_task(lauf(von_hand))
+    _lauf = asyncio.create_task(llm.mit_zweck("revision", lauf(von_hand)))
     return True
 
 
@@ -578,3 +578,164 @@ async def entfernen(name: str, trotzdem: bool = False) -> dict[str, Any]:
     await modellkatalog.entfernen(name)
     print(f"[revision] Modell entfernt: {name} ({gb} GB)", flush=True)
     return {"ok": True, "gb": gb}
+
+
+# ---------------------------------------------------------------- Gesamtplan
+# Veiko, 17.10.2026: "Die Empfehlungen sollen klar gegeneinander abgewogen sein,
+# ich suche das Gesamtoptimum fuer mein Setup." Einzelvorschlaege je Rolle sagen
+# nicht, was das GANZE Team auf zwei Karten zu je 24 GB am besten macht. Dieser
+# Plan rechnet Varianten fuer die ganze Besetzung durch und waegt sie ab:
+#   - Passt jedes Modell auf EINE Karte? (Bedarf = Datei x 1,08 + 1,4 GB
+#     Gespraechsspeicher bei 65.536 Token; gemessen 17.10.: qwen3.8:27b 17,7 GB
+#     Datei -> 20,3 GB geladen.) Passt es nicht, belegt es beide Karten.
+#   - Liegen die Modelle gleichzeitig im Speicher, oder wird bei jedem Wechsel
+#     umgeladen? (Ollama haelt hoechstens zwei, OLLAMA_MAX_LOADED_MODELS=2.)
+#   - Kann Talk antworten, waehrend das Team schreibt? (Ollama rechnet je Modell
+#     nur EINE Anfrage gleichzeitig.)
+#   - Bleibt Platz fuer Bilder und Video (ComfyUI braucht ~20 GB auf einer Karte)?
+#   - Qualitaet: Messungen der Revision, sonst der Rang im Katalog (AUFGABEN) --
+#     und das steht dann so da ("nicht gemessen").
+# Nichts wird ohne Klick umgestellt; "Plan uebernehmen" macht die Umstellungen,
+# jede einzeln zuruecknehmbar.
+KARTE_GB = 23.0
+
+
+def bedarf_gb(name: str, inst: dict[str, float], geladen: dict[str, float]) -> float:
+    if name in geladen:
+        return geladen[name]
+    return round(inst.get(name, 0) * 1.08 + 1.4, 1)
+
+
+def _katalog_rang(name: str, aufgabe: str) -> int | None:
+    for a in modellkatalog.AUFGABEN:
+        if a["id"] == aufgabe:
+            kand = [modellkatalog._tag(k) for k in a["kandidaten"]]
+            return kand.index(name) if name in kand else None
+    return None
+
+
+def _alltagstempo() -> dict[str, float]:
+    """Token je Sekunde im Alltag (aus verbrauch, Lesen eingeschlossen -- deshalb
+    niedriger als das reine Schreibtempo; als Vergleich zwischen Modellen taugt es)."""
+    aus = {}
+    for z in db.alle("SELECT modell, SUM(tok_aus) AS t, SUM(dauer_s) AS d, COUNT(*) AS n FROM verbrauch WHERE art='lokal' "
+                     "AND zeit>? AND dauer_s>0 GROUP BY modell", (time.time() - 30 * 86400,)):
+        if z["n"] >= 3 and z["d"]:
+            aus[z["modell"]] = round(z["t"] / z["d"], 1)
+    return aus
+
+
+def _qualitaet(name: str, aufgabe: str, mess: list[dict[str, Any]]) -> tuple[float, str]:
+    """(Punkte, Beleg). Messungen wiegen schwerer als der Katalog."""
+    siege = sum((m["siege_kandidat"] - m["siege_bisher"]) for m in mess if m["kandidat"] == name) + \
+        sum((m["siege_bisher"] - m["siege_kandidat"]) for m in mess if m["bisher"] == name)
+    n = sum(1 for m in mess if name in (m["kandidat"], m["bisher"]))
+    rang = _katalog_rang(name, aufgabe)
+    punkte = (10 - rang if rang is not None else 2) + 3 * siege
+    beleg = (f"{n} Messung{'en' if n != 1 else ''}, Saldo {siege:+d}" if n else "nicht gemessen") + \
+            (f", Katalog Rang {rang + 1} für „{aufgabe}“" if rang is not None else f", nicht im Katalog für „{aufgabe}“")
+    return punkte, beleg
+
+
+async def gesamtplan() -> dict[str, Any]:
+    inst = {n: g for n, g in modellkatalog.lokal_gb().items() if not _nicht_text(n)}
+    geladen = {m["name"]: round(m["size"] / 1e9, 1) for m in await llm.geladene_modelle() if m.get("size")}
+    pl = await plaetze()
+    mess = db.alle("SELECT * FROM messungen WHERE zeit>?", (time.time() - 60 * 86400,))
+    tempo = _alltagstempo()
+    arbeit = [p for p in pl if p["rolle"] and p["rolle"] != "cockpit"]
+    talk = next((p for p in pl if p["platz"] == "vorgabe:talk"), None)
+    neo = next((p for p in pl if p["rolle"] == "cockpit"), None)
+    neo_m = neo["modell"] if neo else None
+    code = {n for n in inst if "coder" in n or "devstral" in n}
+    eine_karte = {n for n in inst if bedarf_gb(n, inst, geladen) <= KARTE_GB}
+
+    def wert(name: str, aufgabe: str) -> tuple[float, str]:
+        q, beleg = _qualitaet(name, aufgabe, mess)
+        if tempo.get(name):
+            beleg += f", im Alltag {tempo[name]:.0f} Token/s"
+        return q, beleg
+
+    def bestes(kandidaten: set[str], aufgabe: str, ohne: set[str] = frozenset()) -> str | None:
+        k = sorted((n for n in kandidaten if n not in ohne and n not in code),
+                   key=lambda n: (-wert(n, aufgabe)[0], -tempo.get(n, 0)))
+        return k[0] if k else None
+
+    def variante(name: str, kurz: str, zuordnung: dict[str, str], vorteile: list[str], nachteile: list[str]) -> dict[str, Any]:
+        modelle = sorted(set(zuordnung.values()))
+        gesamt = round(sum(bedarf_gb(m, inst, geladen) for m in modelle), 1)
+        return {"name": name, "kurz": kurz, "zuordnung": zuordnung,
+                "modelle": [{"name": m, "gb": bedarf_gb(m, inst, geladen), "eine_karte": m in eine_karte,
+                             "wer": [p["name"] for p in pl if zuordnung.get(p["platz"]) == m]} for m in modelle],
+                "speicher_gb": gesamt, "gleichzeitig": len(modelle) <= 2 and gesamt <= 2 * KARTE_GB,
+                "vorteile": vorteile, "nachteile": nachteile}
+
+    varianten: list[dict[str, Any]] = []
+    w = bestes(eine_karte, "denken") or bestes(set(inst), "denken")
+    if w:
+        _, bw = wert(w, "denken")
+        z = {p["platz"]: w for p in arbeit}
+        if talk:
+            z[talk["platz"]] = w
+        varianten.append(variante(
+            "Ein Modell für das ganze Team", "einfach, nichts wird zwischen den Rollen umgeladen", z,
+            [f"{w} rechnet für alle -- kein Umladen zwischen Rollen ({bw})",
+             f"belegt eine Karte ({bedarf_gb(w, inst, geladen)} GB); die zweite bleibt frei für Bilder, Video und Neo"],
+            ["Talk wartet, solange das Team schreibt -- ein Modell rechnet eine Anfrage nach der anderen"]))
+        partner = {n for n in eine_karte if bedarf_gb(n, inst, geladen) + bedarf_gb(w, inst, geladen) <= 2 * KARTE_GB}
+        t = bestes(partner, "schnell", {w})
+        if talk and t:
+            z = {p["platz"]: w for p in arbeit}
+            z[talk["platz"]] = t
+            qt, bt = wert(t, "schnell")
+            qw, bws = wert(w, "schnell")
+            varianten.append(variante(
+                "Zwei Modelle, je eine Karte", "Talk antwortet auch, während das Team schreibt", z,
+                [f"Talk rechnet auf {t} und wartet nie auf einen Langläufer oder die Pipeline",
+                 f"beide passen gleichzeitig in den Speicher ({bedarf_gb(w, inst, geladen)} + {bedarf_gb(t, inst, geladen)} GB)"],
+                ["Bilder und Video verdrängen eines der beiden (ComfyUI braucht ~20 GB), danach wird neu geladen",
+                 f"Talk: {t} ({bt}) statt {w} ({bws})" + (" -- schwächer eingestuft" if qt < qw else "")]))
+        heute = {p["platz"]: p["modell"] for p in arbeit + ([talk] if talk else []) if p["modell"]}
+        if heute and all(set(heute.items()) != set(v["zuordnung"].items()) for v in varianten):
+            nachteile = []
+            mh = set(heute.values())
+            for m in sorted(mh):
+                if m not in eine_karte:
+                    wer = ", ".join(p["name"] for p in pl if heute.get(p["platz"]) == m)
+                    nachteile.append(f"{m} ({wer}) braucht {bedarf_gb(m, inst, geladen)} GB und passt auf keine einzelne Karte")
+            if len(mh) > 2 or sum(bedarf_gb(m, inst, geladen) for m in mh) > 2 * KARTE_GB:
+                nachteile.append("die Modelle passen nicht gleichzeitig in den Speicher: bei jedem Wechsel zwischen den Rollen "
+                                 "wird umgeladen (10 bis 30 Sekunden), und Bilder haben keinen Platz")
+            varianten.append(variante("Heutige Besetzung", "so, wie es gerade eingestellt ist", heute,
+                                      ["läuft heute so, nichts muss umgestellt werden"], nachteile))
+
+    def kosten(v: dict[str, Any]) -> float:
+        k = (3.0 if not v["gleichzeitig"] else 0.0) + sum(2.0 for m in v["modelle"] if not m["eine_karte"])
+        if v["name"].startswith("Zwei"):
+            k += -1.5 + (2.5 if any("schwächer" in n for n in v["nachteile"]) else 0)
+        return k
+
+    empfohlen = min(varianten, key=kosten)["name"] if varianten else None
+    frei: list[dict[str, Any]] = []
+    if empfohlen:
+        v = next(x for x in varianten if x["name"] == empfohlen)
+        bleibt = set(v["zuordnung"].values()) | ({neo_m} if neo_m else set())
+        digests = modellkatalog.lokal()
+        bleibt_dg = {digests.get(m) for m in bleibt}
+        frei = [{"name": n, "gb": g} for n, g in sorted(inst.items(), key=lambda x: -x[1])
+                if n not in bleibt and digests.get(n) not in bleibt_dg]
+    return {"varianten": varianten, "empfohlen": empfohlen, "neo": neo_m, "frei": frei, "gemessen": bool(mess),
+            "hinweis": None if mess else ("Noch keine Messung der Revision auf diesem Server -- die Abwägung stützt sich auf "
+                                          "Katalog, Größe und Alltagstempo. Die nächste Nachtrevision liefert echte Vergleiche.")}
+
+
+def plan_uebernehmen(zuordnung: dict[str, str]) -> list[str]:
+    getan = []
+    for platz, modell in zuordnung.items():
+        try:
+            r = umstellen(platz, modell, None)
+            if r.get("vorher") != modell:
+                getan.append(f"{platz.split(':', 1)[1]}: {r.get('vorher') or 'Vorgabe'} → {modell}")
+        except ValueError as e:
+            getan.append(f"{platz}: nicht umgestellt ({e})")
+    return getan

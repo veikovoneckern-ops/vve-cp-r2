@@ -7,6 +7,9 @@ das zu Umwegen (eigene Modellkennung nur fuer ein groesseres Fenster).
 """
 from __future__ import annotations
 
+import asyncio
+import collections
+import contextvars
 import json
 import re
 import time
@@ -52,11 +55,124 @@ class taetig:
 
     def __enter__(self):
         TAETIG[self.id] = {"was": self.was, "seit": time.time()}
+        # Anfragen in diesem Block gehoeren hierher und nicht zur Pipeline, die
+        # vielleicht gleichzeitig rechnet (siehe ZWECK unten).
+        self._zweck = ZWECK.set(ZWECK.get() or f"taetig:{self.id}")
+        WAS_ZWECK[ZWECK.get()] = self.was
         return self
 
     def __exit__(self, *_):
         TAETIG.pop(self.id, None)
+        WAS_ZWECK.pop(f"taetig:{self.id}", None)
+        ZWECK.reset(self._zweck)
         return False
+
+
+# ---------------------------------------------------------------- Anfragen im Einzelnen
+# Veiko, 17.10.2026: "bei Current Actions moechte ich mehr Details, was gerade
+# genau gemacht wird." Die Zeilen dort sagten nur den Schritt ("schreibt Etappe 3
+# von 12"), nicht welches Modell gerade fuer sie rechnet, ob es noch liest oder
+# schon schreibt, wie weit es ist -- und was davor passiert ist.
+#
+# ZWECK ordnet eine Anfrage der Aktion zu, zu der sie gehoert ("video:<eid>",
+# "dossier:<id>", "gespraech:<gid>", "neo:<job>"). Ein contextvars-Wert, weil er
+# sich in jeden Task vererbt, den die Aktion startet -- ohne dass jede Funktion
+# dazwischen ein Argument durchreichen muss. Die Pipeline und die Langlaeufer
+# setzen ihn nicht: sie melden sich ohnehin ueber stab.laeuft() mit Vorgang an,
+# und der wird beim Start der Anfrage mitgemerkt.
+ZWECK: contextvars.ContextVar[str | None] = contextvars.ContextVar("llm_zweck", default=None)
+ANFRAGEN: dict[int, dict[str, Any]] = {}
+FERTIG: collections.deque[dict[str, Any]] = collections.deque(maxlen=300)
+WAS_ZWECK: dict[str, str] = {}   # Klartext zu einem Zweck ("Talk antwortet")
+_anfrage_n = 0
+
+
+def _anmelden(body: dict[str, Any], stream: bool) -> dict[str, Any]:
+    global _anfrage_n
+    _anfrage_n += 1
+    zweck, vid, was = ZWECK.get(), None, ""
+    if zweck:
+        was = WAS_ZWECK.get(zweck, "")
+    else:
+        # Ohne Zweck rechnet die Pipeline oder ein Langlaeufer: beide melden sich
+        # ueber stab.laeuft() mit Vorgang und Schritt an.
+        try:
+            from . import stab
+            l = stab.ZUSTAND.get("laeuft") or {}
+            vid = l.get("vorgang_id")
+            was = f"{stab.rollen_name(l['wer'])} {l.get('was') or ''}".strip() if l.get("wer") else ""
+        except Exception:  # noqa: BLE001 -- die Anzeige darf nie einen Aufruf scheitern lassen
+            pass
+    e = {"id": _anfrage_n, "modell": body.get("model") or "", "start": time.time(), "zweck": zweck,
+         "vorgang_id": vid, "was": was, "stream": stream,
+         "tok_aus": 0, "denk_tok": 0, "erstes": None, "json": bool(body.get("format"))}
+    ANFRAGEN[e["id"]] = e
+    return e
+
+
+def _abmelden(e: dict[str, Any], d: dict[str, Any] | None = None, fehler: str | None = None) -> None:
+    ANFRAGEN.pop(e["id"], None)
+    d = d or {}
+    FERTIG.append({**{k: e[k] for k in ("modell", "start", "zweck", "vorgang_id", "was")}, "ende": time.time(),
+                   "tok_ein": d.get("prompt_eval_count") or e.get("tok_ein"), "tok_aus": d.get("eval_count") or e["tok_aus"] or None,
+                   "fehler": fehler})
+
+
+def anfragen_zu(zweck: str | None = None, vorgang_id: str | None = None, verlauf: int = 3) -> dict[str, Any]:
+    """Was gerade fuer diese Aktion rechnet und was zuletzt fertig wurde. Ollama
+    rechnet je Modell eine Anfrage nach der anderen (n_seq_max = 1): ist fuer
+    dasselbe Modell eine aeltere Anfrage offen, WARTET diese -- das wird so gesagt,
+    statt "liest" zu behaupten."""
+    def passt(a: dict[str, Any]) -> bool:
+        return (zweck is not None and a.get("zweck") == zweck) or \
+               (vorgang_id is not None and not a.get("zweck") and a.get("vorgang_id") == vorgang_id)
+
+    jetzt = time.time()
+    laufend = []
+    for a in sorted(ANFRAGEN.values(), key=lambda x: x["start"]):
+        if not passt(a):
+            continue
+        # Alle aelteren offenen Anfragen an dasselbe Modell -- auch die, die schon
+        # schreiben: diese hier kommt erst dran, wenn sie ganz fertig sind
+        # (gemessen 17.10.: B stand sonst auf "liest", waehrend A noch schrieb).
+        vor = [b for b in ANFRAGEN.values() if b["modell"] == a["modell"] and b["start"] < a["start"]]
+        if a.get("erstes"):
+            dauer = jetzt - a["erstes"]
+            phase = "schreibt"
+            tempo = round(a["tok_aus"] / dauer, 1) if dauer > 2 and a["tok_aus"] else None
+        elif a.get("denk_tok"):
+            phase, tempo = "denkt nach", None
+        elif vor and not a["stream"]:
+            phase, tempo = "rechnet oder wartet, bis das Modell frei ist", None
+        elif vor:
+            phase, tempo = "wartet, bis das Modell frei ist", None
+        else:
+            # Ob Ollama das Modell erst laedt, sagt die Anfrage nicht; nach ein paar
+            # Sekunden ohne erstes Wort ist das der haeufigste Grund (gemessen: 12 s).
+            phase = "liest die Vorlage" if jetzt - a["start"] < 8 else "lädt das Modell oder liest die Vorlage"
+            if not a["stream"]:
+                phase += " -- die Antwort kommt am Stück"
+            tempo = None
+        laufend.append({"modell": a["modell"], "seit": a["start"], "phase": phase, "tok_aus": a["tok_aus"] or None,
+                        "denk_tok": a["denk_tok"] or None, "tempo": tempo, "was": a["was"],
+                        "vor": [b["was"] or b["modell"] for b in vor][:2]})
+    fertig = [f for f in reversed(FERTIG) if passt(f)][:verlauf]
+    return {"laufend": laufend,
+            "verlauf": [{"was": f["was"], "modell": f["modell"], "ende": f["ende"], "dauer_s": round(f["ende"] - f["start"]),
+                         "tok_aus": f["tok_aus"], "fehler": f["fehler"]} for f in fertig]}
+
+
+async def mit_zweck(zweck: str, coro):
+    """asyncio.create_task(llm.mit_zweck("video:" + eid, _lauf(...))) -- alle
+    Anfragen in diesem Task zaehlen fuer diese Aktion."""
+    ZWECK.set(zweck)
+    return await coro
+
+
+def anfragen_frei() -> list[dict[str, Any]]:
+    """Anfragen, die keiner Aktion zuzuordnen sind (fuer die Kopfzeile)."""
+    return [{"modell": a["modell"], "seit": a["start"], "was": a["was"]} for a in ANFRAGEN.values()
+            if not a.get("zweck") and not a.get("vorgang_id")]
 
 # Tempo direkter Gespraeche (Talk, Board, Team-Chat). Vorgabe ist gruendlich:
 # das Modell denkt vor der Antwort nach. "Schnelle Antwort" schaltet das ab --
@@ -203,6 +319,9 @@ def _ollama_buchen(body: dict[str, Any], d: dict[str, Any]) -> None:
 
 async def _post(body: dict[str, Any], timeout: float) -> dict[str, Any]:
     _beginn()
+    e = _anmelden(body, False)
+    d: dict[str, Any] | None = None
+    grund = "abgebrochen"
     try:
         async with httpx.AsyncClient(timeout=timeout) as c:
             r = await c.post(f"{OLLAMA}/api/chat", json=body)
@@ -210,11 +329,17 @@ async def _post(body: dict[str, Any], timeout: float) -> dict[str, Any]:
                 # Modelle ohne Denkphase (z. B. llama3.3) lehnen das Feld ab.
                 body = {k: v for k, v in body.items() if k != "think"}
                 r = await c.post(f"{OLLAMA}/api/chat", json=body)
+        if r.status_code >= 400:
+            grund = f"Ollama {r.status_code}"
+            raise ModellFehler(f"Ollama antwortet {r.status_code}: {r.text[:300]}")
+        d = r.json()
+        grund = None
+    except httpx.HTTPError as f:
+        grund = f.__class__.__name__
+        raise
     finally:
         _ende()
-    if r.status_code >= 400:
-        raise ModellFehler(f"Ollama antwortet {r.status_code}: {r.text[:300]}")
-    d = r.json()
+        _abmelden(e, d, grund)
     _ollama_buchen(body, d)
     return d
 
@@ -223,13 +348,33 @@ async def chat(modell: str, system: str, nachrichten: list[dict[str, Any]], *,
                json_format: bool = False, temperatur: float | None = None,
                denken: bool | None = False, num_ctx: int | None = 16384,
                timeout: float = 600) -> str:
+    # Intern als Strom gelesen, nach aussen eine fertige Antwort wie bisher: nur
+    # so sieht Current Actions, dass und wie schnell eine Antwort waechst
+    # (17.10.2026). Am Stueck geholt hiess es zehn Minuten lang nur "rechnet".
     body = _body(modell, system, nachrichten, json_format=json_format, temperatur=temperatur,
-                 denken=denken, num_ctx=num_ctx, stream=False)
+                 denken=denken, num_ctx=num_ctx, stream=True)
+    teile: list[str] = []
+    _beginn()
+    e = _anmelden(body, True)
+    grund = "abgebrochen"
     try:
-        d = await _post(body, timeout)
-    except httpx.HTTPError as e:
-        raise ModellFehler(f"Ollama nicht erreichbar: {e.__class__.__name__}") from e
-    return ((d.get("message") or {}).get("content") or "").strip()
+        async with asyncio.timeout(timeout):
+            async for t in _strom_lauf(body, e):
+                teile.append(t)
+        grund = None
+    except TimeoutError as f:
+        grund = "Zeitgrenze"
+        raise ModellFehler(f"Ollama antwortet nicht binnen {round(timeout)} s") from f
+    except httpx.HTTPError as f:
+        grund = f.__class__.__name__
+        raise ModellFehler(f"Ollama nicht erreichbar: {f.__class__.__name__}") from f
+    except ModellFehler:
+        grund = "Fehler"
+        raise
+    finally:
+        _ende()
+        _abmelden(e, e.get("_fertig"), grund)
+    return "".join(teile).strip()
 
 
 async def chat_mit_werkzeugen(modell: str, system: str, nachrichten: list[dict[str, Any]],
@@ -250,52 +395,67 @@ async def strom(modell: str, system: str, nachrichten: list[dict[str, Any]], *,
     body = _body(modell, system, nachrichten, json_format=False, temperatur=temperatur,
                  denken=denken, num_ctx=num_ctx, stream=True)
     _beginn()
+    e = _anmelden(body, True)
+    grund = "abgebrochen"
     try:
-        async for t in _strom_lauf(body):
+        async for t in _strom_lauf(body, e):
             yield t
+        grund = None
+    except (httpx.HTTPError, ModellFehler) as f:
+        grund = f.__class__.__name__
+        raise
     finally:
         _ende()
+        _abmelden(e, e.get("_fertig"), grund)
 
 
-async def _strom_lauf(body: dict[str, Any]) -> AsyncIterator[str]:
+def _zeile(body: dict[str, Any], e: dict[str, Any], zeile: str) -> str:
+    """Eine Zeile aus Ollamas Strom: zaehlt mit (Current Actions) und gibt den Text."""
+    if not zeile.strip():
+        return ""
+    try:
+        d = json.loads(zeile)
+    except ValueError:
+        return ""
+    if d.get("done"):   # die letzte Zeile traegt die Zaehler
+        e["_fertig"] = d
+        _ollama_buchen(body, d)
+    m = d.get("message") or {}
+    if m.get("thinking"):
+        e["denk_tok"] += 1   # ein Stueck je Zeile -- bei Ollama ein Token
+    t = m.get("content") or ""
+    if t:
+        e["tok_aus"] += 1
+        if not e["erstes"]:
+            e["erstes"] = time.time()
+    return t
+
+
+async def _strom_lauf(body: dict[str, Any], e: dict[str, Any]) -> AsyncIterator[str]:
     async with httpx.AsyncClient(timeout=httpx.Timeout(600, connect=10)) as c:
         async with c.stream("POST", f"{OLLAMA}/api/chat", json=body) as r:
             if r.status_code == 400 and "think" in body:
                 await r.aread()
                 body.pop("think", None)
-                async for t in _strom_nochmal(c, body):
+                async for t in _strom_nochmal(c, body, e):
                     yield t
                 return
             if r.status_code >= 400:
                 txt = (await r.aread()).decode("utf-8", "replace")
                 raise ModellFehler(f"Ollama antwortet {r.status_code}: {txt[:300]}")
             async for zeile in r.aiter_lines():
-                if not zeile.strip():
-                    continue
-                try:
-                    d = json.loads(zeile)
-                except ValueError:
-                    continue
-                if d.get("done"):   # die letzte Zeile traegt die Zaehler
-                    _ollama_buchen(body, d)
-                t = (d.get("message") or {}).get("content") or ""
+                t = _zeile(body, e, zeile)
                 if t:
                     yield t
 
 
-async def _strom_nochmal(c: httpx.AsyncClient, body: dict[str, Any]) -> AsyncIterator[str]:
+async def _strom_nochmal(c: httpx.AsyncClient, body: dict[str, Any], e: dict[str, Any]) -> AsyncIterator[str]:
     async with c.stream("POST", f"{OLLAMA}/api/chat", json=body) as r:
         if r.status_code >= 400:
             txt = (await r.aread()).decode("utf-8", "replace")
             raise ModellFehler(f"Ollama antwortet {r.status_code}: {txt[:300]}")
         async for zeile in r.aiter_lines():
-            try:
-                d = json.loads(zeile)
-            except ValueError:
-                continue
-            if d.get("done"):
-                _ollama_buchen(body, d)
-            t = (d.get("message") or {}).get("content") or ""
+            t = _zeile(body, e, zeile)
             if t:
                 yield t
 

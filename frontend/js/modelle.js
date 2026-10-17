@@ -185,6 +185,34 @@ function ExterneReihe({ extern }) {
   </div>`;
 }
 
+// Gesamtplan (17.10.2026, revision.gesamtplan): Varianten fuer die GANZE Besetzung
+// beider Karten, gegeneinander abgewogen -- Veiko: "ich suche das Gesamtoptimum
+// fuer mein Setup". Die Einzelvorschlaege an den Rollenkarten bleiben darunter.
+function Gesamtplan({ plan, neuLaden }) {
+  if (!plan || !(plan.varianten || []).length) return null;
+  return html`<section class="karte mo-plan">
+    <div class="karte-kopf"><h3>Gesamtplan für deine zwei Karten</h3>
+      <span class="leise klein">je Karte 24 GB · Neo behält sein Code-Modell (${plan.neo || "—"}) und lädt nur, wenn du mit ihm arbeitest</span></div>
+    ${plan.hinweis && html`<p class="hinweisbox klein">${plan.hinweis}</p>`}
+    <div class="mo-plan-raster">${plan.varianten.map((v) => {
+      const an = v.name === plan.empfohlen;
+      return html`<div class=${"mo-variante" + (an ? " empfohlen" : "")} key=${v.name}>
+        <div class="mo-var-kopf"><b>${v.name}</b>${an ? html`<span class="pill gruen">Empfehlung</span>` : ""}</div>
+        <div class="leise klein">${v.kurz}</div>
+        <div class="mo-var-modelle">${v.modelle.map((m) => html`<div class="mo-var-modell">
+          <span class="mono">${m.name}</span> <span class=${"pill " + (m.eine_karte ? "" : "gelb")}>${String(m.gb).replace(".", ",")} GB${m.eine_karte ? "" : " · beide Karten"}</span>
+          <div class="leise klein">${m.wer.join(", ")}</div></div>`)}</div>
+        <div class="klein mo-var-pro">${v.vorteile.map((x) => html`<div>+ ${x}</div>`)}</div>
+        ${v.nachteile.length ? html`<div class="klein mo-var-contra">${v.nachteile.map((x) => html`<div>− ${x}</div>`)}</div>` : ""}
+        ${v.name !== "Heutige Besetzung" && html`<button class=${"btn klein " + (an ? "primaer" : "")}
+          onClick=${() => tun("/revision/plan", { variante: v.name }, `Umgestellt auf „${v.name}“. Jede Rolle lässt sich einzeln zurückstellen.`, neuLaden)}>
+          Diese Besetzung übernehmen</button>`}
+      </div>`; })}</div>
+    ${(plan.frei || []).length > 0 && html`<p class="leise klein" style="margin-top:8px">Mit der Empfehlung braucht niemand mehr:
+      ${plan.frei.map((m) => `${m.name} (${String(m.gb).replace(".", ",")} GB)`).join(", ")} -- entfernen unten unter „Wird von niemandem gebraucht“, sobald es so weit ist.</p>`}
+  </section>`;
+}
+
 function Uebersicht({ rev, laden, neuLaden }) {
   if (!rev) return html`<div class="lade">Lade …</div>`;
   const plaetze = rev.bestand.plaetze;
@@ -212,6 +240,8 @@ function Uebersicht({ rev, laden, neuLaden }) {
         : html`<b>Nichts zu tun.</b><span class="leise klein">Jede Rolle rechnet mit dem besten bekannten Modell. Die Revision sucht jede Nacht weiter.</span>`}
       ${downloads > 0 && html`<a class="btn klein" href="#/aktionen"><${Icon} n="download" g=${13} />${downloads} Download${downloads > 1 ? "s" : ""} -- Current Actions</a>`}
     </div>
+
+    <${Gesamtplan} plan=${rev.gesamtplan} neuLaden=${neuLaden} />
 
     <div class="mo-fluss" role="list" aria-label="Wie das Team zusammenarbeitet">
       ${SPALTEN.map(([id, titel, unter], i) => html`<div class="mo-spalte" role="listitem">

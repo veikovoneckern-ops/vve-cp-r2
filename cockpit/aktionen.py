@@ -78,13 +78,13 @@ def sammeln(gespraeche: dict[str, dict[str, Any]], wer_name) -> dict[str, Any]:
                                          "fehler": "angehalten nach Fehlern: " + str(x.get("fehler") or "")}.get(st, st)),
                             "prozent": round(x["fertig"] / x["etappen"] * 100) if x.get("etappen") else None,
                             "teile": f"{x['fertig']} von {x['etappen']} {x['etappen_name']}" if x.get("etappen") else None,
-                            "start": x.get("erstellt"), "link": "#/langlauf/" + x["id"],
+                            "start": x.get("erstellt"), "link": "#/langlauf/" + x["id"], "_vid": x.get("vorgang_id"),
                             "steuerung": (["fortsetzen", "abbrechen"] if st in ("pausiert", "fehler", "wartet")
                                           else ["pausieren", "abbrechen"])})
     if l and l.get("vorgang_id") not in langlauf_vids:
         v = db.holen("vorgaenge", l["vorgang_id"]) if l.get("vorgang_id") else None
         laufend.append({"id": "pipeline", "art": "pipeline", "titel": (v or {}).get("titel") or "Team-Pipeline",
-                        "wer": stab.rollen_name(l.get("wer")), "schritt": l.get("was"), "start": l.get("seit"), "stand": "laeuft",
+                        "wer": stab.rollen_name(l.get("wer")), "schritt": l.get("was"), "start": l.get("seit"), "stand": "laeuft", "_vid": l.get("vorgang_id"),
                         "link": ("#/inbox/" + l["vorgang_id"]) if l.get("vorgang_id") else "#/inbox", "steuerung": []})
     warten = db.wert("SELECT COUNT(*) FROM vorgaenge WHERE stand IN ('neu','eingeordnet','in_arbeit') AND quelle NOT IN ('alt','langlauf')")
 
@@ -161,11 +161,23 @@ def sammeln(gespraeche: dict[str, dict[str, Any]], wer_name) -> dict[str, Any]:
                         "schritt": ((a.get("log") or "").strip().splitlines() or [""])[-1][:160], "start": a.get("start"),
                         "link": "#/system", "steuerung": []})
 
+    # Was gerade genau fuer jede Zeile rechnet und was zuletzt fertig wurde
+    # (Veiko, 17.10.2026: "mehr Details, was gerade genau gemacht wird").
+    # Zugeordnet wird ueber den Zweck der Anfrage (llm.ZWECK = die Zeilen-ID)
+    # bzw. bei Pipeline und Langlaeufern ueber den Vorgang.
+    for z in laufend:
+        vid = z.pop("_vid", None)
+        if z["art"] in ("pipeline", "langlauf"):
+            z["detail"] = llm.anfragen_zu(vorgang_id=vid) if vid else None
+        elif z["art"] in ("video", "folienbilder", "neo", "gespraech", "dossier", "revision"):
+            z["detail"] = llm.anfragen_zu(zweck=z["id"])
     for z in laufend + beendet:
+        z.pop("_vid", None)
         z["art_name"] = ART_NAME.get(z["art"], z["art"])
     return {"laufend": laufend, "beendet": beendet, "zeit": jetzt,
             "ollama": {"anfragen": llm.AKTIV.get("n") or 0, "seit": llm.AKTIV.get("seit"),
-                       "taetig": [dict(v) for v in list(llm.TAETIG.values())]},
+                       "taetig": [dict(v) for v in list(llm.TAETIG.values())],
+                       "ohne_zuordnung": llm.anfragen_frei()},
             "pipeline_wartet": warten or 0}
 
 

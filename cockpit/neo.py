@@ -729,7 +729,7 @@ async def senden(gid: str, text: str, anhaenge: list[str]) -> str:
             await lauf["schlange"].put({"typ": "fertig", "text": f"Fehler im Ablauf: {f}"})
 
     job["sammler"] = asyncio.create_task(sammler())
-    job["task"] = asyncio.create_task(ausfuehren())
+    job["task"] = asyncio.create_task(llm.mit_zweck("neo:" + jid, ausfuehren()))
     JOBS[jid] = job
     # alte, fertige Auftraege nach einer Stunde vergessen
     for alt in [k for k, j in JOBS.items() if j["fertig"] and time.time() - j["start"] > 3600]:

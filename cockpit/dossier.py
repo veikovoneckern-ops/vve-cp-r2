@@ -165,7 +165,7 @@ async def kanal(url: str, fokus: str, ziel: dict[str, Any], anzahl: int, zusatz:
              minuten=max(2, round(len(folgen) * 1.3)))
     if sperre_bis() > time.time():
         j["notizen"].append("YouTube-Abschriften sind gerade gesperrt -- Folgen ohne vorhandene Abschrift kommen aus dem Podcast des Kanals.")
-    _TASKS[j["id"]] = asyncio.create_task(_lauf(j, folgen, fokus, zusatz))
+    _TASKS[j["id"]] = asyncio.create_task(llm.mit_zweck("dossier:" + j["id"], _lauf(j, folgen, fokus, zusatz)))
     return j
 
 
@@ -176,7 +176,7 @@ async def podcast_feed(feed: str, fokus: str, ziel: dict[str, Any], anzahl: int,
     # Whisper braucht je Folge Minuten statt Sekunden.
     j = _neu("podcast", f"Dossier: {name} ({len(folgen)} Folgen)", len(folgen), ziel, url=feed, kanal=name,
              gesamt=len(folgen), minuten=max(3, len(folgen) * 6))
-    _TASKS[j["id"]] = asyncio.create_task(_lauf(j, folgen, fokus, zusatz))
+    _TASKS[j["id"]] = asyncio.create_task(llm.mit_zweck("dossier:" + j["id"], _lauf(j, folgen, fokus, zusatz)))
     return j
 
 
@@ -184,7 +184,7 @@ async def thema(text: str, ziel: dict[str, Any]) -> dict[str, Any]:
     titel = stab._kurz(re.sub(r"\s+", " ", text), 70)
     j = _neu("thema", f"Recherche-Dossier: {titel}", 0, ziel, url="", kanal=titel, gesamt=0, minuten=30)
     j["schritt"] = "plant die Suche"
-    _TASKS[j["id"]] = asyncio.create_task(_thema_lauf(j, text))
+    _TASKS[j["id"]] = asyncio.create_task(llm.mit_zweck("dossier:" + j["id"], _thema_lauf(j, text)))
     return j
 
 
