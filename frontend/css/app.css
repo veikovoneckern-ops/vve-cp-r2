@@ -1382,12 +1382,10 @@ html.zieht iframe{pointer-events:none}
 .mo-gebraucht{min-width:180px;max-width:280px;white-space:normal}
 /* Gespraech zum Langlaeufer (17.10.2026): feste Hoehe, damit der Verlauf in der
    Karte scrollt und das Eingabefeld sichtbar bleibt, statt die Seite zu strecken. */
-.ll-chat{display:flex;flex-direction:column;padding:0;overflow:hidden;overflow:clip}
-/* Das Eingabefeld bleibt am unteren Bildschirmrand stehen, solange das Gespraech
-   zu sehen ist (Veiko, 17.10.2026: "das Eingabefenster ist nicht vollstaendig zu
-   sehen" -- die Karte reichte unter den Rand). overflow:clip statt hidden, weil
-   hidden einen eigenen Scrollbereich bildet und sticky dann nichts bewirkt. */
-.ll-chat .tc-eingabe{position:sticky;bottom:0;z-index:2;background:var(--surface)}
+.ll-chat{display:flex;flex-direction:column;padding:0;overflow:hidden}
+/* Die tatsaechliche Hoehe setzt LanglaufChat (langlauf.js) nach dem freien Platz bis
+   zum Bildschirmrand; die Regel unten gilt nur, bis das Skript gelaufen ist. Ein am
+   Rand festgehaltenes Eingabefeld (sticky) verdeckte den Verlauf -- nicht wieder so. */
 .ll-chat>.karte-kopf{padding:12px 16px 10px;margin:0;border-bottom:1px solid var(--line)}
 .ll-chat>.karte-kopf .bd-auswahl{flex:1;max-width:420px}
 /* Hoechstens so hoch, nicht fest so hoch (Veiko, 17.10.: der leere Abschnitt

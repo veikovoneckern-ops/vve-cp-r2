@@ -273,9 +273,36 @@ function LanglaufChat({ l, neuLaden }) {
     api(`/teamchat?wer=${encodeURIComponent(wer)}&langlauf_id=${encodeURIComponent(l.id)}`)
       .then((x) => setGid(x.gespraeche[0] ? x.gespraeche[0].id : null)).catch(() => setGid(null));
   }, [wer, l.id]);
+  // Die Hoehe des Gespraechs folgt dem freien Platz bis zum unteren Bildschirmrand
+  // (Veiko, 17.10.2026: erst "das Eingabefeld ist nicht vollstaendig zu sehen",
+  // dann -- mit einem am Rand festgehaltenen Feld -- "jetzt liegt es ueber dem
+  // scrollbaren Text"). So endet der Verlauf genau ueber dem Feld und das Feld am
+  // Rand; zwischen 250 und 640 Punkt, damit es weder winzig noch endlos wird.
+  const ref = useRef(null);
+  useEffect(() => {
+    let wartet = false;
+    const passen = () => {
+      wartet = false;
+      const tc = ref.current && ref.current.querySelector(".tc");
+      if (!tc) return;
+      const nav = document.querySelector(".unten-nav");
+      const unten = nav && getComputedStyle(nav).display !== "none" ? nav.getBoundingClientRect().top : window.innerHeight;
+      const oben = tc.getBoundingClientRect().top;
+      // Ausserhalb des Bildschirms nichts aendern -- sonst schoebe das Wachsen beim
+      // Vorbeiscrollen alles darunter (Zwischenpruefungen, Etappen) mit.
+      if (oben < 0 || oben > unten - 120) return;
+      tc.style.maxHeight = Math.round(Math.max(250, Math.min(640, unten - oben - 12))) + "px";
+    };
+    const anstossen = () => { if (!wartet) { wartet = true; requestAnimationFrame(passen); } };
+    passen();
+    document.addEventListener("scroll", anstossen, true);   // die Seite scrollt in einem inneren Bereich
+    window.addEventListener("resize", anstossen);
+    const t = setInterval(passen, 1500);   // der Chat laedt nach und kann darueber die Lage verschieben
+    return () => { document.removeEventListener("scroll", anstossen, true); window.removeEventListener("resize", anstossen); clearInterval(t); };
+  }, []);
   const partner = gespraechsPartner(team);
   const n = l.etappen_name;
-  return html`<section class="karte ll-chat">
+  return html`<section class="karte ll-chat" ref=${ref}>
     <div class="karte-kopf"><h3>Gespräch zum Langläufer</h3>
       <select class="eingabe bd-auswahl" value=${wer} onChange=${(e) => setWer(e.target.value)} aria-label="Mit wem sprechen">
         ${partner.length ? partner.map((m) => html`<option value=${m.id}>${m.name} · ${m.extern ? "extern, kostet Geld" : m.id === l.rolle ? "schreibt diesen Langläufer" : m.titel}</option>`)
