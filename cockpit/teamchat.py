@@ -158,6 +158,33 @@ def _folien_anweisung() -> str:
     return ANWEISUNG
 
 
+def _langlauf_ergebnis_text(e: dict[str, Any]) -> str:
+    """Das Ergebnis eines Langlaeufers: ohne den vollen Text (ein Buch hat leicht
+    200.000 Zeichen, das sprengt jedes Fenster) und OHNE den Weg "vollstaendige
+    neue Fassung". Gemessen 17.10.2026: "arbeite Daniels Einwaende ein und schreib
+    die vollstaendige neue Fassung" machte aus 193.000 Zeichen 77.000 -- ein Modell
+    kann ein Buch nicht in einer Antwort neu schreiben, es kuerzt dann still.
+    Aenderungen gehen deshalb ueber die Bloecke des Langlaeufers (Kapitel fuer
+    Kapitel, jedes mit Daniels Pruefung); die stehen in DER LANGLÄUFER weiter unten."""
+    p = e.get("pruefung") or {}
+    return (f"DAS ERGEBNIS, AN DEM IHR ARBEITET: „{e['titel']}“ -- das zusammengesetzte Ergebnis des Langläufers unten "
+            f"({len(e.get('inhalt') or ''):,} Zeichen; den Inhalt der einzelnen Stücke zeigt die Kurzfassung im Plan).\n".replace(",", ".")
+            + (f"Daniels letzte Prüfung: {p.get('urteil')} -- {p.get('begruendung') or ''}\n"
+               + "".join(f"- {x}\n" for x in (p.get("maengel") or p.get("einwaende") or [])[:12]) if p.get("urteil") else "")
+            + "ÄNDERUNGEN AM ERGEBNIS: NIE eine neue Gesamtfassung schreiben, auch wenn Veiko „vollständige neue Fassung“ sagt. "
+            "Dafür ist der Block <<<UEBERARBEITEN>>> da: betrifft es das ganze Werk (Ton, Daniels Einwände, durchgehende "
+            "Fehler), eine Zeile „alle: …“ mit allen Punkten, die einzuarbeiten sind; betrifft es einzelne Stücke, je Zeile "
+            "Nummer und Änderung. Der Langläufer schreibt dann jedes Stück einzeln neu, Daniel prüft, und das Ergebnis "
+            "wird danach aktualisiert. Sag Veiko in einem Satz, dass es so läuft und dass er den Fortschritt am Langläufer sieht.")
+
+
+def _ist_langlauf_ergebnis(kontext: dict[str, Any]) -> bool:
+    if not kontext.get("ergebnis_id") or not kontext.get("langlauf_id"):
+        return False
+    from . import langlauf
+    return langlauf.zum_ergebnis(kontext["ergebnis_id"]) == kontext["langlauf_id"]
+
+
 def _ergebnis_text(e: dict[str, Any]) -> str:
     p = e.get("pruefung") or {}
     return (f"DAS ERGEBNIS, AN DEM IHR ARBEITET: „{e['titel']}“ (Form: {e['form']}, erstellt von {stab.rollen_name(e['rolle'])})\n"
@@ -196,7 +223,7 @@ def system_text(wer: str, kontext: dict[str, Any]) -> str:
     if kontext.get("ergebnis_id"):
         e = db.holen("ergebnisse", kontext["ergebnis_id"])
         if e:
-            teile.append(_ergebnis_text(e))
+            teile.append(_langlauf_ergebnis_text(e) if kontext.get("langlauf_id") and _ist_langlauf_ergebnis(kontext) else _ergebnis_text(e))
     if kontext.get("langlauf_id"):
         # Gespraech ueber einen Langlaeufer (17.10.2026): Plan, Stand, Hinweise und
         # die drei Bloecke, mit denen das Mitglied etwas ausloesen kann.
@@ -259,6 +286,13 @@ async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
         yield {"typ": "fehler", "text": f"Unbekanntes Teammitglied: {wer}"}
         return
     kontext = {k: kontext.get(k) for k in ("projekt_id", "ergebnis_id", "langlauf_id") if kontext.get(k)}
+    if kontext.get("ergebnis_id") and not kontext.get("langlauf_id"):
+        # Das Ergebnis eines Langlaeufers: Aenderungen laufen ueber seine Etappen
+        # (_langlauf_ergebnis_text), und der Langlaeufer zeigt, dass gearbeitet wird.
+        from . import langlauf
+        lid = langlauf.zum_ergebnis(kontext["ergebnis_id"])
+        if lid:
+            kontext["langlauf_id"] = lid
     if kontext.get("langlauf_id") and not kontext.get("projekt_id"):
         l0 = db.holen("langlaeufe", kontext["langlauf_id"]) or {}
         if l0.get("projekt_id"):
@@ -402,6 +436,18 @@ async def _antwort(gid: str, wer: str, system: str, verlauf: list[dict[str, str]
     if fassung and quellen:
         fassung += stab.netz_fuss(quellen)   # die Fassung traegt ihre Quellen selbst, wie in der Pipeline
     daten: dict[str, Any] = {"wer": wer, "modell": modell}
+    if fassung and _ist_langlauf_ergebnis(kontext):
+        # Trotz Anweisung eine Gesamtfassung fuer ein Langlaeufer-Ergebnis: NICHT
+        # uebernehmen (sie waere gekuerzt und passte nicht mehr zu den Etappen),
+        # sondern Veikos Wunsch an jedes fertige Stueck geben.
+        from . import langlauf
+        _, mehr = langlauf.chat_anweisungen(kontext["langlauf_id"], f"<<<UEBERARBEITEN>>>\nalle: {text}\n<<<ENDE>>>", wer)
+        getan = getan + mehr
+        if mehr:
+            yield {"typ": "status", "text": "Übernommen: " + "; ".join(mehr)}
+        prosa = (prosa + "\n\n" if prosa else "") + ("Eine komplette neue Fassung in einer Antwort würde das Buch kürzen. "
+                                                     "Deshalb geht dein Wunsch an jedes Kapitel einzeln; Daniel prüft jedes.")
+        fassung = None
     if fassung and kontext.get("ergebnis_id"):
         eid = kontext["ergebnis_id"]
         e = db.holen("ergebnisse", eid) or {}

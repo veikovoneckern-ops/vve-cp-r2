@@ -612,6 +612,13 @@ async def _nachbessern(l: dict[str, Any], e: dict[str, Any], kritik: str) -> Non
                                   f"{e.get('text', '')[:60000]}\n\nKRITIK:\n{kritik}\n\nÜberarbeite und liefere die vollständige Etappe."
                                   + (" Behalte den ```json-Szenenblock bei." if art == "video" else "")}],
                                   temperatur=0.5, denken=stab.DENKEN_SCHREIBEN, num_ctx=65536, timeout=stab.LANGE_FRIST)
+    alt_len = len(e.get("text") or "")
+    if neu.strip() and art != "video" and alt_len > 4000 and len(neu) < 0.6 * alt_len and not re.search(r"kürz|kuerz|straff|knapper", kritik, re.I):
+        # Eine Ueberarbeitung soll verbessern, nicht stillschweigend kuerzen
+        # (17.10.2026: ein ganzes Buch schrumpfte so von 193.000 auf 77.000 Zeichen).
+        db.ereignis(vid, rid, "info", f"{n} {e['nr']}: die Überarbeitung war nur {len(neu):,} statt {alt_len:,} Zeichen lang "
+                                      "-- die bisherige Fassung bleibt.".replace(",", "."))
+        return
     if neu.strip() and (art != "video" or video.drehbuch_aus(neu, SZENEN_JE_AKT)):
         e["text"] = neu if art == "video" else _ueberschriften_eine_ebene_tiefer(neu, e["titel"])
         e["ueberarbeitet"] = kritik.split(":")[0]
@@ -781,6 +788,30 @@ async def schleife() -> None:
 
 
 # ---------------------------------------------------------------- Gespraech ueber den Langlaeufer
+def _nacharbeit_zusammenfassen(d: dict[str, Any], laeuft: bool) -> None:
+    """Mehrere vorgemerkte Ueberarbeitungen desselben Stuecks zu EINER: ein Kapitel
+    einmal mit allen Punkten neu schreiben statt mehrmals nacheinander. Laeuft der
+    Langlaeufer, bleibt der erste Eintrag unberuehrt -- an dem arbeitet er gerade,
+    und er wird nach dem Schritt entfernt."""
+    liste = d.get("nacharbeit") or []
+    fest, rest = (liste[:1], liste[1:]) if laeuft else ([], liste)
+    je: dict[int, dict[str, Any]] = {}
+    for x in rest:
+        if x["nr"] in je:
+            y = je[x["nr"]]
+            if x["was"] not in y["was"]:
+                y["was"] = stab._kurz(y["was"] + "\n" + x["was"], 4000)
+        else:
+            je[x["nr"]] = dict(x)
+    d["nacharbeit"] = fest + sorted(je.values(), key=lambda x: x["nr"])
+
+
+def zum_ergebnis(eid: str) -> str | None:
+    """Der Langlaeufer, dessen Ergebnis das ist -- dann gehoert jede Aenderung
+    daran in seine Etappen, nicht in eine neue Gesamtfassung (siehe teamchat)."""
+    return db.wert("SELECT id FROM langlaeufe WHERE json_extract(daten,'$.ergebnis_id')=? ORDER BY geaendert DESC LIMIT 1", (eid,))
+
+
 # Veiko, 17.10.2026: "ueber den Zwischenpruefungen ein vollfunktionsfaehiges
 # Chatfenster, mit dem ich weitere Anweisungen und Dialog zu dem Langlaeufer
 # fuehren kann." Es ist der Team-Chat (teamchat.py, ein Gespraechsweg) mit dem
@@ -811,8 +842,9 @@ def chat_kontext(lid: str) -> str:
             "einen Satz, was passiert, und danach den Block; das Cockpit führt ihn aus und meldet es im Gespräch:\n"
             f"1. Eine Anweisung für alle weiteren {nn} (Ton, Inhalt, Länge, was zu vermeiden ist):\n"
             "<<<HINWEIS>>>\ndie Anweisung in einem bis drei klaren Sätzen\n<<<ENDE>>>\n"
-            f"2. Fertige {nn} überarbeiten lassen (je Zeile Nummer, Doppelpunkt, was genau zu ändern ist):\n"
-            "<<<UEBERARBEITEN>>>\n3: Beispiel aus der Pflege statt aus der Industrie\n<<<ENDE>>>\n"
+            f"2. Fertige {nn} überarbeiten lassen (je Zeile Nummer, Doppelpunkt, was genau zu ändern ist; "
+            f"„alle“ statt der Nummer, wenn es jedes {n} betrifft, z. B. Ton, durchgehende Fehler, Daniels Einwände):\n"
+            "<<<UEBERARBEITEN>>>\n3: Beispiel aus der Pflege statt aus der Industrie\nalle: Ton durchgehend zuversichtlich statt düster\n<<<ENDE>>>\n"
             f"3. Weitere {nn} am Ende anhängen (je Zeile Titel, zwei Bindestriche, was hineingehört):\n"
             "<<<NEUE_ETAPPEN>>>\nTitel -- Inhalt in zwei Sätzen\n<<<ENDE>>>\n"
             f"Den Text der {nn} schreibst du hier NICHT selbst -- das macht der Langläufer im Hintergrund, mit Plan, "
@@ -840,7 +872,28 @@ def chat_anweisungen(lid: str, text: str, wer: str) -> tuple[str, list[str]]:
             getan.append(f"Hinweis gilt für alle weiteren {ARTEN[art]['mehrzahl']}: „{stab._kurz(inhalt, 160)}“")
         elif art_b == "UEBERARBEITEN":
             fertig = {e["nr"] for e in d.get("etappen") or [] if e.get("stand") == "fertig"}
+            alle_punkte: list[str] = []
             for zeile in inhalt.splitlines():
+                # "alle: ..." -- jedes fertige Stueck (17.10.2026: Daniels Einwaende
+                # betrafen das ganze Buch; vorher ging das nur als komplette neue
+                # Fassung in einer Antwort, und die kuerzte 193.000 auf 77.000 Zeichen).
+                ma = re.match(r"\s*(?:alle(?:\s+\w+)?|jede[sn]?(?:\s+\w+)?|\*)\s*[:.)-]\s*(.*)", zeile, re.I)
+                if ma:
+                    # Alles bis zur naechsten nummerierten Zeile gehoert dazu --
+                    # Daniels Einwaende kommen als Liste ueber mehrere Zeilen.
+                    zeilen = inhalt.splitlines()
+                    i = zeilen.index(zeile)
+                    dazu = []
+                    for z2 in zeilen[i + 1:]:
+                        # bis zur naechsten nummerierten ODER naechsten "alle:"-Zeile
+                        if re.match(r"\s*(?:\w+\s+)?\d+\s*[:.)-]\s*\S", z2) or \
+                                re.match(r"\s*(?:alle(?:\s+\w+)?|jede[sn]?(?:\s+\w+)?|\*)\s*[:.)-]", z2, re.I):
+                            break
+                        dazu.append(z2)
+                    was = "\n".join([ma.group(1)] + dazu).strip()
+                    if was:
+                        alle_punkte.append(was)
+                    continue
                 m = re.match(r"\s*(?:\w+\s+)?(\d+)\s*[:.)-]\s*(.+)", zeile)
                 if not m:
                     continue
@@ -854,6 +907,17 @@ def chat_anweisungen(lid: str, text: str, wer: str) -> tuple[str, list[str]]:
                     continue
                 d.setdefault("nacharbeit", []).append({"nr": nr, "was": stab._kurz(was, 800), "von": von, "zeit": time.time()})
                 getan.append(f"{n} {nr} wird überarbeitet: {stab._kurz(was, 120)}")
+            if alle_punkte:
+                # Mehrere "alle:"-Zeilen (gemessen: das Modell schrieb jeden Einwand
+                # einzeln) werden EIN Durchgang je Stueck mit allen Punkten --
+                # sonst wuerde jedes Kapitel sechsmal nacheinander neu geschrieben.
+                was = "\n".join("- " + p.lstrip("-• ").strip() for p in alle_punkte)
+                for nr in sorted(fertig):   # 3.000 statt 800: Einwaende zum ganzen Werk sind laenger
+                    d.setdefault("nacharbeit", []).append({"nr": nr, "was": stab._kurz(was, 3000), "von": von, "zeit": time.time()})
+                getan.append(f"Alle {len(fertig)} fertigen {ARTEN[art]['mehrzahl']} werden nacheinander überarbeitet, "
+                             f"je einmal mit {len(alle_punkte)} Punkt{'en' if len(alle_punkte) != 1 else ''}: "
+                             + "; ".join(stab._kurz(p, 70) for p in alle_punkte[:6]))
+            _nacharbeit_zusammenfassen(d, l["stand"] == "laeuft")
         elif art_b == "NEUE_ETAPPEN":
             et = d.setdefault("etappen", [])
             for zeile in inhalt.splitlines():
