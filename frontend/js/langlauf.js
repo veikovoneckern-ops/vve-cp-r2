@@ -146,11 +146,28 @@ function Neu({ zu, fertig, d, vorlage }) {
   </${Modal}>`;
 }
 
-function Zeile({ l, an, waehlen }) {
+// Was sonst gerade fuer diesen Langlaeufer arbeitet: Recherche, Antwort im
+// Gespraech, Video ... (aktionen.fuer). Veiko, 17.10.2026: "es wird gearbeitet,
+// der Status steht aber auf fertig -- ich moechte immer die aktuellen Stati sehen."
+export function Nebenbei({ liste }) {
+  if (!liste || !liste.length) return null;
+  return html`<div class="ll-nebenbei">${liste.map((n) => html`<div class="ll-jetzt" key=${n.id}><span class="vf-spin"></span>
+    <span><b>${n.art_name}${n.wer ? " · " + n.wer : ""}:</b> ${n.schritt || n.titel}${n.teile ? " · " + n.teile : ""}
+      ${n.jetzt ? html`<span class="leise klein"> · ${n.jetzt.modell} ${n.jetzt.phase}${n.jetzt.tok_aus ? ", " + n.jetzt.tok_aus.toLocaleString("de-DE") + " Token" : ""}</span>` : ""}
+      ${" "}<a class="klein" href="#/aktionen">Current Actions</a></span></div>`)}</div>`;
+}
+const standAnzeige = (l) => {
   const [farbe, text] = STAND[l.stand] || ["", l.stand];
+  if (l.arbeitet) return ["lila", "arbeitet"];
+  if ((l.nebenbei || []).length) return ["lila", (l.stand === "fertig" ? "fertig · " : text + " · ") + "es wird weitergearbeitet"];
+  return [farbe, text];
+};
+
+function Zeile({ l, an, waehlen }) {
+  const [farbe, text] = standAnzeige(l);
   const pz = l.etappen ? Math.round(100 * l.fertig / l.etappen) : 0;
   return html`<button class=${"ll-zeile" + (an ? " an" : "")} onClick=${() => waehlen(l.id)}>
-    <div class="ll-zeile-kopf"><b>${l.titel}</b><span class=${"pill " + farbe}>${l.arbeitet ? "arbeitet" : text}</span></div>
+    <div class="ll-zeile-kopf"><b>${l.titel}</b><span class=${"pill " + farbe}>${text}</span></div>
     <div class="leise klein">${l.art_name} · ${l.rolle_name} · ${l.etappen ? `${l.fertig} von ${l.etappen} ${l.etappen_name}` : "noch kein Plan"} · ${usd(l.kosten)} von ${usd(l.budget)}</div>
     <div class="video-balken"><i style=${`width:${pz}%`}></i></div>
   </button>`;
@@ -176,14 +193,14 @@ function Etappe({ e, name }) {
 }
 
 function Detail({ id, neuLaden }) {
-  const [l, laden] = useAbruf("/langlaeufe/" + id, 10000, [id]);
+  const [l, laden] = useAbruf("/langlaeufe/" + id, 5000, [id]);
   const [budget, setBudget] = useState(null);
   if (!l) return html`<div class="lade">Lade …</div>`;
   const tun = async (aktion, daten, text) => {
     try { const r = await api(`/langlaeufe/${id}/${aktion}`, { methode: "POST", daten: daten || {} }); if (text) toast(text); laden(); neuLaden(); return r; }
     catch (e) { fehlerMelden(e); }
   };
-  const [farbe, standText] = STAND[l.stand] || ["", l.stand];
+  const [farbe, standText] = standAnzeige(l);
   const aktiv = ["plant", "laeuft", "wartet"].includes(l.stand);
   return html`<div class="ll-detail">
     <div class="karte">
@@ -197,6 +214,7 @@ function Detail({ id, neuLaden }) {
         ${aktiv || l.stand === "pausiert" || l.stand === "fehler" ? html`<${FrageKnopf} text="Abbrechen" frage="Wirklich abbrechen? Fertige Etappen bleiben." ja="Abbrechen" tun=${() => tun("abbrechen", null, "Abgebrochen.")} />` : ""}
       </div>
       ${l.arbeitet && html`<div class="ll-jetzt"><span class="vf-spin"></span>${l.was || "arbeitet"}</div>`}
+      <${Nebenbei} liste=${l.nebenbei} />
       ${l.grund && l.stand === "wartet" && html`<div class="fehlerbox"><b>Wartet auf dich.</b> ${l.grund}<br /><span class="klein">Beantworte die Frage im Briefing -- danach arbeitet er von selbst weiter. Oder „Fortsetzen“, um ohne Antwort weiterzumachen.</span></div>`}
       ${l.fehler && html`<div class="fehlerbox"><b>${l.stand === "fehler" ? "Angehalten nach drei Fehlversuchen." : "Letzter Schritt gescheitert, wird wiederholt."}</b> ${l.fehler}</div>`}
       ${l.extern_aus && html`<div class="hinweisbox klein">${l.extern_aus}</div>`}

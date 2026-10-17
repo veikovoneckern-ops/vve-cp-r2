@@ -339,6 +339,13 @@ export function ErgebnisAnsicht({ id, zu, vorlage = "" }) {
       .then((x) => setGid(x.gespraeche[0] ? x.gespraeche[0].id : null)).catch(() => setGid(null));
   }, [wer, id]);
   useEffect(() => { try { localStorage.setItem("erg-chat", chatAuf ? "1" : "0"); } catch (x) { /* egal */ } }, [chatAuf]);
+  // Was anderswo gerade an diesem Ergebnis arbeitet (Langlaeufer, Recherche, ein
+  // anderes Gespraech): alle 8 s nachfragen, nur dieses Feld uebernehmen -- der
+  // Text links soll beim Lesen nicht springen.
+  useEffect(() => {
+    const t = setInterval(() => { if (!document.hidden) api("/ergebnisse/" + id).then((x) => setE((alt) => alt && ({ ...alt, nebenbei: x.nebenbei }))).catch(() => {}); }, 8000);
+    return () => clearInterval(t);
+  }, [id]);
   if (!e) return html`<${Modal} titel="Ergebnis" zu=${zu}><div class="lade">Lade …</div><//>`;
   const p = e.pruefung || {};
   const partner = gespraechsPartner(team);
@@ -348,7 +355,8 @@ export function ErgebnisAnsicht({ id, zu, vorlage = "" }) {
   const fb = e.folienbilder, vd = e.video;
   const jetzt = taetig ? `${taetig.name}: ${taetig.status}`
     : fb && fb.stand === "rechnet" ? `Bilder werden gerechnet${fb.anzahl ? ` · ${fb.fertig || 0} von ${fb.anzahl}` : ""}`
-    : vd && vd.stand === "rechnet" ? `Video wird gerechnet · ${vd.schritt || ""}` : "";
+    : vd && vd.stand === "rechnet" ? `Video wird gerechnet · ${vd.schritt || ""}`
+    : (e.nebenbei || []).length ? e.nebenbei.map((n) => `${n.art_name}${n.wer ? " · " + n.wer : ""}: ${n.schritt || n.titel}${n.teile ? " · " + n.teile : ""}`).join(" — ") : "";
   const kopf = jetzt ? html`<span class="erg-jetzt" role="status" aria-live="polite"><span class="erg-jetzt-punkt"></span>${jetzt}</span>` : "";
   // Der Kopf der linken Spalte (.erg-text-kopf) bleibt beim Scrollen stehen:
   // welcher Stand gilt, von wem, und Download/Kopieren direkt daneben (Veiko,

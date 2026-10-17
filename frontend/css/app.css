@@ -1204,6 +1204,8 @@ details.eingetragen[open]>summary{margin-bottom:8px}
 .ll-detail{min-width:0}
 .ll-detail .karte-kopf h3{margin:0}
 .ll-jetzt{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--ink-2);margin:-2px 0 10px}
+.ll-nebenbei{display:flex;flex-direction:column}
+.ll-nebenbei .ll-jetzt{align-items:flex-start;overflow-wrap:anywhere}
 .ll-detail .fehlerbox,.ll-detail .hinweisbox{margin-bottom:10px}
 .ll-zahlen{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:6px 0 12px}
 .ll-zahlen>div{display:flex;flex-direction:column;gap:2px;background:var(--surface-2);border-radius:8px;padding:8px 10px;min-width:0}

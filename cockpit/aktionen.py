@@ -174,11 +174,72 @@ def sammeln(gespraeche: dict[str, dict[str, Any]], wer_name) -> dict[str, Any]:
     for z in laufend + beendet:
         z.pop("_vid", None)
         z["art_name"] = ART_NAME.get(z["art"], z["art"])
+        z["bezug"] = _bezug(z)
     return {"laufend": laufend, "beendet": beendet, "zeit": jetzt,
             "ollama": {"anfragen": llm.AKTIV.get("n") or 0, "seit": llm.AKTIV.get("seit"),
                        "taetig": [dict(v) for v in list(llm.TAETIG.values())],
                        "ohne_zuordnung": llm.anfragen_frei()},
             "pipeline_wartet": warten or 0}
+
+
+def _json(w: Any) -> dict[str, Any]:
+    if isinstance(w, dict):
+        return w
+    try:
+        import json
+        d = json.loads(w or "{}")
+        return d if isinstance(d, dict) else {}
+    except ValueError:
+        return {}
+
+
+def _bezug(z: dict[str, Any]) -> dict[str, Any]:
+    """Wofuer eine Aktion arbeitet: Langlaeufer, Ergebnis, Projekt.
+
+    Veiko, 17.10.2026: "ich gebe ueber den Chat etwas ein und es wird gearbeitet,
+    der Status vom Langlaeufer steht aber auf fertig. Ich moechte immer wirklich
+    die aktuellen Stati zu allen Sachen sehen." Eine Recherche oder eine Antwort
+    im Langlaeufer-Gespraech gehoert zum Langlaeufer, auch wenn sie nicht seine
+    Etappen veraendert -- also muss der Langlaeufer sie zeigen."""
+    art, _, ref = z["id"].partition(":")
+    if art == "langlauf":
+        d = _json((db.holen("langlaeufe", ref) or {}).get("daten"))
+        return {"langlauf_id": ref, "ergebnis_id": d.get("ergebnis_id")}
+    if art in ("video", "folienbilder"):
+        r = db.holen("ergebnisse", ref) or {}
+        return {"ergebnis_id": ref, "projekt_id": r.get("projekt_id")}
+    if art == "gespraech":
+        k = _json((db.holen("gespraeche", ref) or {}).get("kontext"))
+        return {"langlauf_id": k.get("langlauf_id"), "ergebnis_id": k.get("ergebnis_id"), "projekt_id": k.get("projekt_id")}
+    if art == "dossier":
+        from . import dossier
+        zi = (dossier.JOBS.get(ref) or {}).get("ziel") or {}
+        return {"langlauf_id": zi.get("langlauf_id"), "projekt_id": zi.get("projekt_id")}
+    return {}
+
+
+_ZWISCHEN: dict[str, Any] = {"zeit": 0.0, "liste": []}
+
+
+def fuer(langlauf_id: str | None = None, ergebnis_id: str | None = None) -> list[dict[str, Any]]:
+    """Was gerade fuer diesen Langlaeufer bzw. dieses Ergebnis laeuft -- ohne den
+    Langlaeufer selbst. Zwei Sekunden gemerkt: die Langlaeufer-Liste fragt je Zeile."""
+    import time as _t
+    if _t.time() - _ZWISCHEN["zeit"] > 2:
+        from .api import GESPRAECH_LAEUFT
+        from .teamchat import wer_name
+        _ZWISCHEN.update(zeit=_t.time(), liste=sammeln(GESPRAECH_LAEUFT, wer_name)["laufend"])
+    aus = []
+    for z in _ZWISCHEN["liste"]:
+        b = z.get("bezug") or {}
+        if z["id"] == f"langlauf:{langlauf_id}":
+            continue
+        if (langlauf_id and b.get("langlauf_id") == langlauf_id) or (ergebnis_id and b.get("ergebnis_id") == ergebnis_id):
+            jetzt = ((z.get("detail") or {}).get("laufend") or [None])[0]
+            aus.append({"id": z["id"], "art_name": z["art_name"], "wer": z.get("wer"), "titel": z["titel"],
+                        "schritt": z.get("schritt"), "teile": z.get("teile"), "prozent": z.get("prozent"), "start": z.get("start"),
+                        "jetzt": jetzt and {"modell": jetzt["modell"], "phase": jetzt["phase"], "tok_aus": jetzt.get("tok_aus")}})
+    return aus
 
 
 def steuern(aid: str, aktion: str, gespraeche: dict[str, dict[str, Any]]) -> dict[str, Any]:

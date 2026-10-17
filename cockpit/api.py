@@ -671,6 +671,8 @@ async def ergebnis(rid: str):
     e["vorgang_titel"] = v.get("titel")
     e["projekt_name"] = (db.holen("projekte", e.get("projekt_id") or "") or {}).get("name")
     e["kurztitel"] = kurztitel(e)
+    from . import aktionen
+    e["nebenbei"] = aktionen.fuer(None, rid)   # was gerade an diesem Ergebnis arbeitet (17.10.2026)
     try:
         e["auftrag"] = (json.loads(v.get("auftrag") or "{}") or {}).get("auftrag")
     except ValueError:
@@ -1703,8 +1705,12 @@ async def modelle_uebersicht(frisch: int = 0):
 # im Rahmen eines Budgets (Veiko, 17.10.2026). Details: langlauf.py.
 @router.get("/langlaeufe")
 async def langlaeufe_liste(projekt_id: str = ""):
-    from . import langlauf
-    return {"langlaeufe": langlauf.liste(projekt_id or None), "arten": langlauf.ARTEN,
+    from . import aktionen, langlauf
+    # Was sonst gerade fuer jeden Langlaeufer arbeitet (Recherche, Antwort im
+    # Gespraech, Video ...): hier und nicht in langlauf.ansicht, weil Current
+    # Actions selbst die Liste liest -- dort waere es eine Schleife.
+    liste = [{**l, "nebenbei": aktionen.fuer(l["id"], l.get("ergebnis_id"))} for l in langlauf.liste(projekt_id or None)]
+    return {"langlaeufe": liste, "arten": langlauf.ARTEN,
             "rollen": [{"id": r, "name": stab.rollen_name(r)} for r in stab.ROLLEN_FUER_ARBEIT if r != "pmo"],
             "preise": _preise(), "zugang_extern": bool(ALT_TOKEN)}
 
@@ -1749,6 +1755,8 @@ async def langlauf_einzeln(lid: str):
     l = langlauf.einzeln(lid)
     if not l:
         raise HTTPException(404, "Langläufer nicht gefunden")
+    from . import aktionen
+    l["nebenbei"] = aktionen.fuer(l["id"], l.get("ergebnis_id"))
     return l
 
 
