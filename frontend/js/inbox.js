@@ -5,7 +5,7 @@ import { escEigen, html, enterBestaetigt, useState, useEffect, Icon, Avatar, Lee
   zeitText, useAbruf, navigiere, rolleName, ROLLEN_WAHL, FORM_WAHL } from "./ui.js";
 import { api } from "./api.js";
 import { Entscheidung } from "./entscheidung.js";
-import { ErgebnisVorschau, URTEIL } from "./ergebnis.js";
+import { ErgebnisVorschau, URTEIL, StilFelder } from "./ergebnis.js";
 
 const FILTER = [["wartet", "Wartet auf dich"], ["in_arbeit", "In Arbeit"], ["fertig", "Fertig"], ["erledigt", "Erledigt"], ["alle", "Alle"]];
 const ART_TEXT = { notiz: "Notiz", einordnung: "hat eingeordnet", aufgabe: "Aufgabe", rueckfrage: "fragt nach", vorschlag: "schlägt vor",
@@ -211,14 +211,19 @@ export function Ausarbeiten({ v, projektId, zu, fertig }) {
   const [form, setForm] = useState("dokument");
   const [auftrag, setAuftrag] = useState(v ? (v.einordnung || v.titel || "") : "");
   const [recherche, setRecherche] = useState("");
+  // Aussehen einer Praesentation (folien_stil.py): vorbelegt mit der Vorgabe aus den Einstellungen.
+  const [stil, setStil] = useState("vveorg");
+  const [stilText, setStilText] = useState("");
+  useEffect(() => { api("/praesentation/stile").then((r) => r.vorgabe && setStil(r.vorgabe)).catch(() => {}); }, []);
   const [laeuft, setLaeuft] = useState(false);
   async function los() {
+    const stilDaten = form === "praesentation" ? { stil, stil_text: stil === "eigen" ? stilText : "" } : {};
     setLaeuft(true);
     try {
-      if (v) await api(`/vorgaenge/${v.id}/ausarbeiten`, { methode: "POST", daten: { rolle, form, auftrag, recherche } });
+      if (v) await api(`/vorgaenge/${v.id}/ausarbeiten`, { methode: "POST", daten: { rolle, form, auftrag, recherche, ...stilDaten } });
       else {
         const r = await api("/erfassen", { methode: "POST", daten: { text: auftrag, projekt_id: projektId } });
-        await api(`/vorgaenge/${r.vorgang_id}/ausarbeiten`, { methode: "POST", daten: { rolle, form, auftrag, recherche } });
+        await api(`/vorgaenge/${r.vorgang_id}/ausarbeiten`, { methode: "POST", daten: { rolle, form, auftrag, recherche, ...stilDaten } });
       }
       toast("Auftrag ist raus. Das Ergebnis erscheint im Case, Daniel prüft es vorher.");
       aktualisieren(); fertig && fertig();
@@ -226,13 +231,14 @@ export function Ausarbeiten({ v, projektId, zu, fertig }) {
   }
   return html`<${Modal} titel="Ausarbeiten lassen" zu=${zu} fuss=${html`
       <button class="btn geist" onClick=${zu}>Abbrechen</button>
-      <button class="btn primaer" disabled=${laeuft || !auftrag.trim()} onClick=${los}>${laeuft ? "Einen Moment …" : "Auftrag geben"}</button>`}>
+      <button class="btn primaer" disabled=${laeuft || !auftrag.trim() || (form === "praesentation" && stil === "eigen" && !stilText.trim())} onClick=${los}>${laeuft ? "Einen Moment …" : "Auftrag geben"}</button>`}>
     <div class="raster" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
       <div class="feld"><label for="aa-rolle">Wer</label><select id="aa-rolle" class="eingabe" value=${rolle} onChange=${(e) => setRolle(e.target.value)}>
         ${ROLLEN_WAHL.map(([k, t]) => html`<option value=${k}>${t}</option>`)}</select></div>
       <div class="feld"><label for="aa-form">Was soll herauskommen</label><select id="aa-form" class="eingabe" value=${form} onChange=${(e) => setForm(e.target.value)}>
         ${FORM_WAHL.map(([k, t]) => html`<option value=${k}>${t}</option>`)}</select></div>
     </div>
+    ${form === "praesentation" && html`<div style="margin-top:10px"><${StilFelder} stil=${stil} setStil=${setStil} text=${stilText} setText=${setStilText} id="aa-stil" /></div>`}
     <div class="feld" style="margin-top:10px"><label for="aa-auftrag">Auftrag</label>
       <textarea id="aa-auftrag" class="eingabe" rows="4" value=${auftrag} onInput=${(e) => setAuftrag(e.target.value)} onKeyDown=${enterBestaetigt}></textarea></div>
     <div class="feld" style="margin-top:10px"><label for="aa-rech">Im Internet recherchieren (optional: Suchbegriffe)</label>

@@ -229,7 +229,12 @@ async def bild_ohne_fehler(c: httpx.AsyncClient, prompt: str, breite: int = 1344
 
 async def _kunstregie(eid: str, liste: list[str]) -> list[str]:
     e = db.holen("ergebnisse", eid) or {}
-    return await kunstregie(e.get("titel") or "", liste, "PRÄSENTATION")
+    # Der Praesentations-Stil bringt seine Bildsprache mit (folien_stil.py): die
+    # VVEORG-Vorlage arbeitet mit dunklen, kinematografischen Bildern.
+    from . import folien_stil
+    bs = folien_stil.bildstil(e.get("stil")) if e.get("form") == "praesentation" else ""
+    return await kunstregie(e.get("titel") or "", liste, "PRÄSENTATION",
+                            f"BILDSPRACHE DIESER PRÄSENTATION: {bs}. " if bs else "")
 
 
 async def kunstregie(titel: str, liste: list[str], art: str = "PRÄSENTATION", zusatz: str = "") -> list[str]:

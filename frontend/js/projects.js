@@ -8,7 +8,7 @@ import { Zeitplan, Struktur } from "./projektansichten.js";
 import { Ausarbeiten } from "./inbox.js";
 import { TeamChat, gespraechsPartner } from "./teamchat.js";
 import { Composer } from "./composer.js";
-import { VideoBlock, FolienbilderBlock, Downloads, Pruefung, GrossAnsicht, ErgebnisZeile, einarbeitenText } from "./ergebnis.js";
+import { VideoBlock, FolienbilderBlock, Downloads, Pruefung, GrossAnsicht, ErgebnisZeile, einarbeitenText, StilWahl } from "./ergebnis.js";
 import { langlaufStarten } from "./langlauf.js";
 import { gespraechOeffnen } from "./zuordnung.js";
 
@@ -385,6 +385,7 @@ export function ErgebnisAnsicht({ id, zu, vorlage = "" }) {
               <${Icon} n="stift" g=${13} />Mit Dario ausarbeiten</button>`}
           </div>
           <${Downloads} e=${e} />
+          ${e.form === "praesentation" && html`<${StilWahl} e=${e} geaendert=${() => laden().then(() => setStand((n) => n + 1))} />`}
         </div>
         ${e.auftrag && html`<details class="auftrag-zeile klein"><summary>Auftrag</summary><div>${e.auftrag}</div></details>`}
         ${(e.form === "video" || e.video) && html`<${VideoBlock} e=${e} neuLaden=${laden} ohneDownload=${true} />`}

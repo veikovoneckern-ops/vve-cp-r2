@@ -111,7 +111,7 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"zeigen","ziel":"board|briefing|inbox|projects|team|neo|system|watchdog|brainstrom|exo|langlauf|aktionen|modelle|einstellungen|uebersicht_modelle|installiert|optimierung|neue_modelle|verbrauch|alle_aufgaben|alle_notizen|neuer_langlaeufer"} -- öffnet einen Bereich oder Reiter des Cockpits sofort (verbrauch = Token und Kosten, optimierung = Modell-Revision, neue_modelle = Neu bei Ollama).
 - {"aktion":"zeigen","ziel":"chat","wer":"Name des Teammitglieds"} -- öffnet den Chat mit diesem Mitglied (Neo: ziel neo).
 - {"aktion":"werkzeug","was":"erfassen|suche|hell|dunkel|zurueck|fenster_zu"} -- Capture öffnen, Suche öffnen, helle oder dunkle Darstellung, eine Seite zurück, oberstes Fenster schließen. Sofort, ohne Rückfrage. Will Veiko „mit dem Advisory Board sprechen“: ziel board. Stellt er dabei schon eine Frage ans Board, gib sie als "frage" mit -- das Board antwortet dann selbst, du antwortest nicht an seiner Stelle.
-- {"aktion":"ausarbeiten","rolle":"stratege|buch|designer|video","form":"text|aufstellung|konzept|dokument|webseite|praesentation|video","auftrag":"…","recherche":"Suchanfrage oder null","vorgang_id":"v… oder null","projekt_id":"p… oder null"}
+- {"aktion":"ausarbeiten","rolle":"stratege|buch|designer|video","form":"text|aufstellung|konzept|dokument|webseite|praesentation|video","auftrag":"…","recherche":"Suchanfrage oder null","vorgang_id":"v… oder null","projekt_id":"p… oder null","stil":"vveorg|cockpit|eigen oder null","stil_text":"…"} -- stil nur bei einer Präsentation und nur, wenn Veiko das Aussehen nennt: „im VVEORG-Look“/„in meiner Vorlage“ = vveorg, „im Cockpit-Design“ = cockpit, eigene Gestaltungswünsche (Farben, Schrift, Footer) = eigen mit stil_text in seinen Worten. Sonst weglassen (dann gilt die Vorgabe, die VVEORG-Vorlage).
 - {"aktion":"merken","art":"person|organisation|begriff|hoerfehler|aussprache","begriff":"…","bedeutung":"…"} -- aussprache: wie das Cockpit ein (meist englisches) Wort VORLESEN soll, in deutscher Lautschrift, z. B. begriff "Slides", bedeutung "Slaids".
 - {"aktion":"notiz","text":"…","projekt_id":"p… oder null"}
 - {"aktion":"projekt_neu","name":"…"}
@@ -641,7 +641,10 @@ async def ausfuehren(a: dict[str, Any]) -> dict[str, Any]:
             vid = v["id"]
             db.ausfuehren("UPDATE vorgaenge SET stand='eingeordnet' WHERE id=?", (vid,))
         stab.auftrag_setzen(vid, {"rolle": a.get("rolle"), "form": a.get("form"), "auftrag": a["auftrag"],
-                                  "recherche": a.get("recherche")})
+                                  "recherche": a.get("recherche"),
+                                  # Praesentations-Stil (folien_stil.py): nur wenn Veiko einen genannt hat, sonst die Vorgabe.
+                                  "stil": a.get("stil") if a.get("stil") in ("vveorg", "cockpit") else
+                                  ({"id": "eigen", "text": str(a.get("stil_text"))[:800]} if a.get("stil") == "eigen" and a.get("stil_text") else None)})
         stab.wecken()
         return {"ok": True, "vorgang_id": vid}
     if art == "merken":

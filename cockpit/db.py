@@ -139,6 +139,9 @@ NACHRUESTEN = [
     # Anhaenge an einer Aufgabe (17.10.2026, Aufgabenfenster): dieselbe Ablage
     # wie Projekt-Unterlagen, nur zusaetzlich an die Aufgabe gehaengt.
     ("dateien", "aufgabe_id", "TEXT"),
+    # Praesentations-Stil je Ergebnis (18.10.2026, folien_stil.py): {"id": "vveorg|cockpit|eigen", ...}.
+    # Leer heisst: die Vorgabe aus den Einstellungen.
+    ("ergebnisse", "stil", "TEXT DEFAULT '{}'"),
 ]
 with _lock:
     for _tab, _spalte, _typ in NACHRUESTEN:
@@ -158,7 +161,7 @@ def _zeile(r: sqlite3.Row | None) -> dict[str, Any] | None:
     if r is None:
         return None
     d = dict(r)
-    for k in ("fruehere_namen", "daten", "quellen", "pruefung", "kontext", "vorher", "nachher", "medien"):
+    for k in ("fruehere_namen", "daten", "quellen", "pruefung", "kontext", "vorher", "nachher", "medien", "stil"):
         if k in d and isinstance(d[k], str):
             try:
                 d[k] = json.loads(d[k])

@@ -1,0 +1,29 @@
+{
+  "id": "vveorg",
+  "name": "VVEORG (Master-Vorlage)",
+  "beschreibung": "Look & Feel der VVEORG PPT Master Vorlage: dunkle und helle Folien im Wechsel, rote Unterzeile in Großbuchstaben, Karten mit Kreisnummern, Footer „Veiko von Eckern · veikovoneckern.org“ mit Logo.",
+  "farben": {
+    "dunkel": "1C1D21",
+    "hell": "FFFFFF",
+    "karte_dunkel": "2A2C31",
+    "karte_hell": "EEF2F6",
+    "rand_hell": "D4DAE1",
+    "titel_hell": "14283E",
+    "text_hell": "1B2733",
+    "grau_hell": "6E7782",
+    "titel_dunkel": "FFFFFF",
+    "text_dunkel": "DCDEE2",
+    "grau_dunkel": "9AA0AA",
+    "akzent": "CE3B30",
+    "akzent_hell": "C5392C",
+    "kreis_hell": "3F4C62",
+    "linie_dunkel": "3C3F46",
+    "linie_hell": "D4DAE1",
+    "reihe": ["5B8DB8", "E6B24A", "CE3B30", "3E8E5E"],
+    "reihe_hell": ["C5392C", "14283E", "3E8E5E", "5B8DB8"]
+  },
+  "schriften": {"kopf": "Segoe UI", "titelfolie": "Segoe UI Semibold", "text": "Calibri", "akzent": "Cambria"},
+  "fuss": {"name": "Veiko von Eckern", "web": "veikovoneckern.org", "logo": true},
+  "anweisung": "DESIGN VVEORG: Gib jeder Folie außer der Titelfolie eine Zeile 'Untertitel: …' mit 2 bis 8 Wörtern (Einordnung, Quelle oder Zeitraum, z. B. 'Untertitel: Zwischenfazit'); sie steht rot in Großbuchstaben unter der Überschrift. Punkte dürfen die Form 'Kurzer Titel — ein Satz Erklärung' haben; dann werden sie zu Karten mit Überschrift. Eine abschluss-Folie hat 3 solche Punkte und darf darunter EINE normale Zeile als Fazit tragen.",
+  "bildstil": "dunkle, kinematografische Bildsprache: tiefes Schwarzblau, kühles Licht, einzelne rote oder warme Akzente, fotorealistisch oder edle 3D-Illustration, ruhiger Hintergrund"
+}

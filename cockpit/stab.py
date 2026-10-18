@@ -86,6 +86,7 @@ BILD_HINWEIS = (" Verlangt der Auftrag Bilder, Illustrationen oder Grafiken, set
                 "'Bild: <ausfuehrliche Bildbeschreibung: Motiv, Stil, Licht, Farben>' -- daraus wird ein echtes Bild gerechnet und "
                 "eingebaut. Beschreibe das Bild NIE nur im Text. Keine Schrift, keine Logos, keine echten Personen im Bild.")
 from . import folien as _folien  # noqa: E402 -- folien.py importiert stab nur in Funktionen
+from . import folien_stil as _folien_stil  # noqa: E402
 FORM_ANWEISUNG["praesentation"] = _folien.ANWEISUNG
 for _f in ("text", "aufstellung", "konzept", "dokument"):
     FORM_ANWEISUNG[_f] += BILD_HINWEIS
@@ -829,6 +830,8 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
               "JETZT: deine konkrete Arbeitsaufgabe. Keine Vorrede, keine Lagebesprechung, keine Einordnung "
               "als Geschäftsmodell, keine Meta-Kommentare. Liefere direkt das fertige Ergebnis in der verlangten Form.\n"
               f"FORM: {FORM_ANWEISUNG[form]}\n"
+              # Praesentations-Stil (folien_stil.py, 18.10.2026): z. B. die rote Unterzeile der VVEORG-Vorlage.
+              + (f"{_folien_stil.anweisung(a.get('stil'))}\n" if form == "praesentation" else "") +
               "REGELN: Schreibe Deutsch. Erfinde keine Fakten, Zahlen oder Namen. Stütze dich auf die Notiz, "
               "das Gedächtnis und die QUELLEN; zitiere Quellen als [1], [2]. Was fehlt, markierst du mit „fehlt:“ statt es zu raten. "
               "Keine Platzhalter in eckigen Klammern.\n\n"
@@ -957,10 +960,10 @@ def _md_inline(s: str) -> str:
     return t.replace("**", "")
 
 
-def _folien_html(text: str, titel: str, eid: str | None = None) -> str:
+def _folien_html(text: str, titel: str, eid: str | None = None, stil=None) -> str:
     # Dieselbe Zerlegung und dasselbe Design wie die PowerPoint (folien.py, 17.10.2026).
     from . import folien
-    return folien.zu_html(titel, text, eid)
+    return folien.zu_html(titel, text, eid, stil)
 
 
 def _hat_bildzeile(text: str) -> bool:
@@ -979,7 +982,7 @@ def ansicht_html(e: dict[str, Any]) -> str | None:
         if m:
             return m.group(1)
     elif form == "praesentation":
-        return _folien_html(text, titel, e.get("id"))
+        return _folien_html(text, titel, e.get("id"), e.get("stil"))
     elif form == "dokument" or (form in ("text", "aufstellung", "konzept") and _hat_bildzeile(text)):
         # Texte mit gewuenschten Bildern bekommen eine Ansicht, damit die
         # Bilder darin stehen statt ihrer Beschreibung.
@@ -1005,6 +1008,8 @@ def ergebnis_speichern(v: dict[str, Any], a: dict[str, Any], text: str, rid: str
         "inhalt": text, "rolle": rid, "modell": modell,
         "quellen": [{"titel": q["titel"], "url": q["url"]} for q in quellen],
         "pruefung": pruefung, "ansicht": ansicht, "erstellt": time.time(),
+        # Der Stil, den Veiko beim Auftrag gewaehlt hat; ohne Wahl die Vorgabe zum Zeitpunkt der Entstehung.
+        "stil": _folien_stil.normal(a.get("stil")) if form == "praesentation" else {},
     }, wer=rid, vorgang_id=v["id"])
     db.ereignis(v["id"], rid, "ergebnis", text[:600] + ("…" if len(text) > 600 else ""),
                 {"ergebnis_id": eid, "form": form, "urteil": pruefung.get("urteil")})

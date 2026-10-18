@@ -11,6 +11,26 @@ function Wert({ name, wert, warn }) {
   return html`<div class="messwert"><span class="leise">${name}</span><b style=${warn ? "color:var(--signal)" : ""}>${wert ?? "nicht verfügbar"}</b></div>`;
 }
 
+// Vorgabe fuer neue Praesentationen (folien_stil.py, 18.10.2026). "Eigene Vorgaben" ist
+// keine Vorgabe: die beschreibt Veiko je Praesentation, im Auftrag oder am Ergebnis.
+function PraesentationStil() {
+  const [d, setD] = useState(null);
+  useEffect(() => { api("/einstellungen").then(setD).catch(fehlerMelden); }, []);
+  if (!d || !d.praesentation_stile) return "";
+  async function setzen(id) {
+    try { setD(await api("/einstellungen", { methode: "POST", daten: { praesentation_stil: id } })); toast("Gespeichert."); }
+    catch (x) { fehlerMelden(x); }
+  }
+  const vorgabe = d.praesentation_stile.find((s) => s.id === d.praesentation_stil);
+  return html`<section class="karte" style="margin-top:14px"><div class="karte-kopf"><h3>Präsentationen</h3></div>
+    <div class="knopfreihe"><span class="leise">Neue Präsentationen sehen so aus:</span>
+      <div class="segment">${d.praesentation_stile.filter((s) => s.id !== "eigen").map((s) => html`<button class=${d.praesentation_stil === s.id ? "an" : ""}
+        onClick=${() => setzen(s.id)}>${s.name}</button>`)}</div></div>
+    ${vorgabe && html`<p class="leise klein" style="margin-top:8px">${vorgabe.beschreibung}</p>`}
+    <p class="leise klein">Beim Auftrag und an jeder fertigen Präsentation lässt sich das Aussehen umstellen, auch auf eigene Vorgaben. Neu gerechnet wird dafür nichts.</p>
+  </section>`;
+}
+
 export function Einstellungen({ konto, thema }) {
   const [d, laden] = useAbruf("/system", 30000, []);
   const [laeuft, setLaeuft] = useState("");
@@ -31,6 +51,7 @@ export function Einstellungen({ konto, thema }) {
 
   return html`<div class="seite">
     <${Vertrauen} />
+    <${PraesentationStil} />
     ${d && html`<div class="raster-gleich drei" style="margin-top:14px">
       <section class="karte"><div class="karte-kopf"><h3>Team-Pipeline</h3></div>
         <${Wert} name="Team" wert=${g.stab_aktiv ? "an" : "aus"} />

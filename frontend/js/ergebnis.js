@@ -17,6 +17,52 @@ export function Downloads({ e }) {
   </div>`;
 }
 
+// Aussehen einer Praesentation (folien_stil.py, 18.10.2026). Veiko: "ich moechte
+// waehlen koennen, ob es in diesem Look and Feel erstellt werden soll oder andere
+// Vorgaben gelten." Umschalten rechnet nichts neu -- Ansicht und PowerPoint
+// entstehen bei jedem Abruf aus dem Text. Dieselben Wahlen wie im Auftrag (StilFelder).
+export const STIL_WAHL = [["vveorg", "VVEORG-Vorlage"], ["cockpit", "Cockpit-Design"], ["eigen", "Eigene Vorgaben"]];
+export function StilFelder({ stil, setStil, text, setText, id = "stil" }) {
+  return html`<div class="feld"><label for=${id}>Aussehen der Folien</label>
+      <select id=${id} class="eingabe" value=${stil} onChange=${(e) => setStil(e.target.value)}>
+        ${STIL_WAHL.map(([k, t]) => html`<option value=${k}>${t}</option>`)}</select></div>
+    ${stil === "eigen" && html`<div class="feld" style="margin-top:8px"><label for=${id + "-text"}>Deine Vorgaben</label>
+      <textarea id=${id + "-text"} class="eingabe" rows="3" value=${text} onInput=${(e) => setText(e.target.value)}
+        placeholder="z. B. hell und freundlich, Grün als Akzentfarbe, Schrift Arial, im Footer „Kanzlei Muster · Vertraulich“, ohne Logo"></textarea>
+      <p class="leise klein">Das Layout der VVEORG-Vorlage bleibt; Farben, Schriften und Footer richten sich nach deinen Worten.</p></div>`}`;
+}
+export function StilWahl({ e, geaendert }) {
+  const jetzt = (e.stil && e.stil.id) || "vveorg";
+  const [auf, setAuf] = useState(false);
+  const [stil, setStil] = useState(jetzt);
+  const [text, setText] = useState((e.stil && e.stil.text) || "");
+  const [laeuft, setLaeuft] = useState(false);
+  async function uebernehmen(id, t) {
+    setLaeuft(true);
+    try {
+      await api(`/ergebnisse/${e.id}/stil`, { methode: "POST", daten: { stil: id, stil_text: t } });
+      toast(id === "eigen" ? "Deine Vorgaben sind umgesetzt." : "Aussehen umgestellt.");
+      setAuf(false); geaendert && geaendert();
+    } catch (x) { fehlerMelden(x); } finally { setLaeuft(false); }
+  }
+  function waehlen(id) {
+    setStil(id);
+    if (id === "eigen") { setAuf(true); return; }
+    if (id !== jetzt) uebernehmen(id, "");
+  }
+  return html`<div class="erg-stil">
+    <div class="knopfreihe klein"><span class="leise">Aussehen</span>
+      <div class="segment">${STIL_WAHL.map(([k, t]) => html`<button class=${jetzt === k ? "an" : ""} disabled=${laeuft}
+        title=${k === "eigen" ? "Farben, Schriften und Footer nach deinen Worten" : ""} onClick=${() => waehlen(k)}>${t}</button>`)}</div>
+      ${laeuft && html`<span class="leise">stellt um …</span>`}</div>
+    ${auf && html`<div class="erg-stil-eigen">
+      <${StilFelder} stil="eigen" setStil=${() => {}} text=${text} setText=${setText} id=${"stil-" + e.id} />
+      <div class="knopfreihe"><button class="btn klein primaer" disabled=${laeuft || !text.trim()} onClick=${() => uebernehmen("eigen", text)}>
+        ${laeuft ? "Setzt um … (ein paar Sekunden)" : "Vorgaben übernehmen"}</button>
+        <button class="btn klein geist" onClick=${() => { setAuf(false); setStil(jetzt); }}>Abbrechen</button></div></div>`}
+  </div>`;
+}
+
 // Daniels Urteil als EINE Zeile; Begruendung und Maengel klappen auf.
 // Vorher ein grosser Kasten ueber dem Ergebnis, der es aus dem Blick schob
 // (Veiko, 16.10.: "das ist alles noch sehr sperrig").

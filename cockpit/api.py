@@ -44,6 +44,25 @@ def _pflicht(d: dict[str, Any], *felder: str) -> None:
         raise HTTPException(400, "Es fehlt: " + ", ".join(fehlt))
 
 
+async def _stil_aus(d: dict[str, Any]) -> dict[str, Any] | None:
+    """Praesentations-Stil aus einer Anfrage (folien_stil.py). Bei eigenen Vorgaben
+    leitet ein lokales Modell daraus Farben, Schriften und Footer ab -- einmal hier,
+    nicht bei jedem Abruf der Ansicht. Nichts gewaehlt: None = die Vorgabe."""
+    from . import folien_stil
+    sid = d.get("stil")
+    if sid in ("vveorg", "cockpit"):
+        return {"id": sid}
+    if sid == "eigen":
+        text = str(d.get("stil_text") or "").strip()
+        if not text:
+            raise HTTPException(400, "Beschreibe bei eigenen Vorgaben, wie die Präsentation aussehen soll.")
+        try:
+            return {"id": "eigen", "text": text[:1500], "werte": await folien_stil.aus_text(text)}
+        except llm.ModellFehler as e:
+            raise HTTPException(503, f"Die Vorgaben ließen sich nicht umsetzen: {e}")
+    return None
+
+
 # ================================================================ Konto
 @router.get("/konto/ich")
 async def ich(request: Request):
@@ -350,7 +369,7 @@ async def vorgang_ausarbeiten(vid: str, request: Request):
     if not db.holen("vorgaenge", vid):
         raise HTTPException(404, "Vorgang nicht gefunden")
     stab.auftrag_setzen(vid, {"rolle": d.get("rolle"), "form": d.get("form"), "auftrag": d["auftrag"],
-                              "recherche": d.get("recherche") or None})
+                              "recherche": d.get("recherche") or None, "stil": await _stil_aus(d)})
     db.ausfuehren("UPDATE vorgaenge SET versuche=0 WHERE id=?", (vid,))
     stab.wecken()
     return {"ok": True}
@@ -657,6 +676,9 @@ async def ergebnis(rid: str):
     if not e:
         raise HTTPException(404, "Ergebnis nicht gefunden")
     e["wer_name"] = stab.rollen_name(e["rolle"])
+    if e.get("form") == "praesentation":
+        from . import folien_stil
+        e["stil"] = folien_stil.normal(e.get("stil"))   # leer = die Vorgabe, so steht es auch in der Auswahl
     # Von wem der Stand ist, der gerade gilt: die letzte Ueberarbeitung im
     # Protokoll, sonst der erste Entwurf. Das Fenster zeigt es ueber dem Text --
     # nach drei Fassungen von Neal und Demmis war nicht mehr zu erkennen, welche
@@ -752,7 +774,7 @@ async def ergebnis_datei(rid: str, format: str = "docx"):
     elif fmt == "docx":
         roh = dokumente.zu_docx(e["titel"], text, rid)
     elif fmt == "pptx":
-        roh = dokumente.zu_pptx(e["titel"], text, rid)
+        roh = dokumente.zu_pptx(e["titel"], text, rid, e.get("stil"))
     elif fmt == "html":
         roh = dokumente.zu_html(e["titel"], text, rid).encode("utf-8")
     else:
@@ -763,6 +785,27 @@ async def ergebnis_datei(rid: str, format: str = "docx"):
     name = dokumente.dateiname(e["titel"], fmt)
     return Response(roh, media_type=typen[fmt], headers={"Content-Disposition": f"attachment; filename=\"{name}\"",
                                                          "X-Content-Type-Options": "nosniff"})
+
+
+@router.get("/praesentation/stile")
+async def praesentation_stile():
+    from . import folien_stil
+    return {"stile": folien_stil.liste(), "vorgabe": folien_stil.vorgabe()}
+
+
+@router.post("/ergebnisse/{rid}/stil")
+async def ergebnis_stil(rid: str, request: Request):
+    """Den Stil einer fertigen Praesentation umschalten. Gerechnet wird nichts neu:
+    Ansicht und PowerPoint entstehen bei jedem Abruf aus dem Markdown."""
+    from . import folien_stil
+    e = db.holen("ergebnisse", rid)
+    if not e:
+        raise HTTPException(404, "Ergebnis nicht gefunden")
+    stil = await _stil_aus(await _koerper(request))
+    if stil is None:
+        raise HTTPException(400, "Unbekannter Stil")
+    db.aendern("ergebnisse", rid, {"stil": stil}, wer="du")
+    return {"ok": True, "stil": folien_stil.normal(stil)}
 
 
 @router.get("/ergebnisse/{rid}/ansicht")
@@ -984,7 +1027,7 @@ async def postfach_abrufen():
 
 @router.get("/einstellungen")
 async def einstellungen():
-    from . import postfach
+    from . import folien_stil, postfach
     from .konfig import ALT_DATEN
     # Was das ALTE Cockpit gerade selbst tut -- nur gelesen (die Datei gehoert
     # dem alten Backend). Seit dem 16.10.2026 arbeitet Veiko nur noch hier;
@@ -996,7 +1039,8 @@ async def einstellungen():
     return {"postfach": postfach.stand(), "alt_automatik": alt, "vertrauen": stab.vertrauen(), "stab_aktiv": stab.stab_aktiv(),
             "stab_ab": db.einstellung("stab_ab"), "letzter_abgleich": db.einstellung("letzter_abgleich"),
             "alt_cockpit": ALT_COCKPIT_URL, "leiste": db.einstellung("leiste", []),
-            "talk_stimme": stimme.gewaehlte_stimme(), "stimmen": stimme.STIMMEN}
+            "talk_stimme": stimme.gewaehlte_stimme(), "stimmen": stimme.STIMMEN,
+            "praesentation_stil": folien_stil.vorgabe(), "praesentation_stile": folien_stil.liste()}
 
 
 @router.post("/einstellungen")
@@ -1020,6 +1064,8 @@ async def einstellungen_setzen(request: Request):
         db.einstellung_setzen("leiste", list(dict.fromkeys(ids))[:40])
     if d.get("talk_stimme") in stimme.STIMMEN:
         db.einstellung_setzen("talk_stimme", d["talk_stimme"])
+    if d.get("praesentation_stil") in ("vveorg", "cockpit"):
+        db.einstellung_setzen("praesentation_stil", d["praesentation_stil"])
     return await einstellungen()
 
 

@@ -216,11 +216,11 @@ def folien(md: str) -> list[dict[str, object]]:
     return out
 
 
-def zu_pptx(titel: str, md: str, eid: str | None = None) -> bytes:
+def zu_pptx(titel: str, md: str, eid: str | None = None, stil=None) -> bytes:
     """Seit 17.10.2026 mit echtem Design und Folientypen (folien.py); vorher eine
     weisse Standardfolie mit Stichpunkten je Folie."""
     from . import folien
-    return folien.zu_pptx(titel, md, eid)
+    return folien.zu_pptx(titel, md, eid, stil)
 
 
 # ------------------------------------------------------------ HTML

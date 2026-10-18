@@ -77,7 +77,7 @@ ANWEISUNG = (
 _TYP = re.compile(r"^\s*(?:typ|folientyp|layout)\s*:\s*([a-zäöü_ -]+)\s*$", re.I)
 _UNTER = re.compile(r"^\s*untertitel\s*:\s*(.+)$", re.I)
 _NOTIZ = re.compile(r"^\s*(?:notizen?|sprechernotiz(?:en)?|sprechertext)\s*:\s*(.*)$", re.I)
-_ZAHL = re.compile(r"^\s*\**\s*([~≈+\-−]?\s*[\d.,]+\s*(?:%|x|×|mio\.?|mrd\.?|tsd\.?|k|m|bn|€|\$|jahre?|monate?|tage?|std\.?)?)\s*\**\s*(?:\||–|—|:|-)\s*(.+)$", re.I)
+_ZAHL = re.compile(r"^\s*\**\s*([~≈+\-−]?\s*[\d.,]+\s*(?:%|x|×|mio\.?|mrd\.?|tsd\.?|min\.?|minuten|stunden|wochen|k|m|bn|€|\$|jahre?|monate?|tage?|std\.?)?)\s*\**\s*(?:\||–|—|:|-)\s*(.+)$", re.I)
 
 
 def _rein(s: str) -> str:
@@ -184,7 +184,13 @@ def _schrift(n: int, groesse: float, klein: float, viel: int) -> float:
 
 
 # ------------------------------------------------------------ PowerPoint
-def zu_pptx(titel: str, md: str, eid: str | None = None) -> bytes:
+def zu_pptx(titel: str, md: str, eid: str | None = None, stil: Any = None) -> bytes:
+    # Seit 18.10.2026 gibt es Stile (folien_stil.py); Vorgabe ist die VVEORG-Vorlage.
+    # Das Design unten ist der Stil "cockpit" und bleibt unveraendert waehlbar.
+    from . import folien_stil
+    w = folien_stil.werte(stil)
+    if w:
+        return folien_stil.zu_pptx(titel, md, eid, w)
     from lxml import etree
     from pptx import Presentation
     from pptx.dml.color import RGBColor
@@ -392,8 +398,12 @@ def _inline(s: str) -> str:
     return _md_inline(s)
 
 
-def zu_html(titel: str, md: str, eid: str | None = None) -> str:
+def zu_html(titel: str, md: str, eid: str | None = None, stil: Any = None) -> str:
     """Dieselben Folien wie in PowerPoint, auf einer 1280x720-Buehne."""
+    from . import folien_stil
+    w = folien_stil.werte(stil)
+    if w:
+        return folien_stil.zu_html(titel, md, eid, w)
     from . import folienbilder
     folien = parse(md)
     deck = (folien[0]["titel"] if folien and folien[0]["typ"] == "titel" and folien[0]["titel"] else titel or "")[:80]
