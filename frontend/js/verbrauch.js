@@ -35,9 +35,9 @@ function Preise({ preise, vorgabe, gespeichert }) {
     onInput=${(e) => setP({ ...p, [k]: i ? [p[k][0], e.target.value] : [e.target.value, p[k][1]] })} aria-label=${NAME[k] + (i ? " Ausgabe" : " Eingabe")} />`;
   return html`<details class="karte vb-preise">
     <summary><b>Mit welchen Preisen gerechnet wird</b> <span class="leise klein">US-$ je 1 Mio. Token -- Annahme, bitte mit deiner Rechnung abgleichen</span></summary>
-    <table class="tabelle"><thead><tr><th>Anbieter</th><th>Eingabe</th><th>Ausgabe</th><th class="leise">Vorgabe</th></tr></thead>
+    <div class="tabelle-wrap"><table class="tabelle"><thead><tr><th>Anbieter</th><th>Eingabe</th><th>Ausgabe</th><th class="leise">Vorgabe</th></tr></thead>
       <tbody>${Object.keys(p).map((k) => html`<tr><td>${NAME[k] || k}</td><td>${feld(k, 0)}</td><td>${feld(k, 1)}</td>
-        <td class="leise klein">${vorgabe[k][0]} / ${vorgabe[k][1]}</td></tr>`)}</tbody></table>
+        <td class="leise klein">${vorgabe[k][0]} / ${vorgabe[k][1]}</td></tr>`)}</tbody></table></div>
     <div class="knopfreihe" style="margin-top:8px"><button class="btn primaer klein" onClick=${speichern}>Preise speichern</button>
       <span class="leise klein">Lokale Modelle kosten nichts: sie rechnen auf deinem eigenen Server (nur Strom).</span></div>
   </details>`;

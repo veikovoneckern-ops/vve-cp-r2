@@ -163,9 +163,14 @@ p{margin:0 0 8px}
 .raster{display:grid;gap:14px}
 .raster.zwei{grid-template-columns:minmax(0,1.55fr) minmax(0,1fr)}
 @media (max-width:1100px){.raster.zwei{grid-template-columns:minmax(0,1fr)}}
-.zeile{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line-2);min-width:0}
+/* Die Beschriftung behaelt mindestens 12em; was daneben nicht mehr passt (Umschalter,
+   Knoepfe), rutscht in die naechste Zeile. Vorher war die Zeile ohne Umbruch und
+   haupt-text auf Breite 0 gestellt: auf dem Telefon nahm der Umschalter „selbst, mit
+   Rueckgaengig / erst fragen“ (~280 Punkt, nowrap) fast alles, und die Beschriftung brach
+   Buchstabe fuer Buchstabe um (Einstellungen, 18.10.2026). */
+.zeile{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line-2);min-width:0}
 .zeile:last-child{border-bottom:0}
-.zeile .haupt-text{flex:1;min-width:0}
+.zeile .haupt-text{flex:1 1 12em;min-width:0}
 .zeile .haupt-text>*{overflow-wrap:anywhere}
 .zeile .neben{color:var(--ink-3);font-size:12px;white-space:nowrap}
 .leer{color:var(--ink-3);text-align:center;padding:26px 12px;font-size:13.5px}
