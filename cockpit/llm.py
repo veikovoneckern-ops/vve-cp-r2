@@ -135,8 +135,11 @@ def anfragen_zu(zweck: str | None = None, vorgang_id: str | None = None, verlauf
         # Alle aelteren offenen Anfragen an dasselbe Modell -- auch die, die schon
         # schreiben: diese hier kommt erst dran, wenn sie ganz fertig sind
         # (gemessen 17.10.: B stand sonst auf "liest", waehrend A noch schrieb).
-        vor = [b for b in ANFRAGEN.values() if b["modell"] == a["modell"] and b["start"] < a["start"]]
-        if a.get("erstes"):
+        vor = [b for b in ANFRAGEN.values() if b["modell"] == a["modell"] and b["start"] < a["start"]
+               and not b.get("wartet_vorrang")]
+        if a.get("wartet_vorrang"):
+            phase, tempo = "pausiert, solange du mit dem Cockpit sprichst", None
+        elif a.get("erstes"):
             dauer = jetzt - a["erstes"]
             phase = "schreibt"
             tempo = round(a["tok_aus"] / dauer, 1) if dauer > 2 and a["tok_aus"] else None
@@ -173,6 +176,75 @@ def anfragen_frei() -> list[dict[str, Any]]:
     """Anfragen, die keiner Aktion zuzuordnen sind (fuer die Kopfzeile)."""
     return [{"modell": a["modell"], "seit": a["start"], "was": a["was"]} for a in ANFRAGEN.values()
             if not a.get("zweck") and not a.get("vorgang_id")]
+
+
+# ---------------------------------------------------------------- Vorrang fuer Gespraeche
+# Veiko, 18.10.2026: "wenn etwas laeuft und ich parallel mit dem Cockpit sprechen
+# will, dauert das Verstehen, Antworten und Ausfuehren lange. Talk soll gut und
+# schnell funktionieren; ob ein Langlaeufer dadurch etwas laenger dauert, ist
+# nicht so wichtig."
+#
+# Der Grund ist Ollama: es rechnet je Modell EINE Anfrage nach der anderen
+# (n_seq_max = 1), und seit "ein Modell fuer alle" teilen sich Talk und das ganze
+# Team qwen3.8. Schrieb Neal gerade ein Kapitel, stand Talk hinten in der Schlange
+# -- Minuten, nicht Sekunden. Eine Warteschlange mit Vorrang hilft dagegen nicht:
+# Ollama nimmt eine laufende Anfrage nicht zurueck. Also umgekehrt: beginnt ein
+# Gespraech (Talk, Board, Team-Chat -- Veiko sitzt davor und wartet), werden die
+# laufenden Hintergrund-Anfragen abgebrochen (Verbindung zu = Ollama hoert auf)
+# und spaeter von vorn gestellt; neue warten. Der Preis ist die verworfene halbe
+# Antwort des Langlaeufers -- genau der Tausch, den Veiko will.
+#
+# NACHLAUF: ein Gespraech ist mehr als eine Anfrage -- danach liest Piper vor,
+# Veiko antwortet, Whisper schreibt ab. Startete der Hintergrund in dieser Pause
+# wieder, staende der naechste Satz erneut hinten an und das halbe Kapitel waere
+# umsonst angefangen. Hoeren und Sprechen frischen den Zeitpunkt deshalb auf.
+VORRANG: contextvars.ContextVar[bool] = contextvars.ContextVar("llm_vorrang", default=False)
+NACHLAUF_S = 45
+_vorrang: dict[str, Any] = {"offen": 0, "zuletzt": 0.0}
+_HINTERGRUND: dict[int, asyncio.Task] = {}   # Anfrage-ID -> der Task, der gerade bei Ollama liest
+
+
+def vorrang_anstossen() -> None:
+    """Hoeren/Sprechen von Talk: haelt den Hintergrund noch NACHLAUF_S zurueck."""
+    _vorrang["zuletzt"] = time.time()
+
+
+def vorrang_aktiv() -> bool:
+    return bool(_vorrang["offen"]) or time.time() - _vorrang["zuletzt"] < NACHLAUF_S
+
+
+class vorrang:
+    """with llm.vorrang(): ... -- ein Gespraech laeuft; der Hintergrund weicht."""
+
+    def __enter__(self):
+        self._token = VORRANG.set(True)
+        _vorrang["offen"] += 1
+        _vorrang["zuletzt"] = time.time()
+        for aid, t in list(_HINTERGRUND.items()):
+            e = ANFRAGEN.get(aid)
+            if e is not None:
+                e["verdraengt"] = True
+            t.cancel()
+        return self
+
+    def __exit__(self, *_):
+        _vorrang["offen"] = max(0, _vorrang["offen"] - 1)
+        _vorrang["zuletzt"] = time.time()
+        VORRANG.reset(self._token)
+        return False
+
+
+async def _warten_auf_vorrang(e: dict[str, Any]) -> None:
+    if VORRANG.get():
+        return
+    try:
+        while vorrang_aktiv():
+            e["wartet_vorrang"] = True
+            await asyncio.sleep(1)
+    except asyncio.CancelledError:
+        ANFRAGEN.pop(e["id"], None)   # abgebrochen, bevor sie bei Ollama war
+        raise
+    e.pop("wartet_vorrang", None)
 
 # Tempo direkter Gespraeche (Talk, Board, Team-Chat). Vorgabe ist gruendlich:
 # das Modell denkt vor der Antwort nach. "Schnelle Antwort" schaltet das ab --
@@ -317,9 +389,11 @@ def _ollama_buchen(body: dict[str, Any], d: dict[str, Any]) -> None:
            (d.get("total_duration") or 0) / 1e9)
 
 
-async def _post(body: dict[str, Any], timeout: float) -> dict[str, Any]:
-    _beginn()
+async def _post(body: dict[str, Any], timeout: float, warten: bool = False) -> dict[str, Any]:
     e = _anmelden(body, False)
+    if warten:   # Revision: Hintergrund, nicht abbrechbar (am Stueck geholt), wartet aber auf Gespraeche
+        await _warten_auf_vorrang(e)
+    _beginn()
     d: dict[str, Any] | None = None
     grund = "abgebrochen"
     try:
@@ -354,13 +428,38 @@ async def chat(modell: str, system: str, nachrichten: list[dict[str, Any]], *,
     body = _body(modell, system, nachrichten, json_format=json_format, temperatur=temperatur,
                  denken=denken, num_ctx=num_ctx, stream=True)
     teile: list[str] = []
-    _beginn()
     e = _anmelden(body, True)
     grund = "abgebrochen"
-    try:
+
+    async def sammeln() -> None:
         async with asyncio.timeout(timeout):
             async for t in _strom_lauf(body, e):
                 teile.append(t)
+
+    try:
+        while True:
+            # Ausserhalb der Zeitgrenze: das Warten auf ein Gespraech ist keine Rechenzeit.
+            await _warten_auf_vorrang(e)
+            teile.clear()
+            e.update(tok_aus=0, denk_tok=0, erstes=None, verdraengt=False)
+            _beginn()
+            # Ein eigener Task, damit vorrang() genau DIESE Anfrage abbrechen kann,
+            # ohne den Aufrufer (Pipeline, Langlaeufer) mit abzubrechen.
+            innen = asyncio.create_task(sammeln())
+            if not VORRANG.get():
+                _HINTERGRUND[e["id"]] = innen
+            try:
+                await innen
+            except asyncio.CancelledError:
+                if e.get("verdraengt") and not asyncio.current_task().cancelling():
+                    print(f"[llm] {e['was'] or body.get('model')}: weicht einem Gespräch, wird danach neu gestellt",
+                          flush=True)
+                    continue
+                raise
+            finally:
+                _HINTERGRUND.pop(e["id"], None)
+                _ende()
+            break
         grund = None
     except TimeoutError as f:
         grund = "Zeitgrenze"
@@ -372,7 +471,6 @@ async def chat(modell: str, system: str, nachrichten: list[dict[str, Any]], *,
         grund = "Fehler"
         raise
     finally:
-        _ende()
         _abmelden(e, e.get("_fertig"), grund)
     return "".join(teile).strip()
 
@@ -394,8 +492,9 @@ async def strom(modell: str, system: str, nachrichten: list[dict[str, Any]], *,
                 num_ctx: int | None = 16384) -> AsyncIterator[str]:
     body = _body(modell, system, nachrichten, json_format=False, temperatur=temperatur,
                  denken=denken, num_ctx=num_ctx, stream=True)
-    _beginn()
     e = _anmelden(body, True)
+    await _warten_auf_vorrang(e)   # ohne Gespraech drumherum (heute niemand) wie der Hintergrund
+    _beginn()
     grund = "abgebrochen"
     try:
         async for t in _strom_lauf(body, e):

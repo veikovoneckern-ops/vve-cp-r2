@@ -66,10 +66,13 @@ def _laden(geraet: str):
     # von large-v3-turbo dauerte ueber WLAN mehrere Minuten -- so lange darf keine
     # Spracheingabe haengen. Fehlt das gewuenschte Modell, nimmt Whisper das beste
     # vorhandene und laedt das gewuenschte im Hintergrund nach.
+    # num_workers=2: ein Modell rechnet sonst eine Abschrift nach der anderen, und
+    # Veikos Satz stand hinter einer zweistuendigen Podcast-Folge an (18.10.2026,
+    # "Talk soll schnell sein, auch wenn etwas laeuft"). Die Gewichte teilen sich beide.
     letzter: Exception | None = None
     for name in dict.fromkeys([WHISPER_MODELL, "medium", "small"]):
         try:
-            m = WhisperModel(name, device=geraet, compute_type=typ, local_files_only=True)
+            m = WhisperModel(name, device=geraet, compute_type=typ, local_files_only=True, num_workers=2)
             _geladen_als[geraet] = name
             if name != WHISPER_MODELL:
                 _nachladen_starten()
@@ -77,7 +80,7 @@ def _laden(geraet: str):
         except Exception as e:  # noqa: BLE001
             letzter = e
     try:
-        m = WhisperModel("small", device=geraet, compute_type=typ)  # gar nichts da: das kleinste holen
+        m = WhisperModel("small", device=geraet, compute_type=typ, num_workers=2)  # gar nichts da: das kleinste holen
         _geladen_als[geraet] = "small"
         _nachladen_starten()
         return m

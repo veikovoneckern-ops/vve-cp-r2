@@ -230,7 +230,7 @@ async def _einmal(modell: str, system: str, frage: str) -> dict[str, Any]:
     body = llm._body(modell, system, [{"role": "user", "content": frage}], json_format=False, temperatur=0.4,
                      denken=False, num_ctx=16384, stream=False)
     t0 = time.time()
-    d = await llm._post(body, 1200)
+    d = await llm._post(body, 1200, warten=True)
     text = ((d.get("message") or {}).get("content") or "").strip()
     text = re.sub(r"<think>[\s\S]*?</think>", "", text).strip()
     ev, evd = d.get("eval_count") or 0, (d.get("eval_duration") or 0) / 1e9

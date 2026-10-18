@@ -877,6 +877,9 @@ def _im_hintergrund(erzeuger, art: str, wer: str = "") -> StreamingResponse:
 
     async def pumpe():
         gid = None
+        # Veiko wartet auf diese Antwort: Langlaeufer und Pipeline weichen (llm.vorrang).
+        vorrang = llm.vorrang()
+        vorrang.__enter__()
         try:
             async for e in erzeuger:
                 if e.get("typ") == "start" and e.get("gespraech_id"):
@@ -894,6 +897,7 @@ def _im_hintergrund(erzeuger, art: str, wer: str = "") -> StreamingResponse:
         except Exception as f:  # noqa: BLE001 -- der Grund soll beim Browser ankommen, nicht nur im Journal
             schlange.put_nowait({"typ": "fehler", "text": f"{f.__class__.__name__}: {f}"})
         finally:
+            vorrang.__exit__()
             if gid:
                 GESPRAECH_LAEUFT.pop(gid, None)
                 llm.WAS_ZWECK.pop("gespraech:" + gid, None)
@@ -1086,7 +1090,10 @@ async def datei_holen(did: str):
 async def hoeren(datei: UploadFile = File(...)):
     roh = await datei.read()
     try:
-        return await stimme.hoeren(roh, stab.whisper_vorlage())
+        # Veiko hat gerade gesprochen: der Hintergrund gibt die Karte schon fuer
+        # Whisper frei, nicht erst fuer die Antwort danach (llm.vorrang).
+        with llm.vorrang():
+            return await stimme.hoeren(roh, stab.whisper_vorlage())
     except RuntimeError as e:
         raise HTTPException(503, str(e))
 
@@ -1094,6 +1101,7 @@ async def hoeren(datei: UploadFile = File(...)):
 @router.post("/stimme/sprechen")
 async def sprechen(request: Request):
     d = await _koerper(request)
+    llm.vorrang_anstossen()   # waehrend Talk vorliest, bleibt der Hintergrund still
     try:
         return Response(await stimme.sprechen(str(d.get("text") or "")), media_type="audio/mpeg")
     except (RuntimeError, httpx.HTTPError) as e:
