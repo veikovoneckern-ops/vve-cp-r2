@@ -58,6 +58,7 @@ function route() {
 // Spart in der Kopfzeile den Platz, den die Statuskaesten brauchen.
 function SucheKnopf() {
   const [auf, setAuf] = useState(false);
+  useEffect(() => bus.an("suche-oeffnen", () => setAuf(true)), []);
   useEffect(() => {
     const k = (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setAuf(true); } };
     document.addEventListener("keydown", k);
@@ -180,6 +181,12 @@ function UntenNav({ liste, aktiv, offen }) {
   </nav>`;
 }
 
+// Hell/Dunkel -- vom Knopf in der Leiste und von Talk ("schalt auf dunkel").
+function themaSetzen(neu) {
+  document.documentElement.dataset.theme = neu;
+  try { localStorage.setItem("vvec_thema", neu); } catch (e) { /* egal */ }
+}
+
 function App() {
   const [konto, setKonto] = useState(null);
   const [r, setR] = useState(route());
@@ -208,6 +215,7 @@ function App() {
   useEffect(() => bus.an("talk-oeffnen", (d) => { setTalkStart({ ...(d || {}), n: Date.now() }); if (d && d.kontext) setKontext(d.kontext); setTalk(true); }), []);
   useEffect(() => bus.an("talk-kontext", (k) => setKontext(k)), []);
   useEffect(() => bus.an("erfassen", () => setErfassen(true)), []);
+  useEffect(() => bus.an("thema-setzen", (neu) => themaSetzen(neu)), []);
   // Die Server-Sektion steht fest auf der Seite System; wer sie von anderswo
   // anfordert (frueher: Aufklappen), landet dort.
   useEffect(() => bus.an("server-sektion", () => navigiere("#/system")), []);
@@ -246,9 +254,7 @@ function App() {
 
   function thema() {
     const jetzt = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    const neu = jetzt === "dark" ? "light" : "dark";
-    document.documentElement.dataset.theme = neu;
-    try { localStorage.setItem("vvec_thema", neu); } catch (e) { /* egal */ }
+    themaSetzen(jetzt === "dark" ? "light" : "dark");
   }
 
   return html`<div class=${"schale" + (talk ? " mit-talk" : "") + (FENSTER ? " fenster" : "")}>

@@ -11,8 +11,8 @@
 // Gespraechskennung null (jeder Satz ein neues Gespraech) und keine offenen
 // Vorschlaege (ein "ja" fuehrte nie etwas aus). Kennung und Verlauf liegen
 // deshalb zusaetzlich in Refs, die die Schleife immer aktuell liest.
-import { Zuordnung } from "./zuordnung.js";
-import { useEsc, html, useState, useEffect, useRef, Icon, Md, toast, fehlerMelden, aktualisieren, navigiere, rolleName, bus, talkSchalter, TalkSchalter, GlobusKnopf, Ziehgriff } from "./ui.js";
+import { Zuordnung, gespraechOeffnen } from "./zuordnung.js";
+import { escFensterZu, useEsc, html, useState, useEffect, useRef, Icon, Md, toast, fehlerMelden, aktualisieren, navigiere, rolleName, bus, talkSchalter, TalkSchalter, GlobusKnopf, Ziehgriff } from "./ui.js";
 import { api, strom } from "./api.js";
 import { Composer } from "./composer.js";
 import { boardFrageMerken } from "./board.js";
@@ -126,7 +126,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
   // Der Sprechen-Knopf im Kopf zeigt, was gerade passiert, und kann beenden.
   useEffect(() => { bus.sende("dialog-zustand", frei ? frei.zustand : null); }, [frei && frei.zustand]);
   useEffect(() => bus.an("dialog-ende", () => { ausKopf.current = false; freiStopp(); }), []);
-  useEsc(() => { if (freiAn.current) freiStopp(); else zu(); });
+  useEsc(() => { if (freiAn.current) freiStopp(); else zu(); }, true, "talk");
 
   function zuAnzeige(m) {
     const d = m.daten || {};
@@ -162,8 +162,20 @@ export function Talk({ zu, kontext, setKontext, start }) {
       const z = (fertig.zeigen || [])[0];
       // "Oeffne das Ergebnis zu …": genau dieses eine Ding (gespraech.oeffnen_aufloesen).
       const o = (fertig.oeffnen || [])[0];
+      // Werkzeuge (18.10.2026): das Cockpit selbst bedienen, nicht nur Seiten oeffnen.
+      const w = fertig.werkzeug;
+      if (w === "erfassen") bus.sende("erfassen");
+      else if (w === "suche") bus.sende("suche-oeffnen");
+      else if (w === "hell" || w === "dunkel") bus.sende("thema-setzen", w === "dunkel" ? "dark" : "light");
+      else if (w === "zurueck") history.back();
+      else if (w === "fenster_zu" && !escFensterZu("talk")) toast("Es ist kein Fenster offen.");
+      // Auf dem Telefon liegt Talk ueber der ganzen Seite: nach dem Oeffnen zur Seite
+      // gehen -- ausser beim Freisprechen, das liefe sonst mitten im Satz aus.
+      const wegTreten = () => { if (!freiAn.current && matchMedia("(max-width:820px)").matches) setTimeout(zu, 400); };
+      if ((o && !(o.art === "gespraech" && o.g_art === "talk")) || z || w === "erfassen" || w === "suche") wegTreten();
       if (o) {
-        if (o.art === "ergebnis") bus.sende("ergebnis-zeigen", o.id);
+        if (o.art === "gespraech") gespraechOeffnen({ art: o.g_art, id: o.id, wer: o.wer }, bus);
+        else if (o.art === "ergebnis") bus.sende("ergebnis-zeigen", o.id);
         else if (o.art === "aufgabe") bus.sende("aufgabe-zeigen", o.id);
         else if (o.art === "notiz") bus.sende("notiz-zeigen", o.id);
         else navigiere({ langlauf: "/langlauf/", vorgang: "/inbox/", projekt: "/projects/" }[o.art] + o.id);
@@ -369,7 +381,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
     ${frei && html`<${StimmeKreis} zustand=${frei.zustand} pegel=${frei.pegel || 0} text=${frei.text} beiKlick=${kreisKlick} />`}
     <div class="talk-verlauf" ref=${verlaufRef}>
       ${!msgs.length && !lauf && !frei && html`<div class="talk-start">
-        <p style="text-align:center">Schreib mir hier, oder tipp oben auf <b>Sprechen</b> und rede einfach los. Ich ändere nichts ohne dein Ja. Zum Schluss genügt „Dialog beenden“.</p>
+        <p style="text-align:center">Schreib mir hier, oder tipp oben auf <b>Sprechen</b> und rede einfach los. Ich ändere nichts ohne dein Ja. Bedienen kannst du alles mit Worten: „öffne den Verbrauch“, „zeig mir den Zeitplan von BVE“, „Chat mit Neal“, „zurück“. Zum Schluss genügt „Dialog beenden“.</p>
         <div class="knopfreihe" style="justify-content:center">
           <button class="btn klein" onClick=${() => senden("Was liegt an?", [], false)}>Was liegt an?</button>
           <button class="btn klein" onClick=${durchgehen}><${Icon} n="play" g=${12} />Entscheidungen per Stimme</button>

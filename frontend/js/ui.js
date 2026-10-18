@@ -131,15 +131,25 @@ export function fehlerMelden(e) { toast(e && e.message ? e.message : String(e), 
 // aufgeht, legt sich oben drauf. Ein Eingabefeld, das Escape selbst nutzt
 // (Umbenennen abbrechen), ruft preventDefault -- dann bleibt das Fenster offen.
 const escStapel = [];
-export function useEsc(zu, an = true) {
+// marke: wer den Eintrag gesetzt hat -- Talk nennt sich "talk", damit "schliess das
+// Fenster" per Sprache das Fenster darueber schliesst und nicht Talk selbst.
+export function useEsc(zu, an = true, marke = "") {
   const ref = useRef(zu);
   ref.current = zu;
   useEffect(() => {
     if (!an) return;
     const eintrag = () => ref.current && ref.current();
+    eintrag.marke = marke;
     escStapel.push(eintrag);
     return () => { const i = escStapel.lastIndexOf(eintrag); if (i >= 0) escStapel.splice(i, 1); };
   }, [an]);
+}
+// Das oberste Fenster schliessen, ausser es gehoert "ausser" (Talk per Sprache).
+export function escFensterZu(ausser) {
+  const oben = escStapel[escStapel.length - 1];
+  if (!oben || oben.marke === ausser) return false;
+  oben();
+  return true;
 }
 function escAusloesen() {
   const oben = escStapel[escStapel.length - 1];
