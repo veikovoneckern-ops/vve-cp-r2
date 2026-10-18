@@ -29,7 +29,7 @@ from . import db, llm, modellkatalog, stab
 
 ART_NAME = {"download": "Download", "pipeline": "Team-Pipeline", "langlauf": "Langläufer", "video": "Video",
             "folienbilder": "Bilder für ein Ergebnis", "medien": "Bild aus dem Gespräch", "neo": "Neo",
-            "gespraech": "Antwort im Gespräch", "revision": "Modell-Revision", "verfahren": "Verfahren",
+            "gespraech": "Antwort im Gespräch", "revision": "Modell-Revision", "ruf": "Ruf im Netz", "verfahren": "Verfahren",
             "system": "Server-Auftrag", "dossier": "Recherche-Dossier"}
 
 
@@ -151,6 +151,14 @@ def sammeln(gespraeche: dict[str, dict[str, Any]], wer_name) -> dict[str, Any]:
                         "teile": f"{rs.get('fertig') or 0} von {rs['geplant']} Vergleichen" if rs.get("geplant") else None,
                         "prozent": round((rs.get("fertig") or 0) / rs["geplant"] * 100) if rs.get("geplant") else None,
                         "link": "#/modelle/optimierung", "steuerung": ["abbrechen"]})
+    from . import ruf
+    if ruf.STAND.get("laeuft") and not rs.get("laeuft"):
+        g = ruf.STAND.get("geplant") or 0
+        laufend.append({"id": "ruf", "art": "ruf", "titel": "Modelle im Netz prüfen", "wer": "Cockpit",
+                        "schritt": ruf.STAND.get("schritt"), "start": ruf.STAND.get("start"), "stand": "laeuft",
+                        "teile": f"{ruf.STAND.get('fertig') or 0} von {g} Modellen" if g else None,
+                        "prozent": round((ruf.STAND.get("fertig") or 0) / g * 100) if g else None,
+                        "link": "#/modelle/uebersicht", "steuerung": ["abbrechen"]})
     for art, t in list(verfahren._TASKS.items()):
         if t and not t.done():
             laufend.append({"id": "verfahren:" + art, "art": "verfahren", "titel": {"brainstrom": "BrainStrom", "exo": "ExO"}.get(art, art),
@@ -272,6 +280,11 @@ def steuern(aid: str, aktion: str, gespraeche: dict[str, dict[str, Any]]) -> dic
     if art == "dossier":
         from . import dossier
         if not dossier.abbrechen(ref):
+            raise ValueError("Läuft schon nicht mehr.")
+        return {"ok": True}
+    if art == "ruf":
+        from . import ruf
+        if not ruf.abbrechen():
             raise ValueError("Läuft schon nicht mehr.")
         return {"ok": True}
     if art == "revision":

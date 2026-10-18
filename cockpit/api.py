@@ -1659,7 +1659,7 @@ async def verbrauch_preise(request: Request):
 # was liegt hier, wer nutzt es wirklich, was sollte ich ersetzen, was ist neu.
 @router.get("/modelle")
 async def modelle_uebersicht(frisch: int = 0):
-    from . import modellkatalog, systeminfo
+    from . import modellkatalog, ruf, systeminfo
     s = await systeminfo.status()
     vram = systeminfo._vram_gesamt(s)
     inst_gb = modellkatalog.lokal_gb()
@@ -1697,6 +1697,7 @@ async def modelle_uebersicht(frisch: int = 0):
     return {"installiert": installiert, "vram": vram, "frei_gb": ((s or {}).get("disk_gb") or {}).get("free"),
             "empfehlungen": modellkatalog.vorschlaege(katalog, vram) + modellkatalog.neu_vorschlaege(neu, 8),
             "neu": neu, "katalog_stand": katalog and katalog.get("zeit"), "laden": modellkatalog.LADEN,
+            "ruf": ruf.alle(),
             "erfasst_seit": db.wert("SELECT MIN(zeit) FROM verbrauch WHERE art='lokal'")}
 
 
@@ -1775,7 +1776,7 @@ async def langlauf_steuern(lid: str, aktion: str, request: Request):
 # einer Messung (Veiko, 17.10.2026). Details: revision.py.
 @router.get("/revision")
 async def revision_uebersicht():
-    from . import modellkatalog, revision, systeminfo
+    from . import modellkatalog, revision, ruf, systeminfo
     s = await systeminfo.status()
     vram = systeminfo._vram_gesamt(s)
     inst = modellkatalog.lokal_gb()
@@ -1796,7 +1797,9 @@ async def revision_uebersicht():
             "geladen_ungemessen": revision.geladen_ungemessen(neu), "gebraucht": await revision.gebraucht_von(),
             "groessen": inst, "extern": await teamchat.externe_liste(),
             # Abgewogene Gesamtbesetzung beider Karten (17.10.2026, revision.gesamtplan).
-            "gesamtplan": await revision.gesamtplan()}
+            "gesamtplan": await revision.gesamtplan(),
+            # Qualitaet laut Netz und das klare Urteil je Empfehlung (18.10.2026, ruf.py).
+            "ruf": ruf.alle(), "ruf_stand": ruf.STAND, "urteile": await revision.urteile(neu)}
 
 
 @router.post("/revision/{aktion}")
@@ -1819,6 +1822,9 @@ async def revision_aktion(aktion: str, request: Request):
         if aktion == "verwerfen":
             revision.verwerfen(str(d.get("messung") or ""))
             return {"ok": True}
+        if aktion == "ruf":
+            from . import ruf
+            return {"gestartet": ruf.starten(bool(d.get("alles"))), "stand": ruf.STAND}
     except ValueError as e:
         raise HTTPException(409, str(e))
     raise HTTPException(404, "Unbekannte Aktion")

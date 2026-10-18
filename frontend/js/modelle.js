@@ -66,6 +66,33 @@ function EntfernenKnopf({ name, gebraucht, gb, nachher }) {
     aktion=${() => tun("/modelle/entfernen", { name, trotzdem: true }, `${name} entfernt.`, nachher)} />`;
 }
 
+// ------------------------------------------------------------ Urteil und Ruf im Netz
+// Veiko, 18.10.2026: "nicht nur den technischen Teil, sondern vor allem die
+// Qualitaet der Ergebnisse -- und ein klares Statement". Jede Empfehlung traegt
+// deshalb oben EIN Wort und EINEN Satz (ruf.statement: eigene Messung vor Ruf im
+// Netz vor Technik), darunter aufklappbar, was im Netz steht -- mit Quellen.
+const URTEIL_FARBE = { "sehr gut": "gruen", gut: "gruen", durchwachsen: "gelb", schwach: "rot", unklar: "" };
+function Urteil({ st }) {
+  if (!st) return null;
+  return html`<div class=${"mo-urteil " + (st.farbe || "")}><b>${st.wort}</b><span>${st.satz}</span></div>`;
+}
+function RufPill({ r }) {
+  if (!r) return html`<span class="pill" title="Wird nachts im Netz geprüft">Netz: offen</span>`;
+  return html`<span class=${"pill " + (URTEIL_FARBE[r.urteil] || "")} title=${r.satz || ""}>Netz: ${r.urteil}</span>`;
+}
+function RufDetails({ name, r }) {
+  if (!r) return html`<div class="leise klein">Was andere mit ${name} erleben, ist noch nicht geprüft -- das passiert heute Nacht oder per „Im Netz prüfen“ oben.</div>`;
+  return html`<div class="mo-ruf klein">
+    <div><b class="mono">${name}</b> <${RufPill} r=${r} /> <span class="leise">geprüft ${zeitText(r.zeit)}${r.verdichtet_mit ? " · verdichtet mit " + r.verdichtet_mit : ""}</span></div>
+    ${r.satz && html`<div>${r.satz}</div>`}
+    ${(r.staerken || []).length > 0 && html`<div class="mo-ruf-liste"><span class="leise">Stärken:</span>${r.staerken.map((x) => html`<div>+ ${x}</div>`)}</div>`}
+    ${(r.schwaechen || []).length > 0 && html`<div class="mo-ruf-liste"><span class="leise">Schwächen:</span>${r.schwaechen.map((x) => html`<div>− ${x}</div>`)}</div>`}
+    ${(r.vergleiche || []).length > 0 && html`<div class="mo-ruf-liste"><span class="leise">Im Vergleich:</span>${r.vergleiche.map((x) => html`<div>${x}</div>`)}</div>`}
+    ${r.deutsch && r.deutsch !== "unbekannt" && html`<div><span class="leise">Deutsch:</span> ${r.deutsch}</div>`}
+    ${(r.quellen || []).length > 0 && html`<ol class="mo-ruf-quellen">${r.quellen.map((q) => html`<li><a href=${q.url} target="_blank" rel="noopener">${q.titel || q.url}</a></li>`)}</ol>`}
+  </div>`;
+}
+
 // ------------------------------------------------------------ Übersicht
 // Wo jede Rolle im Ablauf sitzt. Unbekannte (selbst angelegte) Rollen arbeiten aus.
 const STUFE = { pmo: "planen", kritiker: "pruefen" };
@@ -83,20 +110,26 @@ function naechster(p, rev, laden) {
   const gemessen = rev.vorschlaege.filter((v) => v.platz === p.platz);
   if (gemessen.length) return { art: "gemessen", v: gemessen[0], weitere: gemessen.slice(1) };
   const geladen = (rev.geladen_ungemessen[p.platz] || []).filter((n) => n !== p.modell);
-  if (geladen.length) return { art: "geladen", name: geladen[0], weitere: geladen.slice(1) };
-  const lad = rev.laden.filter((x) => (x.plaetze || []).includes(p.platz));
+  if (geladen.length) return { art: "geladen", name: geladen[0], st: ((rev.urteile || {}).geladen || {})[p.platz + "|" + geladen[0]], weitere: geladen.slice(1) };
+  // Nach dem Urteil geordnet: was sich laut Netz lohnt, zuerst; "Nicht laden" nie als faelliger Schritt.
+  const rang = { gruen: 0, "": 1, gelb: 2, rot: 3 };
+  const st = (x) => ((rev.urteile || {}).laden || {})[p.platz + "|" + x.name];
+  const lad = rev.laden.filter((x) => (x.plaetze || []).includes(p.platz))
+    .sort((a, b) => rang[(st(a) || {}).farbe || ""] - rang[(st(b) || {}).farbe || ""]);
   // Ein Download, der fuer diese Rolle laeuft, zaehlt wie "laden" -- der Knopf zeigt dann den Balken.
-  if (lad.length) return { art: "laden", x: lad[0], weitere: lad.slice(1) };
+  if (lad.length && ((st(lad[0]) || {}).farbe !== "rot" || laden[lad[0].name])) return { art: "laden", x: lad[0], st: st(lad[0]), weitere: lad.slice(1) };
   return null;
 }
 
 function Vorschlag({ p, n, rev, laden, neuLaden }) {
-  if (!n) return html`<div class="mo-vs ruhig klein leise">Kein besserer Kandidat bekannt. Die Revision sucht jede Nacht weiter.</div>`;
+  if (!n) return html`<div class="mo-vs ruhig klein"><${Urteil} st=${((rev.urteile || {}).behalten || {})[p.platz]} />
+    <div class="leise">Kein besserer Kandidat bekannt. Die Revision sucht jede Nacht weiter.</div></div>`;
   const umstellen = (modell, messung) => tun("/revision/umstellen", { platz: p.platz, modell, messung }, `${p.name} rechnet jetzt mit ${modell}.`, neuLaden);
   if (n.art === "gemessen") {
     const v = n.v;
     return html`<div class="mo-vs gruen">
-      <div class="mo-vs-kopf"><span class="pill gruen">gemessen besser</span>${v.art === "abwaegen" ? html`<span class="pill gelb">abwägen</span>` : ""}</div>
+      <${Urteil} st=${v.statement} />
+      <div class="mo-vs-kopf"><span class="pill gruen">gemessen besser</span>${v.art === "abwaegen" ? html`<span class="pill gelb">abwägen</span>` : ""}<${RufPill} r=${(rev.ruf || {})[v.kandidat]} /></div>
       <div><b class="mono">${v.kandidat}</b> statt <span class="mono">${v.bisher}</span></div>
       <div class="leise klein">${v.warum} Gemessen ${zeitText(v.zeit)}.</div>
       <div class="knopfreihe"><button class="btn klein primaer" onClick=${() => umstellen(v.kandidat, v.messung)}>Umstellen</button>
@@ -105,7 +138,8 @@ function Vorschlag({ p, n, rev, laden, neuLaden }) {
   if (n.art === "geladen") {
     const st = rev.stand || {};
     return html`<div class="mo-vs blau">
-      <div class="mo-vs-kopf"><span class="pill blau">geladen, noch nicht gemessen</span></div>
+      <${Urteil} st=${n.st} />
+      <div class="mo-vs-kopf"><span class="pill blau">geladen, noch nicht gemessen</span><${RufPill} r=${(rev.ruf || {})[n.name]} /></div>
       <div><b class="mono">${n.name}</b> ${rev.groessen[n.name] ? html`<span class="leise klein">${gbText(rev.groessen[n.name])}</span>` : ""}</div>
       <div class="leise klein">Liegt auf dem Server und passt zu dieser Rolle. Die Revision vergleicht es heute Nacht mit echten Aufgaben von ${p.name} -- oder jetzt.</div>
       <div class="knopfreihe"><button class="btn klein primaer" disabled=${st.laeuft} onClick=${() => tun("/revision/start", null, "Die Revision misst jetzt (einige Minuten je Vergleich).", neuLaden)}>
@@ -114,7 +148,8 @@ function Vorschlag({ p, n, rev, laden, neuLaden }) {
   }
   const x = n.x;
   return html`<div class="mo-vs">
-    <div class="mo-vs-kopf"><span class="pill lila">${x.neuer ? "Nachfolger bei Ollama" : "neu bei Ollama"}</span><span class="pill">ungetestet</span></div>
+    <${Urteil} st=${n.st} />
+    <div class="mo-vs-kopf"><span class="pill lila">${x.neuer ? "Nachfolger bei Ollama" : "neu bei Ollama"}</span><span class="pill">ungetestet</span><${RufPill} r=${(rev.ruf || {})[x.name]} /></div>
     <div><b class="mono">${x.name}</b> <span class="leise klein">${gbText(x.gb)} · ${x.passt}</span></div>
     <div class="leise klein">${x.ersetzt.includes(p.modell) ? `Würde ${p.modell} ersetzen. ` : `Passt zur Arbeit von ${p.name}. `}Nach dem Laden misst die nächste Nacht, ob es für ${p.name} besser ist.</div>
     <div class="knopfreihe"><${LadenKnopf} name=${x.name} laden=${laden} nachher=${neuLaden} /></div></div>`;
@@ -141,6 +176,7 @@ function RollenKarte({ p, rev, laden, neuLaden }) {
   const n = naechster(p, rev, laden);
   const urteile = Object.entries(p.urteile || {});
   const weitere = n && n.weitere && n.weitere.length;
+  const vorgeschlagen = n ? (n.v ? n.v.kandidat : n.name || (n.x && n.x.name)) : null;
   const zustand = !n ? "" : n.art === "gemessen" ? " hat-gruen" : n.art === "geladen" ? " hat-blau" : " hat-lila";
   return html`<div class=${"mo-rolle" + zustand}>
     <div class="mo-rolle-kopf">${p.rolle ? html`<${Avatar} wer=${p.rolle} name=${p.name} g=${30} />` : html`<span class="mo-talk-ico"><${Icon} n="talk" g=${16} /></span>`}
@@ -159,6 +195,9 @@ function RollenKarte({ p, rev, laden, neuLaden }) {
         ${rev.installiert.map((m) => html`<option value=${m}>${m}</option>`)}</select>
       ${weitere ? html`<div class="mo-weitere">${n.weitere.map((w) => html`<div>${w.kandidat ? html`<b class="mono">${w.kandidat}</b>: ${w.warum}`
           : w.name ? html`<b class="mono">${w.name}</b> ${w.gb ? `(${gbText(w.gb)}, ${w.passt})` : "(geladen, ungemessen)"}` : html`<b class="mono">${w}</b> (geladen, ungemessen)`}</div>`)}</div>` : ""}
+      <div class="mo-ruf-kopf leise">Was andere im Netz mit den Modellen erleben</div>
+      <${RufDetails} name=${p.modell} r=${(rev.ruf || {})[p.modell]} />
+      ${vorgeschlagen && html`<${RufDetails} name=${vorgeschlagen} r=${(rev.ruf || {})[vorgeschlagen]} />`}
       <div class="leise">„Ø“ ist die mittlere Wartezeit je Aufruf, Lesen und Laden eingeschlossen; das reine Schreibtempo misst die Optimierung.</div>
     </div>`}
   </div>`;
@@ -193,6 +232,7 @@ function Gesamtplan({ plan, neuLaden }) {
   return html`<section class="karte mo-plan">
     <div class="karte-kopf"><h3>Gesamtplan für deine zwei Karten</h3>
       <span class="leise klein">je Karte 24 GB · Neo behält sein Code-Modell (${plan.neo || "—"}) und lädt nur, wenn du mit ihm arbeitest</span></div>
+    ${plan.fazit && html`<div class="mo-urteil gruen mo-fazit"><b>Empfehlung</b><span>${plan.fazit.replace(/^Klare Empfehlung: /, "")}</span></div>`}
     ${plan.hinweis && html`<p class="hinweisbox klein">${plan.hinweis}</p>`}
     <div class="mo-plan-raster">${plan.varianten.map((v) => {
       const an = v.name === plan.empfohlen;
@@ -201,7 +241,8 @@ function Gesamtplan({ plan, neuLaden }) {
         <div class="leise klein">${v.kurz}</div>
         <div class="mo-var-modelle">${v.modelle.map((m) => html`<div class="mo-var-modell">
           <span class="mono">${m.name}</span> <span class=${"pill " + (m.eine_karte ? "" : "gelb")}>${String(m.gb).replace(".", ",")} GB${m.eine_karte ? "" : " · beide Karten"}</span>
-          <div class="leise klein">${m.wer.join(", ")}</div></div>`)}</div>
+          <div class="leise klein">${m.wer.join(", ")}</div>
+          <div class="klein mo-var-netz">${m.urteil ? html`<span class=${"pill " + (URTEIL_FARBE[m.urteil] || "")}>Netz: ${m.urteil}</span> ` : ""}${m.netz}</div></div>`)}</div>
         <div class="klein mo-var-pro">${v.vorteile.map((x) => html`<div>+ ${x}</div>`)}</div>
         ${v.nachteile.length ? html`<div class="klein mo-var-contra">${v.nachteile.map((x) => html`<div>− ${x}</div>`)}</div>` : ""}
         ${v.name !== "Heutige Besetzung" && html`<button class=${"btn klein " + (an ? "primaer" : "")}
@@ -211,6 +252,23 @@ function Gesamtplan({ plan, neuLaden }) {
     ${(plan.frei || []).length > 0 && html`<p class="leise klein" style="margin-top:8px">Mit der Empfehlung braucht niemand mehr:
       ${plan.frei.map((m) => `${m.name} (${String(m.gb).replace(".", ",")} GB)`).join(", ")} -- entfernen unten unter „Wird von niemandem gebraucht“, sobald es so weit ist.</p>`}
   </section>`;
+}
+
+// Stand der Netzpruefung: wie viele Modelle ein Urteil haben, wann zuletzt, und von Hand anstossen.
+function RufKopf({ rev, neuLaden }) {
+  const st = rev.ruf_stand || {};
+  const ruf = rev.ruf || {};
+  const namen = rev.installiert || [];
+  const mit = namen.filter((n) => ruf[n]).length;
+  const juengst = Object.values(ruf).reduce((m, r) => Math.max(m, r.zeit || 0), 0);
+  return html`<div class="karte mo-ruf-leiste">
+    <div class="haupt-text"><b>Qualität laut Netz</b>
+      <div class="leise klein">${st.laeuft ? `Prüft gerade: ${st.schritt || ""} (${st.fertig || 0} von ${st.geplant || "?"})`
+        : `${mit} von ${namen.length} installierten Modellen haben ein Urteil${juengst ? ", zuletzt " + zeitText(juengst) : ""}. Jede Nacht werden neue Modelle zuerst geprüft, alle anderen alle zwei Wochen erneut -- aus Testberichten, Reddit und Benchmarks, über deine eigene Suche, verdichtet auf deinem Server.`}
+        ${st.fehler && !st.laeuft ? html` <span class="pill gelb" title=${st.fehler}>zuletzt mit Fehler</span>` : ""}</div></div>
+    <button class="btn klein" disabled=${st.laeuft} onClick=${() => tun("/revision/ruf", {}, "Die Prüfung im Netz läuft -- je Modell etwa eine Minute. Stand unter Current Actions.", neuLaden)}>
+      <${Icon} n="suche" g=${13} />${st.laeuft ? "prüft …" : "Im Netz prüfen"}</button>
+  </div>`;
 }
 
 function Uebersicht({ rev, laden, neuLaden }) {
@@ -240,6 +298,7 @@ function Uebersicht({ rev, laden, neuLaden }) {
         : html`<b>Nichts zu tun.</b><span class="leise klein">Jede Rolle rechnet mit dem besten bekannten Modell. Die Revision sucht jede Nacht weiter.</span>`}
       ${downloads > 0 && html`<a class="btn klein" href="#/aktionen"><${Icon} n="download" g=${13} />${downloads} Download${downloads > 1 ? "s" : ""} -- Current Actions</a>`}
     </div>
+    <${RufKopf} rev=${rev} neuLaden=${neuLaden} />
 
     <${Gesamtplan} plan=${rev.gesamtplan} neuLaden=${neuLaden} />
 
@@ -366,6 +425,7 @@ function NeuBeiOllama({ d, laden, neuLaden, prueft, frisch }) {
             ${f.einordnung.neue_rolle && html`<div><span class="leise">Neue Rolle denkbar:</span> <b>${f.einordnung.neue_rolle.name}</b> -- ${f.einordnung.neue_rolle.wofuer}</div>`}
           </div>`}
           ${f.ausgaben.map((a) => html`<div class="mo-ausgabe"><span class="mono klein">${a.name}</span><span class="leise klein">${a.gb} GB · ${a.passt}</span>
+            ${(d.ruf || {})[a.name] && html`<${RufPill} r=${d.ruf[a.name]} />`}
             ${a.installiert ? html`<span class="pill gruen">installiert</span>` : html`<${LadenKnopf} name=${a.name} laden=${laden} nachher=${neuLaden} />`}</div>`)}
         </div>`; })}</div>`
         : html`<p class="leise">${d.neu && d.neu.fehler ? "ollama.com war nicht erreichbar: " + d.neu.fehler : "Noch nicht geprüft."}</p>`}
@@ -390,7 +450,7 @@ export function Modelle({ tab }) {
   useEffect(() => { holen(false); revHolen(); }, []);
   // Laeuft ein Download oder eine Revision, alle paar Sekunden den Stand holen.
   const laedt = Object.values(laden).some((j) => j.stand === "laeuft");
-  const prueftRev = !!(rev && rev.stand && rev.stand.laeuft);
+  const prueftRev = !!(rev && ((rev.stand && rev.stand.laeuft) || (rev.ruf_stand && rev.ruf_stand.laeuft)));
   useEffect(() => {
     if (!laedt) return undefined;
     const t = setInterval(() => api("/system/modell-laden").then((x) => {

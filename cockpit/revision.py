@@ -44,7 +44,7 @@ import traceback
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from . import db, llm, modellkatalog, stab
+from . import db, llm, modellkatalog, ruf, stab
 
 BERLIN = ZoneInfo("Europe/Berlin")
 MAX_VERGLEICHE = 4
@@ -311,6 +311,15 @@ async def lauf(von_hand: bool = False) -> dict[str, Any]:
                                     {"arbeit": llm.vorgabe("arbeit"), "talk": llm.vorgabe("talk")})
         except Exception:  # noqa: BLE001 -- ohne ollama.com wird trotzdem gemessen, was installiert ist
             neu = None
+        # Ruf im Netz (18.10.2026, ruf.py): jede Nacht, nicht nur einmal -- Modelle ohne
+        # Urteil zuerst, dann die aeltesten. Vor den Messungen, damit die Vorschlaege
+        # morgens beides tragen.
+        _stand_setzen(schritt="liest im Netz, wie gut die Modelle in der Praxis sind")
+        try:
+            ruf_n = await ruf.auffrischen(await ruf.relevante_modelle(), ruf.JE_NACHT)
+        except Exception:  # noqa: BLE001 -- ohne Netz wird trotzdem gemessen
+            traceback.print_exc()
+            ruf_n = 0
         paare = []
         for p in await plaetze():
             if not p["modell"]:
@@ -333,8 +342,9 @@ async def lauf(von_hand: bool = False) -> dict[str, Any]:
                 finally:
                     stab.laeuft(None)
         _stand_setzen(laeuft=False, ende=time.time(), schritt=None,
-                      ergebnis=f"{fertig} Vergleiche" if paare else "Nichts Neues zu messen: kein installiertes Modell, "
+                      ergebnis=(f"{fertig} Vergleiche" if paare else "Nichts Neues zu messen: kein installiertes Modell, "
                                                                      "das für einen Platz in Frage kommt und noch nicht gemessen wurde.")
+                      + (f"; {ruf_n} Modelle im Netz geprüft" if ruf_n else ""))
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
         _stand_setzen(laeuft=False, ende=time.time(), schritt=None, fehler=f"{e.__class__.__name__}: {str(e)[:300]}")
@@ -404,8 +414,9 @@ async def vorschlaege() -> list[dict[str, Any]]:
         art, warum = _bewerten(m)
         if art == "behalten":
             continue
+        st = ruf.statement("gemessen", p["name"], ART_AUFGABE.get(p["art"], "allgemein"), m["bisher"], m["kandidat"], {**m, "art": art})
         aus.append({"art": art, "platz": m["platz"], "name": p["name"], "bisher": m["bisher"], "kandidat": m["kandidat"],
-                    "messung": m["id"], "zeit": m["zeit"],
+                    "messung": m["id"], "zeit": m["zeit"], "statement": st,
                     "titel": f"{p['name']}: {m['kandidat']} statt {m['bisher']}", "warum": warum})
     return aus
 
@@ -631,8 +642,12 @@ def _qualitaet(name: str, aufgabe: str, mess: list[dict[str, Any]]) -> tuple[flo
         sum((m["siege_bisher"] - m["siege_kandidat"]) for m in mess if m["bisher"] == name)
     n = sum(1 for m in mess if name in (m["kandidat"], m["bisher"]))
     rang = _katalog_rang(name, aufgabe)
-    punkte = (10 - rang if rang is not None else 2) + 3 * siege
+    # Qualitaet vor Technik (Veiko, 18.10.2026): der eigene Blindvergleich wiegt am
+    # schwersten, danach der Ruf im Netz (bis etwa +-7), erst dann der Katalog.
+    netz = ruf.punkte(name, aufgabe)
+    punkte = (10 - rang if rang is not None else 2) / 2 + 3 * siege + 1.5 * (netz or 0)
     beleg = (f"{n} Messung{'en' if n != 1 else ''}, Saldo {siege:+d}" if n else "nicht gemessen") + \
+            f", {ruf.kurz(name, aufgabe)}" + \
             (f", Katalog Rang {rang + 1} für „{aufgabe}“" if rang is not None else f", nicht im Katalog für „{aufgabe}“")
     return punkte, beleg
 
@@ -666,7 +681,11 @@ async def gesamtplan() -> dict[str, Any]:
         gesamt = round(sum(bedarf_gb(m, inst, geladen) for m in modelle), 1)
         return {"name": name, "kurz": kurz, "zuordnung": zuordnung,
                 "modelle": [{"name": m, "gb": bedarf_gb(m, inst, geladen), "eine_karte": m in eine_karte,
-                             "wer": [p["name"] for p in pl if zuordnung.get(p["platz"]) == m]} for m in modelle],
+                             "wer": [p["name"] for p in pl if zuordnung.get(p["platz"]) == m],
+                             "netz": (ruf.holen(m) or {}).get("satz") or ruf.kurz(m),
+                             "urteil": (ruf.holen(m) or {}).get("urteil")} for m in modelle],
+                "qualitaet": round(sum(wert(zuordnung[p["platz"]], ART_AUFGABE.get(p["art"], "allgemein"))[0]
+                                       for p in pl if p["platz"] in zuordnung) / max(1, len(zuordnung)), 1),
                 "speicher_gb": gesamt, "gleichzeitig": len(modelle) <= 2 and gesamt <= 2 * KARTE_GB,
                 "vorteile": vorteile, "nachteile": nachteile}
 
@@ -709,8 +728,19 @@ async def gesamtplan() -> dict[str, Any]:
             varianten.append(variante("Heutige Besetzung", "so, wie es gerade eingestellt ist", heute,
                                       ["läuft heute so, nichts muss umgestellt werden"], nachteile))
 
+    beste_q = max((v["qualitaet"] for v in varianten), default=0)
+    for v in varianten:
+        # Qualitaet zuerst: eine Besetzung mit schwaecheren Ergebnissen sagt das ausdruecklich.
+        if v["qualitaet"] < beste_q - 1:
+            v["nachteile"].insert(0, f"schwächere Ergebnisse als die beste Variante (Qualitätswert {v['qualitaet']} gegen {beste_q})")
+        for m in v["modelle"]:
+            if m.get("urteil") in ("durchwachsen", "schwach"):
+                v["nachteile"].insert(0, f"{m['name']} schneidet im Netz nur {m['urteil']} ab")
+
     def kosten(v: dict[str, Any]) -> float:
-        k = (3.0 if not v["gleichzeitig"] else 0.0) + sum(2.0 for m in v["modelle"] if not m["eine_karte"])
+        # Qualitaet vor Technik: ein Punkt Qualitaet wiegt so viel wie ein Umladen.
+        k = 2.0 * (beste_q - v["qualitaet"])
+        k += (3.0 if not v["gleichzeitig"] else 0.0) + sum(2.0 for m in v["modelle"] if not m["eine_karte"])
         if v["name"].startswith("Zwei"):
             k += -1.5 + (2.5 if any("schwächer" in n for n in v["nachteile"]) else 0)
         return k
@@ -725,8 +755,53 @@ async def gesamtplan() -> dict[str, Any]:
         frei = [{"name": n, "gb": g} for n, g in sorted(inst.items(), key=lambda x: -x[1])
                 if n not in bleibt and digests.get(n) not in bleibt_dg]
     return {"varianten": varianten, "empfohlen": empfohlen, "neo": neo_m, "frei": frei, "gemessen": bool(mess),
+            "fazit": _fazit(next((x for x in varianten if x["name"] == empfohlen), None), varianten),
             "hinweis": None if mess else ("Noch keine Messung der Revision auf diesem Server -- die Abwägung stützt sich auf "
                                           "Katalog, Größe und Alltagstempo. Die nächste Nachtrevision liefert echte Vergleiche.")}
+
+
+async def urteile(neu: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    """Das klare Urteil (ruf.statement) zu jedem Vorschlag der Uebersicht, der kein
+    gemessener ist -- die tragen ihres schon (vorschlaege). Schluessel "platz|modell";
+    "behalten" je Platz fuer Rollen ohne Vorschlag."""
+    pl = await plaetze()
+    ungemessen = geladen_ungemessen(neu)
+    laden = laden_vorschlaege(neu)
+    aus: dict[str, dict[str, Any]] = {"behalten": {}, "geladen": {}, "laden": {}}
+    for p in pl:
+        aufgabe = ART_AUFGABE.get(p["art"], "allgemein")
+        aus["behalten"][p["platz"]] = ruf.statement("behalten", p["name"], aufgabe, p["modell"], None)
+        for n in ungemessen.get(p["platz"], []):
+            aus["geladen"][f"{p['platz']}|{n}"] = ruf.statement("geladen", p["name"], aufgabe, p["modell"], n)
+        for x in laden:
+            if p["platz"] in (x.get("plaetze") or []):
+                aus["laden"][f"{p['platz']}|{x['name']}"] = ruf.statement("laden", p["name"], aufgabe, p["modell"], x["name"])
+    return aus
+
+
+def _fazit(v: dict[str, Any] | None, varianten: list[dict[str, Any]]) -> str | None:
+    """Das klare Statement zum Gesamtplan: was, und warum -- Qualitaet zuerst."""
+    if not v:
+        return None
+    haupt = max(v["modelle"], key=lambda m: len(m["wer"]))
+    gruende = []
+    r = ruf.holen(haupt["name"])
+    if r and r.get("urteil") not in (None, "unklar"):
+        gruende.append(f"{haupt['name']} liefert laut Netz {r['urteil']}e Ergebnisse" if r["urteil"] in ("gut",)
+                       else f"{haupt['name']} schneidet im Netz „{r['urteil']}“ ab")
+    else:
+        gruende.append(f"wie gut {haupt['name']} in der Praxis ist, ist im Netz noch nicht belegt")
+    andere = [x for x in varianten if x is not v]
+    if andere and all(x["qualitaet"] <= v["qualitaet"] for x in andere):
+        gruende.append("keine andere Variante liefert bessere Ergebnisse")
+    if v["gleichzeitig"]:
+        gruende.append("alles liegt gleichzeitig im Speicher")
+    satz = f"Klare Empfehlung: „{v['name']}“ -- " + ", ".join(gruende) + "."
+    # Ehrlich sagen, worauf das Urteil noch NICHT steht.
+    offen = [m["name"] for m in v["modelle"] if not ruf.holen(m["name"])]
+    if offen:
+        satz += f" Noch offen: wie gut {', '.join(offen)} laut Netz ist -- wird heute Nacht geprüft, danach kann die Empfehlung kippen."
+    return satz
 
 
 def plan_uebernehmen(zuordnung: dict[str, str]) -> list[str]:
