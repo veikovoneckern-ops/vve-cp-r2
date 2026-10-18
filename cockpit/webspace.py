@@ -409,7 +409,7 @@ Antwortform, genau so:
 <<<SEITE>>>
 (der vollständige neue HTML-Ausschnitt)
 <<<ENDE>>>
-Danach in ein bis drei Sätzen, was du geändert hast."""
+Danach in ein bis drei Sätzen in Alltagssprache, was du geändert hast -- ohne HTML- oder Technikbegriffe (nicht „div“, „Klasse“, „Tag“), so wie man es einem Kollegen sagt."""
 
 
 @router.post("/assistent")

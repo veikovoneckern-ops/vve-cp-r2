@@ -36,6 +36,9 @@ function ausEditor(main) {
   k.removeAttribute("contenteditable");
   let s = k.innerHTML;
   s = s.split(BASIS + "/bilder/").join("/bilder/");
+  // Schreibweise der vorhandenen Seiten halten: strong/em statt b/i, Schalter ohne ="".
+  s = s.replace(/<(\/?)b>/g, "<$1strong>").replace(/<(\/?)i>/g, "<$1em>")
+    .replace(/ (controls|playsinline|autoplay|muted|loop)=""/g, " $1");
   // Leere Absätze, die beim Tippen entstehen, nicht mitschleppen.
   s = s.replace(/<p>(\s|<br>)*<\/p>/g, "").replace(/\n{3,}/g, "\n\n");
   return s.trim();
@@ -67,6 +70,13 @@ export function WebSpace({ pfad: pfadAusAdresse }) {
     return () => clearInterval(i);
   }, [laeuft]);
   useEffect(() => { if (pfadAusAdresse) setPfad(pfadAusAdresse); }, [pfadAusAdresse]);
+  // Gibt es die geöffnete Seite nicht mehr (verworfen, gelöscht), zur Startseite.
+  useEffect(() => {
+    if (stand && !stand.seiten.some((s) => s.pfad === pfad)) {
+      setPfad("index.html");
+      history.replaceState(null, "", "#/webspace");
+    }
+  }, [stand, pfad]);
   useEffect(() => {
     bus.sende("talk-kontext", { art: "webspace", id: "webspace", titel: "WebSpace", pfad });
     return () => bus.sende("talk-kontext", null);

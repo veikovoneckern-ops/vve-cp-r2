@@ -438,7 +438,7 @@ html.neo-vollbild .schale.mit-talk{grid-template-columns:minmax(0,1fr) var(--tal
   /* Wo die Seite ein eigenes Eingabefeld hat (Langlaeufer-, Team-, Board-, Neo-Chat) oder ein
      Fenster offen ist, lag der Knopf ueber deren Senden-Knopf (18.10.2026). Talk bleibt ueber
      das Mikrofon in der Kopfzeile erreichbar. */
-  .schale:has(main .composer) .talk-fab,.schale:has(.modal-grund) .talk-fab{display:none}
+  .schale:has(main .composer) .talk-fab,.schale:has(main .ws) .talk-fab,.schale:has(.modal-grund) .talk-fab{display:none}
   .topbar .suche-feld,.topbar .talk-auf{display:none}
   .nur-mobil{display:inline-flex!important}
 
@@ -1511,9 +1511,9 @@ html.zieht iframe{pointer-events:none}
    Links Seitenliste und Veröffentlichen, rechts der Editor. Der Editor füllt die
    Höhe; die Seite selbst steht in einem Rahmen und scrollt darin. */
 .ws{display:grid;grid-template-columns:270px minmax(0,1fr);height:100%;min-height:0}
-.ws-seite{display:flex;flex-direction:column;gap:10px;padding:14px;border-right:1px solid var(--line);background:var(--surface-2);min-height:0;overflow:auto}
+.ws-seite{display:flex;flex-direction:column;gap:10px;padding:14px;border-right:1px solid var(--line);background:var(--surface-2);min-height:0;overflow:hidden}
 .ws-knoepfe{display:flex;gap:6px}
-.ws-liste{display:flex;flex-direction:column;gap:2px}
+.ws-liste{display:flex;flex-direction:column;gap:2px;flex:1;min-height:0;overflow:auto}
 .ws-gruppe{font-size:11px;font-weight:750;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-4);margin:10px 4px 4px}
 .ws-zeile{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:0 6px;text-align:left;background:none;border:0;border-radius:7px;padding:6px 8px;cursor:pointer;color:var(--ink-2)}
 .ws-zeile:hover{background:var(--hover)}
@@ -1521,7 +1521,7 @@ html.zieht iframe{pointer-events:none}
 .ws-zeile-titel{font-weight:650;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ws-zeile-adr{grid-column:1/-1;font-size:11px;color:var(--ink-4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ws-punkt{width:8px;height:8px;border-radius:50%;background:#C07C12}
-.ws-pub{margin-top:auto}
+.ws-pub{flex:none}
 .ws-pub-kopf{margin-bottom:6px}
 .ws-aend{list-style:none;margin:0 0 10px;padding:0;font-size:12px;display:flex;flex-direction:column;gap:3px;max-height:150px;overflow:auto}
 .ws-aend li{display:flex;gap:6px;align-items:baseline;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
