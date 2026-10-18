@@ -1697,7 +1697,7 @@ async def modelle_uebersicht(frisch: int = 0):
     return {"installiert": installiert, "vram": vram, "frei_gb": ((s or {}).get("disk_gb") or {}).get("free"),
             "empfehlungen": modellkatalog.vorschlaege(katalog, vram) + modellkatalog.neu_vorschlaege(neu, 8),
             "neu": neu, "katalog_stand": katalog and katalog.get("zeit"), "laden": modellkatalog.LADEN,
-            "ruf": ruf.alle(),
+            "ruf": ruf.ansicht(),
             "erfasst_seit": db.wert("SELECT MIN(zeit) FROM verbrauch WHERE art='lokal'")}
 
 
@@ -1799,7 +1799,7 @@ async def revision_uebersicht():
             # Abgewogene Gesamtbesetzung beider Karten (17.10.2026, revision.gesamtplan).
             "gesamtplan": await revision.gesamtplan(),
             # Qualitaet laut Netz und das klare Urteil je Empfehlung (18.10.2026, ruf.py).
-            "ruf": ruf.alle(), "ruf_stand": ruf.STAND, "urteile": await revision.urteile(neu)}
+            "ruf": ruf.ansicht(), "ruf_stand": ruf.STAND, "urteile": await revision.urteile(neu)}
 
 
 @router.post("/revision/{aktion}")

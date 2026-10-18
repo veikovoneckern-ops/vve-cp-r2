@@ -78,8 +78,40 @@ def alle() -> dict[str, dict[str, Any]]:
     return db.einstellung(SCHLUESSEL, {}) or {}
 
 
+_ZWILLINGE: dict[str, Any] = {"zeit": 0.0, "d": {}}
+
+
+def ansicht() -> dict[str, dict[str, Any]]:
+    """Fuer die Oberflaeche: jedes gespeicherte und jedes installierte Modell, so wie
+    holen() es sieht -- also auch Varianten mit dem Urteil ihres Originals."""
+    from . import modellkatalog
+    namen = set(alle()) | set(modellkatalog.lokal())
+    return {n: r for n in namen if (r := holen(n))}
+
+
+def zwilling(name: str | None) -> str | None:
+    """Ein Modell mit denselben Gewichten unter kuerzerem Namen. Anlass: Neos
+    qwen3-coder-neo:30b ist qwen3-coder:30b mit groesserem Fenster -- unter dem
+    eigenen Namen findet das Netz nichts, das Urteil des Originals gilt aber genauso."""
+    if not name:
+        return None
+    if time.time() - _ZWILLINGE["zeit"] > 60:
+        from . import modellkatalog
+        _ZWILLINGE.update({"zeit": time.time(), "d": modellkatalog.lokal()})
+    d = _ZWILLINGE["d"]
+    dg = d.get(name)
+    andere = [n for n, g in d.items() if dg and g == dg and n != name and len(n) < len(name)]
+    return min(andere, key=len) if andere else None
+
+
 def holen(name: str | None) -> dict[str, Any] | None:
-    return alle().get(name or "") if name else None
+    if not name:
+        return None
+    a = alle()
+    z = zwilling(name)
+    if z and a.get(z):
+        return {**a[z], "zwilling": z, "satz": f"Gleiche Gewichte wie {z}: " + (a[z].get("satz") or "")}
+    return a.get(name)
 
 
 def _anzeige_name(name: str) -> str:
@@ -226,7 +258,8 @@ async def relevante_modelle() -> list[str]:
         laden = [x["name"] for x in revision.laden_vorschlaege(neu)]
     except Exception:  # noqa: BLE001 -- ohne ollama.com eben nur das Installierte
         laden = []
-    return list(dict.fromkeys(vorn + laden + namen))
+    # Eigene Varianten (gleiche Gewichte) werden nicht gesucht, sondern ihr Original.
+    return list(dict.fromkeys(zwilling(n) or n for n in vorn + laden + namen))
 
 
 def starten(alles: bool = False) -> bool:
