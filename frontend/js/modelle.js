@@ -111,19 +111,25 @@ function naechster(p, rev, laden) {
   if (gemessen.length) return { art: "gemessen", v: gemessen[0], weitere: gemessen.slice(1) };
   const geladen = (rev.geladen_ungemessen[p.platz] || []).filter((n) => n !== p.modell);
   if (geladen.length) return { art: "geladen", name: geladen[0], st: ((rev.urteile || {}).geladen || {})[p.platz + "|" + geladen[0]], weitere: geladen.slice(1) };
-  // Nach dem Urteil geordnet: was sich laut Netz lohnt, zuerst; "Nicht laden" nie als faelliger Schritt.
-  const rang = { gruen: 0, "": 1, gelb: 2, rot: 3 };
+  // Nach dem Urteil geordnet. Faellig ist nur, was sich laut Netz lohnt ("... lohnt sich")
+  // oder bewusst abzuwaegen ist; "Kein Muss", "Nur zum Testen", "Noch offen" und
+  // "Nicht laden" stehen unter "weitere" -- sonst trug jede Rolle einen Schritt, der
+  // keiner ist (18.10.2026: "Nur zum Testen: clef-flash" an fuenf Karten).
+  const rang = (s) => (!s ? 3 : s.farbe === "gruen" ? 0 : s.wort === "Abwägen" ? 1 : s.farbe === "rot" ? 4 : 2);
   const st = (x) => ((rev.urteile || {}).laden || {})[p.platz + "|" + x.name];
-  const lad = rev.laden.filter((x) => (x.plaetze || []).includes(p.platz))
-    .sort((a, b) => rang[(st(a) || {}).farbe || ""] - rang[(st(b) || {}).farbe || ""]);
-  // Ein Download, der fuer diese Rolle laeuft, zaehlt wie "laden" -- der Knopf zeigt dann den Balken.
-  if (lad.length && ((st(lad[0]) || {}).farbe !== "rot" || laden[lad[0].name])) return { art: "laden", x: lad[0], st: st(lad[0]), weitere: lad.slice(1) };
+  const lad = rev.laden.filter((x) => (x.plaetze || []).includes(p.platz)).sort((a, b) => rang(st(a)) - rang(st(b)));
+  // Ein Download, der fuer diese Rolle laeuft, zaehlt immer -- der Knopf zeigt dann den Balken.
+  const laeuft = lad.find((x) => laden[x.name]);
+  const erstes = laeuft || lad[0];
+  if (erstes && (laeuft || rang(st(erstes)) <= 1)) return { art: "laden", x: erstes, st: st(erstes), weitere: lad.filter((x) => x !== erstes) };
+  // Nichts Faelliges, aber weitere Kandidaten: die stehen dann unter Details.
+  if (lad.length) return { art: "keins", weitere: lad };
   return null;
 }
 
 function Vorschlag({ p, n, rev, laden, neuLaden }) {
-  if (!n) return html`<div class="mo-vs ruhig klein"><${Urteil} st=${((rev.urteile || {}).behalten || {})[p.platz]} />
-    <div class="leise">Kein besserer Kandidat bekannt. Die Revision sucht jede Nacht weiter.</div></div>`;
+  if (!n || n.art === "keins") return html`<div class="mo-vs ruhig klein"><${Urteil} st=${((rev.urteile || {}).behalten || {})[p.platz]} />
+    <div class="leise">${n ? "Kein Kandidat, der sich laut Netz klar lohnt -- die übrigen stehen unter Details." : "Kein besserer Kandidat bekannt."} Die Revision sucht jede Nacht weiter.</div></div>`;
   const umstellen = (modell, messung) => tun("/revision/umstellen", { platz: p.platz, modell, messung }, `${p.name} rechnet jetzt mit ${modell}.`, neuLaden);
   if (n.art === "gemessen") {
     const v = n.v;
@@ -177,7 +183,7 @@ function RollenKarte({ p, rev, laden, neuLaden }) {
   const urteile = Object.entries(p.urteile || {});
   const weitere = n && n.weitere && n.weitere.length;
   const vorgeschlagen = n ? (n.v ? n.v.kandidat : n.name || (n.x && n.x.name)) : null;
-  const zustand = !n ? "" : n.art === "gemessen" ? " hat-gruen" : n.art === "geladen" ? " hat-blau" : " hat-lila";
+  const zustand = !n || n.art === "keins" ? "" : n.art === "gemessen" ? " hat-gruen" : n.art === "geladen" ? " hat-blau" : " hat-lila";
   return html`<div class=${"mo-rolle" + zustand}>
     <div class="mo-rolle-kopf">${p.rolle ? html`<${Avatar} wer=${p.rolle} name=${p.name} g=${30} />` : html`<span class="mo-talk-ico"><${Icon} n="talk" g=${16} /></span>`}
       <div class="mo-rolle-name"><b>${p.name}</b><small>${p.titel}</small></div></div>
@@ -194,7 +200,7 @@ function RollenKarte({ p, rev, laden, neuLaden }) {
         ${!p.modell && html`<option value="">— keins installiert —</option>`}
         ${rev.installiert.map((m) => html`<option value=${m}>${m}</option>`)}</select>
       ${weitere ? html`<div class="mo-weitere">${n.weitere.map((w) => html`<div>${w.kandidat ? html`<b class="mono">${w.kandidat}</b>: ${w.warum}`
-          : w.name ? html`<b class="mono">${w.name}</b> ${w.gb ? `(${gbText(w.gb)}, ${w.passt})` : "(geladen, ungemessen)"}` : html`<b class="mono">${w}</b> (geladen, ungemessen)`}</div>`)}</div>` : ""}
+          : w.name ? html`<b class="mono">${w.name}</b> ${w.gb ? `(${gbText(w.gb)}, ${w.passt})` : "(geladen, ungemessen)"}${((rev.urteile || {}).laden || {})[p.platz + "|" + w.name] ? html` -- <b>${rev.urteile.laden[p.platz + "|" + w.name].wort}</b>: ${rev.urteile.laden[p.platz + "|" + w.name].satz}` : ""}` : html`<b class="mono">${w}</b> (geladen, ungemessen)`}</div>`)}</div>` : ""}
       <div class="mo-ruf-kopf leise">Was andere im Netz mit den Modellen erleben</div>
       <${RufDetails} name=${p.modell} r=${(rev.ruf || {})[p.modell]} />
       ${vorgeschlagen && html`<${RufDetails} name=${vorgeschlagen} r=${(rev.ruf || {})[vorgeschlagen]} />`}
@@ -227,7 +233,7 @@ function ExterneReihe({ extern }) {
 // Gesamtplan (17.10.2026, revision.gesamtplan): Varianten fuer die GANZE Besetzung
 // beider Karten, gegeneinander abgewogen -- Veiko: "ich suche das Gesamtoptimum
 // fuer mein Setup". Die Einzelvorschlaege an den Rollenkarten bleiben darunter.
-function Gesamtplan({ plan, neuLaden }) {
+function Gesamtplan({ plan, laden, neuLaden }) {
   if (!plan || !(plan.varianten || []).length) return null;
   return html`<section class="karte mo-plan">
     <div class="karte-kopf"><h3>Gesamtplan für deine zwei Karten</h3>
@@ -241,11 +247,15 @@ function Gesamtplan({ plan, neuLaden }) {
         <div class="leise klein">${v.kurz}</div>
         <div class="mo-var-modelle">${v.modelle.map((m) => html`<div class="mo-var-modell">
           <span class="mono">${m.name}</span> <span class=${"pill " + (m.eine_karte ? "" : "gelb")}>${String(m.gb).replace(".", ",")} GB${m.eine_karte ? "" : " · beide Karten"}</span>
+          ${m.installiert === false && html`<span class="pill lila">noch nicht geladen</span>`}
           <div class="leise klein">${m.wer.join(", ")}</div>
           <div class="klein mo-var-netz">${m.urteil ? html`<span class=${"pill " + (URTEIL_FARBE[m.urteil] || "")}>Netz: ${m.urteil}</span> ` : ""}${m.netz}</div></div>`)}</div>
         <div class="klein mo-var-pro">${v.vorteile.map((x) => html`<div>+ ${x}</div>`)}</div>
         ${v.nachteile.length ? html`<div class="klein mo-var-contra">${v.nachteile.map((x) => html`<div>− ${x}</div>`)}</div>` : ""}
-        ${v.name !== "Heutige Besetzung" && html`<button class=${"btn klein " + (an ? "primaer" : "")}
+        ${(v.laden || []).length > 0 && html`<div class="knopfreihe">${v.laden.map((m) => html`<${LadenKnopf} name=${m} laden=${laden} nachher=${neuLaden} text=${"Erst laden: " + m} />`)}
+          <span class="leise klein">Danach misst die nächste Nacht; übernehmen geht, sobald es installiert ist.</span></div>`}
+        ${v.aktiv && v.name !== "Heutige Besetzung" && html`<span class="pill gruen">so eingestellt</span>`}
+        ${v.name !== "Heutige Besetzung" && !v.aktiv && !(v.laden || []).length && html`<button class=${"btn klein " + (an ? "primaer" : "")}
           onClick=${() => tun("/revision/plan", { variante: v.name }, `Umgestellt auf „${v.name}“. Jede Rolle lässt sich einzeln zurückstellen.`, neuLaden)}>
           Diese Besetzung übernehmen</button>`}
       </div>`; })}</div>
@@ -280,14 +290,19 @@ function Uebersicht({ rev, laden, neuLaden }) {
   const neue = (rev.neue_rollen || []);
   // Was es zu tun gibt, gezaehlt aus denselben Quellen wie die Karten.
   const nae = plaetze.map((p) => naechster(p, rev, laden)).filter(Boolean);
-  const zaehl = (a) => nae.filter((x) => x.art === a).length;
+  // Gezaehlt nach dem Urteil der Karte: was "Abwägen" heisst, ist kein "umstellen"
+  // oder "laden" -- sonst sagte die Leiste etwas anderes als die Karte darunter.
+  const urteilVon = (x) => (x.art === "gemessen" ? x.v.statement : x.st) || {};
+  const abwaegen = nae.filter((x) => x.art !== "keins" && urteilVon(x).wort === "Abwägen").length;
+  const zaehl = (a) => nae.filter((x) => x.art === a && urteilVon(x).wort !== "Abwägen").length;
   const frei = Object.keys(rev.groessen).filter((m) => !(rev.gebraucht[m] || []).some((g) => g.art === "fest"));
   const freiGb = frei.reduce((s, m) => s + (rev.groessen[m] || 0), 0);
   const downloads = Object.values(laden).filter((j) => j.stand === "laeuft" || j.stand === "pausiert").length;
   const punkte = [
     zaehl("gemessen") && [`${zaehl("gemessen")}× umstellen`, "gemessen besser", "gruen"],
     zaehl("geladen") && [`${zaehl("geladen")}× messen`, "schon geladen", "blau"],
-    zaehl("laden") && [`${zaehl("laden")}× laden`, "neu bei Ollama", "lila"],
+    zaehl("laden") && [`${zaehl("laden")}× laden`, "lohnt sich laut Netz", "lila"],
+    abwaegen && [`${abwaegen}× abwägen`, "besser, weicht aber vom Plan ab", "gelb"],
     frei.length && [`${frei.length} Modelle frei`, `${Math.round(freiGb)} GB, braucht niemand`, ""],
   ].filter(Boolean);
   return html`
@@ -300,7 +315,7 @@ function Uebersicht({ rev, laden, neuLaden }) {
     </div>
     <${RufKopf} rev=${rev} neuLaden=${neuLaden} />
 
-    <${Gesamtplan} plan=${rev.gesamtplan} neuLaden=${neuLaden} />
+    <${Gesamtplan} plan=${rev.gesamtplan} laden=${laden} neuLaden=${neuLaden} />
 
     <div class="mo-fluss" role="list" aria-label="Wie das Team zusammenarbeitet">
       ${SPALTEN.map(([id, titel, unter], i) => html`<div class="mo-spalte" role="listitem">

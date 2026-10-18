@@ -1330,6 +1330,7 @@ html.zieht iframe{pointer-events:none}
 .mo-todo-punkt.gruen{border-color:var(--sea);background:var(--sea-soft)}
 .mo-todo-punkt.blau{border-color:var(--steel);background:var(--steel-soft)}
 .mo-todo-punkt.lila{border-color:var(--violett);background:var(--violett-soft)}
+.mo-todo-punkt.gelb{border-color:var(--amber);background:var(--amber-soft)}
 .mo-fluss{display:flex;flex-direction:column;gap:0}
 .mo-spalte{display:grid;grid-template-columns:170px minmax(0,1fr);gap:12px;position:relative;padding-bottom:26px}
 .mo-spalte:last-child{padding-bottom:4px}

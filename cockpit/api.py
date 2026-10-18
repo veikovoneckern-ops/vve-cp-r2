@@ -1786,7 +1786,8 @@ async def revision_uebersicht():
                                 {"arbeit": llm.vorgabe("arbeit"), "talk": llm.vorgabe("talk")})
     except Exception:  # noqa: BLE001
         neu = None
-    return {"stand": revision.stand(), "bestand": await revision.bestand(), "vorschlaege": await revision.vorschlaege(),
+    plan = await revision.gesamtplan(neu)
+    return {"stand": revision.stand(), "bestand": await revision.bestand(), "vorschlaege": await revision.vorschlaege(plan),
             "laden": revision.laden_vorschlaege(neu), "neue_rollen": revision.neue_rollen(neu),
             "messungen": db.alle("SELECT * FROM messungen ORDER BY zeit DESC LIMIT 20"),
             "umgestellt": (db.einstellung("revision_umgestellt", []) or [])[:10],
@@ -1797,9 +1798,9 @@ async def revision_uebersicht():
             "geladen_ungemessen": revision.geladen_ungemessen(neu), "gebraucht": await revision.gebraucht_von(),
             "groessen": inst, "extern": await teamchat.externe_liste(),
             # Abgewogene Gesamtbesetzung beider Karten (17.10.2026, revision.gesamtplan).
-            "gesamtplan": await revision.gesamtplan(),
+            "gesamtplan": plan,
             # Qualitaet laut Netz und das klare Urteil je Empfehlung (18.10.2026, ruf.py).
-            "ruf": ruf.ansicht(), "ruf_stand": ruf.STAND, "urteile": await revision.urteile(neu)}
+            "ruf": ruf.ansicht(), "ruf_stand": ruf.STAND, "urteile": await revision.urteile(neu, plan)}
 
 
 @router.post("/revision/{aktion}")
@@ -1818,6 +1819,8 @@ async def revision_aktion(aktion: str, request: Request):
             v = next((x for x in plan["varianten"] if x["name"] == d.get("variante")), None)
             if not v:
                 raise ValueError("Diese Variante gibt es nicht (mehr).")
+            if v.get("laden"):
+                raise ValueError(f"Erst laden: {', '.join(v['laden'])}. Danach misst die nächste Nacht, und die Variante lässt sich übernehmen.")
             return {"getan": revision.plan_uebernehmen(v["zuordnung"])}
         if aktion == "verwerfen":
             revision.verwerfen(str(d.get("messung") or ""))

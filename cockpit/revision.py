@@ -401,7 +401,25 @@ def _bewerten(m: dict[str, Any]) -> tuple[str, str]:
     return "behalten", f"Im verdeckten Vergleich {k} von {n} vorn, {b} hinten, {tempo} -- das bisherige bleibt besser."
 
 
-async def vorschlaege() -> list[dict[str, Any]]:
+def gegen_plan(st: dict[str, Any], kandidat: str, plan: dict[str, Any] | None) -> dict[str, Any]:
+    """Ein Einzelvorschlag, der vom empfohlenen Gesamtplan abweicht, sagt das (18.10.2026:
+    oben "ein Modell fuer alle", unten an Talk "Laden lohnt sich: nemotron" -- zwei
+    Empfehlungen, die sich widersprechen, ohne es zu sagen)."""
+    if not plan or not plan.get("empfohlen") or st.get("farbe") != "gruen":
+        return st
+    v = next((x for x in plan["varianten"] if x["name"] == plan["empfohlen"]), None)
+    if not v:
+        return st
+    im_plan = {m["name"] for m in v["modelle"]}
+    if kandidat in im_plan or kandidat == plan.get("neo"):
+        return st
+    return {"wort": "Abwägen", "farbe": "gelb",
+            "satz": st["satz"] + f" Aber: Das weicht vom empfohlenen Gesamtplan („{v['name']}“) ab -- {kandidat} käme als weiteres "
+                    f"Modell neben {', '.join(sorted(im_plan))} in den Speicher (Umladen, weniger Platz für Bilder). Lohnt nur, "
+                    "wenn dir dieser eine Vorteil das wert ist."}
+
+
+async def vorschlaege(plan: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     aus = []
     jetzt = {p["platz"]: p for p in await plaetze()}
     verworfen = set(db.einstellung("revision_verworfen", []) or [])
@@ -414,7 +432,8 @@ async def vorschlaege() -> list[dict[str, Any]]:
         art, warum = _bewerten(m)
         if art == "behalten":
             continue
-        st = ruf.statement("gemessen", p["name"], ART_AUFGABE.get(p["art"], "allgemein"), m["bisher"], m["kandidat"], {**m, "art": art})
+        st = gegen_plan(ruf.statement("gemessen", p["name"], ART_AUFGABE.get(p["art"], "allgemein"), m["bisher"], m["kandidat"], {**m, "art": art}),
+                        m["kandidat"], plan)
         aus.append({"art": art, "platz": m["platz"], "name": p["name"], "bisher": m["bisher"], "kandidat": m["kandidat"],
                     "messung": m["id"], "zeit": m["zeit"], "statement": st,
                     "titel": f"{p['name']}: {m['kandidat']} statt {m['bisher']}", "warum": warum})
@@ -652,8 +671,32 @@ def _qualitaet(name: str, aufgabe: str, mess: list[dict[str, Any]]) -> tuple[flo
     return punkte, beleg
 
 
-async def gesamtplan() -> dict[str, Any]:
+async def neu_eingeordnet() -> dict[str, Any] | None:
+    """Neu bei Ollama samt Einordnung ins Team -- dieselbe Quelle wie die Rollenkarten."""
+    from . import systeminfo
+    try:
+        s = await systeminfo.status()
+        neu = await modellkatalog.neu_bei_ollama(False, systeminfo._vram_gesamt(s))
+        modellkatalog.einordnen(neu, modellkatalog.lokal_gb(), db.alle("SELECT id, name, titel, art, modell FROM team WHERE aktiv=1"),
+                                {"arbeit": llm.vorgabe("arbeit"), "talk": llm.vorgabe("talk")})
+        return neu
+    except Exception:  # noqa: BLE001 -- ohne ollama.com eben nur das Installierte
+        return None
+
+
+async def gesamtplan(neu: dict[str, Any] | None = None) -> dict[str, Any]:
     inst = {n: g for n, g in modellkatalog.lokal_gb().items() if not _nicht_text(n)}
+    if neu is None:
+        neu = await neu_eingeordnet()
+    # Noch nicht geladene Modelle (Veiko, 18.10.2026: "die Empfehlungen sollen
+    # grundsaetzlich auch noch nicht geladene Modelle einbeziehen"). Bis dahin rechnete
+    # der Gesamtplan nur mit dem Installierten -- ein besseres Modell bei Ollama konnte
+    # hier nie auftauchen, nur an einer einzelnen Rollenkarte. Genommen werden die
+    # Ladevorschlaege mit gutem Ruf im Netz; ihre Groesse ist die Downloadgroesse,
+    # gemessen sind sie hier nie, und das steht dabei.
+    ladbar = {x["name"]: x["gb"] for x in laden_vorschlaege(neu)
+              if x["name"] not in inst and (ruf.holen(x["name"]) or {}).get("urteil") in ("gut", "sehr gut")}
+    groesse = {**ladbar, **inst}
     geladen = {m["name"]: round(m["size"] / 1e9, 1) for m in await llm.geladene_modelle() if m.get("size")}
     pl = await plaetze()
     mess = db.alle("SELECT * FROM messungen WHERE zeit>?", (time.time() - 60 * 86400,))
@@ -663,7 +706,8 @@ async def gesamtplan() -> dict[str, Any]:
     neo = next((p for p in pl if p["rolle"] == "cockpit"), None)
     neo_m = neo["modell"] if neo else None
     code = {n for n in inst if "coder" in n or "devstral" in n}
-    eine_karte = {n for n in inst if bedarf_gb(n, inst, geladen) <= KARTE_GB}
+    eine_karte = {n for n in groesse if bedarf_gb(n, groesse, geladen) <= KARTE_GB}
+    eine_karte_inst = eine_karte & set(inst)
 
     def wert(name: str, aufgabe: str) -> tuple[float, str]:
         q, beleg = _qualitaet(name, aufgabe, mess)
@@ -678,9 +722,13 @@ async def gesamtplan() -> dict[str, Any]:
 
     def variante(name: str, kurz: str, zuordnung: dict[str, str], vorteile: list[str], nachteile: list[str]) -> dict[str, Any]:
         modelle = sorted(set(zuordnung.values()))
-        gesamt = round(sum(bedarf_gb(m, inst, geladen) for m in modelle), 1)
-        return {"name": name, "kurz": kurz, "zuordnung": zuordnung,
-                "modelle": [{"name": m, "gb": bedarf_gb(m, inst, geladen), "eine_karte": m in eine_karte,
+        gesamt = round(sum(bedarf_gb(m, groesse, geladen) for m in modelle), 1)
+        zu_laden = [m for m in modelle if m not in inst]
+        if zu_laden:
+            nachteile = [f"muss erst geladen werden: {', '.join(f'{m} ({groesse[m]} GB)' for m in zu_laden)} -- auf diesem Server "
+                         "noch nicht gemessen; die Nacht nach dem Laden vergleicht es mit echten Aufgaben"] + nachteile
+        return {"name": name, "kurz": kurz, "zuordnung": zuordnung, "laden": zu_laden,
+                "modelle": [{"name": m, "gb": bedarf_gb(m, groesse, geladen), "eine_karte": m in eine_karte, "installiert": m in inst,
                              "wer": [p["name"] for p in pl if zuordnung.get(p["platz"]) == m],
                              "netz": (ruf.holen(m) or {}).get("satz") or ruf.kurz(m),
                              "urteil": (ruf.holen(m) or {}).get("urteil")} for m in modelle],
@@ -690,7 +738,17 @@ async def gesamtplan() -> dict[str, Any]:
                 "vorteile": vorteile, "nachteile": nachteile}
 
     varianten: list[dict[str, Any]] = []
-    w = bestes(eine_karte, "denken") or bestes(set(inst), "denken")
+    w = bestes(eine_karte_inst, "denken") or bestes(set(inst), "denken")
+    w_neu = bestes(eine_karte, "denken")
+    if w_neu and w_neu != w and w_neu not in inst:
+        _, bn = wert(w_neu, "denken")
+        z = {p["platz"]: w_neu for p in arbeit}
+        if talk:
+            z[talk["platz"]] = w_neu
+        varianten.append(variante(
+            "Ein neues Modell für das ganze Team", f"wie „Ein Modell“, aber mit {w_neu} statt {w}", z,
+            [f"{w_neu} gilt als besser als {w} ({bn})", "kein Umladen zwischen Rollen, die zweite Karte bleibt frei"],
+            ["Talk wartet, solange das Team schreibt"]))
     if w:
         _, bw = wert(w, "denken")
         z = {p["platz"]: w for p in arbeit}
@@ -699,9 +757,9 @@ async def gesamtplan() -> dict[str, Any]:
         varianten.append(variante(
             "Ein Modell für das ganze Team", "einfach, nichts wird zwischen den Rollen umgeladen", z,
             [f"{w} rechnet für alle -- kein Umladen zwischen Rollen ({bw})",
-             f"belegt eine Karte ({bedarf_gb(w, inst, geladen)} GB); die zweite bleibt frei für Bilder, Video und Neo"],
+             f"belegt eine Karte ({bedarf_gb(w, groesse, geladen)} GB); die zweite bleibt frei für Bilder, Video und Neo"],
             ["Talk wartet, solange das Team schreibt -- ein Modell rechnet eine Anfrage nach der anderen"]))
-        partner = {n for n in eine_karte if bedarf_gb(n, inst, geladen) + bedarf_gb(w, inst, geladen) <= 2 * KARTE_GB}
+        partner = {n for n in eine_karte if bedarf_gb(n, groesse, geladen) + bedarf_gb(w, groesse, geladen) <= 2 * KARTE_GB}
         t = bestes(partner, "schnell", {w})
         if talk and t:
             z = {p["platz"]: w for p in arbeit}
@@ -711,7 +769,7 @@ async def gesamtplan() -> dict[str, Any]:
             varianten.append(variante(
                 "Zwei Modelle, je eine Karte", "Talk antwortet auch, während das Team schreibt", z,
                 [f"Talk rechnet auf {t} und wartet nie auf einen Langläufer oder die Pipeline",
-                 f"beide passen gleichzeitig in den Speicher ({bedarf_gb(w, inst, geladen)} + {bedarf_gb(t, inst, geladen)} GB)"],
+                 f"beide passen gleichzeitig in den Speicher ({bedarf_gb(w, groesse, geladen)} + {bedarf_gb(t, groesse, geladen)} GB)"],
                 ["Bilder und Video verdrängen eines der beiden (ComfyUI braucht ~20 GB), danach wird neu geladen",
                  f"Talk: {t} ({bt}) statt {w} ({bws})" + (" -- schwächer eingestuft" if qt < qw else "")]))
         heute = {p["platz"]: p["modell"] for p in arbeit + ([talk] if talk else []) if p["modell"]}
@@ -721,13 +779,17 @@ async def gesamtplan() -> dict[str, Any]:
             for m in sorted(mh):
                 if m not in eine_karte:
                     wer = ", ".join(p["name"] for p in pl if heute.get(p["platz"]) == m)
-                    nachteile.append(f"{m} ({wer}) braucht {bedarf_gb(m, inst, geladen)} GB und passt auf keine einzelne Karte")
-            if len(mh) > 2 or sum(bedarf_gb(m, inst, geladen) for m in mh) > 2 * KARTE_GB:
+                    nachteile.append(f"{m} ({wer}) braucht {bedarf_gb(m, groesse, geladen)} GB und passt auf keine einzelne Karte")
+            if len(mh) > 2 or sum(bedarf_gb(m, groesse, geladen) for m in mh) > 2 * KARTE_GB:
                 nachteile.append("die Modelle passen nicht gleichzeitig in den Speicher: bei jedem Wechsel zwischen den Rollen "
                                  "wird umgeladen (10 bis 30 Sekunden), und Bilder haben keinen Platz")
             varianten.append(variante("Heutige Besetzung", "so, wie es gerade eingestellt ist", heute,
                                       ["läuft heute so, nichts muss umgestellt werden"], nachteile))
 
+    # Was schon so eingestellt ist, bekommt keinen "Uebernehmen"-Knopf mehr.
+    jetzt = {p["platz"]: p["modell"] for p in arbeit + ([talk] if talk else []) if p["modell"]}
+    for v in varianten:
+        v["aktiv"] = v["zuordnung"] == jetzt
     beste_q = max((v["qualitaet"] for v in varianten), default=0)
     for v in varianten:
         # Qualitaet zuerst: eine Besetzung mit schwaecheren Ergebnissen sagt das ausdruecklich.
@@ -740,6 +802,8 @@ async def gesamtplan() -> dict[str, Any]:
     def kosten(v: dict[str, Any]) -> float:
         # Qualitaet vor Technik: ein Punkt Qualitaet wiegt so viel wie ein Umladen.
         k = 2.0 * (beste_q - v["qualitaet"])
+        # Ungemessen und erst zu laden: nur bei klarem Vorsprung vorn.
+        k += 2.0 * len(v.get("laden") or [])
         k += (3.0 if not v["gleichzeitig"] else 0.0) + sum(2.0 for m in v["modelle"] if not m["eine_karte"])
         if v["name"].startswith("Zwei"):
             k += -1.5 + (2.5 if any("schwächer" in n for n in v["nachteile"]) else 0)
@@ -760,7 +824,7 @@ async def gesamtplan() -> dict[str, Any]:
                                           "Katalog, Größe und Alltagstempo. Die nächste Nachtrevision liefert echte Vergleiche.")}
 
 
-async def urteile(neu: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+async def urteile(neu: dict[str, Any] | None, plan: dict[str, Any] | None = None) -> dict[str, dict[str, Any]]:
     """Das klare Urteil (ruf.statement) zu jedem Vorschlag der Uebersicht, der kein
     gemessener ist -- die tragen ihres schon (vorschlaege). Schluessel "platz|modell";
     "behalten" je Platz fuer Rollen ohne Vorschlag."""
@@ -772,10 +836,10 @@ async def urteile(neu: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
         aufgabe = ART_AUFGABE.get(p["art"], "allgemein")
         aus["behalten"][p["platz"]] = ruf.statement("behalten", p["name"], aufgabe, p["modell"], None)
         for n in ungemessen.get(p["platz"], []):
-            aus["geladen"][f"{p['platz']}|{n}"] = ruf.statement("geladen", p["name"], aufgabe, p["modell"], n)
+            aus["geladen"][f"{p['platz']}|{n}"] = gegen_plan(ruf.statement("geladen", p["name"], aufgabe, p["modell"], n), n, plan)
         for x in laden:
             if p["platz"] in (x.get("plaetze") or []):
-                aus["laden"][f"{p['platz']}|{x['name']}"] = ruf.statement("laden", p["name"], aufgabe, p["modell"], x["name"])
+                aus["laden"][f"{p['platz']}|{x['name']}"] = gegen_plan(ruf.statement("laden", p["name"], aufgabe, p["modell"], x["name"]), x["name"], plan)
     return aus
 
 
@@ -797,6 +861,8 @@ def _fazit(v: dict[str, Any] | None, varianten: list[dict[str, Any]]) -> str | N
     if v["gleichzeitig"]:
         gruende.append("alles liegt gleichzeitig im Speicher")
     satz = f"Klare Empfehlung: „{v['name']}“ -- " + ", ".join(gruende) + "."
+    if v.get("laden"):
+        satz += f" Dafür zuerst {', '.join(v['laden'])} laden; umgestellt wird erst danach, wenn die Messung der Nacht es bestätigt."
     # Ehrlich sagen, worauf das Urteil noch NICHT steht.
     offen = [m["name"] for m in v["modelle"] if not ruf.holen(m["name"])]
     if offen:
