@@ -82,7 +82,67 @@ TEAMARBEIT = (
     "Das Cockpit holt das Mitglied dann sofort in dieses Gespräch; es arbeitet selbst weiter (bei einem Ergebnis "
     "direkt an der Fassung). Sag Veiko in einem Satz, wer sich woran macht. Daniel prüft jede neue Fassung ohnehin "
     "von selbst -- ihn musst du nicht holen. Externe (Dario, Elon, Demmis) kosten Geld: die holt nur Veiko selbst. "
-    "Rückfragen an Veiko nur, wenn eine Entscheidung wirklich nur er treffen kann (Inhalt, Ziel, Geld) -- nie für eine Übergabe.")
+    "Rückfragen an Veiko nur, wenn eine Entscheidung wirklich nur er treffen kann (Inhalt, Ziel, Geld) -- nie für eine Übergabe.\n"
+    "NEUE ERGEBNISSE: Das Cockpit erzeugt selbst PowerPoint-Präsentationen (im VVEORG-Design, mit gerechneten Bildern), "
+    "Webseiten und Erklärvideos. Sag NIE, du könntest keine Datei erzeugen, und schreib keine Anleitung, wie Veiko etwas "
+    "selbst in PowerPoint baut. Will Veiko ein neues Ergebnis in anderer Form (z. B. eine Präsentation zu diesem Dokument), "
+    "hänge einen Block an:\n<<<AUSARBEITEN form=\"praesentation\">>>\nder Auftrag mit allem, was hinein soll\n<<<ENDE>>>\n"
+    "(form: praesentation, webseite, video, dokument). Das Team baut es dann als eigenes Ergebnis im Projekt, Daniel prüft.")
+
+# Neues Ergebnis aus dem Gespraech (18.10.2026). Anlass: Veiko verlangte im Chat zum
+# Buch-Kapitelplan "mach mir jetzt eine 5-seitige ppt dazu", und Neal antwortete
+# zweimal "Ich kann keine .pptx-Datei erzeugen" samt Bastelanleitung, Annie lieferte
+# Hex-Farben zum Abtippen. Aus diesem Chat konnte bis dahin nur das VORHANDENE
+# Ergebnis ueberarbeitet werden -- die Vorschau zeigte deshalb zu Recht weiter das Buch.
+# Jetzt startet ein Block (oder, wenn das Modell ihn vergisst, Veikos Wunsch selbst)
+# eine echte Ausarbeitung ueber die Pipeline: Rolle schreibt, Annie setzt Bilder,
+# Daniel prueft, Praesentations-Stil wie eingestellt.
+AUSARBEITEN_RE = re.compile(r"<<<AUSARBEITEN(?:\s+form\s*=?\s*[\"„“']?([a-zäöü_]+)[\"„“']?)?\s*>>>(.*?)(?:<<<ENDE>>>|\Z)", re.S | re.I)
+NEUE_FORMEN = ("praesentation", "webseite", "video", "dokument")
+_WUNSCH_VERB = r"(erstell|mach|bau|schreib|liefer|generier|erzeug|brauch|will|möcht|hätte gern)"
+FORM_WUNSCH = (("praesentation", re.compile(_WUNSCH_VERB + r".{0,80}\b(präsentation|praesentation|ppt|pptx|powerpoint|folien|slides)", re.I | re.S)),
+               ("webseite", re.compile(_WUNSCH_VERB + r".{0,80}\b(webseite|website|landingpage|landing page)", re.I | re.S)),
+               ("video", re.compile(_WUNSCH_VERB + r".{0,80}\b(erklärvideo|video)\b", re.I | re.S)))
+
+
+def ausarbeiten_trennen(text: str) -> tuple[str, list[dict[str, str]]]:
+    auftraege = []
+    for m in AUSARBEITEN_RE.finditer(text):
+        form = (m.group(1) or "praesentation").lower().replace("ä", "ae")
+        if form in NEUE_FORMEN and m.group(2).strip():
+            auftraege.append({"form": form, "auftrag": m.group(2).strip()[:6000]})
+    return AUSARBEITEN_RE.sub("", text).strip(), auftraege[:1]
+
+
+def form_wunsch(text: str) -> str | None:
+    for form, rx in FORM_WUNSCH:
+        if rx.search(text or ""):
+            return form
+    return None
+
+
+def ausarbeitung_starten(auftrag: dict[str, str], wer: str, kontext: dict[str, Any], vorarbeit: str = "") -> str:
+    """Ein neues Ergebnis ueber die Pipeline bauen lassen. Die Notiz des neuen Vorgangs
+    traegt die Grundlage (das Ergebnis, an dem gerade gearbeitet wird, und die Vorarbeit
+    aus dem Gespraech), damit die Rolle nicht bei null anfaengt."""
+    rolle = wer if wer in stab.ROLLEN_FUER_ARBEIT and wer not in ("pmo", "cockpit") else "buch"
+    grundlage = [f"AUS DEM GESPRÄCH MIT {wer_name(wer).upper()}: {auftrag['auftrag']}"]
+    if vorarbeit.strip():
+        grundlage.append("VORARBEIT AUS DEM GESPRÄCH (Entwürfe, die einfließen sollen):\n" + vorarbeit.strip()[:20000])
+    e = db.holen("ergebnisse", kontext.get("ergebnis_id") or "") if kontext.get("ergebnis_id") else None
+    if e:
+        grundlage.append(f"GRUNDLAGE -- das Ergebnis „{e['titel']}“ ({len(e.get('inhalt') or ''):,} Zeichen, Auszug):\n".replace(",", ".")
+                         + (e.get("inhalt") or "")[:30000])
+    titel = {"praesentation": "Präsentation", "webseite": "Webseite", "video": "Erklärvideo", "dokument": "Dokument"}[auftrag["form"]]
+    titel += f": {e['titel']}" if e else f": {auftrag['auftrag'][:60]}"
+    v = stab.aus_text("\n\n".join(grundlage), quelle="gespraech", projekt_id=kontext.get("projekt_id"), titel=titel[:80])
+    db.ausfuehren("UPDATE vorgaenge SET stand='eingeordnet' WHERE id=?", (v["id"],))
+    # "titel" setzt den Titel des Ergebnisses (stab.ergebnis_speichern) -- sonst stand dort
+    # der abgeschnittene Auftrag ("… Erstelle eine 5-seitige PowerPoint-Präsenta").
+    stab.auftrag_setzen(v["id"], {"rolle": rolle, "form": auftrag["form"], "auftrag": f"{titel}. {auftrag['auftrag']}"[:3000],
+                                  "recherche": None, "titel": titel[:90]})
+    stab.wecken()
+    return v["id"]
 
 
 def _ziel(name: str, von: str) -> str | None:
@@ -549,6 +609,24 @@ async def _antwort(gid: str, wer: str, system: str, verlauf: list[dict[str, str]
                 gesamt = "\n\n".join(a for a in re.split(r"\n\s*\n", gesamt)
                                      if not (FRAGT_NACH_RE.search(a) and any(z in a for z in ziele))).strip()
 
+    # Neues Ergebnis in anderer Form (AUSARBEITEN_RE). Fehlt der Block, obwohl Veiko es
+    # verlangt hat, startet das Cockpit es selbst -- das Gespraech ist dann Vorarbeit.
+    neu: list[dict[str, str]] = []
+    if not ist_extern(wer):
+        gesamt, neu = ausarbeiten_trennen(gesamt)
+        f = form_wunsch(text.split(" -- Auftrag von ")[0])
+        eigene_form = (db.holen("ergebnisse", kontext["ergebnis_id"]) or {}).get("form") if kontext.get("ergebnis_id") else None
+        # Nur bei Veikos eigener Nachricht, nicht bei einer Uebergabe (die traegt seinen Text
+        # mit -- sonst startete das zweite Mitglied dieselbe Ausarbeitung noch einmal).
+        if not neu and f and f != eigene_form and " -- Auftrag von " not in text:
+            vor = "\n\n".join(m["content"] for m in verlauf[-4:] if m.get("role") == "assistant")
+            neu = [{"form": f, "auftrag": text.split(" -- Auftrag von ")[0], "vorarbeit": (vor + "\n\n" + gesamt).strip()}]
+            # Was das Modell statt des Blocks schrieb ("ich kann keine .pptx erzeugen",
+            # Anleitung zum Selberbauen), ist falsch -- es geht als Vorarbeit in den Auftrag.
+            gesamt = ""
+        if neu:
+            weiter = []   # die Ausarbeitung holt Annie und Daniel selbst dazu
+
     getan: list[str] = []
     if kontext.get("langlauf_id"):
         from . import langlauf
@@ -614,6 +692,15 @@ async def _antwort(gid: str, wer: str, system: str, verlauf: list[dict[str, str]
         prosa = (prosa or "Erledigt.") + ("\n\n**Im Langläufer übernommen:**\n" if kontext.get("langlauf_id") else "\n\n**Ausgelöst:**\n") \
             + "\n".join("- " + g for g in getan)
         daten["langlauf"] = getan
+    for a in neu:
+        vid = ausarbeitung_starten(a, wer, kontext, a.get("vorarbeit") or "")
+        art = {"praesentation": "Präsentation", "webseite": "Webseite", "video": "Erklärvideo", "dokument": "Dokument"}[a["form"]]
+        wie = ("schreibt die Folien, Annie setzt das Bildkonzept, Daniel prüft; die PowerPoint kommt im eingestellten Design"
+               if a["form"] == "praesentation" else "arbeitet aus, Daniel prüft")
+        prosa = (prosa or f"Ich lasse die {art} jetzt im Cockpit bauen.") + (
+            f"\n\n**Wird gebaut:** {art} -- {wer_name(wer) if wer in stab.ROLLEN_FUER_ARBEIT and wer not in ('pmo', 'cockpit') else 'Neal'} {wie}. "
+            f"Sie erscheint als eigenes Ergebnis im Projekt, in der Regel nach ein paar Minuten. [Zum Case](#/inbox/{vid})")
+        daten.setdefault("ausarbeitung", []).append(vid)
     if weiter:
         # Vom Code geschrieben: wer jetzt woran arbeitet -- und es passiert gleich danach.
         prosa = (prosa or "Ich gebe weiter.") + "\n\n**Weitergegeben:**\n" + "\n".join(
