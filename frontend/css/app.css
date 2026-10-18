@@ -432,6 +432,10 @@ html.neo-vollbild .schale.mit-talk{grid-template-columns:minmax(0,1fr) var(--tal
   .unten-blatt a.an{background:var(--steel-soft);color:var(--steel)}
   .unten-blatt a .zahl{margin-left:auto;background:var(--signal);color:#fff;border-radius:99px;font-size:11px;padding:0 6px;line-height:18px}
   .talk-fab{display:grid;place-items:center;position:fixed;right:16px;bottom:calc(72px + env(safe-area-inset-bottom,0px));width:56px;height:56px;border-radius:50%;background:var(--fuell);color:var(--fuell-text);border:0;box-shadow:var(--sh-3);z-index:61;cursor:pointer}
+  /* Wo die Seite ein eigenes Eingabefeld hat (Langlaeufer-, Team-, Board-, Neo-Chat) oder ein
+     Fenster offen ist, lag der Knopf ueber deren Senden-Knopf (18.10.2026). Talk bleibt ueber
+     das Mikrofon in der Kopfzeile erreichbar. */
+  .schale:has(main .composer) .talk-fab,.schale:has(.modal-grund) .talk-fab{display:none}
   .topbar .suche-feld,.topbar .talk-auf{display:none}
   .nur-mobil{display:inline-flex!important}
 
@@ -536,6 +540,14 @@ html.neo-vollbild .schale.mit-talk{grid-template-columns:minmax(0,1fr) var(--tal
 .neo-kopf select{max-width:170px;min-width:84px;flex:0 1 auto}
 .neo-kopf .btn{flex:none}
 @media (max-width:1100px){.neo-kopf .btn .txt{display:none}}
+/* 18.10.2026: die Modellwahl lag ueber "Zuordnen" -- dessen Huelle schrumpfte, der Knopf darin
+   nicht (Handy, OnePlus Open, schmale Mitte mit Talk). Die Huelle schrumpft nie; bis 1100 Punkt
+   steht der Titel oben und die Knoepfe darunter, statt den Titel auf "N." zu kuerzen. */
+.neo-kopf .zu-wrap{flex:none}
+@media (max-width:1100px){
+  .neo-kopf{flex-wrap:wrap;row-gap:6px}
+  .neo-kopf h2{flex:1 1 100%;order:-1}
+}
 .md code{overflow-wrap:anywhere;word-break:break-word}
 .neo-beitrag code{overflow-wrap:anywhere;word-break:break-all}
 .neo.liste-offen .neo-liste{display:flex!important;position:absolute;z-index:40;width:260px;top:0;bottom:0;left:0;box-shadow:var(--sh-3)}
@@ -866,9 +878,22 @@ html.ki-arbeitet .logo-knopf{filter:drop-shadow(0 0 .6px rgba(0,0,0,.75)) drop-s
 .bd-quellen a{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media (max-width:900px){
   .bd{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
-  .bd-tisch{border-right:0;border-bottom:1px solid var(--line);max-height:38vh}
+  .bd-tisch{border-right:0;border-bottom:1px solid var(--line);max-height:none}
   .bd-du{max-width:88%}
+  /* Personen als eine waagerecht wischbare Reihe (18.10.2026): als Liste untereinander nahmen
+     sie auf dem Handy 38 % der Hoehe, fuer das Gespraech blieben gemessen 70 Punkt. */
+  .bd-tisch-kopf{padding:8px 12px 2px}
+  .bd-tisch-kopf>.leise{display:none}
+  .bd-personen{flex:none;flex-direction:row;overflow-x:auto;overflow-y:hidden;padding:4px 10px 8px;gap:6px}
+  .bd-person{flex:none}
+  .bd-person-haupt>.bd-name small{display:none}
+  .bd-person-haupt>.bd-name b{font-size:12.5px}
+  /* Advisory Board: die einzelnen Personen zugeklappt, die Gruppen-Chips bleiben (board.js personenAuf). */
+  .bd-board-tisch:not(.offen) .bd-personen{display:none}
+  .bd-board-tisch .bd-personen-auf{display:inline-flex}
+  .bd-board-tisch .bd-gruppen{padding-bottom:8px}
 }
+.bd-personen-auf{display:none;margin-left:auto}
 
 /* Board-Tisch, zweite Fassung (01.10.): Klick auf Person/Gruppe = an den Tisch oder weg. */
 .bd-gruppen{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 12px;border-bottom:1px solid var(--line-2)}
@@ -1048,9 +1073,13 @@ html.ki-arbeitet .logo-knopf{filter:drop-shadow(0 0 .6px rgba(0,0,0,.75)) drop-s
 .mitglied.extern{border-style:dashed}
 @media (max-width:1000px){
   .modal.voll{height:auto}
-  .erg-raster.mit-chat{grid-template-columns:minmax(0,1fr)}
-  .erg-raster.mit-chat .erg-text{overflow:visible}
-  .erg-chat{min-height:70vh}
+  /* Untereinander waechst das Raster mit seinem Inhalt, und das Fenster scrollt als Ganzes.
+     Mit flex:1 und fester Hoehe drueckte der Chat (70vh) das Dokument auf 0 Punkt -- sein
+     Kopf lag dann ueber dem Chat (gemessen am 18.10.2026: Handy, OnePlus Open, iPad hochkant). */
+  .erg-raster.mit-chat{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto;flex:none}
+  .erg-raster.mit-chat .erg-text{overflow:visible;min-height:auto}
+  /* Feste Hoehe mit eigenem Scrollbereich -- sonst waechst der Chat mit dem Verlauf (gemessen 2.124 Punkt). */
+  .erg-chat{min-height:0;height:78vh}
 }
 a.bd-person-haupt{text-decoration:none}
 .tc-fassung-text{display:inline-flex;align-items:center;gap:6px}

@@ -291,6 +291,10 @@ function LanglaufChat({ l, neuLaden }) {
       if (!tc) return;
       const nav = document.querySelector(".unten-nav");
       const unten = nav && getComputedStyle(nav).display !== "none" ? nav.getBoundingClientRect().top : window.innerHeight;
+      // Auf schmalen Geraeten scrollt die ganze Seite: feste Hoehe, gut drei Viertel des
+      // Bildschirms. Nach dem freien Platz gerechnet blieben dort 250 Punkt, davon 98 fuer
+      // den Verlauf (gemessen am 18.10.2026 bei 390 Punkt Breite).
+      if (window.matchMedia("(max-width:820px)").matches) { tc.style.maxHeight = Math.round(Math.max(420, unten * 0.78)) + "px"; return; }
       const oben = tc.getBoundingClientRect().top;
       // Ausserhalb des Bildschirms nichts aendern -- sonst schoebe das Wachsen beim
       // Vorbeiscrollen alles darunter (Zwischenpruefungen, Etappen) mit.

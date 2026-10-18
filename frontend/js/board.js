@@ -82,6 +82,9 @@ export function Board({ id }) {
   const [msgs, setMsgs] = useState([]);
   const [lauf, setLauf] = useState(null);
   const [einzel, setEinzel] = useState(null);   // id einer Person oder null = Runde
+  // Auf schmalen Geraeten sind die einzelnen Personen zugeklappt (18.10.2026): offen nahmen
+  // sie 40 % der Hoehe, fuer das Gespraech blieb fast nichts. Die Gruppen-Chips bleiben sichtbar.
+  const [personenAuf, setPersonenAuf] = useState(false);
   const [projekt, setProjekt] = useState("");
   const [projekte, setProjekte] = useState([]);
   const feld = useRef(null);
@@ -159,10 +162,12 @@ export function Board({ id }) {
   };
 
   return html`<div class="bd">
-    <aside class="bd-tisch">
+    <aside class=${"bd-tisch bd-board-tisch" + (personenAuf ? " offen" : "")}>
       <${Ziehgriff} name="bd-liste" seite="rechts" />
       <div class="bd-tisch-kopf">
-        <h3>Am Tisch <span class="pill">${d.tisch.length} von ${d.personen.length}</span></h3>
+        <h3>Am Tisch <span class="pill">${d.tisch.length} von ${d.personen.length}</span>
+          <button class="btn klein geist bd-personen-auf" onClick=${() => setPersonenAuf(!personenAuf)} aria-expanded=${personenAuf}>
+            <${Icon} n=${personenAuf ? "runter" : "rechts"} g=${12} />${personenAuf ? "Personen ausblenden" : "Personen zeigen"}</button></h3>
         <span class="leise klein">Klick auf eine Person oder Gruppe holt sie an den Tisch oder nimmt sie weg.${d.aufgefrischt ? " Stand aufgefrischt " + zeitText(d.aufgefrischt) + "." : ""}</span>
       </div>
       <div class="bd-gruppen" role="group" aria-label="Ganze Gruppen an den Tisch">

@@ -18,7 +18,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from cockpit import anmeldung, importer, langlauf, medien, revision, stab
+from cockpit import anmeldung, folienbilder, importer, langlauf, medien, revision, stab
 from cockpit.api import router
 from cockpit.konfig import FRONTEND, HOST, PORT
 
@@ -38,7 +38,10 @@ async def lebenszeit(app: FastAPI):
     rev = asyncio.create_task(revision.schleife())
     # ComfyUI gibt nach Leerlauf seinen Grafikspeicher frei (medien.py, 17.10.2026).
     frei = asyncio.create_task(medien.aufraeum_schleife())
+    # Fehlende Bilder in Ergebnissen von selbst nachrechnen (folienbilder.py, 18.10.2026).
+    bilder = asyncio.create_task(folienbilder.nachhol_schleife())
     yield
+    bilder.cancel()
     frei.cancel()
     aufgabe.cancel()
     lang.cancel()

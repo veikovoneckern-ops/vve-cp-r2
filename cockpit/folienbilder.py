@@ -317,3 +317,45 @@ def starten(eid: str, neu: bool = False) -> int:
     _stand_setzen(eid, stand="rechnet", anzahl=len(liste), fertig=0, fehler=None, schritt="beginnt")
     LAUFEND[eid] = asyncio.create_task(llm.mit_zweck("folienbilder:" + eid, _lauf(eid, liste)))
     return len(liste)
+
+
+# ------------------------------------------------------------ nachholen
+# Veiko, 18.10.2026: "warum rechnet er erst jetzt die Bilder, wenn ich es oeffne?
+# Das soll im Verlauf der Bearbeitung gleich passieren." Angestossen wurde zwar
+# sofort (neues Ergebnis, neue Fassung, Ende eines Langlaeufers) -- aber ein Lauf,
+# den ein Neustart des Dienstes abbrach, blieb liegen, ein Zwischenstand bekam mit
+# jeder Etappe neue Bildzeilen ohne neuen Anstoss, und einiges war nie angestossen.
+# Gemessen am 18.10.: drei Ergebnisse mit 2/16, 0/17 und 0/6 Bildern. Gerechnet
+# wurde jeweils erst beim Oeffnen. Diese Schleife holt das nach: alle fuenf
+# Minuten das zuletzt bearbeitete Ergebnis der letzten NACHHOL_TAGE, dem Bilder
+# fehlen -- eines nach dem anderen, nie neben einem Video (beide auf Karte 2) und
+# nie nach einem gescheiterten Lauf (dafuer gibt es "Neu rechnen").
+NACHHOL_TAGE = 14
+
+
+async def nachholen() -> str | None:
+    from . import video
+    if any(t and not t.done() for t in LAUFEND.values()) or any(t and not t.done() for t in video.LAUFEND.values()):
+        return None
+    seit = time.time() - NACHHOL_TAGE * 86400
+    formen = ",".join("?" * len(MIT_BILDERN))
+    for e in db.alle(f"SELECT e.*, COALESCE((SELECT MAX(p.zeit) FROM protokoll p WHERE p.tabelle='ergebnisse' AND p.datensatz_id=e.id), "
+                     f"e.erstellt) AS zuletzt FROM ergebnisse e WHERE e.form IN ({formen}) ORDER BY zuletzt DESC LIMIT 200", MIT_BILDERN):
+        if (e.get("zuletzt") or 0) < seit:
+            break
+        s = stand(e) or {}
+        if s.get("gewuenscht", 0) > s.get("vorhanden", 0) and s.get("stand") != "fehler" and starten(e["id"]):
+            return e["id"]
+    return None
+
+
+async def nachhol_schleife() -> None:
+    await asyncio.sleep(120)   # nach einem Neustart erst einmal die Pipeline anlaufen lassen
+    while True:
+        try:
+            eid = await nachholen()
+            if eid:
+                print(f"[folienbilder] hole fehlende Bilder nach: {eid}", flush=True)
+        except Exception as x:  # noqa: BLE001 -- die Schleife darf nie sterben
+            print(f"[folienbilder] Nachholen gescheitert: {x}", flush=True)
+        await asyncio.sleep(300)
