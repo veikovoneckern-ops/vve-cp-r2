@@ -357,7 +357,7 @@ export function ErgebnisAnsicht({ id, zu, vorlage = "" }) {
     : fb && fb.stand === "rechnet" ? `Bilder werden gerechnet${fb.anzahl ? ` · ${fb.fertig || 0} von ${fb.anzahl}` : ""}`
     : vd && vd.stand === "rechnet" ? `Video wird gerechnet · ${vd.schritt || ""}`
     : (e.nebenbei || []).length ? e.nebenbei.map((n) => `${n.art_name}${n.wer ? " · " + n.wer : ""}: ${n.schritt || n.titel}${n.teile ? " · " + n.teile : ""}`).join(" — ") : "";
-  const kopf = jetzt ? html`<span class="erg-jetzt" role="status" aria-live="polite"><span class="erg-jetzt-punkt"></span>${jetzt}</span>` : "";
+  const kopf = jetzt ? html`<span class="erg-jetzt" role="status" aria-live="polite" title=${jetzt}><span class="erg-jetzt-punkt"></span>${jetzt}</span>` : "";
   // Der Kopf der linken Spalte (.erg-text-kopf) bleibt beim Scrollen stehen:
   // welcher Stand gilt, von wem, und Download/Kopieren direkt daneben (Veiko,
   // 16.10.: "dort immer den letzten vollstaendigen Stand und die Buttons").

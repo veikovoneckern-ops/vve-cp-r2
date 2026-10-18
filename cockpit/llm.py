@@ -431,22 +431,49 @@ def _zeile(body: dict[str, Any], e: dict[str, Any], zeile: str) -> str:
     return t
 
 
+# Speichermangel auf einer Grafikkarte ist meist voruebergehend: ComfyUI rechnet gerade
+# ein Bild auf Karte 2 (18.10.2026: ein Langlaeufer brach dreimal in 20 s mit
+# "cudaMalloc failed: out of memory ... CUDA1" ab, waehrend Folienbilder liefen, und hielt an).
+# Dann warten, bis ComfyUI fertig ist, es seinen Speicher freigeben lassen und erneut
+# versuchen -- statt den Fehler an Langlaeufer, Pipeline oder Gespraech weiterzureichen.
+SPEICHERMANGEL = re.compile(r"out of memory|cudaMalloc failed|failed to allocate CUDA", re.I)
+SPEICHER_VERSUCHE = 3
+
+
+async def _platz_schaffen() -> None:
+    from . import medien
+    ende = time.time() + 240
+    while time.time() < ende:
+        if await medien.comfy_freigeben() or not await medien.comfy_beschaeftigt():
+            break
+        await asyncio.sleep(10)
+    await asyncio.sleep(5)
+
+
 async def _strom_lauf(body: dict[str, Any], e: dict[str, Any]) -> AsyncIterator[str]:
     async with httpx.AsyncClient(timeout=httpx.Timeout(600, connect=10)) as c:
-        async with c.stream("POST", f"{OLLAMA}/api/chat", json=body) as r:
-            if r.status_code == 400 and "think" in body:
-                await r.aread()
-                body.pop("think", None)
-                async for t in _strom_nochmal(c, body, e):
-                    yield t
+        for versuch in range(SPEICHER_VERSUCHE + 1):
+            async with c.stream("POST", f"{OLLAMA}/api/chat", json=body) as r:
+                if r.status_code == 400 and "think" in body:
+                    await r.aread()
+                    body.pop("think", None)
+                    async for t in _strom_nochmal(c, body, e):
+                        yield t
+                    return
+                if r.status_code >= 400:
+                    txt = (await r.aread()).decode("utf-8", "replace")
+                    # Noch nichts geliefert -- ein zweiter Anlauf ist also sicher, auch im Strom von Talk.
+                    if SPEICHERMANGEL.search(txt) and versuch < SPEICHER_VERSUCHE:
+                        print(f"[llm] Speichermangel bei {body.get('model')}, warte auf freien Grafikspeicher "
+                              f"(Versuch {versuch + 1} von {SPEICHER_VERSUCHE})", flush=True)
+                        await _platz_schaffen()
+                        continue
+                    raise ModellFehler(f"Ollama antwortet {r.status_code}: {txt[:300]}")
+                async for zeile in r.aiter_lines():
+                    t = _zeile(body, e, zeile)
+                    if t:
+                        yield t
                 return
-            if r.status_code >= 400:
-                txt = (await r.aread()).decode("utf-8", "replace")
-                raise ModellFehler(f"Ollama antwortet {r.status_code}: {txt[:300]}")
-            async for zeile in r.aiter_lines():
-                t = _zeile(body, e, zeile)
-                if t:
-                    yield t
 
 
 async def _strom_nochmal(c: httpx.AsyncClient, body: dict[str, Any], e: dict[str, Any]) -> AsyncIterator[str]:

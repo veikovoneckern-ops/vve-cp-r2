@@ -68,6 +68,16 @@ def comfy_benutzt() -> None:
     COMFY_ZULETZT.update(zeit=time.time(), frei=False)
 
 
+async def comfy_beschaeftigt() -> bool:
+    """Rechnet ComfyUI gerade oder wartet etwas? Nicht erreichbar zaehlt als nein."""
+    try:
+        async with httpx.AsyncClient(timeout=8) as cl:
+            q = (await cl.get(f"{COMFY}/queue")).json()
+        return bool(q.get("queue_running") or q.get("queue_pending"))
+    except (httpx.HTTPError, ValueError):
+        return False
+
+
 async def comfy_freigeben() -> bool:
     try:
         async with httpx.AsyncClient(timeout=20) as cl:

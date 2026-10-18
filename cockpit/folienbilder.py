@@ -277,6 +277,13 @@ async def _lauf(eid: str, liste: list[str]) -> None:
         englisch = await _kunstregie(eid, liste)
         async with httpx.AsyncClient(timeout=60) as c:
             for i, p in enumerate(liste):
+                # Bilder geben dem Team Vortritt (18.10.2026): rechnet gerade ein Schritt von
+                # Pipeline oder Langlaeufer, wartet das naechste Bild -- beide brauchen Karte 2,
+                # und gleichzeitig reichte der Speicher nicht. Hoechstens 20 Minuten, dann weiter.
+                warten_bis = time.time() + 1200
+                while _team_rechnet() and time.time() < warten_bis:
+                    _stand_setzen(eid, schritt=f"Bild {i + 1} von {len(liste)}: wartet, bis das Team fertig gerechnet hat", fertig=i)
+                    await asyncio.sleep(10)
                 _stand_setzen(eid, schritt=f"Bild {i + 1} von {len(liste)}", fertig=i)
                 try:
                     png, mangel = await bild_ohne_fehler(c, englisch[i], melden=lambda s, i=i: _stand_setzen(
@@ -333,9 +340,18 @@ def starten(eid: str, neu: bool = False) -> int:
 NACHHOL_TAGE = 14
 
 
+def _team_rechnet() -> bool:
+    """Rechnet gerade ein Schritt von Pipeline oder Langlaeufer (beide unter stab._lock)?"""
+    from . import stab
+    return stab._lock.locked()
+
+
 async def nachholen() -> str | None:
     from . import video
     if any(t and not t.done() for t in LAUFEND.values()) or any(t and not t.done() for t in video.LAUFEND.values()):
+        return None
+    # Nachholen ist nie eilig: nur, wenn das Team gerade nicht rechnet (18.10.2026, siehe _lauf).
+    if _team_rechnet():
         return None
     seit = time.time() - NACHHOL_TAGE * 86400
     formen = ",".join("?" * len(MIT_BILDERN))
