@@ -351,6 +351,10 @@ def _folie(f: dict[str, Any], deck_titel: str, roh: bytes | None, w: dict[str, A
     else:   # punkte (und bild ohne gerechnetes Bild)
         ps = (f["punkte"] or f["rest"])[:6]
         geteilt = [_teilen(p) for p in ps]
+        # Ueberschrift + Satz nur, wenn ALLE Punkte so gebaut sind -- gemischt wirkte es
+        # unruhig (18.10., ExO-Deck: ein Punkt fett mit Erklaerung, der naechste schlicht).
+        if not all(kt for kt, _ in geteilt):
+            geteilt = [("", p) for p in ps]
         if roh or len(ps) > 4 or not ps:
             # Nummerierte Zeilen (wie die rechte Haelfte von Folie 2 der Vorlage).
             breit = 470 if roh else 860
