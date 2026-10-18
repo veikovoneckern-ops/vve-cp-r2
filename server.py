@@ -18,7 +18,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from cockpit import anmeldung, folienbilder, importer, langlauf, medien, revision, stab
+from cockpit import anmeldung, folienbilder, importer, langlauf, medien, revision, stab, webspace
 from cockpit.api import router
 from cockpit.konfig import FRONTEND, HOST, PORT
 
@@ -65,6 +65,8 @@ async def anmeldung_pruefen(request: Request, call_next):
 
 
 app.include_router(router)
+# WebSpace (18.10.2026): Editor fuer die Website veikovoneckern.org, eigenes Modul.
+app.include_router(webspace.router)
 app.mount("/static", StaticFiles(directory=str(FRONTEND)), name="static")
 
 

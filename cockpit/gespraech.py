@@ -227,6 +227,9 @@ def kontext_text(k: dict[str, Any] | None) -> str:
     if art in ("brainstrom", "exo"):
         from . import verfahren
         return verfahren.kontext_text(art)
+    if art == "webspace":
+        from . import webspace
+        return webspace.kontext_text(k.get("pfad"))
     if art == "aktionen":
         # Current Actions (17.10.2026): dieselbe Liste wie auf der Seite.
         from . import aktionen, teamchat
@@ -301,7 +304,7 @@ ZIELE = {"ueberblick": "Überblick", "aufgaben": "Aufgaben", "zeitplan": "Zeitpl
 # Bereiche des Cockpits, die Talk ohne Projekt oeffnen kann.
 BEREICHE = {"board": "Advisory Board", "briefing": "Briefing", "inbox": "Inbox", "projects": "Projects", "team": "Team",
             "neo": "Neo", "system": "System", "watchdog": "WatchDog", "brainstrom": "BrainStrom", "exo": "ExO",
-            "langlauf": "Langläufer", "aktionen": "Current Actions", "modelle": "Stab & Modelle", "einstellungen": "Einstellungen",
+            "langlauf": "Langläufer", "aktionen": "Current Actions", "webspace": "WebSpace", "modelle": "Stab & Modelle", "einstellungen": "Einstellungen",
             # Reiter und Listen (18.10.2026): erreichbar wie die Bereiche.
             "uebersicht_modelle": "Stab & Modelle: Übersicht", "installiert": "Installierte Modelle", "optimierung": "Optimierung",
             "neue_modelle": "Neu bei Ollama", "verbrauch": "Verbrauch", "alle_aufgaben": "Alle Aufgaben",
@@ -333,6 +336,7 @@ SEITEN = [
     ("alle_aufgaben", r"(alle|meine) aufgaben|aufgabenliste", "alle Aufgaben"),
     ("alle_notizen", r"(alle|meine) notizen|notizliste", "alle Notizen"),
     ("aktionen", r"current actions|aktionen|was (gerade )?läuft", "Current Actions"),
+    ("webspace", r"web ?space|meine (website|webseite|homepage)|veikovoneckern", "den WebSpace"),
     ("briefing", r"briefing|startseite", "das Briefing"),
     ("inbox", r"inbox|eingang|posteingang", "die Inbox"),
     ("projects", r"projekte|projects|projektliste|projektübersicht", "die Projekte"),

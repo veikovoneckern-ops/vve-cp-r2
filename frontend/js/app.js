@@ -20,6 +20,7 @@ import { Langlaeufer } from "./langlauf.js";
 import { BrainStrom, ExO } from "./verfahren.js";
 import { Aktionen } from "./aktionen.js";
 import { AufgabeFenster } from "./aufgabe.js";
+import { WebSpace } from "./webspace.js";
 
 const BEREICHE = [
   { id: "briefing", titel: "Briefing", icon: "briefing", unter: "Was jetzt zählt" },
@@ -34,6 +35,8 @@ const BEREICHE = [
   { id: "neo", titel: "Neo", icon: "neo", unter: "Cockpit Engineer", neo: true },
   { id: "team", titel: "Team", icon: "team", unter: "Dein KI-Team" },
   { id: "board", titel: "Advisory Board", kurz: "Board", icon: "board", unter: "Deine Advisors" },
+  // Die Website veikovoneckern.org bearbeiten und veröffentlichen (Veiko, 18.10.2026).
+  { id: "webspace", titel: "WebSpace", icon: "globus", unter: "Deine Website veikovoneckern.org" },
   // Aus dem alten Cockpit uebernommen (Veiko, 01.10.): zwei Verfahren auf dem
   // eigenen Modell und der WatchDog -- je mit eigenem Knopf.
   { id: "brainstrom", titel: "BrainStrom", icon: "brainstrom", unter: "Aus einer Idee ein Vorhaben" },
@@ -245,7 +248,7 @@ function App() {
   const neoLaeuft = lage && lage.neo_laeuft && lage.neo_laeuft.length > 0;
   const akt = lage ? lage.aktionen || 0 : 0;
   const zahl = (b) => b.id === "aktionen" && akt ? html`<span class="zahl ruhig">${akt}</span>` : b.id === "inbox" && offen ? html`<span class="zahl">${offen}</span>` : b.neo && neoLaeuft ? html`<span class="zahl ruhig">arbeitet</span>` : null;
-  const voll = r.bereich === "inbox" || r.bereich === "neo" || r.bereich === "board";
+  const voll = r.bereich === "inbox" || r.bereich === "neo" || r.bereich === "board" || r.bereich === "webspace";
   // Im Projekt steht oben der Projektname (wie im alten Cockpit "BVE / Projekt-Detail").
   const imProjekt = r.bereich === "projects" && r.id && !r.id.startsWith("_") && kontext && kontext.art === "projekt";
   const titel = imProjekt ? kontext.titel : bereich.titel;
@@ -299,6 +302,7 @@ function App() {
         ${r.bereich === "exo" && html`<${ExO} />`}
         ${r.bereich === "langlauf" && html`<${Langlaeufer} id=${r.id} />`}
         ${r.bereich === "aktionen" && html`<${Aktionen} />`}
+        ${r.bereich === "webspace" && html`<${WebSpace} pfad=${r.id} />`}
       </main>
     </div>
     ${talk && html`<${Talk} zu=${() => setTalk(false)} kontext=${kontext} setKontext=${setKontext} start=${talkStart} />`}

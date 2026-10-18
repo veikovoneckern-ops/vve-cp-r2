@@ -1506,3 +1506,67 @@ html.zieht iframe{pointer-events:none}
 .mo-ruf-quellen{margin:2px 0 0 18px;padding:0;color:var(--ink-3)}
 .mo-ruf-quellen a{color:var(--ink-3)}
 .mo-var-netz{margin-top:3px;color:var(--ink-2,var(--ink));overflow-wrap:anywhere}
+
+/* ---------------------------------------------------------------- WebSpace (18.10.2026)
+   Links Seitenliste und Veröffentlichen, rechts der Editor. Der Editor füllt die
+   Höhe; die Seite selbst steht in einem Rahmen und scrollt darin. */
+.ws{display:grid;grid-template-columns:270px minmax(0,1fr);height:100%;min-height:0}
+.ws-seite{display:flex;flex-direction:column;gap:10px;padding:14px;border-right:1px solid var(--line);background:var(--surface-2);min-height:0;overflow:auto}
+.ws-knoepfe{display:flex;gap:6px}
+.ws-liste{display:flex;flex-direction:column;gap:2px}
+.ws-gruppe{font-size:11px;font-weight:750;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-4);margin:10px 4px 4px}
+.ws-zeile{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:0 6px;text-align:left;background:none;border:0;border-radius:7px;padding:6px 8px;cursor:pointer;color:var(--ink-2)}
+.ws-zeile:hover{background:var(--hover)}
+.ws-zeile.an{background:var(--knopf-grund);color:var(--ink)}
+.ws-zeile-titel{font-weight:650;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ws-zeile-adr{grid-column:1/-1;font-size:11px;color:var(--ink-4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ws-punkt{width:8px;height:8px;border-radius:50%;background:#C07C12}
+.ws-pub{margin-top:auto}
+.ws-pub-kopf{margin-bottom:6px}
+.ws-aend{list-style:none;margin:0 0 10px;padding:0;font-size:12px;display:flex;flex-direction:column;gap:3px;max-height:150px;overflow:auto}
+.ws-aend li{display:flex;gap:6px;align-items:baseline;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ws-art{font-size:10.5px;font-weight:700;border-radius:4px;padding:0 5px;background:var(--knopf-grund);color:var(--ink-3);flex:none}
+.ws-art.neu{color:#0b8f3e}.ws-art.gelöscht{color:var(--rot)}
+.ws-frage{font-size:12.5px;display:flex;flex-direction:column;gap:8px}
+.ws-pub-fuss{display:flex;flex-direction:column;gap:4px;margin-top:10px;font-size:12px}
+.ws-lage.gruen{color:#0b8f3e}.ws-lage.gelb{color:#C07C12}.ws-lage.rot{color:var(--rot)}
+.ws-live{display:inline-flex;align-items:center;gap:4px;color:var(--ink-3)}
+.ws-haupt{display:flex;flex-direction:column;min-height:0;min-width:0}
+.ws-editor{display:flex;flex-direction:column;height:100%;min-height:0}
+.ws-kopfzeile{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--line)}
+.ws-titel{display:flex;flex-direction:column;min-width:0;margin-right:auto}
+.ws-titel b{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ws-titel span{font-size:12px}
+.ws-bearbeiten{display:flex;flex-direction:column;flex:1;min-height:0;position:relative}
+.ws-werkzeug{display:flex;align-items:center;gap:2px;flex-wrap:wrap;padding:6px 10px;border-bottom:1px solid var(--line);background:var(--surface)}
+.ws-werkzeug .btn{color:var(--ink-2)}
+.ws-trenner{width:1px;height:20px;background:var(--line);margin:0 4px}
+.ws-hinweis{margin-left:auto;font-size:12px}
+.ws-rahmen{flex:1;width:100%;min-height:0;border:0;background:#fff}
+.ws-code{flex:1;min-height:0;width:100%;border:0;padding:14px;resize:none;font:12.5px/1.55 ui-monospace,Consolas,monospace;background:var(--surface);color:var(--ink)}
+.ws-felder{flex:1;overflow:auto;padding:18px;display:flex;flex-direction:column;gap:14px;max-width:760px}
+.ws-pop{position:absolute;z-index:5;left:10px;right:10px;top:46px;display:flex;gap:6px;align-items:center;padding:10px;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.16)}
+.ws-pop .eingabe{flex:1}
+.ws-bilder{flex-direction:column;align-items:stretch;max-height:60vh}
+.ws-bilder-kopf{display:flex;gap:8px;align-items:center}
+.ws-bilder-kopf b{margin-right:auto}
+.ws-bilder-raster{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;overflow:auto}
+.ws-bilder-raster button{padding:0;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);cursor:pointer;aspect-ratio:4/3;overflow:hidden}
+.ws-bilder-raster img{width:100%;height:100%;object-fit:cover;display:block}
+.ws-bildwahl{display:flex;gap:10px;align-items:center;position:relative;flex-wrap:wrap}
+.ws-bildwahl img{width:140px;aspect-ratio:16/10;object-fit:cover;border-radius:6px}
+.ws-bildwahl .ws-pop{top:auto;bottom:100%;left:0;right:auto;width:min(560px,80vw)}
+.ws-assistent{border-top:1px solid var(--line);padding:10px 14px;background:var(--surface-2)}
+.ws-auftrag{display:flex;gap:8px;align-items:stretch}
+.ws-auftrag textarea{flex:1;resize:vertical}
+.ws-vorschlag-leiste{display:flex;gap:12px;align-items:center;justify-content:space-between;border-left:4px solid #7C3AED;padding-left:10px}
+@media (max-width:900px){
+  .ws{grid-template-columns:minmax(0,1fr);height:auto;overflow:visible}
+  .inhalt.voll:has(.ws){overflow:auto}
+  .ws-seite{border-right:0;border-bottom:1px solid var(--line);max-height:none}
+  .ws-liste{max-height:240px;overflow:auto}
+  .ws-rahmen{min-height:70vh}
+  .ws-code{min-height:60vh}
+  .ws-hinweis{display:none}
+  .ws-auftrag{flex-direction:column}
+}
