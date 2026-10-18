@@ -814,15 +814,26 @@ async def abschnittsweise(modell: str, system: str, frage: str, form: str, rid: 
     return (f"# {titel}\n\n" if titel else "") + "\n\n".join(teile)
 
 
-async def ausarbeiten(v: dict[str, Any]) -> None:
-    a = json.loads(v.get("auftrag") or "{}")
-    rid = a.get("rolle") or "stratege"
-    form = a.get("form") or "text"
+# ---------------------------------------------------------------- Zusammenarbeit in der Pipeline
+# Veiko, 18.10.2026: "Das Team soll eigenstaendig zusammenarbeiten, um das Ergebnis
+# zu liefern" -- im Team-Chat umgesetzt (teamchat.TEAMARBEIT), hier dasselbe fuer
+# Auftraege, die ohne ihn laufen. Bis dahin arbeitete genau EINE Rolle, und eine
+# Praesentation von Neal kam ohne Bildkonzept, obwohl Annie dafuer da ist.
+# Weitergegeben wird nach dem ersten Entwurf und VOR Daniels Pruefung: Daniel soll
+# das gemeinsame Ergebnis pruefen, nicht einen halben Zwischenstand.
+PIPELINE_UEBERGABEN = 2
+LANG_FUER_VOLLFASSUNG = 20000   # Zeichen -- darueber ergaenzt die zweite Rolle nur
+PIPELINE_TEAMARBEIT = (
+    "TEAMARBEIT: Du arbeitest im Team. Braucht dieses Ergebnis die Arbeit eines anderen Mitglieds, damit Veiko es fertig "
+    "bekommt (Annie: Gestaltung, Bildkonzept, Bild-Zeilen; Neal: Texte und Formulierung; Clayton: Strategie und Konzepte; "
+    "Ridley: Video), dann hänge GANZ AM ENDE deines Ergebnisses einen Block an:\n"
+    "<<<WEITERGEBEN an=\"Annie\">>>\nder konkrete Auftrag: was genau, worauf achten\n<<<ENDE>>>\n"
+    "Das Mitglied arbeitet seinen Teil danach direkt in dein Ergebnis ein. Nur wenn es wirklich etwas beiträgt -- "
+    "Daniel prüft ohnehin, ihn holst du nicht. Frag Veiko nie, ob jemand anderes etwas übernehmen soll.")
+
+
+def _arbeits_system(rid: str, form: str, a: dict[str, Any], mit_team: bool = True) -> str:
     r = rolle(rid)
-    modell = await modell_fuer(rid, llm.vorgabe("arbeit"))
-    if not modell:
-        raise llm.ModellFehler("Kein passendes lokales Modell installiert.")
-    vid = v["id"]
     # Nur der Kern des Rollenauftrags: der volle Text (Clayton: "Zielbild,
     # Geschaeftsmodell, Wege") faerbte jede Arbeit -- eine Anbieterliste kam mit
     # vorangestelltem "Business-Check". Die Aufgabe bestimmt die Form, nicht die Rolle.
@@ -841,9 +852,92 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
     system += ("\n\nGRÜNDLICHKEIT: Rechenzeit spielt keine Rolle, das Team rechnet auf Veikos eigenem Server. "
                "Arbeite ausführlich und vollständig; kürze nicht aus Sparsamkeit. Lieber etwas zu viel liefern, "
                "das Veiko streichen kann, als zu wenig. Denk vor dem Schreiben gründlich nach.")
+    if mit_team:
+        system += "\n\n" + PIPELINE_TEAMARBEIT
+    return system
+
+
+def _uebergaben_aus(text: str, von: str) -> tuple[str, list[dict[str, str]]]:
+    """Dieselben Bloecke wie im Team-Chat (teamchat.UEBERGABE_RE), nur an Rollen,
+    die ausarbeiten koennen -- Daniel prueft ohnehin, Jason plant."""
+    from . import teamchat
+    rest, weiter = teamchat.uebergaben_trennen(text, von)
+    return rest, [w for w in weiter if w["wer"] in ROLLEN_FUER_ARBEIT and w["wer"] not in ("pmo", "cockpit")]
+
+
+async def _zusammenarbeiten(entwurf: str, von: str, form: str, a: dict[str, Any], v: dict[str, Any],
+                            frage: str) -> tuple[str, list[str]]:
+    """Weitergegebene Teile nacheinander einarbeiten lassen. Gibt den gemeinsamen
+    Entwurf und die Namen der Mitwirkenden zurueck. Ein Fehler einer zweiten Rolle
+    kippt nie die Arbeit der ersten: dann bleibt der Entwurf, wie er war."""
+    vid = v["id"]
+    entwurf, weiter = _uebergaben_aus(entwurf, von)
+    # Feste Regel statt Hoffnung: eine Praesentation, die nicht Annie geschrieben hat,
+    # geht IMMER zu Annie. Gemessen am 18.10.: Neal schrieb die Bild-Zeilen selbst (die
+    # Folienanweisung verlangt sie) und haengte keinen Block an -- Annie war nie beteiligt.
+    if form == "praesentation" and von != "designer" and "designer" not in [w["wer"] for w in weiter]:
+        weiter.append({"wer": "designer", "von": von, "auftrag": "Übernimm das Bildkonzept: EINE Bildsprache für die ganze "
+                       "Präsentation. Titelfolie, bild-Folien und etwa jede dritte weitere Folie bekommen eine Zeile 'Bild: …' "
+                       "(Motiv, Stil, Licht, Farben; keine Schrift im Bild); vorhandene Bild-Zeilen schärfst du in diesem Stil. "
+                       "Text, Folientypen und Aufbau der Folien bleiben, wie sie sind."})
+    mit: list[str] = []
+    schon = 0
+    while weiter and schon < PIPELINE_UEBERGABEN:
+        w = weiter.pop(0)
+        schon += 1
+        tid, vname, tname = w["wer"], rollen_name(w["von"]), rollen_name(w["wer"])
+        modell = await modell_fuer(tid, llm.vorgabe("arbeit"))
+        if not modell:
+            db.ereignis(vid, tid, "fehler", f"{tname} sollte mitarbeiten, aber es ist kein passendes Modell installiert.")
+            continue
+        db.ereignis(vid, w["von"], "info", f"{vname} gibt an {tname} weiter: {w['auftrag']}")
+        laeuft(tid, f"arbeitet mit ({vname} hat weitergegeben)", vid)
+        voll = len(entwurf) <= LANG_FUER_VOLLFASSUNG
+        aufgabe = (f"{frage}\n\nBISHERIGES ERGEBNIS VON {vname.upper()}:\n{entwurf}\n\n"
+                   f"AUFTRAG VON {vname.upper()} AN DICH: {w['auftrag']}\n\n"
+                   + ("Arbeite deinen Teil direkt in das Ergebnis ein und liefere das VOLLSTÄNDIGE Ergebnis in derselben Form. "
+                      f"Lass nichts weg, was {vname} geschrieben hat, außer dein Auftrag verlangt es. Keine Vorrede."
+                      if voll else
+                      "Das Ergebnis ist zu lang, um es neu zu schreiben (ein Modell kürzt dabei still). Liefere NUR deinen "
+                      "Beitrag als eigenen Abschnitt mit Überschrift; er wird am Ende angefügt. Keine Vorrede."))
+        try:
+            neu = await _chat_robust(modell, _arbeits_system(tid, form, a), [{"role": "user", "content": aufgabe}],
+                                     temperatur=0.5, denken=DENKEN_SCHREIBEN, num_ctx=65536, timeout=LANGE_FRIST)
+        except llm.ModellFehler as f:
+            db.ereignis(vid, tid, "fehler", f"{tname} konnte nicht mitarbeiten: {f}. Das Ergebnis von {vname} bleibt.")
+            continue
+        neu, mehr = _uebergaben_aus(neu, tid)
+        if llm.fremdschrift(neu) or not neu.strip():
+            db.ereignis(vid, tid, "fehler", f"{tname} hat nichts Brauchbares geliefert. Das Ergebnis von {vname} bleibt.")
+            continue
+        if voll and len(neu) < 0.6 * len(entwurf):
+            # Gemessen beim Langlaeufer (17.10.): "vollstaendige neue Fassung" machte aus
+            # 193.000 Zeichen 77.000. Eine stark gekuerzte Fassung ersetzt nichts.
+            db.ereignis(vid, tid, "fehler", f"{tname}s Fassung war deutlich kürzer ({len(neu):,} statt {len(entwurf):,} Zeichen) "
+                        f"und wurde verworfen -- das Ergebnis von {vname} bleibt.".replace(",", "."))
+            continue
+        entwurf = neu if voll else entwurf.rstrip() + "\n\n" + neu.strip()
+        mit.append(tname)
+        db.ereignis(vid, tid, "info", f"{tname} hat mitgearbeitet ({'eingearbeitet' if voll else 'Abschnitt angefügt'}).")
+        weiter += [x for x in mehr if x["wer"] not in (y["wer"] for y in weiter) and rollen_name(x["wer"]) not in mit
+                   and x["wer"] != von]
+    return entwurf, mit
+
+
+async def ausarbeiten(v: dict[str, Any]) -> None:
+    a = json.loads(v.get("auftrag") or "{}")
+    rid = a.get("rolle") or "stratege"
+    form = a.get("form") or "text"
+    r = rolle(rid)
+    modell = await modell_fuer(rid, llm.vorgabe("arbeit"))
+    if not modell:
+        raise llm.ModellFehler("Kein passendes lokales Modell installiert.")
+    vid = v["id"]
+    system = _arbeits_system(rid, form, a)
     grund = f"AUFTRAG: {a.get('auftrag')}\n\n{_vorgang_kontext(v)}"
+    # Die Recherche plant ohne den Teamarbeit-Teil: dort ist ein angehaengter Block nur Stoerung im JSON.
     quellen = [] if form == "webseite" and not a.get("recherche") else \
-        await recherche_planen(modell, system, grund, a.get("recherche"), rid, vid)
+        await recherche_planen(modell, _arbeits_system(rid, form, a, mit_team=False), grund, a.get("recherche"), rid, vid)
     quellen_text = "\n\n".join(f"[{i + 1}] {q['titel']} — {q['url']}\n{q['text'][:3000]}"
                                for i, q in enumerate(quellen))
     frage = grund + (f"\n\nQUELLEN:\n{quellen_text}" if quellen_text else "\n\n(keine Internetquellen)")
@@ -869,6 +963,13 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
                                      temperatur=0.3, denken=False, num_ctx=65536, timeout=LANGE_FRIST)
         if not entwurf.strip():
             raise llm.ModellFehler(f"{r.get('name')} hat nichts geliefert.")
+        if runde == 0:
+            # Das Team arbeitet zusammen, bevor Daniel prueft (siehe _zusammenarbeiten).
+            entwurf, mitgewirkt = await _zusammenarbeiten(entwurf, rid, form, a, v, frage)
+            if mitgewirkt:
+                db.ereignis(vid, rid, "info", "Gemeinsames Ergebnis von " + ", ".join([r.get("name") or rid] + mitgewirkt) + ".")
+        else:
+            entwurf = _uebergaben_aus(entwurf, rid)[0]   # beim Nachbessern wird nicht erneut weitergegeben
         laeuft("kritiker", "prüft", vid)
         pruefung = await pruefen(entwurf, a, v, quellen_text)
         db.ereignis(vid, "kritiker", "pruefung", pruefung.get("begruendung", ""),
