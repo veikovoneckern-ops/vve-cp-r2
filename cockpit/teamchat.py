@@ -57,6 +57,54 @@ STIL = ("WIE DU ANTWORTEST: Deutsch, für Veiko (kein Entwickler, aber sattelfes
         "Rechenzeit spielt keine Rolle, kürze nicht aus Sparsamkeit.")
 
 
+# ---------------------------------------------------------------- Teamarbeit ohne Rueckfrage
+# Veiko, 18.10.2026, an Neals Antwort „Wenn du willst, dass Annie ein Cover- und
+# Bildkonzept dazu macht -- sag Bescheid“: „Ich möchte nicht gefragt werden, ob
+# etwas an ein anderes Teammitglied übergeben werden soll, sondern das Team soll
+# eigenständig zusammenarbeiten, um das Ergebnis zu liefern.“
+# Ein Mitglied gibt deshalb selbst weiter (Block unten), und das Cockpit holt das
+# andere Mitglied sofort in DIESES Gespraech -- derselbe Weg, auf dem Externe
+# antworten (Ereignis "wer"). Nur das lokale Team: ein Externer kostet Geld und
+# kommt nie ohne Veikos Freigabe dazu.
+UEBERGABE_RE = re.compile(r"<<<WEITERGEBEN\s+(?:an\s*=?\s*)?[\"„“']?([^\"„“'>\n]+?)[\"„“']?\s*>>>(.*?)(?:<<<ENDE>>>|\Z)", re.S | re.I)
+MAX_UEBERGABEN = 3        # je Nachricht von Veiko -- eine Kette, kein Kreis
+# Erkennt eine Rueckfrage nach einer Uebergabe, die trotz Anweisung kam (dann
+# einmal gezielt nachfordern, wie bei Talk und Neo).
+FRAGT_NACH_RE = re.compile(r"wenn du (das )?(willst|möchtest|magst)|sag (mir )?bescheid|soll ich|möchtest du,? dass|"
+                           r"falls du (das )?(willst|möchtest)|gib mir (kurz )?bescheid", re.I)
+TEAMARBEIT = (
+    "TEAMARBEIT -- OHNE VEIKO ZU FRAGEN: Ihr arbeitet als Team zusammen, um Veiko ein fertiges Ergebnis zu liefern. "
+    "Frag Veiko NIE, ob du etwas an ein anderes Teammitglied geben sollst, und schreib nie „wenn du willst, macht X …, "
+    "sag Bescheid“. Braucht das Ergebnis die Arbeit eines anderen Mitglieds (Annie: Gestaltung, Bildkonzept, Bilder; "
+    "Neal: Texte; Clayton: Strategie und Konzepte; Ridley: Video; Jason: Planung), dann gib selbst weiter: hänge am "
+    "Ende deiner Antwort einen Block an\n"
+    "<<<WEITERGEBEN an=\"Annie\">>>\nder konkrete Auftrag: was genau, wofür, worauf achten\n<<<ENDE>>>\n"
+    "Das Cockpit holt das Mitglied dann sofort in dieses Gespräch; es arbeitet selbst weiter (bei einem Ergebnis "
+    "direkt an der Fassung). Sag Veiko in einem Satz, wer sich woran macht. Daniel prüft jede neue Fassung ohnehin "
+    "von selbst -- ihn musst du nicht holen. Externe (Dario, Elon, Demmis) kosten Geld: die holt nur Veiko selbst. "
+    "Rückfragen an Veiko nur, wenn eine Entscheidung wirklich nur er treffen kann (Inhalt, Ziel, Geld) -- nie für eine Übergabe.")
+
+
+def _ziel(name: str, von: str) -> str | None:
+    """Name oder Kennung -> Kennung eines aktiven, lokalen Mitglieds (nicht man selbst)."""
+    n = name.strip().lower()
+    for m in db.alle("SELECT id, name FROM team WHERE aktiv=1"):
+        if n in (m["id"].lower(), (m["name"] or "").lower()) and m["id"] != von:
+            return m["id"]
+    return None
+
+
+def uebergaben_trennen(text: str, von: str) -> tuple[str, list[dict[str, str]]]:
+    """Uebergabe-Bloecke aus einer Antwort: sie werden ausgefuehrt, nicht angezeigt."""
+    weiter: list[dict[str, str]] = []
+    for m in UEBERGABE_RE.finditer(text):
+        zid = _ziel(m.group(1), von)
+        auftrag = m.group(2).strip()
+        if zid and auftrag and zid not in [w["wer"] for w in weiter]:
+            weiter.append({"wer": zid, "auftrag": auftrag[:3000], "von": von})
+    return UEBERGABE_RE.sub("", text).strip(), weiter
+
+
 def ist_extern(wer: str) -> bool:
     return wer in EXTERNE
 
@@ -216,6 +264,8 @@ def system_text(wer: str, kontext: dict[str, Any]) -> str:
         kopf = (r.get("auftrag") or f"Du bist {r.get('name')}, {r.get('titel')} in Veiko von Eckerns KI-Team.")
         kopf += f"\n\nJETZT sprichst du direkt mit Veiko, in Ich-Form, als {r.get('name')}."
     teile = [kopf, STIL, f"WER SONST IM TEAM IST:\n{_stab_text()}", f"GEDÄCHTNIS (was über Veiko bekannt ist):\n{stab.gedaechtnis_text()}"]
+    if not ist_extern(wer):
+        teile.insert(3, TEAMARBEIT)
     if kontext.get("projekt_id"):
         pk = kontext_text({"art": "projekt", "id": kontext["projekt_id"]})
         if pk:
@@ -318,6 +368,10 @@ async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
         inhalt = m["text"] or ""
         if i == len(zeilen) - 1 and anh:
             inhalt += "\n\n" + anh
+        # Hat ein anderes Mitglied hier geantwortet (Uebergabe), steht sein Name davor --
+        # sonst hielte das Modell Annies Beitrag fuer seinen eigenen.
+        if m["rolle"] not in ("du", wer):
+            inhalt = f"[{wer_name(m['rolle'])}]: {inhalt}"
         verlauf.append({"role": "user" if m["rolle"] == "du" else "assistant", "content": inhalt or "(leer)"})
     denken, zusatz = llm.tempo(schnell)
     # Zugeordnetes Projekt/Aufgabe (17.10.2026): gespeichert am Gespraech, gilt
@@ -358,11 +412,19 @@ async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
             yield {"typ": "status", "text": "; ".join(lstatus)}
 
     sprecher = [x for x in (extern or []) if x in EXTERNE] if not ist_extern(wer) else []
+    netz = ("\n\n" + stab.netz_system(quellen)) if quellen else ""
     if not sprecher:
+        weiter: list[dict[str, str]] = []
         async for e in _antwort(gid, wer, system, verlauf, kontext, text, quellen, denken):
+            if e.get("typ") == "fertig":
+                weiter += e.get("weitergeben") or []
+            yield e
+        # Das Team arbeitet selbst weiter, ohne Veiko zu fragen (TEAMARBEIT oben).
+        dazu = zusatz + netz + (("\n\n" + ltext) if ltext else "") + \
+            ("\n\n" + aufgabe_text(z["aufgabe_id"]) if z.get("aufgabe_id") else "")
+        async for e in _uebergaben(gid, weiter, kontext, text, dazu, quellen, denken):
             yield e
         return
-    netz = ("\n\n" + stab.netz_system(quellen)) if quellen else ""
     for xid in sprecher:
         yield {"typ": "wer", "wer": xid}
         xsys = (system_text(xid, kontext) + "\n\n" + zusatz + netz + (("\n\n" + ltext) if ltext else "") +
@@ -372,6 +434,60 @@ async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
                 "was jemand anderes tun könnte. Bei einer Korrektur: nenne jede Fundstelle mit Zitat und Verbesserung.")
         async for e in _antwort(gid, xid, xsys, verlauf, kontext, text, quellen, denken):
             yield e
+
+
+async def _uebergaben(gid: str, weiter: list[dict[str, str]], kontext: dict[str, Any], text: str, dazu: str,
+                      quellen: list[dict[str, str]], denken: bool) -> AsyncIterator[dict[str, Any]]:
+    """Weitergegebene Auftraege nacheinander abarbeiten: das Mitglied kommt ins
+    Gespraech, sieht den Verlauf (auch die Antwort dessen, der weitergab) und
+    bekommt den Auftrag als letzte Nachricht. Gibt es selbst weiter, reiht sich
+    das hinten an -- hoechstens MAX_UEBERGABEN je Nachricht von Veiko."""
+    schon = 0
+    while weiter and schon < MAX_UEBERGABEN:
+        w = weiter.pop(0)
+        schon += 1
+        yield {"typ": "wer", "wer": w["wer"]}
+        zeilen = list(reversed(db.alle("SELECT rolle, text FROM nachrichten WHERE gespraech_id=? ORDER BY id DESC LIMIT 20", (gid,))))
+        verlauf = [{"role": "user" if m["rolle"] == "du" else "assistant",
+                    "content": (m["text"] or "(leer)") if m["rolle"] == "du" else f"[{wer_name(m['rolle'])}]: {m['text'] or ''}"}
+                   for m in zeilen]
+        verlauf.append({"role": "user", "content": f"[Übergabe von {wer_name(w['von'])} an dich] {w['auftrag']}"})
+        system = (system_text(w["wer"], kontext) + "\n\n" + dazu +
+                  f"\n\nDICH HAT {wer_name(w['von']).upper()} AUS DEM TEAM IN DIESES GESPRÄCH GEHOLT, damit Veiko ein fertiges "
+                  "Ergebnis bekommt. Erledige den Auftrag selbst und vollständig hier im Gespräch -- nicht als Vorschlag oder "
+                  "Briefing für jemand anderen, und ohne Veiko zu fragen, ob du anfangen sollst. Gibt es ein Ergebnis im Kontext "
+                  "und ändert dein Beitrag es, liefere die vollständige neue Fassung zwischen den Marken.")
+        async for e in _antwort(gid, w["wer"], system, verlauf, kontext, f"{text} -- Auftrag von {wer_name(w['von'])}: {w['auftrag']}",
+                                quellen, denken):
+            if e.get("typ") == "fertig":
+                weiter += [x for x in (e.get("weitergeben") or []) if x["wer"] not in (y["wer"] for y in weiter)]
+            yield e
+    if weiter:
+        yield {"typ": "status", "text": f"Weitere Übergaben ({', '.join(wer_name(x['wer']) for x in weiter)}) zurückgestellt -- "
+                                        f"höchstens {MAX_UEBERGABEN} je Nachricht."}
+
+
+async def _uebergabe_nachfordern(wer: str, modell: str, system: str, verlauf: list[dict[str, str]],
+                                 antwort: str) -> list[dict[str, str]]:
+    """Die Antwort fragt Veiko, ob jemand anderes etwas uebernehmen soll -- trotz
+    Anweisung. Einmal gezielt nachfordern: entscheide selbst, nur der Block."""
+    namen = [m["name"] for m in db.alle("SELECT id, name FROM team WHERE aktiv=1") if m["id"] != wer]
+    if not FRAGT_NACH_RE.search(antwort) or not any(re.search(rf"\b{re.escape(n)}\b", antwort) for n in namen if n):
+        return []
+    # Gemessen am 18.10.: mit "entscheide selbst, sonst: keine" antwortete qwen3.8 auf
+    # Neals eigenen Vorschlag (Annie macht das Bildkonzept) mit "keine". Was ein
+    # Mitglied selbst vorgeschlagen hat, wird deshalb ausgefuehrt, nicht neu abgewogen.
+    frage = ("Du hast Veiko vorgeschlagen, dass ein anderes Teammitglied etwas übernimmt, und ihn gefragt, ob er das will. "
+             "Veiko will nicht gefragt werden -- das Team soll selbst zusammenarbeiten. Gib es deshalb JETZT weiter. "
+             "Antworte NUR mit dem Block <<<WEITERGEBEN an=\"Name\">>> konkreter Auftrag: was, wofür, worauf achten <<<ENDE>>> "
+             "(einer je Mitglied, das du vorgeschlagen hast). Nur wenn dein Vorschlag nichts mit Veikos Auftrag zu tun hatte, "
+             "antworte: keine")
+    try:
+        roh = await llm.chat(modell, system, verlauf + [{"role": "assistant", "content": antwort}, {"role": "user", "content": frage}],
+                             temperatur=0.3, denken=False, num_ctx=65536, timeout=300)
+    except llm.ModellFehler:
+        return []
+    return uebergaben_trennen(roh, wer)[1]
 
 
 async def _antwort(gid: str, wer: str, system: str, verlauf: list[dict[str, str]], kontext: dict[str, Any],
@@ -417,6 +533,21 @@ async def _antwort(gid: str, wer: str, system: str, verlauf: list[dict[str, str]
         return
     if llm.fremdschrift(gesamt):
         gesamt = llm.FREMDSCHRIFT.sub("", gesamt)
+    # Im Verlauf steht vor fremden Beitraegen "[Name]: " -- das Modell ahmt es gern
+    # nach (18.10.: Annies Antwort begann mit "[Annie]:"). Der Name steht ohnehin am Beitrag.
+    gesamt = re.sub(r"^\s*\[[^\]\n]{2,30}\]:\s*", "", gesamt)
+
+    # Uebergaben an andere Mitglieder (TEAMARBEIT): ausfuehren statt fragen.
+    weiter: list[dict[str, str]] = []
+    if not ist_extern(wer):
+        gesamt, weiter = uebergaben_trennen(gesamt, wer)
+        if not weiter:
+            weiter = await _uebergabe_nachfordern(wer, modell, system, verlauf, gesamt)
+            if weiter:
+                # Die Rueckfrage selbst ist damit beantwortet -- der Absatz faellt weg.
+                ziele = [wer_name(w["wer"]) for w in weiter]
+                gesamt = "\n\n".join(a for a in re.split(r"\n\s*\n", gesamt)
+                                     if not (FRAGT_NACH_RE.search(a) and any(z in a for z in ziele))).strip()
 
     getan: list[str] = []
     if kontext.get("langlauf_id"):
@@ -483,8 +614,14 @@ async def _antwort(gid: str, wer: str, system: str, verlauf: list[dict[str, str]
         prosa = (prosa or "Erledigt.") + ("\n\n**Im Langläufer übernommen:**\n" if kontext.get("langlauf_id") else "\n\n**Ausgelöst:**\n") \
             + "\n".join("- " + g for g in getan)
         daten["langlauf"] = getan
+    if weiter:
+        # Vom Code geschrieben: wer jetzt woran arbeitet -- und es passiert gleich danach.
+        prosa = (prosa or "Ich gebe weiter.") + "\n\n**Weitergegeben:**\n" + "\n".join(
+            f"- {wer_name(w['wer'])}: {w['auftrag'][:200]}{'…' if len(w['auftrag']) > 200 else ''}" for w in weiter)
+        daten["weitergeben"] = weiter
     prosa += stab.netz_fuss(quellen)
     mid = db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",
                         (gid, wer, prosa, json.dumps(daten, ensure_ascii=False), time.time()))
     db.ausfuehren("UPDATE gespraeche SET geaendert=? WHERE id=?", (time.time(), gid))
-    yield {"typ": "fertig", "text": prosa, "nachricht_id": mid, "modell": modell, "wer": wer, **{k: daten[k] for k in ("fassung", "protokoll_id") if k in daten}}
+    yield {"typ": "fertig", "text": prosa, "nachricht_id": mid, "modell": modell, "wer": wer,
+           **{k: daten[k] for k in ("fassung", "protokoll_id", "weitergeben") if k in daten}}
