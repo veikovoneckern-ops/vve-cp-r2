@@ -1516,6 +1516,15 @@ html.zieht iframe{pointer-events:none}
 .ws2-tabs button{flex:1;padding:6px 4px;font-size:12.5px}
 .ws2-links-inhalt{flex:1;min-height:0;overflow:auto;padding:12px}
 .ws2-neu{width:100%;margin-bottom:10px}
+.ws2-neu-reihe{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px}
+.ws2-neu-reihe .btn{justify-content:center;padding-left:8px;padding-right:8px;min-width:0}
+.ws-gruppe:has(.ws2-gruppe-plus){display:flex;align-items:center;gap:6px}
+.ws2-gruppe-plus{margin-left:auto;border:0;background:none;color:var(--steel,#2c6bb3);font:inherit;font-size:11.5px;font-weight:600;cursor:pointer;padding:2px 4px;border-radius:4px;text-transform:none;letter-spacing:0}
+.ws2-gruppe-plus:hover{background:var(--surface-2)}
+.ws2-blogneu{display:grid;grid-template-columns:150px 1fr;gap:12px;align-items:start}
+.ws2-blogbild{height:96px;border:2px dashed var(--line);border-radius:8px;background:var(--surface-2);color:var(--ink-2);cursor:pointer;overflow:hidden;padding:0;font:inherit;font-size:13px}
+.ws2-blogbild img{width:100%;height:100%;object-fit:cover;display:block}
+@media (max-width:560px){.ws2-blogneu{grid-template-columns:1fr}}
 .ws2-suche{width:100%;margin-bottom:8px}
 .ws2-liste{display:flex;flex-direction:column;gap:1px}
 .ws-gruppe{font-size:11px;font-weight:750;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-4);margin:12px 6px 4px}

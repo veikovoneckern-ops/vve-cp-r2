@@ -276,7 +276,12 @@ async def seite_neu(d: dict[str, Any]):
             k, _ = _lesen(f)
             if k.get("blog") and isinstance(k["blog"].get("reihe"), (int, float)):
                 reihen.append(k["blog"]["reihe"])
-        kopf["blog"] = {"reihe": (min(reihen) - 1) if reihen else 1, "bild": "", "auszug": ""}
+        # Bild und Auszug kommen seit dem 19.10. gleich aus dem Dialog "Neuer Blogbeitrag".
+        bild = str(d.get("bild") or "")
+        if bild and not re.fullmatch(r"/bilder/[\w.-]+", bild):
+            raise HTTPException(400, "Ungültiges Bild")
+        auszug = str(d.get("auszug") or "").strip()[:400]
+        kopf["blog"] = {"reihe": (min(reihen) - 1) if reihen else 1, "bild": bild, "auszug": auszug}
         inhalt = '<div class="fliess">\n<p>Hier beginnt der Artikel.</p>\n</div>'
     else:
         inhalt = (f'<section class="band" style="--h:260px">\n  <div class="band-innen">\n    <h1>{titel}</h1>\n  </div>\n</section>\n\n'

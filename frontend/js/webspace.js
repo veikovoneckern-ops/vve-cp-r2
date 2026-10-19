@@ -67,7 +67,7 @@ export function WebSpace({ pfad: pfadAusAdresse }) {
         ${[["seiten", "Seiten"], ["medien", "Medien"], ["suchen", "Suchen"]].map(([id, t]) => html`<button class=${links === id ? "an" : ""} onClick=${() => linksWaehlen(id)}>${t}</button>`)}
       </div>
       <div class="ws2-links-inhalt">
-        ${(links === "seiten" || links === "menue") && html`<${SeitenBaum} stand=${stand} pfad=${pfad} waehlen=${wechseln} neu=${() => setNeu(true)} neuLaden=${laden} menueGeaendert=${neuAufbauen} />`}
+        ${(links === "seiten" || links === "menue") && html`<${SeitenBaum} stand=${stand} pfad=${pfad} waehlen=${wechseln} neu=${(art) => setNeu(art || "seite")} neuLaden=${laden} menueGeaendert=${neuAufbauen} />`}
         ${links === "medien" && html`<${MedienVerwaltung} />`}
         ${links === "suchen" && html`<${SuchenErsetzen} oeffnen=${wechseln} vorher=${() => editorRef.current.sichern()} fertig=${neuAufbauen} />`}
       </div>
@@ -78,7 +78,7 @@ export function WebSpace({ pfad: pfadAusAdresse }) {
         geaendert=${(x) => { if (x && x.wechseln) wechseln(x.wechseln, { neuLaden: true }); else laden(); }}
         geloescht=${async () => { await laden(); wechseln("index.html"); }} />
     </section>
-    ${neu && html`<${NeueSeite} stand=${stand} zu=${() => setNeu(false)} fertig=${async (p) => { setNeu(false); await laden(); wechseln(p); }} />`}
+    ${neu && html`<${NeueSeite} vorgabe=${neu} stand=${stand} zu=${() => setNeu(false)} fertig=${async (p) => { setNeu(false); await laden(); wechseln(p); }} />`}
     ${pub && html`<${VeroeffentlichenDialog} stand=${stand} zu=${() => setPub(false)} oeffnen=${(p) => { setPub(false); wechseln(p); }}
       fertig=${async () => { setPub(false); await laden(); }} verworfen=${async () => { setPub(false); await neuAufbauen(); }} />`}
   </div>`;
@@ -324,7 +324,10 @@ function SeitenBaum({ stand, pfad, waehlen, neu, neuLaden, menueGeaendert }) {
   const freiZiel = zug && zug.ziel && zug.ziel.art === "frei";
   const endeZiel = zug && zug.ziel && zug.ziel.art === "ende";
   return html`<div class=${"ws2-seiten" + (zug ? " zieht" : "")}>
-    <button class="btn primaer ws2-neu" onClick=${neu}><${Icon} n="plus" g=${15} />Neue Seite oder Artikel</button>
+    <div class="ws2-neu-reihe">
+      <button class="btn primaer" onClick=${() => neu("seite")} title="Neue Seite anlegen (mit Platz im Menü)"><${Icon} n="plus" g=${15} />Neue Seite</button>
+      <button class="btn primaer" onClick=${() => neu("blog")} title="Neuen Beitrag im Blog „Inspiration“ anlegen"><${Icon} n="plus" g=${15} />Blogbeitrag</button>
+    </div>
     <input class="eingabe ws2-suche" placeholder="Seite suchen …" value=${suche} onInput=${(e) => setSuche(e.target.value)} />
     <div class="ws2-liste" ref=${liste}>
       <div class=${"ws2-gruppe-box" + (endeZiel ? " ziel" : "")} data-wsg="menue">
@@ -336,7 +339,7 @@ function SeitenBaum({ stand, pfad, waehlen, neu, neuLaden, menueGeaendert }) {
         ${freiZeilen.length ? freiZeilen : html`<div class="ws2-leer">${zug && zug.quelle.art === "menue" ? "Hierher ziehen, um eine Seite aus dem Menü zu nehmen" : "Alle Seiten stehen im Menü."}</div>`}
       </div>
       <div class="ws2-gruppe-box" data-wsg="blog">
-        <div class="ws-gruppe" title="Reihenfolge in der Übersicht „Inspiration“">Blog „Inspiration“ <span class="ws2-tipp">neueste oben</span></div>
+        <div class="ws-gruppe" title="Reihenfolge in der Übersicht „Inspiration“">Blog „Inspiration“ <span class="ws2-tipp">neueste oben</span><button class="ws2-gruppe-plus" title="Neuer Blogbeitrag" onClick=${() => neu("blog")}>＋ Beitrag</button></div>
         ${blogZeilen}
       </div>
       ${q && !menueZeilen.length && !freiZeilen.length && !blogZeilen.length && html`<p class="leise klein" style="padding:8px">Nichts gefunden.</p>`}
@@ -616,8 +619,13 @@ function Unterschied({ a }) {
 }
 
 // ---------------------------------------------------------------- Neue Seite oder Artikel
-function NeueSeite({ stand, zu, fertig }) {
-  const [art, setArt] = useState("seite");
+function NeueSeite({ vorgabe, stand, zu, fertig }) {
+  const [art, setArt] = useState(vorgabe === "blog" ? "blog" : "seite");
+  // Nur beim Blogbeitrag: Bild und Auszug für die Übersicht „Inspiration“ gleich hier,
+  // statt sie danach unter „Eigenschaften“ suchen zu müssen.
+  const [bild, setBild] = useState("");
+  const [auszug, setAuszug] = useState("");
+  const [bildWahl, setBildWahl] = useState(false);
   const [titel, setTitel] = useState("");
   const [menue, setMenue] = useState("");
   const [ordner, setOrdner] = useState("");
@@ -627,7 +635,7 @@ function NeueSeite({ stand, zu, fertig }) {
   async function los() {
     setLaeuft("Seite wird angelegt …");
     try {
-      const r = await api("/webspace/neu", { methode: "POST", daten: { art, titel, ordner: art === "seite" ? ordner : undefined, menue: art === "seite" && menue !== "-" ? menue : null } });
+      const r = await api("/webspace/neu", { methode: "POST", daten: { art, titel, bild: art === "blog" ? bild : undefined, auszug: art === "blog" ? auszug.trim() : undefined, ordner: art === "seite" ? ordner : undefined, menue: art === "seite" && menue !== "-" ? menue : null } });
       if (entwurf.trim()) {
         setLaeuft("Die KI schreibt den ersten Entwurf … (meist eine halbe bis eine Minute)");
         const s = await api("/webspace/seite?pfad=" + encodeURIComponent(r.pfad));
@@ -639,7 +647,7 @@ function NeueSeite({ stand, zu, fertig }) {
       fertig(r.pfad);
     } catch (e) { fehlerMelden(e); setLaeuft(""); }
   }
-  return html`<${Modal} titel="Neue Seite oder Artikel" zu=${zu}
+  return html`<${Modal} titel=${art === "blog" ? "Neuer Blogbeitrag" : "Neue Seite"} zu=${zu}
     fuss=${html`<span class="luecke"></span><button class="btn geist" onClick=${zu}>Abbrechen</button><button class="btn primaer" disabled=${!titel.trim() || !!laeuft} onClick=${los}>${laeuft ? "Einen Moment …" : "Anlegen"}</button>`}>
     <div class="ws2-artwahl">
       <button class=${art === "seite" ? "an" : ""} onClick=${() => setArt("seite")}><b>Seite</b><span class="leise klein">z. B. Vorträge, Über mich — mit Platz im Menü</span></button>
@@ -655,9 +663,15 @@ function NeueSeite({ stand, zu, fertig }) {
           ${stand.menue.filter((m) => m.href !== "/").map((m) => html`<option value=${m.href}>unter „${m.text}“</option>`)}
           <option value="-">nicht im Menü</option>
         </select></div></div>`}
+    ${art === "blog" && html`<div class="ws2-blogneu">
+      <button class="ws2-blogbild" onClick=${() => setBildWahl(true)} title="Bild für die Übersicht wählen">
+        ${bild ? html`<img src=${BASIS + bild} alt="" />` : html`<span>＋ Titelbild<br /><span class="leise klein">optional</span></span>`}</button>
+      <div class="feld"><label>Kurzer Auszug für die Übersicht (optional)</label>
+        <textarea class="eingabe" rows="3" value=${auszug} onInput=${(e) => setAuszug(e.target.value)} placeholder="Ein, zwei Sätze, die unter dem Titel in der Liste stehen."></textarea></div></div>`}
     <div class="feld"><label>✦ Ersten Entwurf von der KI schreiben lassen (optional)</label>
       <textarea class="eingabe" rows="4" value=${entwurf} onInput=${(e) => setEntwurf(e.target.value)}
         placeholder="Worum soll es gehen? Stichpunkte reichen. Leer lassen = leere Seite zum selbst Schreiben."></textarea></div>
     ${laeuft && html`<p class="leise">${laeuft}</p>`}
+    ${bildWahl && html`<${MedienWahl} zu=${() => setBildWahl(false)} waehlen=${(p) => { setBild(p); setBildWahl(false); }} />`}
   <//>`;
 }
