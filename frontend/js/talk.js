@@ -66,6 +66,15 @@ function MedienKarte({ m }) {
   </div>`;
 }
 
+// Wozu eine Antwort gehoert (gespraech.bezug_erkennen, 19.10.2026): Talk ordnet eine
+// Nachricht von selbst einer passenden Aufgabe zu -- was daraus entsteht (Dossier,
+// Ausarbeitung), landet dort. Die Zeile macht das sichtbar und fuehrt hin.
+function BezugZeile({ b }) {
+  const hin = () => (b.aufgabe_id ? bus.sende("aufgabe-zeigen", b.aufgabe_id) : navigiere("/projects/" + b.projekt_id));
+  return html`<button class="talk-bezug" onClick=${hin} title=${b.aufgabe_id ? "Aufgabe öffnen" : "Projekt öffnen"}>
+    <${Icon} n="projects" g=${12} /><span>Gehört zu ${b.aufgabe_titel ? html`<b>${b.aufgabe_titel}</b>${b.projekt_name ? " · " + b.projekt_name : ""}` : html`<b>${b.projekt_name}</b>`}</span></button>`;
+}
+
 function StimmeKreis({ zustand, pegel, text, beiKlick }) {
   const TXT = { bereit: "Antippen und sprechen", hoert: "Ich höre zu …", erkennt: "Verstehe …", denkt: "Denke nach …", spricht: "Spreche …" };
   // Kompakt (Veiko, 01.10.: der grosse Kreis war zu gross und seine Wellen
@@ -130,7 +139,8 @@ export function Talk({ zu, kontext, setKontext, start }) {
 
   function zuAnzeige(m) {
     const d = m.daten || {};
-    return { id: m.id, rolle: m.rolle === "du" ? "du" : "ck", text: m.rolle === "du" ? (d.anzeige ?? m.text) : m.text, vorschlaege: d.vorschlaege || [], medien: d.medien || [] };
+    return { id: m.id, rolle: m.rolle === "du" ? "du" : "ck", text: m.rolle === "du" ? (d.anzeige ?? m.text) : m.text, vorschlaege: d.vorschlaege || [], medien: d.medien || [],
+      bezug: m.rolle === "du" ? null : d.bezug || null, datei: d.datei_id || null };
   }
 
   async function senden(text, anhaenge, stimme) {
@@ -157,7 +167,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
     laufRef.current = false;
     setLauf(null);
     if (fertig) {
-      setMsgs((m) => [...m, { id: fertig.nachricht_id, rolle: "ck", text: fertig.text, vorschlaege: fertig.vorschlaege, medien: fertig.medien || [] }]);
+      setMsgs((m) => [...m, { id: fertig.nachricht_id, rolle: "ck", text: fertig.text, vorschlaege: fertig.vorschlaege, medien: fertig.medien || [], bezug: fertig.bezug || null }]);
       // "Zeig mir …": aendert nichts, deshalb sofort und ohne Knopf.
       const z = (fertig.zeigen || [])[0];
       // "Oeffne das Ergebnis zu …": genau dieses eine Ding (gespraech.oeffnen_aufloesen).
@@ -178,6 +188,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
         else if (o.art === "ergebnis") bus.sende("ergebnis-zeigen", o.id);
         else if (o.art === "aufgabe") bus.sende("aufgabe-zeigen", o.id);
         else if (o.art === "notiz") bus.sende("notiz-zeigen", o.id);
+        else if (o.art === "datei") bus.sende("datei-zeigen", o.id);
         else navigiere({ langlauf: "/langlauf/", vorgang: "/inbox/", projekt: "/projects/" }[o.art] + o.id);
       } else if (z && z.projekt_id) navigiere("/projects/" + z.projekt_id + (z.ziel && z.ziel !== "ueberblick" ? "/" + z.ziel : ""));
       else if (z && z.ziel) {
@@ -399,6 +410,8 @@ export function Talk({ zu, kontext, setKontext, start }) {
             ${m.vorschlaege && m.vorschlaege.filter((v) => !v.erledigt).length > 1 && html`<button class="btn klein" style="margin-top:6px"
               onClick=${() => ausfuehren(m.id, m.vorschlaege.map((v, i) => (v.erledigt ? -1 : i)).filter((i) => i >= 0))}>Alle ausführen</button>`}
             ${(m.medien || []).map((x) => html`<${MedienKarte} key=${x.id} m=${x} />`)}
+            ${m.datei && html`<button class="btn klein primaer" style="margin-top:6px" onClick=${() => bus.sende("datei-zeigen", m.datei)}><${Icon} n="voll" g=${12} />Dossier öffnen</button>`}
+            ${m.bezug && html`<${BezugZeile} b=${m.bezug} />`}
             ${typeof m.id === "number" && html`<button class="btn klein geist" style="margin-top:4px" title="Vorlesen" onClick=${() => vorlesen(m.text).catch((e) => toast(e.message, { fehler: true }))}><${Icon} n="play" g=${12} />Vorlesen</button>`}
           </div>`)}
       ${lauf && html`<div class="talk-blase ck">${lauf.text ? html`<${Md} text=${lauf.text} />` : html`<span class="leise">${lauf.status ? lauf.status.charAt(0).toUpperCase() + lauf.status.slice(1) : "Denke nach …"}</span>`}</div>`}

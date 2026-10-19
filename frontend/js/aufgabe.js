@@ -30,6 +30,9 @@ export function AufgabeFenster({ id, zu }) {
     setF((alt) => alt || { titel: x.titel, notiz: x.notiz || "", faellig: x.faellig || "", start: x.start || "", prio: x.prio || 2, projekt_id: x.projekt_id || "" });
   }).catch((e) => { fehlerMelden(e); zu(); });
   useEffect(() => { holen(); api("/projekte").then((d) => setProjekte(d.projekte || [])).catch(() => {}); }, [id]);
+  // Laeuft etwas fuer die Aufgabe (Recherche, Gespraech), alle acht Sekunden nachsehen.
+  const laeuftWas = a && (a.nebenbei || []).length > 0;
+  useEffect(() => { if (!laeuftWas) return undefined; const t = setInterval(holen, 8000); return () => clearInterval(t); }, [laeuftWas]);
 
   if (!a || !f) return html`<${Modal} titel="Aufgabe" zu=${zu}><div class="lade">Lade …</div><//>`;
   const geaendert = f.titel !== a.titel || f.notiz !== (a.notiz || "") || f.faellig !== (a.faellig || "") || f.start !== (a.start || "")
@@ -82,7 +85,9 @@ export function AufgabeFenster({ id, zu }) {
     if (geaendert && !(await speichern(true))) return;
     zu();
     // Talk mit der Aufgabe als Bezug (Projekt bzw. Case), wie bisher der Klick im Briefing.
-    const kontext = a.vorgang_id ? { art: "vorgang", id: a.vorgang_id, titel: f.titel } : f.projekt_id ? { art: "projekt", id: f.projekt_id, titel: a.projekt_name || f.titel } : null;
+    // Seit 19.10.2026 die Aufgabe selbst (gespraech.kontext_text art aufgabe): Talk kennt
+    // dann Informationen und Anhaenge, und alles, was daraus entsteht, haengt an ihr.
+    const kontext = { art: "aufgabe", id, titel: f.titel };
     bus.sende("talk-oeffnen", { kontext, vorlage: `Zur Aufgabe „${f.titel.trim()}“: ` });
   }
   async function archivieren() {
@@ -115,11 +120,11 @@ export function AufgabeFenster({ id, zu }) {
             <button class="btn klein" onClick=${() => wahl.current && wahl.current.click()}><${Icon} n="clip" g=${13} />Datei wählen</button>
             <input type="file" multiple hidden ref=${wahl} onChange=${(e) => { const l = [...e.target.files]; e.target.value = ""; if (l.length) dateienHoch(l); }} /></div>
           ${(a.dateien || []).map((d) => html`<div class="af-datei" key=${d.id}>
-            <a href=${"/api/dateien/" + d.id} target="_blank" rel="noopener"><${Icon} n="clip" g=${13} />${d.name}</a>
+            <a href=${"/api/dateien/" + d.id} onClick=${(e) => { e.preventDefault(); bus.sende("datei-zeigen", d.id); }}><${Icon} n="clip" g=${13} />${d.name}</a>
             <span class="leise klein">${groesse(d.groesse || 0)}${d.zeichen ? "" : " · Inhalt nicht lesbar"} · ${zeitText(d.erstellt)}</span>
             <button class="btn klein geist" onClick=${() => loesen(d.id, d.name)} title="Von der Aufgabe lösen (die Datei bleibt erhalten)"><${Icon} n="x" g=${12} /></button></div>`)}
           ${laedt.map((d) => html`<div class="af-datei" key=${"l" + d.name}><span>${d.name}</span><span class="leise klein">lädt … ${Math.round(d.anteil * 100)} %</span></div>`)}
-          ${!(a.dateien || []).length && !laedt.length && html`<div class="leise klein">Noch keine. Angehängtes lesen Talk, Team-Chat und ein Langläufer zu dieser Aufgabe mit.</div>`}
+          ${!(a.dateien || []).length && !laedt.length && html`<div class="leise klein">Noch keine. Angehängtes lesen Talk, Team-Chat und ein LongRun zu dieser Aufgabe mit.</div>`}
         </div>
       </div>
 
@@ -137,9 +142,10 @@ export function AufgabeFenster({ id, zu }) {
 
         <div class="af-block">
           <b>Weiterarbeiten</b>
+          ${(a.nebenbei || []).map((x) => html`<div class="af-laeuft"><span class="punkt-laeuft"></span><span><b>${x.art_name}</b> ${x.titel}<span class="leise klein">${x.schritt ? " · " + x.schritt : ""}${x.teile ? " · " + x.teile : ""}</span></span></div>`)}
           <button class="btn" onClick=${besprechen} title="Talk öffnen, mit dieser Aufgabe als Bezug"><${Icon} n="chat" g=${14} />Im Gespräch besprechen</button>
-          ${!erledigt && html`<button class="btn" onClick=${alsLanglaeufer} title="Das Team arbeitet die Aufgabe in Etappen ab, mit Zwischenprüfung"><${Icon} n="langlauf" g=${14} />Als Langläufer starten</button>`}
-          ${laeufer.map((l) => html`<a class="af-link" href=${"#/langlauf/" + l.id} onClick=${zu}><${Icon} n="langlauf" g=${13} />Langläufer: ${l.titel}
+          ${!erledigt && html`<button class="btn" onClick=${alsLanglaeufer} title="Das Team arbeitet die Aufgabe in Etappen ab, mit Zwischenprüfung"><${Icon} n="langlauf" g=${14} />Als LongRun starten</button>`}
+          ${laeufer.map((l) => html`<a class="af-link" href=${"#/langlauf/" + l.id} onClick=${zu}><${Icon} n="langlauf" g=${13} />LongRun: ${l.titel}
             <span class="pill">${LL_STAND[l.stand] || l.stand}${l.etappen ? ` · ${l.fertig}/${l.etappen}` : ""}</span></a>`)}
           ${(a.ergebnisse || []).map((e) => html`<button class="af-link" onClick=${() => { zu(); bus.sende("ergebnis-zeigen", e.id); }}><${Icon} n="auge" g=${13} />Ergebnis: ${e.titel}</button>`)}
           ${(a.gespraeche || []).map((g) => html`<button class="af-link" onClick=${() => {

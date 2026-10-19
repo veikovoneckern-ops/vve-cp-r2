@@ -1,13 +1,13 @@
-// STAB & MODELLE (17.10.2026; vorher "Modelle" und "Verbrauch" als zwei Seiten).
+// MODELLE IM TEAM (17.10.2026 als Seite "Stab & Modelle"; seit 19.10.2026 Abschnitte der Seite Team).
 //
-// Fuenf Reiter, in dieser Reihenfolge, weil das die Fragen sind, die man hier hat:
+// Vier Abschnitte, in dieser Reihenfolge, weil das die Fragen sind, die man hier hat:
 //   Übersicht     Das Team als Schaubild: wer arbeitet mit wem, womit rechnet jede
 //                 Rolle, und je Rolle der EINE naechste Schritt (umstellen, laden,
 //                 messen) samt dem Weg zurueck. Dazu, was nicht mehr gebraucht wird.
 //   Installiert   Was auf der Platte liegt, wer es braucht, und Entfernen.
 //   Optimierung   Die Modell-Revision selbst: Laeufe, Messungen, Verlauf.
 //   Neu bei Ollama  Neueste Modelle und Nachfolger, je mit Einordnung.
-//   Verbrauch     Token und Kosten (verbrauch.js).
+//   (Verbrauch hat seit dem 19.10.2026 eine eigene Seite: Usage.)
 //
 // Veiko, 17.10.2026 (zweite Runde): "zu aufwendig, mich zurechtzufinden und zu
 // entscheiden, was muss ich wo wie machen". Vorher lagen die Vorschlaege zum
@@ -21,14 +21,12 @@
 // Ersetzen ist ein Weg in drei Schritten, und die Karte zeigt immer nur den
 // faelligen: laden -> (messen oder gleich) umstellen -> das alte entfernen, wenn
 // es sonst niemand braucht (revision.gebraucht_von; was etwas braucht, sperrt).
-import { html, useState, useEffect, Icon, Avatar, toast, fehlerMelden, zeitText, navigiere } from "./ui.js";
+import { html, useState, useEffect, Icon, Avatar, toast, fehlerMelden, zeitText, Klappe } from "./ui.js";
 import { api } from "./api.js";
-import { Verbrauch } from "./verbrauch.js";
 
 const tok = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1).replace(".", ",") + " Mio." : n >= 1e3 ? Math.round(n / 1e3) + " Tsd." : String(n || 0));
 const zahl = (x) => (x == null ? "—" : String(Math.round(x * 10) / 10).replace(".", ","));
 const gbText = (g) => (g == null ? "?" : String(g).replace(".", ",")) + " GB";
-const TABS = [["uebersicht", "Übersicht"], ["installiert", "Installiert"], ["optimierung", "Optimierung"], ["neu", "Neu bei Ollama"], ["verbrauch", "Verbrauch"]];
 const URTEIL_KURZ = { tragfaehig: "in Ordnung", nachbessern: "mit Einwänden", rueckfrage: "mit Rückfrage", ungeprueft: "ungeprüft" };
 
 async function tun(pfad, daten, text, nachher) {
@@ -447,10 +445,13 @@ function NeuBeiOllama({ d, laden, neuLaden, prueft, frisch }) {
     </section>`;
 }
 
-// ------------------------------------------------------------ Seite
-export function Modelle({ tab }) {
-  // "besetzung" war bis 17.10. der erste Reiter; alte Links landen in der Übersicht.
-  const reiter = TABS.some((t) => t[0] === tab) ? tab : "uebersicht";
+// ------------------------------------------------------------ Abschnitte auf der Seite Team
+// Seit dem 19.10.2026 keine eigene Seite mehr (Veiko: "Kombiniere Team und Stab & Modelle
+// in eine gute Seite mit dem Namen Team ... mit Sektionen, die man auf- und zuklappen
+// kann"). Aus den Reitern wurden aufklappbare Abschnitte (ui.Klappe); der Verbrauch hat
+// eine eigene Seite (Usage). Der gemeinsame Stand (Modelle, Revision, Downloads) liegt
+// hier EINMAL fuer alle vier Abschnitte -- vier eigene Abrufe waeren vier Wahrheiten.
+export function ModelleAbschnitte() {
   const [d, setD] = useState(null);
   const [rev, setRev] = useState(null);
   const [laden, setLaden] = useState({});
@@ -480,13 +481,17 @@ export function Modelle({ tab }) {
     return () => clearInterval(t);
   }, [prueftRev]);
   const anzahl = rev ? rev.vorschlaege.length : 0;
-  return html`<div class="seite mo">
-    <div class="tabs" role="tablist">${TABS.map(([k, t]) => html`<button role="tab" aria-selected=${reiter === k} class=${reiter === k ? "an" : ""}
-      onClick=${() => navigiere("/modelle/" + k)}>${t}${k === "uebersicht" && anzahl ? html` <span class="pill gruen">${anzahl}</span>` : ""}</button>`)}</div>
-    ${reiter === "uebersicht" && html`<${Uebersicht} rev=${rev} laden=${laden} neuLaden=${alles} />`}
-    ${reiter === "installiert" && html`<${Installiert} d=${d} rev=${rev} neuLaden=${alles} />`}
-    ${reiter === "optimierung" && html`<${Optimierung} rev=${rev} d=${d} laden=${laden} neuLaden=${alles} />`}
-    ${reiter === "neu" && html`<${NeuBeiOllama} d=${d} laden=${laden} neuLaden=${alles} prueft=${prueft} frisch=${() => holen(true)} />`}
-    ${reiter === "verbrauch" && html`<${Verbrauch} />`}
+  const inst = d ? (d.installiert || []).length : null;
+  const neuZahl = d && d.neu ? (d.neu.familien || []).length : null;
+  return html`<div class="mo">
+    <${Klappe} id="besetzung" titel="Besetzung und Empfehlungen" unter="Wer rechnet womit, und je Rolle der eine nächste Schritt"
+      zahl=${anzahl ? anzahl + " Vorschläge" : null} vorgabe=${true}>
+      <${Uebersicht} rev=${rev} laden=${laden} neuLaden=${alles} /></${Klappe}>
+    <${Klappe} id="installiert" titel="Installierte Modelle" unter="Was auf der Platte liegt, wer es braucht, Entfernen" zahl=${inst}>
+      <${Installiert} d=${d} rev=${rev} neuLaden=${alles} /></${Klappe}>
+    <${Klappe} id="optimierung" titel="Optimierung" unter="Die Modell-Revision: Läufe, Messungen, Verlauf">
+      <${Optimierung} rev=${rev} d=${d} laden=${laden} neuLaden=${alles} /></${Klappe}>
+    <${Klappe} id="neu" titel="Neu bei Ollama" unter="Neueste Modelle und Nachfolger, je mit Einordnung" zahl=${neuZahl}>
+      <${NeuBeiOllama} d=${d} laden=${laden} neuLaden=${alles} prueft=${prueft} frisch=${() => holen(true)} /></${Klappe}>
   </div>`;
 }

@@ -24,7 +24,7 @@ function Gesundheit({ g, neo, optimierung }) {
       ${!g.stab_aktiv ? "Team pausiert" : g.letzter_lauf ? `Team: letzter Durchgang ${zeitText(g.letzter_lauf)}` : "Team startet …"}</span>
     ${laeuft && html`<span><i class="punkt lila"></i>${rolleName(laeuft.wer)} ${laeuft.was}</span>`}
     ${neo && neo.length > 0 && html`<span><i class="punkt lila"></i><a href=${"#/neo/" + neo[0].gespraech_id}>Neo arbeitet</a> seit ${zeitText(neo[0].seit).replace("vor ", "")}</span>`}
-    ${optimierung > 0 && html`<span><i class="punkt"></i><a href="#/modelle/uebersicht">${optimierung === 1 ? "1 Modell-Vorschlag" : optimierung + " Modell-Vorschläge"}</a>, gemessen</span>`}
+    ${optimierung > 0 && html`<span><i class="punkt"></i><a href="#/team/besetzung">${optimierung === 1 ? "1 Modell-Vorschlag" : optimierung + " Modell-Vorschläge"}</a>, gemessen</span>`}
     ${g.letzter_fehler && html`<span class="leise" title=${g.letzter_fehler}>Letzter Fehler: ${g.letzter_fehler.slice(0, 70)}</span>`}
   </div>`;
 }
@@ -119,7 +119,7 @@ export function Briefing({ lage }) {
           ${lage.aufgaben.length ? lage.aufgaben.map((t) => html`<div class="zeile" key=${t.id}>
             <button class="check" onClick=${() => erledigen(t)} aria-label=${"Erledigt: " + t.titel} title="Erledigt"></button>
             <div class="haupt-text"><button class="aufgabe-titel" onClick=${() => bus.sende("aufgabe-zeigen", t.id)}
-                title="Öffnen: Informationen, Anhänge, Langläufer, Gespräch">${t.titel}</button>
+                title="Öffnen: Informationen, Anhänge, LongRun, Gespräch">${t.titel}</button>
               <div class="leise klein">${t.projekt_name ? html`<span class="punkt" style=${"background:" + (t.projekt_farbe || "#999") + ";width:7px;height:7px;margin-right:5px"}></span>${t.projekt_name}` : "ohne Projekt"}
               ${t.quelle === "stab" ? " · vom Team" : ""}</div></div>
             ${t.faellig && html`<span class="neben">${datumText(t.faellig)}</span>`}

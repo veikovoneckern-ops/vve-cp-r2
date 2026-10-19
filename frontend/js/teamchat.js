@@ -49,7 +49,7 @@ const EXTERN_NAMEN = [["dario", /\b(dario|claude)\b/i], ["elon", /\b(elon|grok)\
 // Waehrend des Schreibens: Fassung und Langlaeufer-Bloecke nicht roh zeigen.
 // Was davon wirklich uebernommen wurde, steht danach unter der fertigen Antwort.
 const ohneBloecke = (t) => t.replace(/<<<FASSUNG>>>[\s\S]*/, "\n\n_… schreibt die neue Fassung …_")
-  .replace(/<<<(HINWEIS|UEBERARBEITEN|NEUE_ETAPPEN)>>>[\s\S]*/, "\n\n_… gibt die Anweisung an den Langläufer …_")
+  .replace(/<<<(HINWEIS|UEBERARBEITEN|NEUE_ETAPPEN)>>>[\s\S]*/, "\n\n_… gibt die Anweisung an den LongRun …_")
   .replace(/<<<RECHERCHE>>>[\s\S]*/, "\n\n_… startet die Recherche …_");
 function genannteExterne(text) { return EXTERN_NAMEN.filter(([, re]) => re.test(text || "")).map(([id]) => id); }
 
@@ -187,7 +187,7 @@ export function TeamChat({ wer, partnerListe, gid, ergebnisId = "", projektId = 
       <div class="knopfreihe" style="margin-top:8px"><button class="btn primaer klein" onClick=${() => { const w = wartet; setWartet(null); setKostenOk(true); setTimeout(() => sendenFrei(w.text, w.dateien), 0); }}>Für dieses Gespräch erlauben und senden</button>
         <button class="btn klein geist" onClick=${() => { feld.current && feld.current.setzen(wartet.text); setWartet(null); }}>Abbrechen</button></div></div>`}
     <div class="tc-eingabe">
-      <${Composer} feldRef=${feld} platzhalter=${ergebnisId ? `Sag ${ich.name}, was am Ergebnis passieren soll …` : langlaufId ? `Sag ${ich.name}, was am Langläufer passieren soll …` : `Schreib ${ich.name} …`}
+      <${Composer} feldRef=${feld} platzhalter=${ergebnisId ? `Sag ${ich.name}, was am Ergebnis passieren soll …` : langlaufId ? `Sag ${ich.name}, was am LongRun passieren soll …` : `Schreib ${ich.name} …`}
         beimSenden=${senden} laeuft=${!!lauf || !!nach} beimStoppen=${() => { if (lauf) { abbruch.current && abbruch.current.abort(); } else if (nach) { api("/gespraech/" + gid + "/abbrechen", { methode: "POST" }).then(lade).catch(() => {}); } }}
         projektId=${projektId} entwurfKey=${"tc:" + wer + ":" + (ergebnisId || langlaufId || gid || "")} zeilen=${2} />
       <${TempoSchalter} />

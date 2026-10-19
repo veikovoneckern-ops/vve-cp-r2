@@ -91,7 +91,7 @@ So antwortest du:
 - Nenne im Text NIE interne Kennungen (e…, t…, p…, v…). Die gehören nur in den aktionen-Block. Im Text sagst du den Titel.
 - Auf "Was liegt an?" antwortest du knapp: höchstens fünf Punkte, in DIESER Reihenfolge -- wie das Briefing, das Veiko daneben sieht: 1. OFFENE ENTSCHEIDUNGEN (stehen dort „keine“, sag genau das), 2. NEU ENTSTANDEN (zuletzt bearbeitete zuerst, mit Daniels Urteil in einfachen Worten), 3. WAS GERADE LÄUFT (steht dort „nichts“, sag genau das), 4. OFFENE AUFGABEN (die ersten drei, in der Reihenfolge der Liste). Nur, was in LAGE steht. Einen eigenen, noch nicht ausgeführten Vorschlag aus diesem Gespräch nennst du getrennt am Ende („Aus unserem Gespräch noch offen: …“) -- er ist keine Entscheidung des Teams. Keine vollständigen Listen.
 - Kein Fachjargon ohne Erklärung.
-- Wortwahl wie im Cockpit: „Team“ (nicht „Stab“), „Case“ (nicht „Akte“), „Memory“ (nicht „Gedächtnis“), „Advisory Board“ (nicht „Beirat“).
+- Wortwahl wie im Cockpit: „Team“ (nicht „Stab“), „Case“ (nicht „Akte“), „Memory“ (nicht „Gedächtnis“), „Advisory Board“ (nicht „Beirat“), „LongRun“ (nicht „Langläufer“), „Stack“ (nicht „Maschine“), „Usage“ für den Verbrauch, „Explorer“ für alle erzeugten Inhalte.
 {STIMME}
 
 Wenn Veiko etwas tun lassen will, schlägst du es vor. Hänge dafür GANZ ANS ENDE einen Block in genau dieser Form an:
@@ -107,11 +107,11 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"zeigen","ziel":"ueberblick|aufgaben|zeitplan|struktur|notizen|ergebnisse|verlauf|dateien","projekt_id":"p…"} -- öffnet eine Ansicht des Projekts sofort, ohne Rückfrage (ändert nichts)
 - {"aktion":"bild","prompt":"ausführliche Bildbeschreibung auf ENGLISCH (Motiv, Stil, Licht, Perspektive)","titel":"kurzer deutscher Titel","format":"quadrat|quer|hoch","vorlage":"z-image"} -- erzeugt ein Bild auf dem eigenen Server. Vorlage IMMER z-image (etwa 15 Sekunden), auch für fotorealistische Bilder; qwen nur, wenn lesbarer Text im Bild stehen soll; flux2 nur, wenn Veiko ausdrücklich höchste Qualität verlangt (dauert mehrere Minuten). Läuft sofort.
 - {"aktion":"visualisierung","beschreibung":"was dargestellt werden soll, mit allen Inhalten (Schritte, Begriffe, Zahlen) auf Deutsch","titel":"kurzer Titel"} -- zeichnet ein Schaubild (Ablauf, Mindmap, Diagramm, Vergleich). Läuft sofort.
-- {"aktion":"oeffnen","art":"ergebnis|langlauf|aufgabe|vorgang|projekt|notiz|gespraech","id":"r…|l…|t…|v…|p…|n… aus LAGE/KONTEXT","titel":"der Titel, wie Veiko ihn nennt"} -- öffnet GENAU DIESES eine Ding sofort, ohne Rückfrage (ändert nichts): „öffne das Ergebnis zu X“ = art ergebnis, „zeig mir den Langläufer X“ = art langlauf. Das Ergebnis eines Langläufers steht in LANGLÄUFER als „Ergebnis r…“. Kennst du die id nicht sicher, lass sie weg und gib nur den titel -- das Cockpit sucht dann selbst.
-- {"aktion":"zeigen","ziel":"board|briefing|inbox|projects|team|neo|system|watchdog|brainstrom|exo|langlauf|aktionen|modelle|einstellungen|uebersicht_modelle|installiert|optimierung|neue_modelle|verbrauch|alle_aufgaben|alle_notizen|neuer_langlaeufer"} -- öffnet einen Bereich oder Reiter des Cockpits sofort (verbrauch = Token und Kosten, optimierung = Modell-Revision, neue_modelle = Neu bei Ollama).
+- {"aktion":"oeffnen","art":"ergebnis|langlauf|aufgabe|vorgang|projekt|notiz|gespraech|datei","id":"r…|l…|t…|v…|p…|n…|d… aus LAGE/KONTEXT","titel":"der Titel, wie Veiko ihn nennt"} -- öffnet GENAU DIESES eine Ding sofort, ohne Rückfrage (ändert nichts): „öffne das Ergebnis zu X“ = art ergebnis, „zeig mir den Langläufer X“ = art langlauf. Das Ergebnis eines Langläufers steht in LANGLÄUFER als „Ergebnis r…“. Kennst du die id nicht sicher, lass sie weg und gib nur den titel -- das Cockpit sucht dann selbst.
+- {"aktion":"zeigen","ziel":"board|briefing|inbox|projects|team|neo|system|watchdog|website_stand|brainstrom|exo|langlauf|aktionen|modelle|einstellungen|memory|usage|explorer|uebersicht_modelle|installiert|optimierung|neue_modelle|alle_aufgaben|alle_notizen|neuer_langlaeufer"} -- öffnet einen Bereich oder Abschnitt des Cockpits sofort (system = Stack: Server, Updates, WatchDog, ganz unten website_stand = Stand der Website; langlauf = LongRuns; usage = Verbrauch an Token, Kosten und Strom nach Projekt, Aufgabe, Modell; explorer = alle erzeugten Inhalte zum Suchen und Filtern; memory = was das Team über Veiko weiß, unter Einstellungen; optimierung = Modell-Revision, neue_modelle = Neu bei Ollama).
 - {"aktion":"zeigen","ziel":"chat","wer":"Name des Teammitglieds"} -- öffnet den Chat mit diesem Mitglied (Neo: ziel neo).
 - {"aktion":"werkzeug","was":"erfassen|suche|hell|dunkel|zurueck|fenster_zu"} -- Capture öffnen, Suche öffnen, helle oder dunkle Darstellung, eine Seite zurück, oberstes Fenster schließen. Sofort, ohne Rückfrage. Will Veiko „mit dem Advisory Board sprechen“: ziel board. Stellt er dabei schon eine Frage ans Board, gib sie als "frage" mit -- das Board antwortet dann selbst, du antwortest nicht an seiner Stelle.
-- {"aktion":"ausarbeiten","rolle":"stratege|buch|designer|video","form":"text|aufstellung|konzept|dokument|webseite|praesentation|video","auftrag":"…","recherche":"Suchanfrage oder null","vorgang_id":"v… oder null","projekt_id":"p… oder null","stil":"vveorg|cockpit|eigen oder null","stil_text":"…"} -- stil nur bei einer Präsentation und nur, wenn Veiko das Aussehen nennt: „im VVEORG-Look“/„in meiner Vorlage“ = vveorg, „im Cockpit-Design“ = cockpit, eigene Gestaltungswünsche (Farben, Schrift, Footer) = eigen mit stil_text in seinen Worten. Sonst weglassen (dann gilt die Vorgabe, die VVEORG-Vorlage).
+- {"aktion":"ausarbeiten","rolle":"stratege|buch|designer|video","form":"text|aufstellung|konzept|dokument|webseite|praesentation|video","auftrag":"…","recherche":"Suchanfrage oder null","vorgang_id":"v… oder null","projekt_id":"p… oder null","aufgabe_id":"t… oder null (die Aufgabe, zu der das gehört)","stil":"vveorg|cockpit|eigen oder null","stil_text":"…"} -- stil nur bei einer Präsentation und nur, wenn Veiko das Aussehen nennt: „im VVEORG-Look“/„in meiner Vorlage“ = vveorg, „im Cockpit-Design“ = cockpit, eigene Gestaltungswünsche (Farben, Schrift, Footer) = eigen mit stil_text in seinen Worten. Sonst weglassen (dann gilt die Vorgabe, die VVEORG-Vorlage).
 - {"aktion":"merken","art":"person|organisation|begriff|hoerfehler|aussprache","begriff":"…","bedeutung":"…"} -- aussprache: wie das Cockpit ein (meist englisches) Wort VORLESEN soll, in deutscher Lautschrift, z. B. begriff "Slides", bedeutung "Slaids".
 - {"aktion":"notiz","text":"…","projekt_id":"p… oder null"}
 - {"aktion":"projekt_neu","name":"…"}
@@ -203,6 +203,16 @@ def lage_text() -> str:
         teile.append("LANGLÄUFER (zuletzt zuerst):\n" + "\n".join(
             f"- {x['id']}: {x['titel']} ({x['stand']}" + (f", {x['fertig']} von {x['etappen']} {x.get('etappen_name') or 'Etappen'}" if x.get("etappen") else "")
             + (f", Ergebnis {x['ergebnis_id']}" if x.get("ergebnis_id") else ", noch kein Ergebnis") + ")" for x in ll))
+    # Recherche-Dossiers der letzten sieben Tage (19.10.2026): sie sind Unterlagen, keine
+    # Ergebnisse, und fehlten deshalb in NEU ENTSTANDEN -- Talk wusste nichts von ihnen.
+    dos = db.alle("SELECT d.id, d.name, d.erstellt, p.name AS pname, a.titel AS atitel FROM dateien d "
+                  "LEFT JOIN projekte p ON p.id=d.projekt_id LEFT JOIN aufgaben a ON a.id=d.aufgabe_id "
+                  "WHERE (d.name LIKE 'Recherche-Dossier%' OR d.name LIKE 'Dossier%') AND d.erstellt>? ORDER BY d.erstellt DESC LIMIT 5",
+                  (time.time() - 7 * 86400,))
+    if dos:
+        teile.append("RECHERCHE-DOSSIERS (Unterlagen, öffnen mit art datei):\n" + "\n".join(
+            f"- {x['id']}: {x['name'][:90]} ({_zeit(x['erstellt'])}" + (f", Projekt {x['pname']}" if x.get("pname") else ", ohne Projekt")
+            + (f", Aufgabe {x['atitel']}" if x.get("atitel") else "") + ")" for x in dos))
     teile.append("PROJEKTE:\n" + stab.projektliste_text())
     teile.append("GEDÄCHTNIS:\n" + stab.gedaechtnis_text())
     return "\n\n".join(teile)
@@ -276,7 +286,67 @@ def kontext_text(k: dict[str, Any] | None) -> str:
         e = db.holen("ergebnisse", kid)
         if e:
             return f"VEIKO LIEST GERADE DAS ERGEBNIS „{e['titel']}“ von {stab.rollen_name(e['rolle'])}:\n{(e['inhalt'] or '')[:8000]}"
+    if art == "notiz":
+        n = db.holen("notizen", kid)
+        if n:
+            return f"VEIKO SPRICHT ÜBER DIE NOTIZ „{n.get('titel') or ''}“ vom {n.get('datum') or '?'}:\n{(n.get('text') or n.get('kurz') or '')[:12000]}"
+    if art == "datei":
+        d = db.holen("dateien", kid)
+        if d:
+            return f"VEIKO SPRICHT ÜBER DIE UNTERLAGE „{d['name']}“:\n{(d.get('text') or '(Inhalt nicht lesbar)')[:12000]}"
+    if art == "aufgabe":
+        a = db.holen("aufgaben", kid)
+        if a:
+            p = db.holen("projekte", a.get("projekt_id") or "") if a.get("projekt_id") else None
+            return (aufgabe_text(kid).replace("DIESES GESPRÄCH GEHÖRT ZUR AUFGABE", "VEIKO SCHAUT GERADE AUF DIE AUFGABE")
+                    + f"\n(aufgabe_id {kid}" + (f", Projekt „{p['name']}“ projekt_id {p['id']}" if p else ", ohne Projekt") + ")")
+    # Seiten ohne eigenes Ding (19.10.2026: "mit allen Elementen im Cockpit per Talk sprechen"):
+    # was die Seite zeigt, in wenigen Zeilen -- dieselben Quellen wie die Seite selbst.
+    if art in SEITEN_KONTEXT:
+        try:
+            return SEITEN_KONTEXT[art]()
+        except Exception as f:  # noqa: BLE001 -- der Kontext darf eine Antwort nie verhindern
+            return f"VEIKO SCHAUT AUF {k.get('titel') or art} (Stand gerade nicht lesbar: {f})."
     return ""
+
+
+def _team_kontext() -> str:
+    t = db.alle("SELECT id, name, titel, modell, aktiv FROM team ORDER BY reihenfolge")
+    zeilen = [f"- {m['name']} ({m['titel']}): {'aktiv' if m['aktiv'] else 'pausiert'}, Modell {m['modell'] or 'Vorgabe ' + llm.vorgabe('arbeit')}" for m in t]
+    return ("VEIKO SCHAUT AUF DIE TEAMSEITE (Mitglieder, Externe, Besetzung mit Modellen, Optimierung, Neu bei Ollama). "
+            "Chatten mit einem Mitglied: zeigen ziel chat. Umstellen von Modellen geht dort per Knopf.\n" + "\n".join(zeilen))
+
+
+def _einstellungen_kontext() -> str:
+    from . import folien_stil, stimme
+    e = {"stab_aktiv": stab.stab_aktiv(), "talk_stimme": stimme.gewaehlte_stimme(), "praesentation_stil": folien_stil.vorgabe()}
+    return ("VEIKO SCHAUT AUF DIE EINSTELLUNGEN (Freigaben, Team-Pipeline, Präsentationen, Stimme, Memory, Daten, Konto). "
+            f"Team-Pipeline: {'an' if e.get('stab_aktiv') else 'aus'}; Stimme: {e.get('talk_stimme') or 'Vorgabe'}; "
+            f"Präsentationen: {e.get('praesentation_stil') or 'vveorg'}. Einträge ins Memory gehen mit der Aktion merken.\n"
+            "MEMORY:\n" + stab.gedaechtnis_text())
+
+
+def _usage_kontext() -> str:
+    from . import usage
+    return usage.kontext_text()
+
+
+def _stack_kontext() -> str:
+    from . import systeminfo, webspace
+    w = systeminfo.watchdog()
+    return ("VEIKO SCHAUT AUF DEN STACK (Server, Updates, Sicherungen, Software, WatchDog und ganz unten seine Website). "
+            "Die Notabschaltung gibt es nie über Talk.\n"
+            + (f"WatchDog: Grafikkarten " + ", ".join(f"{g.get('temp_c')} °C" for g in w.get("gpu_temps") or []) if w.get("bekannt") else "WatchDog meldet nichts.")
+            + "\n" + webspace.stack_text())
+
+
+def _explorer_kontext() -> str:
+    from . import explorer
+    return explorer.kontext_text()
+
+
+SEITEN_KONTEXT = {"team": _team_kontext, "einstellungen": _einstellungen_kontext, "usage": _usage_kontext,
+                  "stack": _stack_kontext, "explorer": _explorer_kontext}
 
 
 def vorschlaege_aus(text: str) -> tuple[str, list[dict[str, Any]]]:
@@ -302,16 +372,21 @@ DATUM = re.compile(r"\d{4}-\d{2}-\d{2}")
 ZIELE = {"ueberblick": "Überblick", "aufgaben": "Aufgaben", "zeitplan": "Zeitplan", "struktur": "Struktur", "notizen": "Notizen", "ergebnisse": "Ergebnisse",
          "verlauf": "Verlauf", "dateien": "Dateien"}
 # Bereiche des Cockpits, die Talk ohne Projekt oeffnen kann.
+# Neu geordnet am 19.10.2026: Team = Team + Stab & Modelle (aufklappbare Abschnitte),
+# eigene Seiten Usage und Explorer, "Maschine" heisst Stack (Kennung bleibt system),
+# "Langläufer" heisst LongRuns (Kennung bleibt langlauf), Memory steht unter Einstellungen.
 BEREICHE = {"board": "Advisory Board", "briefing": "Briefing", "inbox": "Inbox", "projects": "Projects", "team": "Team",
-            "neo": "Neo", "system": "System", "watchdog": "WatchDog", "brainstrom": "BrainStrom", "exo": "ExO",
-            "langlauf": "Langläufer", "aktionen": "Current Actions", "webspace": "WebSpace", "modelle": "Stab & Modelle", "einstellungen": "Einstellungen",
+            "neo": "Neo", "system": "Stack", "stack": "Stack", "watchdog": "WatchDog", "brainstrom": "BrainStrom", "exo": "ExO",
+            "langlauf": "LongRuns", "aktionen": "Current Actions", "webspace": "WebSpace", "modelle": "Team: Modelle", "einstellungen": "Einstellungen",
+            "usage": "Usage", "explorer": "Explorer", "memory": "Memory", "website_stand": "Stack: Website",
             # Reiter und Listen (18.10.2026): erreichbar wie die Bereiche.
-            "uebersicht_modelle": "Stab & Modelle: Übersicht", "installiert": "Installierte Modelle", "optimierung": "Optimierung",
-            "neue_modelle": "Neu bei Ollama", "verbrauch": "Verbrauch", "alle_aufgaben": "Alle Aufgaben",
-            "alle_notizen": "Alle Notizen", "neuer_langlaeufer": "Neuer Langläufer"}
+            "uebersicht_modelle": "Team: Besetzung und Empfehlungen", "installiert": "Installierte Modelle", "optimierung": "Optimierung",
+            "neue_modelle": "Neu bei Ollama", "verbrauch": "Usage", "alle_aufgaben": "Alle Aufgaben",
+            "alle_notizen": "Alle Notizen", "neuer_langlaeufer": "Neuer LongRun"}
 # Wohin ein Ziel im Browser fuehrt (Adresse hinter #/). Fehlt es hier, ist das Ziel selbst die Adresse.
-BEREICH_PFAD = {"watchdog": "system", "uebersicht_modelle": "modelle/uebersicht", "installiert": "modelle/installiert",
-                "optimierung": "modelle/optimierung", "neue_modelle": "modelle/neu", "verbrauch": "modelle/verbrauch",
+BEREICH_PFAD = {"watchdog": "system/watchdog", "stack": "system", "website_stand": "system/website", "modelle": "team/besetzung",
+                "uebersicht_modelle": "team/besetzung", "installiert": "team/installiert",
+                "optimierung": "team/optimierung", "neue_modelle": "team/neu", "verbrauch": "usage", "memory": "einstellungen/memory",
                 "alle_aufgaben": "projects/_aufgaben", "alle_notizen": "projects/_notizen", "neuer_langlaeufer": "langlauf/neu"}
 WERKZEUGE = {"erfassen": "Capture", "suche": "Suche", "hell": "Helle Darstellung", "dunkel": "Dunkle Darstellung",
              "zurueck": "Eine Seite zurück", "fenster_zu": "Fenster schließen"}
@@ -327,12 +402,15 @@ WERKZEUGE = {"erfassen": "Capture", "suche": "Suche", "hell": "Helle Darstellung
 # (schluessel, Muster, Satzteil fuer "Ich oeffne dir …") -- Spezielles vor Allgemeinem.
 SEITEN = [
     ("neue_modelle", r"neu bei ollama|neuen? modelle", "„Neu bei Ollama“"),
-    ("verbrauch", r"verbrauch|kosten|token|consumption", "den Verbrauch"),
+    ("verbrauch", r"usage|verbrauch|kosten|token|consumption|stromverbrauch", "Usage"),
     ("optimierung", r"optimierung|revision", "die Optimierung"),
     ("installiert", r"installiert\w*( modelle)?", "die installierten Modelle"),
-    ("modelle", r"stab (und|&) modelle|modelle|besetzung", "Stab & Modelle"),
-    ("neuer_langlaeufer", r"neue[nrs]? langl(ä|ae)ufer", "einen neuen Langläufer"),
-    ("langlauf", r"langl(ä|ae)ufer", "die Langläufer"),
+    ("modelle", r"stab (und|&) modelle|modelle|besetzung", "die Besetzung im Team"),
+    ("explorer", r"explorer|alle inhalte|alle ergebnisse|ablage", "den Explorer"),
+    ("memory", r"memory|gedächtnis|gedaechtnis", "das Memory"),
+    ("website_stand", r"(stand|zustand|überblick|ueberblick) (meiner|der) (website|webseite)", "den Stand deiner Website"),
+    ("neuer_langlaeufer", r"neue[nrs]? (langl(ä|ae)ufer|long ?run)", "einen neuen LongRun"),
+    ("langlauf", r"langl(ä|ae)ufer|long ?runs?", "die LongRuns"),
     ("alle_aufgaben", r"(alle|meine) aufgaben|aufgabenliste", "alle Aufgaben"),
     ("alle_notizen", r"(alle|meine) notizen|notizliste", "alle Notizen"),
     ("aktionen", r"current actions|aktionen|was (gerade )?läuft", "Current Actions"),
@@ -344,7 +422,7 @@ SEITEN = [
     ("brainstrom", r"brain ?strom|brainstorm\w*", "BrainStrom"),
     ("exo", r"\bexo\b", "ExO"),
     ("einstellungen", r"einstellungen|settings", "die Einstellungen"),
-    ("system", r"maschine|\bsystem\b|server|watch ?dog|updates|sicherung\w*", "die Maschine"),
+    ("system", r"\bstack\b|maschine|\bsystem\b|server|watch ?dog|updates|sicherung\w*", "den Stack"),
     ("neo", r"\bneo\b", "Neo"),
     ("team", r"\bteam\b|teamseite", "die Teamseite"),
 ]
@@ -375,7 +453,7 @@ def _mitglied_im_text(t: str) -> dict[str, Any] | None:
 
 
 def oeffnen_satz(o: dict[str, Any]) -> str:
-    artikel = "den " if o["art"] in ("langlauf", "vorgang") else "die " if o["art"] in ("aufgabe", "notiz") else "das "
+    artikel = "den " if o["art"] in ("langlauf", "vorgang") else "die " if o["art"] in ("aufgabe", "notiz", "datei") else "das "
     return f"Ich öffne dir {artikel}{OEFFNEN_NAME[o['art']]} „{str(o.get('titel') or '')[:90]}“."
 
 
@@ -457,11 +535,13 @@ def bedienung_erkennen(text: str, kontext: dict | None = None, gid: str | None =
 # wenn das Modell keine sichere Kennung hat.
 OEFFNEN_TABELLE = {"ergebnis": ("ergebnisse", "titel"), "langlauf": ("langlaeufe", "titel"), "aufgabe": ("aufgaben", "titel"),
                    "vorgang": ("vorgaenge", "titel"), "projekt": ("projekte", "name"), "notiz": ("notizen", "titel"),
-                   "gespraech": ("gespraeche", "titel")}
+                   "gespraech": ("gespraeche", "titel"), "datei": ("dateien", "name")}
 OEFFNEN_NAME = {"ergebnis": "Ergebnis", "langlauf": "Langläufer", "aufgabe": "Aufgabe", "vorgang": "Case", "projekt": "Projekt", "notiz": "Notiz",
-                "gespraech": "Gespräch"}
+                "gespraech": "Gespräch", "datei": "Unterlage"}
 # Gespraech zuerst: "das Gespraech ueber das Kapitel" meint das Gespraech, nicht das Kapitel.
-_ART_WORT = (("gespraech", r"gespräch|gespraech|unterhaltung|\bchat\b"), ("ergebnis", r"ergebnis|resultat|kapitel|dokument|präsentation|praesentation|video|text"),
+_ART_WORT = (("gespraech", r"gespräch|gespraech|unterhaltung|\bchat\b"),
+             # Unterlagen (19.10.2026): "oeffne das Dossier zu Verlagen" -- vor "ergebnis", sonst griffe "Dokument".
+             ("datei", r"dossier|unterlage|abschrift|anhang|\bdatei"), ("ergebnis", r"ergebnis|resultat|kapitel|dokument|präsentation|praesentation|video|text"),
              ("langlauf", r"langläufer|langlaeufer|langlauf"), ("aufgabe", r"aufgabe|todo"),
              ("vorgang", r"\bcase|vorgang"), ("projekt", r"projekt"), ("notiz", r"notiz"))
 _FUELL = {"öffne", "öffnen", "oeffne", "oeffnen", "zeig", "zeige", "zeigen", "mal", "bitte", "dem", "den", "das", "der", "die",
@@ -498,7 +578,7 @@ def oeffnen_suchen(text: str, art: str | None = None, ohne: str | None = None) -
             if re.search(muster, text or "", re.I):
                 art = a
                 break
-    arten = [art] if art in OEFFNEN_TABELLE else ["ergebnis", "langlauf", "projekt", "aufgabe", "vorgang"]
+    arten = [art] if art in OEFFNEN_TABELLE else ["ergebnis", "langlauf", "projekt", "aufgabe", "vorgang", "datei"]
     bestes, punkte = None, 0.0
     for a in arten:
         tab, feld = OEFFNEN_TABELLE[a]
@@ -646,6 +726,9 @@ async def ausfuehren(a: dict[str, Any]) -> dict[str, Any]:
             db.ausfuehren("UPDATE vorgaenge SET stand='eingeordnet' WHERE id=?", (vid,))
         stab.auftrag_setzen(vid, {"rolle": a.get("rolle"), "form": a.get("form"), "auftrag": a["auftrag"],
                                   "recherche": a.get("recherche"),
+                                  # Die Aufgabe, zu der die Ausarbeitung gehoert (bezug_erkennen, 19.10.2026):
+                                  # das Aufgabenfenster listet ihre Ergebnisse darueber.
+                                  "aufgabe_id": a.get("aufgabe_id") if db.holen("aufgaben", str(a.get("aufgabe_id") or "")) else None,
                                   # Praesentations-Stil (folien_stil.py): nur wenn Veiko einen genannt hat, sonst die Vorgabe.
                                   "stil": a.get("stil") if a.get("stil") in ("vveorg", "cockpit") else
                                   ({"id": "eigen", "text": str(a.get("stil_text"))[:800]} if a.get("stil") == "eigen" and a.get("stil_text") else None)})
@@ -708,8 +791,12 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
             voll += f"\n\n[Angehängt: {d['name']}]\n{d['text'][:15000]}"
         elif d:
             voll += f"\n\n[Angehängt: {d['name']} -- Inhalt nicht lesbar]"
+    # Zu welcher Aufgabe gehoert das (bezug_erkennen, 19.10.2026)? Nur, wenn das
+    # Gespraech nicht ohnehin von Hand zugeordnet ist -- die Hand sticht.
+    z0 = zuordnung(gid)
+    bez = None if (z0.get("aufgabe_id") or z0.get("projekt_id")) else bezug_erkennen(text, gid, kontext)
     db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",
-                  (gid, "du", voll, json.dumps({"anzeige": text, "kontext": kontext or {}}, ensure_ascii=False), time.time()))
+                  (gid, "du", voll, json.dumps({"anzeige": text, "kontext": kontext or {}, "bezug": bez}, ensure_ascii=False), time.time()))
     if db.wert("SELECT titel FROM gespraeche WHERE id=?", (gid,)) == "Gespräch":
         db.ausfuehren("UPDATE gespraeche SET titel=? WHERE id=?", (text[:60] or "Gespräch", gid))
     # Ein reiner Bedienbefehl ("oeffne den Verbrauch") braucht kein Modell (bedienung_erkennen).
@@ -732,6 +819,8 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     zt = zuordnung_text(gid, (kontext or {}).get("id") if (kontext or {}).get("art") == "projekt" else None)
     if zt:
         system += "\n\n" + zt
+    if bez and (kontext or {}).get("art") != "aufgabe":   # dort steht die Aufgabe schon im KONTEXT
+        system += "\n\n" + bezug_text(bez)
     if re.search(r"beirat|board|vordenker", text, re.I):
         system += "\n\n" + beirat_text()
     denken, zusatz = llm.tempo(schnell)
@@ -791,6 +880,7 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
             if (v["aktion"] in ("aufgabe_neu", "notiz", "ausarbeiten") or (v["aktion"] == "zeigen" and v.get("ziel") in ZIELE))                     and not v.get("projekt_id"):
                 v["projekt_id"] = kontext["id"]
                 v["label"] = beschriften(v) or v["label"]
+    _bezug_einsetzen(vorschlaege, bez)
     # "Zeigen" aendert nichts -- das Cockpit fuehrt es sofort aus, ohne Knopf.
     zeigen = [v for v in vorschlaege if v["aktion"] == "zeigen" and (v.get("projekt_id") or v.get("ziel") in BEREICHE or v.get("ziel") == "chat")]
     oeffnen_roh = [v for v in vorschlaege if v["aktion"] == "oeffnen"]
@@ -862,6 +952,7 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
                 if kontext and kontext.get("art") == "projekt" and v["aktion"] in ("aufgabe_neu", "notiz", "ausarbeiten") and not v.get("projekt_id"):
                     v["projekt_id"] = kontext["id"]
                     v["label"] = beschriften(v) or v["label"]
+            _bezug_einsetzen(nach, bez)
             vorschlaege += [v for v in nach if v["aktion"] not in ("zeigen", "bild", "visualisierung")]
         except llm.ModellFehler:
             pass
@@ -923,15 +1014,17 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     # Recherche-Dossier auf Zuruf (dossier.py, 17.10.2026)
     from . import dossier
     _z = zuordnung(gid)
-    sichtbar, recherche = await dossier.aus_antwort(sichtbar, {"projekt_id": _z.get("projekt_id") or ((kontext or {}).get("id") if (kontext or {}).get("art") == "projekt" else None),
-                                                               "aufgabe_id": _z.get("aufgabe_id"), "gespraech_id": gid, "wer": "assistent"})
+    sichtbar, recherche = await dossier.aus_antwort(sichtbar, {
+        "projekt_id": _z.get("projekt_id") or ((kontext or {}).get("id") if (kontext or {}).get("art") == "projekt" else None) or (bez or {}).get("projekt_id"),
+        "aufgabe_id": _z.get("aufgabe_id") or (bez or {}).get("aufgabe_id"), "gespraech_id": gid, "wer": "assistent"})
     if recherche:
         sichtbar = (sichtbar + "\n\n" + recherche[0]).strip()
     sichtbar += stab.netz_fuss(quellen)
     mid = db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",
-                        (gid, "assistent", sichtbar, json.dumps({"vorschlaege": vorschlaege, "modell": modell, "medien": medien_jobs}, ensure_ascii=False), time.time()))
+                        (gid, "assistent", sichtbar, json.dumps({"vorschlaege": vorschlaege, "modell": modell, "medien": medien_jobs,
+                                                                 "bezug": bez}, ensure_ascii=False), time.time()))
     db.ausfuehren("UPDATE gespraeche SET geaendert=? WHERE id=?", (time.time(), gid))
-    yield {"typ": "fertig", "text": sichtbar, "vorschlaege": vorschlaege, "nachricht_id": mid, "modell": modell, "medien": medien_jobs,
+    yield {"typ": "fertig", "text": sichtbar, "vorschlaege": vorschlaege, "nachricht_id": mid, "modell": modell, "medien": medien_jobs, "bezug": bez,
            "zeigen": [z for z in (zeigen_ziel(v) for v in zeigen[:1]) if z],
            "oeffnen": oeffnen[:1], "werkzeug": werkzeug}
 
@@ -1031,6 +1124,107 @@ def aufgabe_text(aufgabe_id: str | None) -> str:
         platz -= min(len(t), 12000)
     teile.append("Richte deine Antworten auf diese Aufgabe aus, solange Veiko nichts anderes sagt.")
     return "\n".join(teile)
+
+
+# ---------------------------------------------------------------- Bezug erkennen
+# Veiko, 19.10.2026: "ich hatte ueber Talk einen Auftrag erteilt, ich finde die
+# Ergebnisse nicht, der Chat ist einer dazu passenden, bereits existierenden
+# Aufgabe nicht zugeordnet worden ... mein zentraler Punkt fuer die Arbeit sind
+# die Projekte mit ihren Aufgaben." Anlass: „stoß eine Recherche an, wie ich an
+# Verlage herantreten kann“ -- im BUCH PROJECT steht die Aufgabe „Verlag finden“,
+# das Dossier landete trotzdem ohne Projekt unter „Anhänge“.
+# Talk ist EIN langes Gespraech ueber vieles; die Zuordnung des ganzen Gespraechs
+# (zuordnen) passt dafuer nicht. Erkannt wird deshalb je Nachricht, ohne Modell
+# (kein Zeitverlust) und nur bei einem klaren Treffer -- lieber kein Bezug als ein
+# falscher. Was aus der Nachricht entsteht (Dossier, Ausarbeitung, Aufgabe, Notiz),
+# geht dorthin, und Talk zeigt den Bezug unter der Antwort.
+_BEZUG_LEER = {"recherch", "such", "find", "mach", "erstell", "schreib", "anstoß", "stoß", "kann", "komm", "frag", "best",
+               "heut", "morg", "doch", "also", "etwas", "alles", "welch", "dies", "dass", "oder", "aber", "schon", "auch",
+               "mehr", "sehr", "wird", "werd", "sind", "habe", "hast", "will", "soll", "muss", "könnt", "könn", "mein",
+               "mich", "dein", "sein", "nach", "lass", "bitt", "kurz", "klär", "klaer", "hol", "info", "informatio",
+               "thema", "sach", "plan", "aufgab", "projekt", "erledig", "gerad", "einfach", "eigentlich", "vielleicht",
+               # Formen und Allerweltswoerter: "erstelle eine Präsentation" meint nicht jede Aufgabe mit "Präsentation".
+               "präsentatio", "praesentatio", "dokument", "video", "webseit", "website", "konzept", "text", "bild", "list",
+               "entwurf", "inhalt", "erarbeit", "ausarbeit", "vorschlag", "idee", "frag", "termin", "neues", "worauf"}
+
+
+def _bezug_woerter(t: str) -> set[str]:
+    return {w for w in _woerter(t) if w not in _BEZUG_LEER and len(w) >= 4}
+
+
+def bezug_erkennen(text: str, gid: str | None, kontext: dict | None) -> dict[str, Any] | None:
+    """Zu welcher offenen Aufgabe (und welchem Projekt) Veikos Nachricht gehoert.
+    {projekt_id, aufgabe_id, projekt_name, aufgabe_titel, erkannt: True} oder None."""
+    k = kontext or {}
+    # Aus dem Aufgabenfenster heraus ("Im Gespräch besprechen"): der Bezug ist die Aufgabe selbst.
+    if k.get("art") == "aufgabe":
+        a = db.holen("aufgaben", k.get("id") or "")
+        if a:
+            p = db.holen("projekte", a.get("projekt_id") or "") if a.get("projekt_id") else None
+            return {"projekt_id": a.get("projekt_id"), "aufgabe_id": a["id"], "projekt_name": (p or {}).get("name"),
+                    "aufgabe_titel": a["titel"], "erkannt": True}
+    im_projekt = k.get("id") if k.get("art") == "projekt" else None
+    gesucht = _bezug_woerter(text)
+    projekte = db.alle("SELECT id, name FROM projekte WHERE status NOT IN ('archiviert','abgeschlossen')")
+    im_satz = {p["id"] for p in projekte if _bezug_woerter(p["name"]) and _bezug_woerter(p["name"]) <= gesucht}
+    treffer: list[tuple[float, dict[str, Any]]] = []
+    if gesucht and not ist_ja(text):
+        sql = ("SELECT a.id, a.titel, a.projekt_id, p.name FROM aufgaben a LEFT JOIN projekte p ON p.id=a.projekt_id "
+               "WHERE a.status!='erledigt' AND a.archiviert=0" + (" AND a.projekt_id=?" if im_projekt else ""))
+        for a in db.alle(sql, (im_projekt,) if im_projekt else ()):
+            w = _bezug_woerter(a["titel"])
+            if not w:
+                continue
+            gemein = gesucht & w
+            # Klar heisst: zwei gemeinsame Woerter, oder der ganze (kurze) Aufgabentitel,
+            # oder ein langes, eigenes Wort ("Verlage" ~ "Verlag finden").
+            if len(gemein) >= 2 or (gemein and (gemein == w or max(len(x) for x in gemein) >= 6)):
+                treffer.append((len(gemein) + len(gemein) / len(w) + (1 if a["projekt_id"] in im_satz else 0), a))
+    treffer.sort(key=lambda x: -x[0])
+    if treffer and (len(treffer) == 1 or treffer[0][0] > treffer[1][0]):
+        a = treffer[0][1]
+        return {"projekt_id": a["projekt_id"], "aufgabe_id": a["id"], "projekt_name": a.get("name"),
+                "aufgabe_titel": a["titel"], "erkannt": True}
+    if im_projekt:
+        return None   # das Projekt steht ohnehin im Kontext
+    # Kein eindeutiger Treffer: eine kurze Folgenachricht ("ja", "und die Kosten?")
+    # gehoert zum Bezug der vorigen, wenn die hoechstens 15 Minuten alt ist.
+    if gid and len((text or "").split()) <= 12:
+        vor = db.eine("SELECT daten, zeit FROM nachrichten WHERE gespraech_id=? AND rolle='assistent' ORDER BY id DESC LIMIT 1", (gid,))
+        b = ((vor or {}).get("daten") or {}).get("bezug") if vor else None
+        if b and time.time() - (vor.get("zeit") or 0) < 900 and db.holen("projekte", b.get("projekt_id") or ""):
+            return b
+    # Nur ein Projekt im Satz ("im Buchprojekt …"): dann gehoert es dorthin.
+    if len(im_satz) == 1:
+        p = next(x for x in projekte if x["id"] in im_satz)
+        return {"projekt_id": p["id"], "aufgabe_id": None, "projekt_name": p["name"], "aufgabe_titel": None, "erkannt": True}
+    return None
+
+
+def _bezug_einsetzen(vorschlaege: list[dict[str, Any]], b: dict[str, Any] | None) -> None:
+    """Was aus einer Nachricht mit erkanntem Bezug entsteht, bekommt Projekt (und bei
+    einer Ausarbeitung die Aufgabe) -- auch wenn das Modell die Kennung vergisst."""
+    if not b:
+        return
+    for v in vorschlaege:
+        if v["aktion"] in ("aufgabe_neu", "notiz", "ausarbeiten") and not v.get("projekt_id") and b.get("projekt_id"):
+            v["projekt_id"] = b["projekt_id"]
+            v["label"] = beschriften(v) or v["label"]
+        if v["aktion"] == "ausarbeiten" and not v.get("aufgabe_id") and b.get("aufgabe_id"):
+            v["aufgabe_id"] = b["aufgabe_id"]
+
+
+def bezug_text(b: dict[str, Any]) -> str:
+    if b.get("aufgabe_id"):
+        info = (aufgabe_text(b["aufgabe_id"]).replace("DIESES GESPRÄCH GEHÖRT ZUR AUFGABE", "AUFGABE")
+                .replace("Richte deine Antworten auf diese Aufgabe aus, solange Veiko nichts anderes sagt.", ""))
+        return (f"BEZUG (vom Cockpit erkannt): Veikos Nachricht gehört zur bestehenden Aufgabe „{b['aufgabe_titel']}“ "
+                f"(aufgabe_id {b['aufgabe_id']}) im Projekt „{b.get('projekt_name') or 'ohne Projekt'}“ (projekt_id {b.get('projekt_id')}). "
+                "Alles, was daraus entsteht -- Recherche, Ausarbeitung, neue Aufgaben, Notizen -- gehört dorthin: setze diese projekt_id "
+                "(und bei ausarbeiten die aufgabe_id) in den aktionen-Block. Lege KEINE zweite Aufgabe mit demselben Inhalt an. "
+                f"Nenne den Bezug in einem kurzen Halbsatz („für deine Aufgabe „{b['aufgabe_titel']}““).\n" + info).strip()
+    return (f"BEZUG (vom Cockpit erkannt): Veikos Nachricht gehört zum Projekt „{b.get('projekt_name')}“ (projekt_id {b.get('projekt_id')}). "
+            "Was daraus entsteht, gehört in dieses Projekt.")
 
 
 def zuordnung_text(gid: str | None, schon_projekt: str | None = None) -> str:

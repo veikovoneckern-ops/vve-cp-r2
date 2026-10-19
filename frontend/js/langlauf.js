@@ -91,11 +91,11 @@ function Neu({ zu, fertig, d, vorlage }) {
     setSendet(true);
     try {
       const r = await api("/langlaeufe", { methode: "POST", daten: { ...f, rolle: f.rolle || vorgabeRolle, material: material() } });
-      toast("Langläufer gestartet. Er plant jetzt die Etappen.");
+      toast("LongRun gestartet. Er plant jetzt die Etappen.");
       fertig(r.id);
     } catch (e) { fehlerMelden(e); setSendet(false); }
   }
-  return html`<${Modal} titel="Neuer Langläufer" zu=${zu} breit
+  return html`<${Modal} titel="Neuer LongRun" zu=${zu} breit
     fuss=${html`<button class="btn" onClick=${zu}>Abbrechen</button>
       <button class="btn primaer" disabled=${sendet || f.auftrag.trim().length < 20} onClick=${los}>${sendet ? "startet …" : "Starten"}</button>`}>
     <div class="ll-form">
@@ -142,7 +142,7 @@ function Neu({ zu, fertig, d, vorlage }) {
       wird geschätzt, und reicht der Rest nicht, läuft es lokal weiter, ohne zu fragen. Angehalten wird nur, wenn der Prüfer sagt, dass es
       ohne deine Entscheidung nicht weitergeht -- dann steht eine Frage im Briefing.
       ${f.art === "video" ? " Ein langes Video rechnet am Ende viele Stunden (etwa 12 Szenen je Minute)." : ""}</p>
-    ${!d.zugang_extern && html`<p class="fehlerbox klein">Für Dario und Demmis fehlt der Zugang (VVEC_ALT_TOKEN). Der Langläufer läuft dann ohne externe Prüfung, nur mit Daniel.</p>`}
+    ${!d.zugang_extern && html`<p class="fehlerbox klein">Für Dario und Demmis fehlt der Zugang (VVEC_ALT_TOKEN). Der LongRun läuft dann ohne externe Prüfung, nur mit Daniel.</p>`}
   </${Modal}>`;
 }
 
@@ -311,15 +311,15 @@ function LanglaufChat({ l, neuLaden }) {
   const partner = gespraechsPartner(team);
   const n = l.etappen_name;
   return html`<section class="karte ll-chat" ref=${ref}>
-    <div class="karte-kopf"><h3>Gespräch zum Langläufer</h3>
+    <div class="karte-kopf"><h3>Gespräch zum LongRun</h3>
       <select class="eingabe bd-auswahl" value=${wer} onChange=${(e) => setWer(e.target.value)} aria-label="Mit wem sprechen">
-        ${partner.length ? partner.map((m) => html`<option value=${m.id}>${m.name} · ${m.extern ? "extern, kostet Geld" : m.id === l.rolle ? "schreibt diesen Langläufer" : m.titel}</option>`)
+        ${partner.length ? partner.map((m) => html`<option value=${m.id}>${m.name} · ${m.extern ? "extern, kostet Geld" : m.id === l.rolle ? "schreibt diesen LongRun" : m.titel}</option>`)
           : html`<option value=${wer}>${l.rolle_name}</option>`}</select>
-      ${gid && html`<button class="btn klein geist" onClick=${() => setGid(null)} title="Neues Gespräch zu diesem Langläufer"><${Icon} n="neu" g=${13} />Neu</button>`}
+      ${gid && html`<button class="btn klein geist" onClick=${() => setGid(null)} title="Neues Gespräch zu diesem LongRun"><${Icon} n="neu" g=${13} />Neu</button>`}
       ${(l.nacharbeit || []).length > 0 && html`<span class="pill lila">${l.nacharbeit.length} zur Überarbeitung vorgemerkt</span>`}</div>
     ${team && gid !== undefined ? html`<${TeamChat} key=${wer + ":" + (gid || "neu")} wer=${wer} partnerListe=${partner} gid=${gid} langlaufId=${l.id}
         projektId=${l.projekt_id || ""} beiGespraech=${setGid}
-        leerText=${`Frag nach dem Stand, gib Anweisungen für die weiteren ${n}, lass fertige ${n} überarbeiten oder weitere anhängen. Unterlagen über das Plus. Was davon im Langläufer ankommt, steht jeweils unter der Antwort.`} />`
+        leerText=${`Frag nach dem Stand, gib Anweisungen für die weiteren ${n}, lass fertige ${n} überarbeiten oder weitere anhängen. Unterlagen über das Plus. Was davon im LongRun ankommt, steht jeweils unter der Antwort.`} />`
       : html`<div class="lade">Lade …</div>`}
   </section>`;
 }
@@ -331,21 +331,21 @@ export function Langlaeufer({ id }) {
   const [vorlage] = useState(() => { const v = naechsteVorlage; naechsteVorlage = null; return v; });
   const [wahl, setWahl] = useState(id && id !== "neu" ? id : null);
   useEffect(() => { if (id && id !== "neu") setWahl(id); }, [id]);
-  if (!d) return html`<div class="seite"><div class="lade">Lade Langläufer …</div></div>`;
+  if (!d) return html`<div class="seite"><div class="lade">Lade LongRuns …</div></div>`;
   const aktuell = wahl || (d.langlaeufe[0] && d.langlaeufe[0].id);
   return html`<div class="seite ll">
     <div class="ll-kopf">
-      <details class="ll-info klein"><summary>So arbeitet ein Langläufer</summary>
+      <details class="ll-info klein"><summary>So arbeitet ein LongRun</summary>
         <p class="leise">Ein langes Vorhaben -- ein Buch, ein langes Dokument, ein langes Video -- läuft hier in Etappen durch. Das Team schreibt lokal,
         Daniel prüft jede Etappe, und alle paar Etappen liest Dario oder Demmis mit und gibt Hinweise für den Rest. Du musst nicht eingreifen;
         angehalten wird nur, wenn ein Prüfer deine Entscheidung braucht.</p></details>
-      <button class="btn primaer klein" onClick=${() => setNeu(true)}><${Icon} n="plus" g=${14} />Neuer Langläufer</button>
+      <button class="btn primaer klein" onClick=${() => setNeu(true)}><${Icon} n="plus" g=${14} />Neuer LongRun</button>
     </div>
     ${d.langlaeufe.length ? html`<div class="ll-raster">
         <div class="ll-liste">${d.langlaeufe.map((l) => html`<${Zeile} key=${l.id} l=${l} an=${l.id === aktuell} waehlen=${setWahl} />`)}</div>
         ${aktuell && html`<${Detail} id=${aktuell} neuLaden=${laden} />`}
       </div>`
-      : html`<div class="karte"><p class="leise">Noch kein Langläufer. „Neuer Langläufer“ startet einen -- zum Beispiel ein Buch mit zwölf Kapiteln.</p></div>`}
+      : html`<div class="karte"><p class="leise">Noch kein LongRun. „Neuer LongRun“ startet einen -- zum Beispiel ein Buch mit zwölf Kapiteln.</p></div>`}
     ${neu && html`<${Neu} d=${d} vorlage=${vorlage} zu=${() => setNeu(false)} fertig=${(nid) => { setNeu(false); setWahl(nid); laden(); }} />`}
   </div>`;
 }

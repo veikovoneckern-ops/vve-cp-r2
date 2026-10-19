@@ -100,19 +100,19 @@ function AufgabeZeile({ t, nachher, mitProjekt, bezug }) {
       ${erledigt ? html`<${Icon} n="check" g=${14} w=${3} />` : ""}</button>
     <div class="haupt-text">
       <button class="aufgabe-titel" style=${erledigt ? "text-decoration:line-through;color:var(--ink-3)" : ""} onClick=${oeffnen}
-        title="Öffnen: Informationen, Anhänge, Langläufer, Gespräch">${t.titel}</button>
+        title="Öffnen: Informationen, Anhänge, LongRun, Gespräch">${t.titel}</button>
       ${(t.notiz || "").trim() ? html`<div class="leise klein aufgabe-notiz">${t.notiz.trim().split("\n")[0].slice(0, 140)}</div>` : ""}
       <div class="leise klein">
         ${mitProjekt && (t.projekt_name ? html`<a href=${"#/projects/" + t.projekt_id} style="color:inherit">${t.projekt_name}</a>` : "ohne Projekt")}
         ${t.quelle === "stab" ? html`${mitProjekt ? " · " : ""}vom Team${t.vorgang_id ? html` (<a href=${"#/inbox/" + t.vorgang_id} style="color:inherit" title="Die ursprüngliche Notiz und was das Team daraus gemacht hat">Herkunft</a>)` : ""}` : ""}
-        ${bezug && bezug.langlauf && html` <a class="pill lila" href=${"#/langlauf/" + bezug.langlauf.id} title="Läuft als Langläufer">Langläufer ${bezug.langlauf.fertig}/${bezug.langlauf.etappen || "?"}</a>`}
+        ${bezug && bezug.langlauf && html` <a class="pill lila" href=${"#/langlauf/" + bezug.langlauf.id} title="Läuft als LongRun">LongRun ${bezug.langlauf.fertig}/${bezug.langlauf.etappen || "?"}</a>`}
         ${bezug && bezug.gespraeche > 0 && html` <span class="pill" title="Zugeordnete Gespräche -- Liste im Überblick">${bezug.gespraeche} Gespräch${bezug.gespraeche === 1 ? "" : "e"}</span>`}
       </div>
     </div>
     <input type="date" class="eingabe" style="width:auto;min-height:30px;padding:2px 6px;font-size:12px" value=${t.faellig || ""} aria-label="Fällig am"
       onChange=${(e) => setzen({ faellig: e.target.value })} />
-    <button class="btn klein geist icon" title="Bearbeiten: Informationen, Anhänge, Langläufer" aria-label="Bearbeiten" onClick=${oeffnen}><${Icon} n="stift" g=${14} /></button>
-    ${!erledigt && html`<button class="btn klein geist icon" title="Als Langläufer starten: das Team arbeitet die Aufgabe in Etappen ab, mit Zwischenprüfung" aria-label="Als Langläufer starten"
+    <button class="btn klein geist icon" title="Bearbeiten: Informationen, Anhänge, LongRun" aria-label="Bearbeiten" onClick=${oeffnen}><${Icon} n="stift" g=${14} /></button>
+    ${!erledigt && html`<button class="btn klein geist icon" title="Als LongRun starten: das Team arbeitet die Aufgabe in Etappen ab, mit Zwischenprüfung" aria-label="Als LongRun starten"
       onClick=${() => langlaufStarten({ projekt_id: t.projekt_id || "", aufgabe_id: t.id, aufgabe_titel: t.titel, titel: t.titel, auftrag: t.notiz || t.titel })}><${Icon} n="langlauf" g=${14} /></button>`}
     <button class="btn klein geist icon" title="Archivieren" aria-label="Archivieren" onClick=${async () => {
       try { await api("/aufgaben/" + t.id, { methode: "DELETE" }); toast("Archiviert.", { aktion: { text: "Rückgängig", fn: () => setzen({ archiviert: 0 }) } }); nachher(); } catch (e) { fehlerMelden(e); }
@@ -219,7 +219,7 @@ function Projekt({ id, reiter }) {
       <div class="knopfreihe">
         <button class="btn" onClick=${() => setAusarbeiten(true)}><${Icon} n="stift" g=${15} />Ausarbeiten lassen</button>
         <button class="btn" title="Ein langes Vorhaben zu diesem Projekt in Etappen durchlaufen lassen, mit Zwischenprüfung"
-          onClick=${() => langlaufStarten({ projekt_id: id, titel: "", auftrag: p.ziel || "" })}><${Icon} n="langlauf" g=${15} />Als Langläufer</button>
+          onClick=${() => langlaufStarten({ projekt_id: id, titel: "", auftrag: p.ziel || "" })}><${Icon} n="langlauf" g=${15} />Als LongRun</button>
         <select class="eingabe" style="width:auto" value=${p.status} aria-label="Status" onChange=${(e) => aendern({ status: e.target.value }, "Status geändert.")}>
           <option value="aktiv">aktiv</option><option value="pausiert">pausiert</option><option value="abgeschlossen">abgeschlossen</option><option value="archiviert">archiviert</option>
         </select>
@@ -235,7 +235,7 @@ function Projekt({ id, reiter }) {
       </section>
       <div>
         ${(langlaeufe.length > 0 || gespraeche.length > 0) && html`<section class="karte">
-          <div class="karte-kopf"><h3>Langläufer und Gespräche</h3><span class="leise klein">was zu diesem Projekt läuft und besprochen wurde</span></div>
+          <div class="karte-kopf"><h3>LongRuns und Gespräche</h3><span class="leise klein">was zu diesem Projekt läuft und besprochen wurde</span></div>
           ${langlaeufe.map((l) => html`<div class="zeile" key=${l.id}><${Icon} n="langlauf" g=${15} />
             <div class="haupt-text"><a href=${"#/langlauf/" + l.id} style="color:inherit"><b>${l.titel}</b></a>
               <div class="leise klein">${l.art_name} · ${l.fertig} von ${l.etappen || "?"} ${l.etappen_name}${l.aufgabe_id ? " · zu einer Aufgabe" : ""}</div></div>

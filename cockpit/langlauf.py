@@ -139,12 +139,12 @@ def anlegen(titel: str, auftrag: str, art: str, projekt_id: str | None, pruefer:
     titel = titel or auftrag[:80]
     material = _material_sauber(material)
     # Der Vorgang traegt den Langlaeufer im Briefing, im Verlauf und am Ergebnis.
-    v = stab.aus_text(f"Langläufer „{titel}“: {auftrag}", quelle="langlauf", projekt_id=projekt_id)
+    v = stab.aus_text(f"LongRun „{titel}“: {auftrag}", quelle="langlauf", projekt_id=projekt_id)
     vid = v["id"] if isinstance(v, dict) else v
     db.ausfuehren("UPDATE vorgaenge SET titel=?, stand='in_arbeit', auftrag=?, einordnung=? WHERE id=?",
-                  (f"Langläufer: {titel}"[:120],
+                  (f"LongRun: {titel}"[:120],
                    json.dumps({"auftrag": auftrag, "langlauf": True, "rolle": rolle, "form": "dokument"}, ensure_ascii=False),
-                   "Langläufer -- arbeitet in Etappen, mit Zwischenprüfung", vid))
+                   "LongRun -- arbeitet in Etappen, mit Zwischenprüfung", vid))
     lid = db.neue_id("l")
     db.einfuegen("langlaeufe", {
         "id": lid, "vorgang_id": vid, "projekt_id": projekt_id, "titel": titel, "art": art, "stand": "plant",
@@ -154,7 +154,7 @@ def anlegen(titel: str, auftrag: str, art: str, projekt_id: str | None, pruefer:
                   "etappen": [], "hinweise": [], "pruefungen": [], "kosten": 0.0, "fehlversuche": 0}})
     namen = [s[0] for s in (_material_stueck(m) for m in material) if s]
     db.ereignis(vid, "du", "auftrag",
-                f"Langläufer gestartet: {ARTEN[art]['name']}, {stab.rollen_name(rolle)} arbeitet, "
+                f"LongRun gestartet: {ARTEN[art]['name']}, {stab.rollen_name(rolle)} arbeitet, "
                 f"{'Dario' if pruefer == 'dario' else 'Demmis'} prüft nach je {pruef_alle} {ARTEN[art]['mehrzahl']}, "
                 f"Budget $ {float(budget or 0):.2f}."
                 + (f"\nBaut auf: " + "; ".join(namen) if namen else ""))
@@ -313,7 +313,7 @@ def _aufgabe_vermerken(aufgabe_id: str | None, zeile: str) -> None:
 def steuern(lid: str, aktion: str, d: dict[str, Any]) -> dict[str, Any]:
     l = holen(lid)
     if not l:
-        raise ValueError("Langläufer nicht gefunden.")
+        raise ValueError("LongRun nicht gefunden.")
     daten = l["daten"]
     vid = l["vorgang_id"]
     if aktion == "pausieren":
@@ -321,7 +321,7 @@ def steuern(lid: str, aktion: str, d: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("Der Langläufer ist schon beendet.")
         daten["stand_vorher"] = l["stand"]
         _speichern(l, stand="pausiert")
-        db.ereignis(vid, "du", "info", "Langläufer pausiert.")
+        db.ereignis(vid, "du", "info", "LongRun pausiert.")
     elif aktion == "fortsetzen":
         if l["stand"] not in ("pausiert", "fehler", "wartet"):
             raise ValueError("Der Langläufer läuft schon.")
@@ -335,7 +335,7 @@ def steuern(lid: str, aktion: str, d: dict[str, Any]) -> dict[str, Any]:
                               ("(ohne Antwort fortgesetzt)", time.time(), e["id"]))
             neu = "laeuft"
         _speichern(l, stand=neu if neu != "wartet" else "laeuft")
-        db.ereignis(vid, "du", "info", "Langläufer fortgesetzt.")
+        db.ereignis(vid, "du", "info", "LongRun fortgesetzt.")
         wecken()
     elif aktion == "budget":
         b = max(0.0, float(d.get("budget") or 0))
@@ -351,7 +351,7 @@ def steuern(lid: str, aktion: str, d: dict[str, Any]) -> dict[str, Any]:
         db.ereignis(vid, "du", "antwort", f"Hinweis für die nächsten Etappen: {t}")
     elif aktion == "abbrechen":
         _speichern(l, stand="abgebrochen")
-        db.ereignis(vid, "du", "info", "Langläufer abgebrochen. Die fertigen Etappen bleiben erhalten.")
+        db.ereignis(vid, "du", "info", "LongRun abgebrochen. Die fertigen Etappen bleiben erhalten.")
         stab._auftrag_erledigt(vid)
         stab.stand_berechnen(vid)
     elif aktion == "zusammenfassen":
@@ -443,7 +443,7 @@ async def _etappe(l: dict[str, Any], e: dict[str, Any]) -> None:
     system = _system(rid, art)
     v = db.holen("vorgaenge", vid) or {"id": vid}
     grund = _etappen_kontext(d, e, art) + "\n\n" + stab._vorgang_kontext(v)[:15000]
-    stab.laeuft(rid, f"Langläufer: schreibt {n} {e['nr']} von {gesamt}", vid)
+    stab.laeuft(rid, f"LongRun: schreibt {n} {e['nr']} von {gesamt}", vid)
     if art == "video":
         frage = (grund + f"\n\nSchreibe JETZT NUR {n} {e['nr']}: „{e['titel']}“ -- {e.get('inhalt') or ''}\n"
                  + video.DREHBUCH_ANWEISUNG.replace("höchstens 16", f"höchstens {SZENEN_JE_AKT}")

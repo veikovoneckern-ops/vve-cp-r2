@@ -15,7 +15,9 @@ import { Board } from "./board.js";
 import { Logo, CockpitLeiste, ServerKaesten, SprechKnopf, kopfAbruf } from "./kopf.js";
 import { LeisteNav, useLeiste, FENSTER } from "./leiste.js";
 import { Einstellungen } from "./einstellungen.js";
-import { Modelle } from "./modelle.js";
+import { Usage } from "./usage.js";
+import { Explorer } from "./explorer.js";
+import { DateiFenster } from "./datei.js";
 import { Langlaeufer } from "./langlauf.js";
 import { BrainStrom, ExO } from "./verfahren.js";
 import { Aktionen } from "./aktionen.js";
@@ -27,13 +29,19 @@ const BEREICHE = [
   { id: "inbox", titel: "Inbox", icon: "inbox", unter: "Alles, was hereinkommt" },
   { id: "projects", titel: "Projects", icon: "projects", unter: "Vorhaben, Aufgaben, Ergebnisse" },
   // Lange Vorhaben in Etappen mit Zwischenpruefung durch Dario oder Demmis (17.10.).
-  { id: "langlauf", titel: "Langläufer", icon: "langlauf", unter: "Buch, langes Dokument, langes Video -- läuft durch" },
+  // Heisst seit dem 19.10.2026 "LongRuns" (Veikos Wunsch); die Kennung bleibt langlauf.
+  { id: "langlauf", titel: "LongRuns", icon: "langlauf", unter: "Buch, langes Dokument, langes Video -- läuft durch" },
   // Alles, was gerade laeuft, mit Pausieren/Abbrechen (Veiko, 17.10.2026). Hinter den
   // Langlaeufern: weit oben, damit man es findet, aber nicht unter den ersten vier --
   // die stehen auf dem Telefon in der unteren Leiste und sollen dort bleiben.
   { id: "aktionen", titel: "Current Actions", kurz: "Actions", icon: "aktionen", unter: "Alles, was gerade läuft" },
+  // Alle erzeugten Inhalte wie in einem Datei-Explorer (Veiko, 19.10.2026).
+  { id: "explorer", titel: "Explorer", icon: "explorer", unter: "Alles, was entstanden ist -- suchen, filtern, öffnen" },
   { id: "neo", titel: "Neo", icon: "neo", unter: "Cockpit Engineer", neo: true },
-  { id: "team", titel: "Team", icon: "team", unter: "Dein KI-Team" },
+  // Team = Mitglieder + das fruehere "Stab & Modelle", in aufklappbaren Abschnitten (19.10.2026).
+  { id: "team", titel: "Team", icon: "team", unter: "Mitglieder, Besetzung, Modelle, Optimierung" },
+  // Verbrauch als eigene Seite (19.10.2026): Token, Rechenzeit, Kosten, Strom -- nach Projekt, Aufgabe, Modell.
+  { id: "usage", titel: "Usage", icon: "usage", unter: "Token, Rechenzeit, Kosten und Strom" },
   { id: "board", titel: "Advisory Board", kurz: "Board", icon: "board", unter: "Deine Advisors" },
   // Die Website veikovoneckern.org bearbeiten und veröffentlichen (Veiko, 18.10.2026).
   { id: "webspace", titel: "WebSpace", icon: "globus", unter: "Deine Website veikovoneckern.org" },
@@ -41,19 +49,21 @@ const BEREICHE = [
   // eigenen Modell und der WatchDog -- je mit eigenem Knopf.
   { id: "brainstrom", titel: "BrainStrom", icon: "brainstrom", unter: "Aus einer Idee ein Vorhaben" },
   { id: "exo", titel: "ExO", icon: "exo", unter: "Exponential-Organizations-Analyse" },
-  // Neu geordnet am 17.10.2026: drei Seiten statt fuenf. Maschine = System + WatchDog;
-  // Stab & Modelle = Besetzung, Optimierung (revision.py), Neues bei Ollama, Verbrauch;
-  // Einstellungen = Freigaben, Pipeline, Stimme, Daten, Konto. Alte Adressen leitet route() um.
-  { id: "modelle", titel: "Stab & Modelle", icon: "modelle", unter: "Wer rechnet womit, Optimierung, Neues, Verbrauch" },
-  { id: "system", titel: "Maschine", icon: "system", unter: "Server, Updates, Sicherungen, WatchDog" },
-  { id: "einstellungen", titel: "Einstellungen", icon: "einstellungen", unter: "Freigaben, Pipeline, Stimme, Daten, Konto" },
+  // Neu geordnet am 17.10.2026 und 19.10.2026: Stack = Server + WatchDog + Website;
+  // Team = Mitglieder + Besetzung, Optimierung, Neues bei Ollama; Usage und Explorer eigene Seiten;
+  // Einstellungen = Freigaben, Pipeline, Stimme, Memory, Daten, Konto. Alte Adressen leitet route() um.
+  // "Maschine" heisst seit dem 19.10.2026 "Stack"; die Kennung bleibt system (Kopfzeile, alte Links).
+  { id: "system", titel: "Stack", icon: "stapel", unter: "Server, Updates, Sicherungen, WatchDog, Website" },
+  { id: "einstellungen", titel: "Einstellungen", icon: "einstellungen", unter: "Freigaben, Pipeline, Stimme, Memory, Daten, Konto" },
 ];
 
 function route() {
   const teile = (location.hash.replace(/^#\/?/, "") || "briefing").split("/");
-  // Alte Adressen (vor der Neuordnung am 17.10.2026) fuehren an die neue Stelle.
-  if (teile[0] === "watchdog") teile[0] = "system";
-  if (teile[0] === "verbrauch") { teile[0] = "modelle"; teile[1] = "verbrauch"; }
+  // Alte Adressen (vor den Neuordnungen am 17. und 19.10.2026) fuehren an die neue Stelle.
+  if (teile[0] === "watchdog") { teile[0] = "system"; teile[1] = "watchdog"; }
+  if (teile[0] === "verbrauch" || (teile[0] === "modelle" && teile[1] === "verbrauch")) { teile.length = 1; teile[0] = "usage"; }
+  if (teile[0] === "modelle") { teile[0] = "team"; teile[1] = { uebersicht: "besetzung", installiert: "installiert", optimierung: "optimierung", neu: "neu" }[teile[1]] || "besetzung"; }
+  if (teile[0] === "team" && teile[1] === "gedaechtnis") { teile[0] = "einstellungen"; teile[1] = "memory"; }
   return { bereich: BEREICHE.some((b) => b.id === teile[0]) ? teile[0] : "briefing", id: teile[1] ? decodeURIComponent(teile[1]) : null, rest: teile.slice(2) };
 }
 
@@ -228,6 +238,8 @@ function App() {
   // ergebnis-zeigen: eine Kennung, oder { id, vorlage } -- dann steht die Bitte schon im Chat (Daniels Einwände einarbeiten).
   useEffect(() => bus.an("ergebnis-zeigen", (x) => setAnzeige({ art: "ergebnis", id: (x && x.id) || x, vorlage: x && x.vorlage, n: Date.now() })), []);
   useEffect(() => bus.an("notiz-zeigen", (id) => setAnzeige({ art: "notiz", id })), []);
+  // Eine Unterlage im Cockpit lesen (datei.js, 19.10.2026): Explorer, Talk, Aufgabe.
+  useEffect(() => bus.an("datei-zeigen", (id) => setAnzeige({ art: "datei", id, n: Date.now() })), []);
   // Das Aufgabenfenster (17.10.2026): von jeder Stelle, an der eine Aufgabe steht.
   useEffect(() => bus.an("aufgabe-zeigen", (id) => setAufgabe({ id, n: Date.now() })), []);
   useEffect(() => {
@@ -293,9 +305,10 @@ function App() {
         ${r.bereich === "inbox" && html`<${Inbox} id=${r.id} />`}
         ${r.bereich === "projects" && html`<${Projects} id=${r.id} rest=${r.rest} />`}
         ${r.bereich === "team" && html`<${Team} id=${r.id} rest=${r.rest} />`}
-        ${r.bereich === "system" && html`<${System} gesundheit=${lage && lage.gesundheit} />`}
-        ${r.bereich === "einstellungen" && html`<${Einstellungen} konto=${konto} thema=${thema} />`}
-        ${r.bereich === "modelle" && html`<${Modelle} tab=${r.id} />`}
+        ${r.bereich === "system" && html`<${System} gesundheit=${lage && lage.gesundheit} abschnitt=${r.id} />`}
+        ${r.bereich === "einstellungen" && html`<${Einstellungen} konto=${konto} thema=${thema} abschnitt=${r.id} />`}
+        ${r.bereich === "usage" && html`<${Usage} />`}
+        ${r.bereich === "explorer" && html`<${Explorer} />`}
         ${r.bereich === "neo" && html`<${Neo} id=${r.id} />`}
         ${r.bereich === "board" && html`<${Board} id=${r.id} />`}
         ${r.bereich === "brainstrom" && html`<${BrainStrom} />`}
@@ -312,6 +325,7 @@ function App() {
     ${anzeige && anzeige.art === "notiz" && html`<${NotizAnsicht} id=${anzeige.id} zu=${() => setAnzeige(null)} />`}
     ${erfassen && html`<${Erfassen} zu=${() => setErfassen(false)} />`}
     ${aufgabe && html`<${AufgabeFenster} key=${aufgabe.n} id=${aufgabe.id} zu=${() => setAufgabe(null)} />`}
+    ${anzeige && anzeige.art === "datei" && html`<${DateiFenster} key=${anzeige.n} id=${anzeige.id} zu=${() => setAnzeige(null)} />`}
     <${Toasts} />
   </div>`;
 }

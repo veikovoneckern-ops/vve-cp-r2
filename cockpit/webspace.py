@@ -1040,3 +1040,78 @@ def kontext_text(pfad: str | None) -> str:
             teil = ""
     return ("VEIKO IST IM WEBSPACE (Editor für die Website veikovoneckern.org). Änderungen sind erst nach "
             "„Veröffentlichen“ öffentlich; das macht Veiko selbst per Klick, nie Talk." + teil)
+
+
+# ---------------------------------------------------------------- Überblick im Stack
+# Veiko, 19.10.2026: "Im Stack moechte ich ganz unten auch einen Abschnitt haben, der
+# mir die Informationen zu dem gibt, was ich auf meiner Webseite habe und wie das
+# angebunden ist -- welche Hauptseiten gibt es, wie aktuell ist meine Webseite.
+# Kuenftig moechte ich da noch mehr haben, und das soll dann immer aktuell sein."
+# Deshalb wird nichts davon von Hand gepflegt: Menue, Seiten und Blog kommen aus dem
+# Klon, die Veroeffentlichung aus GitHub, die Erreichbarkeit aus einem echten Abruf.
+# Kommt etwas dazu (eine Seite, ein Menuepunkt, eine Domain), steht es von selbst da.
+_stack_merker: dict[str, Any] = {"zeit": 0.0, "wert": None}
+
+
+async def _live_pruefen() -> dict[str, Any]:
+    beginn = time.time()
+    try:
+        async with httpx.AsyncClient(timeout=8, follow_redirects=True) as c:
+            r = await c.get(LIVE + "/")
+        return {"erreichbar": r.status_code < 400, "status": r.status_code, "ms": round((time.time() - beginn) * 1000),
+                "server": r.headers.get("server"), "geaendert": r.headers.get("last-modified")}
+    except httpx.HTTPError as e:
+        return {"erreichbar": False, "fehler": str(e)[:200]}
+
+
+@router.get("/stack")
+async def stack_ueberblick(frisch: int = 0):
+    if not frisch and time.time() - _stack_merker["zeit"] < 60 and _stack_merker["wert"]:
+        return _stack_merker["wert"]
+    async with _sperre:
+        try:
+            await _klon_sicher()
+            aend = await _aenderungen()
+            letzter = (await _git("log", "-1", "--format=%h%x1f%s%x1f%cI")).strip().split("\x1f")
+        except WebspaceFehler as e:
+            raise HTTPException(503, str(e)) from e
+        try:   # Stand auf GitHub (origin/main) gegen den Klon: liegt etwas nur hier?
+            voraus = (await _git("rev-list", "--count", "origin/main..HEAD")).strip()
+        except WebspaceFehler:
+            voraus = ""
+    cfg = _menue_lesen()
+    seiten, blog = [], []
+    for f in sorted((KLON / "inhalt").rglob("*.html")):
+        rel = f.relative_to(KLON / "inhalt").as_posix()
+        kopf, inhalt = _lesen(f)
+        e = {"pfad": rel, "titel": kopf.get("titel") or rel, "adresse": _adresse(rel),
+             "datum": kopf.get("datum"), "zeichen": len(re.sub(r"<[^>]+>", "", inhalt))}
+        (blog if kopf.get("blog") else seiten).append(e)
+    blog.sort(key=lambda b: str(b.get("datum") or ""), reverse=True)
+    domain = ""
+    try:
+        domain = (KLON / "CNAME").read_text(encoding="utf-8").strip()
+    except OSError:
+        pass
+    workflows = sorted(p.name for p in (KLON / ".github" / "workflows").glob("*.y*ml")) if (KLON / ".github" / "workflows").exists() else []
+    wert = {"live": LIVE, "domain": domain or None, "mail": cfg.get("mail"), "repo": REPO_API.replace("api.github.com/repos", "github.com"),
+            "workflows": workflows, "menue": cfg.get("navigation", []), "seiten": seiten, "blog": blog,
+            "unveroeffentlicht": len(aend), "nur_hier": int(voraus) if voraus.isdigit() else None,
+            "letzter": {"sha": letzter[0], "text": letzter[1], "zeit": letzter[2]} if len(letzter) == 3 else None,
+            "veroeffentlichung": await _veroeffentlichung(), "erreichbar": await _live_pruefen(), "geprueft": time.time()}
+    _stack_merker.update(zeit=time.time(), wert=wert)
+    return wert
+
+
+def stack_text() -> str:
+    """Fuer Talk (Stack-Seite): der zuletzt abgerufene Ueberblick, ohne neuen Abruf."""
+    w = _stack_merker.get("wert")
+    if not w:
+        return "WEBSITE veikovoneckern.org: Überblick noch nicht abgerufen (steht ganz unten im Stack)."
+    v = w.get("veroeffentlichung") or {}
+    menue = "; ".join(m["text"] + (" (" + ", ".join(u["text"] for u in m.get("unter", [])) + ")" if m.get("unter") else "") for m in w["menue"])
+    return (f"WEBSITE {w['live']} (GitHub Pages aus {w['repo']}, Domain {w.get('domain') or '?'} bei one.com): "
+            f"{'erreichbar' if (w.get('erreichbar') or {}).get('erreichbar') else 'NICHT erreichbar'}; "
+            f"letzte Veröffentlichung {v.get('zeit') or 'unbekannt'} ({v.get('ergebnis') or v.get('stand') or '?'}); "
+            f"{w['unveroeffentlicht']} unveröffentlichte Änderungen. Menü: {menue}. "
+            f"{len(w['seiten'])} Seiten, {len(w['blog'])} Blogbeiträge" + (f", neuester: {w['blog'][0]['titel']}" if w["blog"] else "") + ".")

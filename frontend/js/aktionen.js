@@ -20,7 +20,7 @@ const KNOPF = {
 // Was ein Abbruch jeweils bedeutet -- die Rueckfrage sagt es, bevor geklickt ist.
 const ABBRUCH = {
   download: "Download abbrechen? Schon Geladenes bleibt bei Ollama liegen; ein neues Laden setzt dort fort.",
-  langlauf: "Langläufer abbrechen? Fertige Etappen bleiben, weiter geht es danach nicht mehr.",
+  langlauf: "LongRun abbrechen? Fertige Etappen bleiben, weiter geht es danach nicht mehr.",
   video: "Video abbrechen? Am Ergebnis steht dann „abgebrochen“ mit „Neu rechnen“.",
   folienbilder: "Bilder abbrechen? Fertige Bilder bleiben, die übrigen lassen sich neu rechnen.",
   neo: "Neos Auftrag abbrechen? Was er schon geändert hat, bleibt.",
@@ -109,7 +109,7 @@ export function Aktionen() {
       ${d.pipeline_wartet > 0 && html`<a class="leise klein" href="#/inbox">${d.pipeline_wartet} Cases warten auf das Team</a>`}
     </div>
     ${d.laufend.length ? html`<div class="ak-liste">${d.laufend.map((z) => html`<${Karte} key=${z.id} z=${z} neu=${neu} zeit=${d.zeit} />`)}</div>`
-      : html`<${Leer} titel="Nichts in Arbeit">Downloads, Langläufer, Videos, Bilder, Antworten in Gesprächen, Neos Aufträge und Modell-Vergleiche erscheinen hier, sobald sie laufen.<//>`}
+      : html`<${Leer} titel="Nichts in Arbeit">Downloads, LongRuns, Videos, Bilder, Antworten in Gesprächen, Neos Aufträge und Modell-Vergleiche erscheinen hier, sobald sie laufen.<//>`}
     ${d.beendet.length > 0 && html`<section class="karte" style="margin-top:14px">
       <div class="karte-kopf"><h3>Gerade fertig geworden</h3><span class="leise klein">letzte Stunde</span></div>
       <div class="ak-liste">${d.beendet.map((z) => html`<${Karte} key=${z.id} z=${{ ...z, stand: "fertig" }} neu=${neu} />`)}</div></section>`}

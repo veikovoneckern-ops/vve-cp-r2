@@ -27,7 +27,7 @@ from typing import Any
 
 from . import db, llm, modellkatalog, stab
 
-ART_NAME = {"download": "Download", "pipeline": "Team-Pipeline", "langlauf": "Langläufer", "video": "Video",
+ART_NAME = {"download": "Download", "pipeline": "Team-Pipeline", "langlauf": "LongRun", "video": "Video",
             "folienbilder": "Bilder für ein Ergebnis", "medien": "Bild aus dem Gespräch", "neo": "Neo",
             "gespraech": "Antwort im Gespräch", "revision": "Modell-Revision", "ruf": "Ruf im Netz", "verfahren": "Verfahren",
             "system": "Server-Auftrag", "dossier": "Recherche-Dossier"}
@@ -48,7 +48,7 @@ def sammeln(gespraeche: dict[str, dict[str, Any]], wer_name) -> dict[str, Any]:
         z = {"id": "download:" + j["name"], "art": "download", "titel": j["name"], "stand": j.get("stand"),
              "schritt": j.get("schritt"), "start": j.get("start"), "prozent": j.get("prozent"), "gb": j.get("gb"),
              "geladen_gb": j.get("geladen_gb"), "mb_s": j.get("mb_s"), "rest_s": j.get("rest_s"),
-             "fehler": j.get("fehler"), "link": "#/modelle/uebersicht"}
+             "fehler": j.get("fehler"), "link": "#/team/besetzung"}
         if j.get("stand") == "laeuft":
             z["steuerung"] = ["pausieren", "abbrechen"]
             laufend.append(z)
@@ -150,7 +150,7 @@ def sammeln(gespraeche: dict[str, dict[str, Any]], wer_name) -> dict[str, Any]:
                         "schritt": rs.get("schritt"), "start": rs.get("start"), "stand": "laeuft",
                         "teile": f"{rs.get('fertig') or 0} von {rs['geplant']} Vergleichen" if rs.get("geplant") else None,
                         "prozent": round((rs.get("fertig") or 0) / rs["geplant"] * 100) if rs.get("geplant") else None,
-                        "link": "#/modelle/optimierung", "steuerung": ["abbrechen"]})
+                        "link": "#/team/optimierung", "steuerung": ["abbrechen"]})
     from . import ruf
     if ruf.STAND.get("laeuft") and not rs.get("laeuft"):
         g = ruf.STAND.get("geplant") or 0
@@ -158,7 +158,7 @@ def sammeln(gespraeche: dict[str, dict[str, Any]], wer_name) -> dict[str, Any]:
                         "schritt": ruf.STAND.get("schritt"), "start": ruf.STAND.get("start"), "stand": "laeuft",
                         "teile": f"{ruf.STAND.get('fertig') or 0} von {g} Modellen" if g else None,
                         "prozent": round((ruf.STAND.get("fertig") or 0) / g * 100) if g else None,
-                        "link": "#/modelle/uebersicht", "steuerung": ["abbrechen"]})
+                        "link": "#/team/besetzung", "steuerung": ["abbrechen"]})
     for art, t in list(verfahren._TASKS.items()):
         if t and not t.done():
             laufend.append({"id": "verfahren:" + art, "art": "verfahren", "titel": {"brainstrom": "BrainStrom", "exo": "ExO"}.get(art, art),
@@ -218,18 +218,19 @@ def _bezug(z: dict[str, Any]) -> dict[str, Any]:
         return {"ergebnis_id": ref, "projekt_id": r.get("projekt_id")}
     if art == "gespraech":
         k = _json((db.holen("gespraeche", ref) or {}).get("kontext"))
-        return {"langlauf_id": k.get("langlauf_id"), "ergebnis_id": k.get("ergebnis_id"), "projekt_id": k.get("projekt_id")}
+        return {"langlauf_id": k.get("langlauf_id"), "ergebnis_id": k.get("ergebnis_id"), "projekt_id": k.get("projekt_id"),
+                "aufgabe_id": k.get("aufgabe_id")}
     if art == "dossier":
         from . import dossier
         zi = (dossier.JOBS.get(ref) or {}).get("ziel") or {}
-        return {"langlauf_id": zi.get("langlauf_id"), "projekt_id": zi.get("projekt_id")}
+        return {"langlauf_id": zi.get("langlauf_id"), "projekt_id": zi.get("projekt_id"), "aufgabe_id": zi.get("aufgabe_id")}
     return {}
 
 
 _ZWISCHEN: dict[str, Any] = {"zeit": 0.0, "liste": []}
 
 
-def fuer(langlauf_id: str | None = None, ergebnis_id: str | None = None) -> list[dict[str, Any]]:
+def fuer(langlauf_id: str | None = None, ergebnis_id: str | None = None, aufgabe_id: str | None = None) -> list[dict[str, Any]]:
     """Was gerade fuer diesen Langlaeufer bzw. dieses Ergebnis laeuft -- ohne den
     Langlaeufer selbst. Zwei Sekunden gemerkt: die Langlaeufer-Liste fragt je Zeile."""
     import time as _t
@@ -242,7 +243,8 @@ def fuer(langlauf_id: str | None = None, ergebnis_id: str | None = None) -> list
         b = z.get("bezug") or {}
         if z["id"] == f"langlauf:{langlauf_id}":
             continue
-        if (langlauf_id and b.get("langlauf_id") == langlauf_id) or (ergebnis_id and b.get("ergebnis_id") == ergebnis_id):
+        if ((langlauf_id and b.get("langlauf_id") == langlauf_id) or (ergebnis_id and b.get("ergebnis_id") == ergebnis_id)
+                or (aufgabe_id and b.get("aufgabe_id") == aufgabe_id)):
             jetzt = ((z.get("detail") or {}).get("laufend") or [None])[0]
             aus.append({"id": z["id"], "art_name": z["art_name"], "wer": z.get("wer"), "titel": z["titel"],
                         "schritt": z.get("schritt"), "teile": z.get("teile"), "prozent": z.get("prozent"), "start": z.get("start"),

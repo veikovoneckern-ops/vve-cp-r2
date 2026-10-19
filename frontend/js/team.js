@@ -1,40 +1,48 @@
 // TEAM -- Veikos KI-Team: wer ist da, womit rechnet er, was hat er zuletzt getan.
-// Dazu Memory (was das Team ueber Veiko weiss) und Freigaben (was das Team
-// ohne Nachfrage tun darf). Das Advisory Board hat einen eigenen Bereich (board.js).
-import { escEigen, html, enterBestaetigt, useState, useEffect, useRef, Icon, Avatar, Leer, Modal, toast, fehlerMelden, aktualisieren, zeitText, useAbruf, navigiere, bus } from "./ui.js";
+// Seit dem 19.10.2026 EINE Seite mit aufklappbaren Abschnitten (Veiko: "Kombiniere
+// Team und Stab & Modelle in eine gute Seite mit dem Namen Team ... Sektionen, die
+// man auf- und zuklappen kann, die Auf- und Zuklappfunktion aber gut sichtbar"):
+// Mitglieder, Extern, dann die Modelle (modelle.js). Memory steht unter
+// Einstellungen, Freigaben ebenfalls. Das Advisory Board hat einen eigenen Bereich.
+import { escEigen, html, enterBestaetigt, useState, useEffect, useRef, Icon, Avatar, Leer, Modal, toast, fehlerMelden, aktualisieren, zeitText, useAbruf, navigiere, bus, Klappe, useAbschnitt } from "./ui.js";
 import { api } from "./api.js";
 import { TeamGespraeche } from "./teamchat.js";
+import { ModelleAbschnitte } from "./modelle.js";
 
-// "Freigaben" stehen seit dem 17.10.2026 auf der Seite Einstellungen (einstellungen.js);
-// der Tab fuehrt dorthin, damit ein alter Link nicht ins Leere geht.
-const TABS = [["mitglieder", "Mitglieder"], ["gedaechtnis", "Memory"]];
-
-// #/team/chat/<wer>[/<gespraech>] ist das Gespraech mit einem Mitglied.
+// #/team/chat/<wer>[/<gespraech>] ist das Gespraech mit einem Mitglied; #/team/<abschnitt>
+// oeffnet einen Abschnitt (besetzung, installiert, optimierung, neu, extern).
 export function Team({ id, rest = [] }) {
   if (id === "chat") return html`<${TeamGespraeche} wer=${rest[0] || ""} gid=${rest[1] || null} />`;
-  return html`<${TeamTabs} id=${id} />`;
+  return html`<${TeamSeite} abschnitt=${id} />`;
 }
 
-function TeamTabs({ id }) {
-  useEffect(() => { if (id === "vertrauen") navigiere("/einstellungen"); }, [id]);
-  const [tab, setTab] = useState(id && TABS.some((t) => t[0] === id) ? id : "mitglieder");
-  useEffect(() => { bus.sende("talk-kontext", null); }, []);
-  return html`<div class="seite">
-    <div class="tabs" role="tablist">${TABS.map(([k, t]) => html`<button role="tab" aria-selected=${tab === k} class=${tab === k ? "an" : ""} onClick=${() => setTab(k)}>${t}</button>`)}</div>
-    ${tab === "mitglieder" && html`<${Mitglieder} />`}
-    ${tab === "gedaechtnis" && html`<${Gedaechtnis} />`}
+function TeamSeite({ abschnitt }) {
+  // Alte Adressen: "vertrauen" (Freigaben) und "gedaechtnis" (Memory) stehen unter Einstellungen.
+  useEffect(() => { if (abschnitt === "vertrauen") navigiere("/einstellungen"); if (abschnitt === "gedaechtnis") navigiere("/einstellungen/memory"); }, [abschnitt]);
+  useEffect(() => { bus.sende("talk-kontext", { art: "team", id: "team", titel: "Team" }); return () => bus.sende("talk-kontext", null); }, []);
+  useAbschnitt(abschnitt);
+  const [d, laden] = useAbruf("/team", 15000, []);
+  const aktiv = d ? d.team.filter((m) => m.aktiv).length : null;
+  return html`<div class="seite team-seite">
+    <${Klappe} id="mitglieder" titel="Mitglieder" unter="Wer im Team arbeitet, womit, was gerade läuft -- mit jedem direkt chatten"
+      zahl=${d ? `${aktiv} von ${d.team.length} aktiv` : null} vorgabe=${true}>
+      <${Mitglieder} d=${d} laden=${laden} /></${Klappe}>
+    <${Klappe} id="extern" titel="Extern" unter="Dario, Elon und Demmis -- über die Cloud, kosten Geld je Nachricht, arbeiten nie von selbst"
+      zahl=${d ? (d.externe || []).length : null}>
+      ${d ? html`<div class="team-raster">${(d.externe || []).map((x) => html`<${ExternKarte} key=${x.id} x=${x} nachher=${laden} />`)}</div>` : html`<div class="lade">Lade …</div>`}
+    </${Klappe}>
+    <${ModelleAbschnitte} />
   </div>`;
 }
 
-function Mitglieder() {
-  const [d, laden] = useAbruf("/team", 15000, []);
+function Mitglieder({ d, laden }) {
   const [offen, setOffen] = useState(null);
   if (!d) return html`<div class="lade">Lade …</div>`;
   async function setzen(m, daten, meldung) {
     try { await api("/team/" + m.id, { methode: "PATCH", daten }); toast(meldung); laden(); } catch (e) { fehlerMelden(e); }
   }
   return html`
-    <p class="leise" style="margin-bottom:12px">Jason ordnet jede neue Notiz ein und plant. Die anderen arbeiten, wenn eine Notiz oder du es ausdrücklich verlangst. Daniel prüft jedes Ergebnis, bevor du es siehst. Das Team rechnet lokal auf deinem Server. Dario, Elon und Demmis sind extern und kosten Geld je Nachricht. Mit jedem kannst du direkt sprechen.</p>
+    <p class="leise" style="margin-bottom:12px">Jason ordnet jede neue Notiz ein und plant. Die anderen arbeiten, wenn eine Notiz oder du es ausdrücklich verlangst. Daniel prüft jedes Ergebnis, bevor du es siehst. Das Team rechnet lokal auf deinem Server. Mit jedem kannst du direkt sprechen.</p>
     <div class="team-raster">${d.team.map((m) => {
       const tut = (d.laeuft && d.laeuft.wer === m.id) ? d.laeuft.was : (m.id === "cockpit" && d.neo_laeuft ? "arbeitet an einem Auftrag" : "");
       return html`<div class="karte mitglied" key=${m.id}>
@@ -58,8 +66,6 @@ function Mitglieder() {
         </div>
       </div>`;
     })}</div>
-    <h3 class="team-abschnitt">Extern <span class="leise klein">zugeschaltet über die Cloud · kostet Geld je Nachricht · arbeitet nie von selbst</span></h3>
-    <div class="team-raster">${(d.externe || []).map((x) => html`<${ExternKarte} key=${x.id} x=${x} nachher=${laden} />`)}</div>
     ${offen && html`<${MitgliedDetail} id=${offen} zu=${() => setOffen(null)} nachher=${laden} />`}`;
 }
 
@@ -107,7 +113,7 @@ function MitgliedDetail({ id, zu, nachher }) {
 
 const ARTEN = [["person", "Person"], ["organisation", "Organisation"], ["begriff", "Begriff, Abkürzung"], ["hoerfehler", "Hörfehler (wird korrigiert)"], ["aussprache", "Aussprache (so wird vorgelesen)"]];
 
-function Gedaechtnis() {
+export function Gedaechtnis() {
   const [d, laden] = useAbruf("/gedaechtnis", 0, []);
   const [neu, setNeu] = useState({ art: "person", begriff: "", bedeutung: "" });
   const [bearb, setBearb] = useState(null);
@@ -218,7 +224,7 @@ export function Vertrauen() {
           <button class=${d.vertrauen[k] === "fragen" ? "an" : ""} onClick=${() => setzen({ vertrauen: { [k]: "fragen" } })}>erst fragen</button></div>
       </div>`)}
       <div class="zeile"><div class="haupt-text"><b>Cloud-Modelle, Mails verschicken</b><div class="leise klein">Kostet Geld oder geht nach außen</div></div><span class="pill gelb">immer fragen</span></div>
-      <div class="zeile"><div class="haupt-text"><b>Löschen, Code einspielen, Server ändern</b><div class="leise klein">Nur du, auf der Seite Maschine oder über Neo</div></div><span class="pill rot">nie vom Team</span></div>
+      <div class="zeile"><div class="haupt-text"><b>Löschen, Code einspielen, Server ändern</b><div class="leise klein">Nur du, auf der Seite Stack oder über Neo</div></div><span class="pill rot">nie vom Team</span></div>
     </section>
     <section class="karte">
       <div class="karte-kopf"><h3>Team in dieser Fassung</h3></div>

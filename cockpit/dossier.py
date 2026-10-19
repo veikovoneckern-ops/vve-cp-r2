@@ -157,12 +157,69 @@ def _neu(art: str, titel: str, anzahl: int, ziel: dict[str, Any], **mehr: Any) -
     return j
 
 
+# ---------------------------------------------------------------- Ueber einen Neustart hinweg
+# 19.10.2026: Veiko liess aus Talk eine Recherche zu Verlagen anstossen; sechs Minuten
+# spaeter startete eine Auslieferung den Dienst neu. Der Auftrag lebte nur im Speicher,
+# war danach still weg, und Talk hatte versprochen: "Das Dossier meldet sich hier."
+# Jetzt steht jeder laufende Auftrag in der Einstellung dossier_offen (mit seinem Ziel
+# und, sobald geplant, den gewaehlten Quellen). Beim Start setzt fortsetzen() ihn fort
+# und sagt das im Gespraech; fertige Abschriften liegen als Unterlagen und werden nicht
+# noch einmal geholt. Nur ein Abbruch durch Veiko oder das Ende nimmt den Eintrag weg.
+def _offen() -> dict[str, Any]:
+    return db.einstellung("dossier_offen", {}) or {}
+
+
+def _offen_setzen(jid: str, eintrag: dict[str, Any] | None) -> None:
+    o = _offen()
+    if eintrag is None:
+        o.pop(jid, None)
+    else:
+        o[jid] = eintrag
+    db.einstellung_setzen("dossier_offen", o)
+
+
+def _melden(ziel: dict[str, Any], text: str) -> None:
+    if ziel.get("gespraech_id") and db.holen("gespraeche", ziel["gespraech_id"]):
+        db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",
+                      (ziel["gespraech_id"], ziel.get("wer") or "assistent", text, json.dumps({}), time.time()))
+        db.ausfuehren("UPDATE gespraeche SET geaendert=? WHERE id=?", (time.time(), ziel["gespraech_id"]))
+
+
+async def fortsetzen() -> None:
+    """Beim Start: unterbrochene Auftraege weiterfuehren (hoechstens einen Tag alt)."""
+    await asyncio.sleep(20)   # erst den Dienst anlaufen lassen
+    for alt, e in list(_offen().items()):
+        _offen_setzen(alt, None)
+        ziel = e.get("ziel") or {}
+        titel = e.get("titel") or "Recherche"
+        if time.time() - (e.get("start") or 0) > 86400:
+            _melden(ziel, f"Die Recherche „{titel}“ wurde durch einen Neustart des Cockpits unterbrochen und ist älter als einen Tag -- "
+                          "ich setze sie nicht mehr von selbst fort. Sag mir, wenn ich sie neu starten soll.")
+            continue
+        try:
+            if e.get("art") == "thema":
+                j = await thema(e["text"], ziel, quellen=e.get("auswahl"), start=e.get("start"))
+            elif e.get("art") == "kanal":
+                j = await kanal(e["url"], e.get("fokus") or "", ziel, int(e.get("anzahl") or VORGABE_FOLGEN), e.get("zusatz") or "")
+            elif e.get("art") == "podcast":
+                j = await podcast_feed(e["url"], e.get("fokus") or "", ziel, int(e.get("anzahl") or VORGABE_FOLGEN), e.get("zusatz") or "")
+            else:
+                continue
+            _melden(ziel, f"Die Recherche „{titel}“ wurde durch einen Neustart des Cockpits unterbrochen -- ich setze sie jetzt fort. "
+                          "Schon geholte Abschriften nehme ich aus den Unterlagen. Das Dossier meldet sich hier, sobald es fertig ist.")
+            print(f"[dossier] fortgesetzt: {titel} ({j['id']})", flush=True)
+        except Exception as f:  # noqa: BLE001 -- ein kaputter Eintrag soll den Start nie aufhalten
+            _melden(ziel, f"Die Recherche „{titel}“ wurde durch einen Neustart unterbrochen und ließ sich nicht fortsetzen: {f}")
+
+
 async def kanal(url: str, fokus: str, ziel: dict[str, Any], anzahl: int, zusatz: str = "") -> dict[str, Any]:
     from .quellen import sperre_bis
     name, folgen, gesamt = await asyncio.to_thread(_yt_liste, url)
     folgen = folgen[:anzahl]
     j = _neu("kanal", f"Dossier: {name} ({len(folgen)} Folgen)", len(folgen), ziel, url=url, kanal=name, gesamt=gesamt,
              minuten=max(2, round(len(folgen) * 1.3)))
+    _offen_setzen(j["id"], {"art": "kanal", "url": url, "fokus": fokus, "zusatz": zusatz, "anzahl": anzahl, "ziel": ziel,
+                            "start": time.time(), "titel": j["dossier_titel"]})
     if sperre_bis() > time.time():
         j["notizen"].append("YouTube-Abschriften sind gerade gesperrt -- Folgen ohne vorhandene Abschrift kommen aus dem Podcast des Kanals.")
     _TASKS[j["id"]] = asyncio.create_task(llm.mit_zweck("dossier:" + j["id"], _lauf(j, folgen, fokus, zusatz)))
@@ -176,15 +233,24 @@ async def podcast_feed(feed: str, fokus: str, ziel: dict[str, Any], anzahl: int,
     # Whisper braucht je Folge Minuten statt Sekunden.
     j = _neu("podcast", f"Dossier: {name} ({len(folgen)} Folgen)", len(folgen), ziel, url=feed, kanal=name,
              gesamt=len(folgen), minuten=max(3, len(folgen) * 6))
+    _offen_setzen(j["id"], {"art": "podcast", "url": feed, "fokus": fokus, "zusatz": zusatz, "anzahl": anzahl, "ziel": ziel,
+                            "start": time.time(), "titel": j["dossier_titel"]})
     _TASKS[j["id"]] = asyncio.create_task(llm.mit_zweck("dossier:" + j["id"], _lauf(j, folgen, fokus, zusatz)))
     return j
 
 
-async def thema(text: str, ziel: dict[str, Any]) -> dict[str, Any]:
+async def thema(text: str, ziel: dict[str, Any], quellen: list[dict[str, Any]] | None = None,
+                start: float | None = None) -> dict[str, Any]:
     titel = stab._kurz(re.sub(r"\s+", " ", text), 70)
     j = _neu("thema", f"Recherche-Dossier: {titel}", 0, ziel, url="", kanal=titel, gesamt=0, minuten=30)
-    j["schritt"] = "plant die Suche"
-    _TASKS[j["id"]] = asyncio.create_task(llm.mit_zweck("dossier:" + j["id"], _thema_lauf(j, text)))
+    _offen_setzen(j["id"], {"art": "thema", "text": text, "ziel": ziel, "start": start or time.time(), "titel": j["dossier_titel"],
+                            "auswahl": quellen})
+    if quellen:   # fortgesetzt: dieselben Quellen wie geplant, nicht neu suchen
+        j.update(anzahl=len(quellen), schritt="setzt fort")
+        _TASKS[j["id"]] = asyncio.create_task(llm.mit_zweck("dossier:" + j["id"], _lauf(j, quellen, text, "")))
+    else:
+        j["schritt"] = "plant die Suche"
+        _TASKS[j["id"]] = asyncio.create_task(llm.mit_zweck("dossier:" + j["id"], _thema_lauf(j, text)))
     return j
 
 
@@ -232,7 +298,13 @@ async def _thema_lauf(j: dict[str, Any], text: str) -> None:
     j["minuten"] = max(5, sum(6 if a["quelle"] == "podcast" else 1 for a in auswahl))
     if not auswahl:
         j.update(stand="fehler", fehler="Keine einzige Quelle gefunden.", ende=time.time(), schritt="nichts gefunden")
+        _offen_setzen(j["id"], None)
+        _melden(j["ziel"], f"Die Recherche „{j['kanal']}“ hat keine einzige Quelle gefunden -- es gibt kein Dossier.")
         return
+    # Die gewaehlten Quellen merken: ein Neustart setzt mit genau diesen fort (fortsetzen()).
+    e = _offen().get(j["id"])
+    if e is not None:
+        _offen_setzen(j["id"], {**e, "auswahl": auswahl})
     await _lauf(j, auswahl, text, "")
 
 
@@ -241,7 +313,7 @@ def abbrechen(jid: str) -> bool:
     if not t or t.done():
         return False
     t.cancel()
-    JOBS[jid].update(stand="abgebrochen", schritt="von dir abgebrochen -- aus dem Fertigen entsteht trotzdem ein Dossier")
+    JOBS[jid].update(stand="abgebrochen", von_dir=True, schritt="von dir abgebrochen -- aus dem Fertigen entsteht trotzdem ein Dossier")
     return True
 
 
@@ -353,13 +425,21 @@ async def _lauf(j: dict[str, Any], quellen: list[dict[str, Any]], fokus: str, zu
                 await asyncio.sleep(PAUSE_YT + random.uniform(0, 20))
         j["stand"] = "fertig"
     except asyncio.CancelledError:
+        if not j.get("von_dir"):
+            # Der Dienst faehrt herunter: kein halbes Dossier, der Eintrag in dossier_offen
+            # bleibt stehen, und fortsetzen() macht beim naechsten Start weiter.
+            j.update(stand="unterbrochen", schritt="unterbrochen -- geht nach dem Neustart weiter")
+            raise
         j["stand"] = "abgebrochen"
     except Exception as e:  # noqa: BLE001
         j.update(stand="fehler", fehler=str(e)[:300])
+    _offen_setzen(j["id"], None)
     if kurz:
         _abschluss(j, kurz)
     elif j["stand"] == "fertig":
         j.update(stand="fehler", fehler="Keine einzige Quelle ließ sich lesen.")
+    if j["stand"] == "fehler" and not kurz:
+        _melden(j["ziel"], f"Die Recherche „{j.get('kanal') or j['dossier_titel']}“ ist gescheitert: {j.get('fehler')}")
     j["ende"] = time.time()
     j["schritt"] = {"fertig": "fertig", "abgebrochen": "abgebrochen", "fehler": j.get("fehler") or "gescheitert"}.get(j["stand"], j["stand"])
 
@@ -401,10 +481,22 @@ def _abschluss(j: dict[str, Any], kurz: list[str]) -> None:
                                                  "text": f"Neues Material: „{titel}“ -- stütze Aussagen über diese Quellen darauf."})
             langlauf._speichern(l)
             meldung += " Es steht im Material dieses Langläufers. Sag mir, was daraus werden soll -- z. B. das neue Kapitel."
-    meldung += " Du findest es auch unter den Unterlagen" + (" des Projekts." if ziel.get("projekt_id") else " (Anhänge).")
+    # Gehoert das Dossier zu einer Aufgabe (Talk erkennt den Bezug, 19.10.2026), steht
+    # es dort unter den Anhaengen UND als datierte Zeile oben in ihren Informationen.
+    aufgabe = db.holen("aufgaben", ziel.get("aufgabe_id") or "") if ziel.get("aufgabe_id") else None
+    if aufgabe:
+        from .langlauf import _aufgabe_vermerken
+        _aufgabe_vermerken(aufgabe["id"], f"Recherche-Dossier „{titel}“ liegt bei den Anhängen ({len(kurz)} Quellen).")
+        meldung += f" Es hängt an deiner Aufgabe „{aufgabe['titel']}“."
+    else:
+        meldung += " Du findest es auch unter den Unterlagen" + (" des Projekts." if ziel.get("projekt_id") else " (Anhänge).") + " Und im Explorer."
     if ziel.get("gespraech_id") and db.holen("gespraeche", ziel["gespraech_id"]):
         db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",
-                      (ziel["gespraech_id"], ziel.get("wer") or "assistent", meldung, json.dumps({"dossier": j["id"]}), time.time()))
+                      (ziel["gespraech_id"], ziel.get("wer") or "assistent", meldung,
+                       json.dumps({"dossier": j["id"], "datei_id": did, "bezug": {"projekt_id": ziel.get("projekt_id"),
+                                   "aufgabe_id": (aufgabe or {}).get("id"), "aufgabe_titel": (aufgabe or {}).get("titel"),
+                                   "projekt_name": (db.holen("projekte", ziel.get("projekt_id") or "") or {}).get("name")}
+                                   if ziel.get("projekt_id") else None}, ensure_ascii=False), time.time()))
         db.ausfuehren("UPDATE gespraeche SET geaendert=? WHERE id=?", (time.time(), ziel["gespraech_id"]))
 
 

@@ -18,7 +18,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from cockpit import anmeldung, folienbilder, importer, langlauf, medien, revision, stab, webspace
+from cockpit import anmeldung, dossier, folienbilder, importer, langlauf, medien, revision, stab, usage, webspace
 from cockpit.api import router
 from cockpit.konfig import FRONTEND, HOST, PORT
 
@@ -40,7 +40,13 @@ async def lebenszeit(app: FastAPI):
     frei = asyncio.create_task(medien.aufraeum_schleife())
     # Fehlende Bilder in Ergebnissen von selbst nachrechnen (folienbilder.py, 18.10.2026).
     bilder = asyncio.create_task(folienbilder.nachhol_schleife())
+    # Strom beider Shelly-Dosen alle fuenf Minuten mitschreiben (Usage, 19.10.2026).
+    strom = asyncio.create_task(usage.strom_schleife())
+    # Recherche-Dossiers, die ein Neustart unterbrochen hat, fortsetzen (19.10.2026).
+    weiter = asyncio.create_task(dossier.fortsetzen())
     yield
+    weiter.cancel()
+    strom.cancel()
     bilder.cancel()
     frei.cancel()
     aufgabe.cancel()

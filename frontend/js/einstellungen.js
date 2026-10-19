@@ -1,11 +1,12 @@
 // EINSTELLUNGEN (17.10.2026) -- was Veiko am Cockpit selbst einstellt, an einem
-// Ort: was das Team ohne Nachfrage darf, ob es neue Notizen bearbeitet, Stimme,
+// Ort: was das Team ohne Nachfrage darf, ob es neue Notizen bearbeitet, Stimme, Memory,
 // Postfach, Daten und Konto. Vorher verteilt auf Team (Tab "Freigaben") und
 // System (Kasten "Diese Fassung"). Welches Modell wofuer rechnet, steht unter
-// Stab & Modelle -- das ist keine Einstellung, sondern Besetzung.
-import { html, useState, useEffect, Icon, toast, fehlerMelden, aktualisieren, zeitText, useAbruf, bus } from "./ui.js";
+// Team -- das ist keine Einstellung, sondern Besetzung. Memory kam am 19.10.2026
+// von der Teamseite hierher (Veiko: "da macht er mehr Sinn fuer mich").
+import { html, useState, useEffect, Icon, toast, fehlerMelden, aktualisieren, zeitText, useAbruf, bus, Klappe, useAbschnitt } from "./ui.js";
 import { api } from "./api.js";
-import { Vertrauen } from "./team.js";
+import { Vertrauen, Gedaechtnis } from "./team.js";
 
 function Wert({ name, wert, warn }) {
   return html`<div class="messwert"><span class="leise">${name}</span><b style=${warn ? "color:var(--signal)" : ""}>${wert ?? "nicht verfügbar"}</b></div>`;
@@ -31,10 +32,11 @@ function PraesentationStil() {
   </section>`;
 }
 
-export function Einstellungen({ konto, thema }) {
+export function Einstellungen({ konto, thema, abschnitt }) {
   const [d, laden] = useAbruf("/system", 30000, []);
   const [laeuft, setLaeuft] = useState("");
-  useEffect(() => { bus.sende("talk-kontext", null); }, []);
+  useEffect(() => { bus.sende("talk-kontext", { art: "einstellungen", id: "einstellungen", titel: "Einstellungen" }); return () => bus.sende("talk-kontext", null); }, []);
+  useAbschnitt(abschnitt);
 
   async function abgleich() {
     setLaeuft("abgleich");
@@ -52,6 +54,8 @@ export function Einstellungen({ konto, thema }) {
   return html`<div class="seite">
     <${Vertrauen} />
     <${PraesentationStil} />
+    <div style="margin-top:14px"><${Klappe} id="memory" titel="Memory" unter="Was dein Team über dich weiß: Personen, Begriffe, Hörfehler, Aussprache" vorgabe=${true}>
+      <${Gedaechtnis} /></${Klappe}></div>
     ${d && html`<div class="raster-gleich drei" style="margin-top:14px">
       <section class="karte"><div class="karte-kopf"><h3>Team-Pipeline</h3></div>
         <${Wert} name="Team" wert=${g.stab_aktiv ? "an" : "aus"} />

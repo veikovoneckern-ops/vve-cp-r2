@@ -28,6 +28,10 @@ const PFADE = {
   projects: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",
   team: "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3.5 20a5.5 5.5 0 0 1 11 0M17 11a2.5 2.5 0 1 0 0-5M15.5 14.5A4.5 4.5 0 0 1 21 19",
   system: "M4 5h16v10H4zM8 19h8M12 15v4",
+  // Explorer, Stack, Usage (19.10.2026)
+  explorer: "M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v3H3zM3 11h18l-1.5 8H4.5zM8 15h8",
+  stapel: "M12 3 3 7.5 12 12l9-4.5zM3 12l9 4.5 9-4.5M3 16.5 12 21l9-4.5",
+  usage: "M3 20h18M6 16v-4M10 16V8M14 16v-6M18 16V5",
   neo: "M4 6l6 6-6 6M12 18h8",
   talk: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3",
   griff: "M9 5.5h.01M15 5.5h.01M9 12h.01M15 12h.01M9 18.5h.01M15 18.5h.01",
@@ -501,4 +505,48 @@ export function Ziehgriff({ name, seite = "rechts", faktor = 1 }) {
   }
   return html`<div class=${"ziehgriff " + seite} onPointerDown=${runter} onDblClick=${zurueck}
     role="separator" aria-orientation="vertical" title="Ziehen: Breite ändern · Doppelklick: zurück auf die Vorgabe"></div>`;
+}
+
+// ------------------------------------------------------------ Aufklappbare Abschnitte
+// Veiko, 19.10.2026: "Sektionen, die man auf- und zuklappen kann, die Auf- und
+// Zuklappfunktion aber gut sichtbar." Deshalb: der ganze Kopf ist der Knopf, der
+// Pfeil steht links in einem eigenen Kasten (Klapper immer links), und rechts steht
+// ausgeschrieben, was ein Klick tut. Der Inhalt wird erst gezeichnet, wenn offen --
+// ein zugeklappter Abschnitt fragt also auch nichts beim Server ab. Offen/zu merkt
+// sich jedes Geraet je Abschnitt (klappe-<id>).
+export function Klappe({ id, titel, unter, zahl, vorgabe = false, children, rechts }) {
+  const [auf, setAuf] = useState(() => { try { const v = localStorage.getItem("klappe-" + id); return v == null ? vorgabe : v === "1"; } catch (e) { return vorgabe; } });
+  useEffect(() => bus.an("klappe-auf", (x) => { if (x === id) setAuf(true); }), [id]);
+  const umschalten = () => { const n = !auf; setAuf(n); try { localStorage.setItem("klappe-" + id, n ? "1" : "0"); } catch (e) { /* egal */ } };
+  return html`<section class=${"klappe" + (auf ? " auf" : "")} id=${"klappe-" + id}>
+    <div class="klappe-kopf">
+      <button class="klappe-knopf" onClick=${umschalten} aria-expanded=${auf} aria-controls=${"klappe-inhalt-" + id}>
+        <span class="klappe-pfeil" aria-hidden="true"><${Icon} n="rechts" g=${16} w=${2.4} /></span>
+        <span class="klappe-titel"><b>${titel}</b>${unter ? html`<small>${unter}</small>` : ""}</span>
+        ${zahl != null && zahl !== "" ? html`<span class="pill">${zahl}</span>` : ""}
+        <span class="klappe-tun">${auf ? "Zuklappen" : "Aufklappen"}</span>
+      </button>
+      ${rechts && auf ? html`<span class="klappe-rechts">${rechts}</span>` : ""}
+    </div>
+    ${auf && html`<div class="klappe-inhalt" id=${"klappe-inhalt-" + id}>${children}</div>`}
+  </section>`;
+}
+// Eine Adresse wie #/team/optimierung oeffnet den Abschnitt und scrollt hin --
+// von Talk ("zeig mir die Optimierung"), aus Links und alten Adressen.
+// Was ueber dem Abschnitt steht, laedt oft erst nach (Server-Sektion im Stack) und
+// schiebt ihn wieder aus dem Bild -- deshalb wird zweimal nachgefasst, aber nur,
+// solange der Abschnitt noch nicht oben im Bild steht.
+export function useAbschnitt(abschnitt) {
+  useEffect(() => {
+    if (!abschnitt) return undefined;
+    const hin = (sanft) => {
+      const el = document.getElementById("klappe-" + abschnitt);
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      if (top < 0 || top > innerHeight * 0.4) el.scrollIntoView({ behavior: sanft ? "smooth" : "auto", block: "start" });
+    };
+    const zeiten = [setTimeout(() => { bus.sende("klappe-auf", abschnitt); setTimeout(() => hin(true), 60); }, 60),
+      setTimeout(() => hin(false), 1500), setTimeout(() => hin(false), 3500)];
+    return () => zeiten.forEach(clearTimeout);
+  }, [abschnitt]);
 }

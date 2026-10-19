@@ -563,8 +563,14 @@ async def aufgabe_einzeln(tid: str):
                         "wer": (g.get("kontext") or {}).get("wer") if isinstance(g.get("kontext"), dict) else None}
                        for g in db.alle("SELECT id, art, titel, kontext, geaendert FROM gespraeche WHERE json_extract(kontext,'$.aufgabe_id')=? "
                                         "ORDER BY geaendert DESC LIMIT 20", (tid,))]
-    a["ergebnisse"] = db.alle("SELECT id, titel, form, erstellt FROM ergebnisse WHERE vorgang_id=? ORDER BY erstellt DESC", (a["vorgang_id"],)) \
-        if a.get("vorgang_id") else []
+    # Ergebnisse aus dem Case der Aufgabe UND aus Ausarbeitungen, die fuer sie
+    # angestossen wurden (Talk erkennt den Bezug, 19.10.2026: auftrag.aufgabe_id).
+    a["ergebnisse"] = db.alle("SELECT r.id, r.titel, r.form, r.erstellt FROM ergebnisse r LEFT JOIN vorgaenge v ON v.id=r.vorgang_id "
+                              "WHERE (r.vorgang_id=? AND ?!='') OR json_extract(v.auftrag,'$.aufgabe_id')=? ORDER BY r.erstellt DESC",
+                              (a.get("vorgang_id") or "", a.get("vorgang_id") or "", tid))
+    # Was gerade fuer die Aufgabe arbeitet (Recherche, Gespraech) -- wie beim Langlaeufer.
+    from . import aktionen
+    a["nebenbei"] = aktionen.fuer(aufgabe_id=tid)
     return a
 
 
@@ -1120,8 +1126,45 @@ async def datei_aendern(did: str, request: Request):
     if not db.holen("dateien", did):
         raise HTTPException(404, "Datei nicht gefunden")
     if "aufgabe_id" in d:
+        a = db.holen("aufgaben", d.get("aufgabe_id") or "") if d.get("aufgabe_id") else None
+        if d.get("aufgabe_id") and not a:
+            raise HTTPException(404, "Aufgabe nicht gefunden")
         db.ausfuehren("UPDATE dateien SET aufgabe_id=? WHERE id=?", (d.get("aufgabe_id") or None, did))
+        # Eine Aufgabe bringt ihr Projekt mit (Explorer: "gehört zu …").
+        if a and a.get("projekt_id") and "projekt_id" not in d:
+            db.ausfuehren("UPDATE dateien SET projekt_id=? WHERE id=?", (a["projekt_id"], did))
+    if "projekt_id" in d:
+        if d.get("projekt_id") and not db.holen("projekte", d["projekt_id"]):
+            raise HTTPException(404, "Projekt nicht gefunden")
+        db.ausfuehren("UPDATE dateien SET projekt_id=? WHERE id=?", (d.get("projekt_id") or None, did))
+    if "name" in d and str(d.get("name") or "").strip():
+        db.ausfuehren("UPDATE dateien SET name=? WHERE id=?", (re.sub(r'[\\/:*?"<>|]', "-", str(d["name"]).strip())[:120], did))
     return {"ok": True}
+
+
+# Eine Unterlage im Cockpit ansehen statt herunterladen (Explorer, Talk, Aufgabe;
+# 19.10.2026): Angaben, Zuordnung und der gelesene Text.
+@router.get("/dateien/{did}/info")
+async def datei_info(did: str):
+    d = db.holen("dateien", did)
+    if not d:
+        raise HTTPException(404, "Datei nicht gefunden")
+    p = db.holen("projekte", d.get("projekt_id") or "") if d.get("projekt_id") else None
+    a = db.holen("aufgaben", d.get("aufgabe_id") or "") if d.get("aufgabe_id") else None
+    return {"id": d["id"], "name": d["name"], "typ": d.get("typ"), "groesse": d.get("groesse"), "erstellt": d.get("erstellt"),
+            "projekt_id": d.get("projekt_id"), "projekt_name": (p or {}).get("name"),
+            "aufgabe_id": d.get("aufgabe_id"), "aufgabe_titel": (a or {}).get("titel"),
+            "vorhanden": Path(d["pfad"]).is_file(), "text": (d.get("text") or "")[:200000],
+            "gekuerzt": len(d.get("text") or "") > 200000}
+
+
+# ================================================================ Explorer (19.10.2026, explorer.py)
+@router.get("/explorer")
+async def explorer_liste(q: str = ""):
+    from . import explorer
+    d = explorer.liste()
+    d["im_inhalt"] = explorer.im_inhalt(q) if q else {}
+    return d
 
 
 @router.get("/dateien/{did}")
@@ -1704,6 +1747,39 @@ async def verbrauch_preise(request: Request):
                 raise HTTPException(400, f"Preis für {k} ist keine Zahl.")
     db.einstellung_setzen("verbrauch_preise", neu)
     return {"preise": _preise()}
+
+
+# ================================================================ Usage (19.10.2026, usage.py)
+# Die Seite "Usage": dieselben Buchungen wie /verbrauch, aber nach Projekt, Aufgabe,
+# Modell, Rolle, Bereich und Tag -- dazu der Strom aus den Shelly-Zaehlern.
+@router.get("/usage")
+async def usage_auswertung(von: float = 0, bis: float = 0, projekt: str = "", aufgabe: str = "", modell: str = "",
+                           anbieter: str = "", rolle: str = "", art: str = ""):
+    from . import usage
+    d = usage.auswerten(von, bis, {"projekt": projekt, "aufgabe": aufgabe, "modell": modell, "anbieter": anbieter,
+                                   "rolle": rolle, "art": art}, _preise())
+    d["strom"] = usage.strom(von, bis or time.time() + 60)
+    d["preise"] = _preise()
+    d["preise_vorgabe"] = PREISE_VORGABE
+    d["anbieter_name"] = ANBIETER_NAME
+    return d
+
+
+@router.post("/usage/strompreis")
+async def usage_strompreis(request: Request):
+    d = await _koerper(request)
+    w = d.get("preis")
+    if w in (None, ""):
+        db.einstellung_setzen("strompreis", None)
+        return {"preis": None}
+    try:
+        p = round(float(str(w).replace(",", ".")), 4)
+    except ValueError:
+        raise HTTPException(400, "Der Strompreis ist keine Zahl.")
+    if not 0 <= p < 5:
+        raise HTTPException(400, "Der Strompreis gilt je kWh in Euro, also etwa 0,30.")
+    db.einstellung_setzen("strompreis", p)
+    return {"preis": p}
 
 
 # ================================================================ Modelle (Uebersicht und Empfehlungen)

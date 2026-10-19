@@ -1212,7 +1212,7 @@ details.eingetragen[open]>summary{margin-bottom:8px}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .composer-leiste .sym.globus .globus-strich{stroke:#FF6B5B}}
 :root[data-theme="dark"] .composer-leiste .sym.globus .globus-strich{stroke:#FF6B5B}
 
-/* Verbrauch (verbrauch.js) */
+/* Verbrauch (frueher verbrauch.js; vb-preis, vb-sort und vb-preise nutzt usage.js weiter) */
 .vb-filter{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px}
 .vb-karten{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-auto-rows:1fr;gap:12px;margin-bottom:14px}
 @media (max-width:1100px){.vb-karten{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -1803,3 +1803,142 @@ html.zieht iframe{pointer-events:none}
 .ws2-geist span{font-size:11.5px;font-weight:600;color:var(--fuell)}
 [data-theme="dark"] .ws2-geist span{color:var(--ink-2)}
 .ws2-umbenennen{flex:1;min-height:30px;padding:3px 8px;margin:4px 0}
+
+/* ======================================================= 19.10.2026: Klappen, Explorer, Usage, Stack-Website */
+/* Aufklappbare Abschnitte (ui.Klappe): der ganze Kopf ist der Knopf, der Pfeil steht
+   links in einem eigenen Kasten, rechts steht ausgeschrieben, was ein Klick tut. */
+.klappe{margin:0 0 14px}
+.klappe-kopf{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.klappe-knopf{flex:1 1 280px;display:flex;align-items:center;gap:12px;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 14px;cursor:pointer;color:var(--ink);min-height:54px;font:inherit;min-width:0}
+.klappe-knopf:hover{border-color:var(--ink-4)}
+.klappe-knopf:focus-visible{outline:2px solid var(--steel);outline-offset:2px}
+.klappe-pfeil{flex:none;width:30px;height:30px;border-radius:8px;background:var(--knopf-grund);color:var(--ink);display:grid;place-items:center}
+.klappe-pfeil svg{transition:transform .15s}
+.klappe.auf .klappe-pfeil svg{transform:rotate(90deg)}
+.klappe-titel{display:flex;flex-direction:column;min-width:0;flex:1}
+.klappe-titel b{font-size:15px}
+.klappe-titel small{color:var(--ink-3);font-size:12.5px;line-height:1.35}
+.klappe-tun{flex:none;font-size:12px;font-weight:700;color:var(--ink-2);background:var(--knopf-grund);padding:5px 11px;border-radius:99px}
+.klappe-inhalt{padding:12px 0 2px}
+@media (prefers-reduced-motion:reduce){.klappe-pfeil svg{transition:none}}
+@media (max-width:520px){.klappe-knopf{gap:9px;padding:9px 11px}.klappe-tun{padding:4px 8px;font-size:11px}.klappe-titel small{font-size:12px}}
+
+/* Talk: wozu eine Antwort gehoert (gespraech.bezug_erkennen) */
+.talk-bezug{display:inline-flex;align-items:center;gap:6px;margin-top:8px;max-width:100%;background:var(--surface-2);border:1px solid var(--line);border-radius:99px;padding:3px 10px;font:inherit;font-size:12px;color:var(--ink-2);cursor:pointer;text-align:left}
+.talk-bezug span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.talk-bezug:hover{border-color:var(--ink-4)}
+
+/* Aufgabenfenster: was gerade fuer die Aufgabe laeuft */
+.af-laeuft{display:flex;gap:8px;align-items:center;font-size:13px;padding:6px 9px;background:var(--amber-soft);border-radius:8px;min-width:0}
+.punkt-laeuft{flex:none;width:8px;height:8px;border-radius:50%;background:var(--amber);animation:puls-l 1.4s infinite}
+
+/* Unterlage ansehen (datei.js) */
+.datei-fenster{display:flex;flex-direction:column;gap:12px;min-width:0}
+.datei-text{overflow-wrap:anywhere;min-width:0}
+.datei-text pre{white-space:pre-wrap;font-size:13px;margin:0}
+.zuordnung-wahl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 10px;align-items:center;margin-top:6px}
+@media (max-width:600px){.zuordnung-wahl{grid-template-columns:minmax(0,1fr)}}
+
+/* Explorer (explorer.js) */
+.ex-kopf{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.ex-kopf select.eingabe{width:auto;max-width:100%}
+.ex-suche{display:flex;align-items:center;gap:6px;flex:1 1 260px;min-width:0;color:var(--ink-3)}
+.ex-suche input{flex:1;min-width:0}
+.ex-inhalt{display:flex;gap:5px;align-items:center;white-space:nowrap}
+.ex-rumpf{display:grid;grid-template-columns:240px minmax(0,1fr);gap:14px;align-items:start}
+.ex-rumpf.mit-vorschau{grid-template-columns:230px minmax(0,1fr) 340px}
+@media (max-width:1400px){.ex-rumpf.mit-vorschau{grid-template-columns:200px minmax(0,1fr) 290px}}
+@media (max-width:900px){.ex-rumpf,.ex-rumpf.mit-vorschau{grid-template-columns:minmax(0,1fr)}}
+.ex-baum{position:sticky;top:8px;display:flex;flex-direction:column;gap:1px;max-height:calc(100vh - 150px);overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:6px}
+.ex-baum-titel{padding:10px 8px 4px;text-transform:uppercase;letter-spacing:.05em;font-size:11px}
+.ex-ordner{display:flex;align-items:center;gap:8px;width:100%;background:none;border:0;border-radius:7px;padding:6px 8px;cursor:pointer;color:var(--ink-2);text-align:left;min-height:32px;font:inherit;font-size:13.5px;min-width:0}
+.ex-ordner span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ex-ordner small{color:var(--ink-4);font-size:11px}
+.ex-ordner:hover{background:var(--hover)}
+.ex-ordner.an,.ex-ordner-zeile.an .ex-ordner{background:var(--knopf-grund);color:var(--ink);font-weight:650}
+.ex-ordner-zeile{display:flex;align-items:center;min-width:0}
+.ex-pfeil{flex:none;width:22px;height:30px;background:none;border:0;cursor:pointer;color:var(--ink-3);display:grid;place-items:center;padding:0}
+.ex-pfeil:disabled{cursor:default}
+.ex-aufgabe{padding-left:30px;font-size:12.5px}
+.ex-mitte{min-width:0}
+.ex-pfad{display:flex;align-items:baseline;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+.ex-liste .tabelle td{white-space:normal}
+.ex-liste tr.klickbar{cursor:pointer}
+.ex-liste tr.klickbar:hover td{background:var(--hover)}
+.ex-liste tr.an td{background:var(--steel-soft)}
+.ex-liste tr:focus-visible{outline:2px solid var(--steel);outline-offset:-2px}
+.ex-name{display:flex;gap:8px;align-items:flex-start;min-width:0}
+.ex-name>svg{flex:none;margin-top:2px;color:var(--ink-3)}
+.ex-name>span{display:flex;flex-direction:column;min-width:0;overflow-wrap:anywhere}
+.ex-treffer{font-style:italic}
+.ex-nur-schmal{display:none}
+@media (max-width:1300px){.ex-sp-wer,.ex-sp-groesse{display:none}}
+@media (max-width:700px){.ex-sp-art,.ex-sp-projekt{display:none}.ex-nur-schmal{display:block}}
+/* Mit offener Vorschau braucht die Liste Platz: Nebenspalten weg, Art und Projekt stehen dann unter dem Namen. */
+.ex-rumpf.mit-vorschau .ex-sp-wer,.ex-rumpf.mit-vorschau .ex-sp-groesse{display:none}
+@media (max-width:1700px){.ex-rumpf.mit-vorschau .ex-sp-art,.ex-rumpf.mit-vorschau .ex-sp-projekt{display:none}.ex-rumpf.mit-vorschau .ex-nur-schmal{display:block}}
+.ex-kacheln{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.ex-kachel{display:flex;flex-direction:column;gap:4px;text-align:left;cursor:pointer;padding:10px;color:var(--ink);font:inherit;min-width:0}
+.ex-kachel img,.ex-kachel-ic{width:100%;aspect-ratio:4/3;border-radius:6px;background:var(--surface-2)}
+.ex-kachel img{object-fit:cover}
+.ex-kachel-ic{display:grid;place-items:center;color:var(--ink-3)}
+.ex-kachel b{font-size:13px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
+.ex-kachel.an{border-color:var(--steel);box-shadow:0 0 0 2px var(--steel-soft)}
+@media (max-width:480px){.ex-kacheln{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.ex-vorschau{position:sticky;top:8px;display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 150px);overflow:auto;min-width:0}
+.ex-vorschau-kopf{display:flex;gap:8px;align-items:flex-start;justify-content:space-between;overflow-wrap:anywhere}
+.ex-vorschau-ort{color:var(--ink-2)}
+.ex-vorschau-blick{border-top:1px solid var(--line-2);padding-top:8px;font-size:13px;overflow-wrap:anywhere}
+.ex-vorschau-blick img{max-width:100%;border-radius:6px}
+
+/* Usage (usage.js). Zwei Farben fuer Server und Dock, mit dem Palette-Pruefer
+   gemessen (hell und dunkel je eigene Stufe, alle Pruefungen bestanden). */
+:root{--us-a:#2C6BB3;--us-b:#C07C12}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--us-a:#4A90E2;--us-b:#B87D1E}}
+:root[data-theme="dark"]{--us-a:#4A90E2;--us-b:#B87D1E}
+.us-filter{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.us-filter select.eingabe{width:auto;max-width:100%}
+.us-weg{background:none;border:0;cursor:pointer;color:inherit;font-weight:700;padding:0 0 0 4px}
+.us-kacheln{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-auto-rows:1fr;gap:12px;margin-bottom:14px}
+.us-kachel{display:flex;flex-direction:column;gap:2px;min-width:0}
+.us-kachel b{font-size:22px;font-weight:700}
+@media (max-width:1000px){.us-kacheln{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:400px){.us-kachel b{font-size:19px}}
+.us-ansicht{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:10px}
+.us-mass{display:flex;gap:6px;align-items:center}
+.us-mass select{width:auto}
+.us-tabelle td{white-space:normal}
+.us-tabelle .zahl{text-align:right;white-space:nowrap}
+.us-tabelle tr.klickbar{cursor:pointer}
+.us-tabelle tr.klickbar:hover td{background:var(--hover)}
+.us-balken-zelle{min-width:150px;width:30%}
+.us-balken{display:block;height:8px;border-radius:0 4px 4px 0;background:var(--us-a);margin:5px 0 3px}
+.us-saeulen{display:flex;align-items:flex-end;gap:2px;height:210px;padding-bottom:22px;overflow-x:auto;overflow-y:hidden}
+.us-saeule-feld{flex:1 1 0;min-width:12px;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;position:relative;cursor:pointer}
+.us-saeule,.us-stapel{width:100%;max-width:36px;min-height:1px}
+.us-saeule{background:var(--us-a);border-radius:4px 4px 0 0}
+.us-stapel{display:flex;flex-direction:column;gap:2px}
+.us-stapel>span{display:block;min-height:0}
+.us-stapel>span:first-child{border-radius:4px 4px 0 0}
+.us-saeule-feld:hover .us-saeule,.us-saeule-feld:hover .us-stapel,.us-saeule-feld.an .us-saeule,.us-saeule-feld.an .us-stapel{outline:2px solid var(--ink-3);outline-offset:1px}
+.us-tag{position:absolute;bottom:-20px;font-size:10.5px;color:var(--ink-3);white-space:nowrap}
+.us-legende{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;color:var(--ink-2)}
+.us-legende i{width:10px;height:10px;border-radius:3px;display:inline-block;margin-left:8px}
+.us-a{background:var(--us-a)}.us-b{background:var(--us-b)}
+.us-wert{margin-bottom:6px;min-height:18px}
+.us-preis{width:110px}
+.us-fuss{margin:12px 0}
+
+/* Stack: die Website (system.js) */
+.ws-h{margin:6px 0 8px;font-size:13px;color:var(--ink-2)}
+.ws-kette{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;list-style:none;padding:0;margin:0 0 10px}
+.ws-kette li{position:relative;background:var(--surface-2);border:1px solid var(--line);border-radius:9px;padding:10px;display:flex;flex-direction:column;gap:3px;min-width:0;overflow-wrap:anywhere}
+.ws-kette li+li::before{content:"→";position:absolute;left:-8px;top:50%;transform:translate(-50%,-50%);color:var(--ink-3);font-weight:700}
+@media (max-width:1100px){.ws-kette{grid-template-columns:minmax(0,1fr)}.ws-kette li+li::before{content:"↓";left:50%;top:-8px}}
+.ws-stand{font-weight:600;color:var(--ink-2)}
+.ws-stand.gruen{color:var(--sea)}.ws-stand.gelb{color:var(--amber)}.ws-stand.rot{color:var(--signal)}
+.ws-raster{margin-top:12px}
+.ws-menue{list-style:none;padding:0;margin:0}
+.ws-menue>li{padding:5px 0;border-bottom:1px solid var(--line-2)}
+.ws-menue ul{list-style:none;padding-left:16px;margin:4px 0 0}
+.ws-menue ul li{padding:2px 0;font-size:13px}

@@ -259,7 +259,7 @@ export function Struktur({ projekt, aufgaben, laden }) {
             ${umben && umben.id === t.id
               ? html`<input class="st-umben" autofocus value=${umben.text} onInput=${(e) => setUmben({ id: t.id, text: e.target.value })}
                   onKeyDown=${(e) => { if (e.key === "Enter") umbenennen(); if (escEigen(e)) setUmben(null); }} onBlur=${umbenennen} aria-label="Neuer Titel" />`
-              : html`<span class="st-tt" role="button" title="Öffnen: Informationen, Anhänge, Langläufer" onClick=${() => { if (Date.now() - gezogenUm > 400) bus.sende("aufgabe-zeigen", t.id); }}>${t.titel}</span>`}
+              : html`<span class="st-tt" role="button" title="Öffnen: Informationen, Anhänge, LongRun" onClick=${() => { if (Date.now() - gezogenUm > 400) bus.sende("aufgabe-zeigen", t.id); }}>${t.titel}</span>`}
             ${kinder ? html`<span class=${"st-zahl" + (f === n ? " fertig" : "")} title=${`${f} von ${n} Unteraufgaben erledigt`}>${f}/${n}</span>` : ""}
             <label class=${"st-termin" + (t.faellig ? "" : " leer")} title=${t.faellig ? "Fällig am " + kurz(t.faellig) + " · ändern" : "Termin setzen"}>
               ${t.faellig ? kurz(t.faellig) : html`<${Icon} n="kalender" g=${12} />`}
