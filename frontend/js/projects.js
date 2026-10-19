@@ -19,6 +19,7 @@ const FARBEN = ["#2C6BB3", "#0E9377", "#C07C12", "#E0392B", "#7C3AED", "#D0458F"
 export function Projects({ id, rest }) {
   if (id === "_aufgaben") return html`<${Uebersicht} art="aufgaben" />`;
   if (id === "_notizen") return html`<${Uebersicht} art="notizen" />`;
+  if (id === "_kategorien") return html`<${Uebersicht} art="kategorien" />`;
   if (id) return html`<${Projekt} key=${id} id=${id} reiter=${rest && rest[0]} />`;
   return html`<${Uebersicht} art="projekte" />`;
 }
@@ -28,6 +29,7 @@ function Kopfwahl({ art }) {
     <button class=${art === "projekte" ? "an" : ""} onClick=${() => navigiere("/projects")}>Projekte</button>
     <button class=${art === "aufgaben" ? "an" : ""} onClick=${() => navigiere("/projects/_aufgaben")}>Alle Aufgaben</button>
     <button class=${art === "notizen" ? "an" : ""} onClick=${() => navigiere("/projects/_notizen")}>Alle Notizen</button>
+    <button class=${art === "kategorien" ? "an" : ""} onClick=${() => navigiere("/projects/_kategorien")}>Nach Kategorie</button>
   </div>`;
 }
 
@@ -36,12 +38,16 @@ function Uebersicht({ art }) {
   return html`<div class="seite">
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><${Kopfwahl} art=${art} /></div>
     ${art === "projekte" && html`<${ProjektListe} />`}
+    ${art === "kategorien" && html`<${ProjektListe} gruppiert=${true} />`}
     ${art === "aufgaben" && html`<${AufgabenListe} />`}
     ${art === "notizen" && html`<${NotizListe} />`}
   </div>`;
 }
 
-function ProjektListe() {
+// gruppiert (19.10.2026, "Nach Kategorie"): je Kategorie ein Block, darin die eigene Reihenfolge
+// (Prioritaet); Kategorien alphabetisch, "Ohne Kategorie" zuletzt. Ziehen wirkt auf dieselbe
+// Reihenfolge wie in der Kachelansicht -- es gibt nur eine.
+function ProjektListe({ gruppiert = false }) {
   const [alle, setAlle] = useState(false);
   const [q, setQ] = useState("");
   // Kategorie-Filter (19.10.2026) -- je Geraet gemerkt, "" = alle, "_ohne" = ohne Kategorie.
@@ -57,14 +63,20 @@ function ProjektListe() {
   const [zieht, setZieht] = useState(null);
   const reiheRef = useRef(null);
   const zug = useRef(null);
+  // Nach dem Loslassen feuert der Browser noch einen Klick -- landet der Zeiger auf einer Kachel,
+  // oeffnete sie sich (Veiko, 19.10.2026: "beim Drop oeffnet sich das Projekt, das soll nicht sein").
+  const geradeGezogen = useRef(false);
   useEffect(() => { reiheRef.current = null; setReihe(null); }, [d]);
   useEffect(() => { try { localStorage.setItem("proj-kat", kat); } catch (e) { /* egal */ } }, [kat]);
   const alleP = d ? d.projekte : [];
   const kategorien = d ? d.kategorien || [] : [];
   const ordnung = reihe ? reihe.map((i) => alleP.find((p) => p.id === i)).filter(Boolean) : alleP;
   const passt = (p) => (!q || (p.name + " " + (p.kategorie || "") + " " + (p.fruehere_namen || []).join(" ")).toLowerCase().includes(q.toLowerCase()))
-    && (!kat || (kat === "_ohne" ? !p.kategorie : p.kategorie === kat));
+    && (gruppiert || !kat || (kat === "_ohne" ? !p.kategorie : p.kategorie === kat));
   const liste = d ? ordnung.filter(passt) : null;
+  const gruppen = !liste || !gruppiert ? [] : [...kategorien, ""].map((k) => ({ k, projekte: liste.filter((p) => (p.kategorie || "") === k) }))
+    .filter((g) => g.projekte.length);
+  const sichtbar = gruppiert ? gruppen.flatMap((g) => g.projekte) : liste;
 
   async function speichern(ids) {
     try { await api("/projekte/reihenfolge", { methode: "POST", daten: { ids } }); toast("Reihenfolge gespeichert."); laden(); }
@@ -85,7 +97,7 @@ function ProjektListe() {
   function runter(e, p) {
     if (e.button !== undefined && e.button !== 0) return;
     e.preventDefault(); e.stopPropagation();
-    zug.current = { id: p.id, x: e.clientX, y: e.clientY, aktiv: false };
+    zug.current = { id: p.id, kat: p.kategorie || "", x: e.clientX, y: e.clientY, aktiv: false };
     const weg = () => { window.removeEventListener("pointermove", bewegt); window.removeEventListener("pointerup", ende); window.removeEventListener("pointercancel", ende); };
     const ende = () => { weg(); hoch(); };
     window.addEventListener("pointermove", bewegt);
@@ -99,7 +111,9 @@ function ProjektListe() {
       if (Math.hypot(e.clientX - z.x, e.clientY - z.y) < 6) return;
       z.aktiv = true; setZieht(z.id);
     }
-    const ziel = document.elementsFromPoint(e.clientX, e.clientY).map((el) => el.closest && el.closest("[data-pid]")).find((el) => el && el.dataset.pid !== z.id);
+    // Nach Kategorie: nur innerhalb der eigenen Gruppe -- die Kategorie aendert sich durchs Ziehen nicht.
+    const ziel = document.elementsFromPoint(e.clientX, e.clientY).map((el) => el.closest && el.closest("[data-pid]"))
+      .find((el) => el && el.dataset.pid !== z.id && (!gruppiert || el.dataset.kat === z.kat));
     if (!ziel) return;
     const r = ziel.getBoundingClientRect();
     verschieben(z.id, ziel.dataset.pid, e.clientX > r.left + r.width / 2);
@@ -108,6 +122,8 @@ function ProjektListe() {
     const z = zug.current;
     zug.current = null;
     if (!z || !z.aktiv) return;
+    geradeGezogen.current = true;
+    setTimeout(() => { geradeGezogen.current = false; }, 400);
     setZieht(null);
     if (reiheRef.current) speichern(reiheRef.current);
   }
@@ -116,32 +132,20 @@ function ProjektListe() {
     if (e.key === "Enter") { navigiere("/projects/" + p.id); return; }
     if (!e.altKey || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
     e.preventDefault();
-    const sichtbar = liste.map((x) => x.id);
-    const i = sichtbar.indexOf(p.id), j = e.key === "ArrowLeft" ? i - 1 : i + 1;
-    if (j < 0 || j >= sichtbar.length) return;
-    verschieben(p.id, sichtbar[j], e.key === "ArrowRight");
+    const reihe = sichtbar.filter((x) => !gruppiert || (x.kategorie || "") === (p.kategorie || "")).map((x) => x.id);
+    const i = reihe.indexOf(p.id), j = e.key === "ArrowLeft" ? i - 1 : i + 1;
+    if (j < 0 || j >= reihe.length) return;
+    verschieben(p.id, reihe[j], e.key === "ArrowRight");
     speichern(reiheRef.current);
     setTimeout(() => { const el = document.querySelector(`[data-pid="${p.id}"]`); if (el) el.focus(); }, 50);
   }
 
-  return html`
-    <div class="knopfreihe" style="margin-bottom:12px">
-      <input class="eingabe" style="max-width:280px" placeholder="Projekt suchen …" value=${q} onInput=${(e) => setQ(e.target.value)} aria-label="Projekt suchen" />
-      <label class="klein leise" style="display:flex;gap:6px;align-items:center"><input type="checkbox" checked=${alle} onChange=${(e) => setAlle(e.target.checked)} />archivierte zeigen</label>
-      <span style="flex:1"></span>
-      <button class="btn primaer" onClick=${() => setNeu(true)}><${Icon} n="plus" g=${15} />Neues Projekt</button>
-    </div>
-    ${kategorien.length > 0 && html`<div class="proj-filter" role="group" aria-label="Nach Kategorie filtern">
-      ${[["", "Alle"], ...kategorien.map((k) => [k, k]), ["_ohne", "Ohne Kategorie"]].map(([k, t]) => html`<button key=${k || "alle"}
-        class=${"btn klein" + (kat === k ? " an" : "")} aria-pressed=${kat === k} onClick=${() => setKat(k)}>${t}
-        <span class="zahl">${k === "" ? alleP.length : alleP.filter((p) => (k === "_ohne" ? !p.kategorie : p.kategorie === k)).length}</span></button>`)}</div>`}
-    ${!liste ? html`<div class="lade">Lade …</div>` : !liste.length ? html`<${Leer} titel="Keine Projekte gefunden." />` : html`
-    <div class=${"proj-raster" + (zieht ? " beim-ziehen" : "")}>${liste.map((p) => {
+  const kachel = (p) => {
       const ges = (p.offen || 0) + (p.erledigt || 0);
       const [naechstFaellig, naechstTitel] = (p.naechste || "").split("|");
-      return html`<div class=${"proj-karte" + (zieht === p.id ? " zieht" : "")} key=${p.id} data-pid=${p.id} role="link" tabindex="0"
+      return html`<div class=${"proj-karte" + (zieht === p.id ? " zieht" : "")} key=${p.id} data-pid=${p.id} data-kat=${p.kategorie || ""} role="link" tabindex="0"
           aria-label=${p.name + (p.kategorie ? ", " + p.kategorie : "")}
-          onClick=${() => { if (!zieht) navigiere("/projects/" + p.id); }} onKeyDown=${(e) => taste(e, p)}>
+          onClick=${() => { if (!zieht && !geradeGezogen.current) navigiere("/projects/" + p.id); }} onKeyDown=${(e) => taste(e, p)}>
         <h3><span class="punkt" style=${"background:" + (p.farbe || "#999")}></span><span class="proj-name">${p.name}</span>
           ${p.status !== "aktiv" && html`<span class="pill">${p.status}</span>`}
           <button class="proj-griff" type="button" aria-label=${"Ziehen, um " + p.name + " zu verschieben (oder Alt + Pfeiltaste)"}
@@ -157,7 +161,25 @@ function ProjektListe() {
         <div class="zahlen"><span><b>${p.offen}</b> offen</span><span>${p.notizen} Notizen</span>${p.ergebnisse > 0 && html`<span>${p.ergebnisse} Ergebnisse</span>`}
           ${p.bewegung && html`<span>· ${zeitText(p.bewegung)}</span>`}</div>
       </div>`;
-    })}</div>
+  };
+
+  return html`
+    <div class="knopfreihe" style="margin-bottom:12px">
+      <input class="eingabe" style="max-width:280px" placeholder="Projekt suchen …" value=${q} onInput=${(e) => setQ(e.target.value)} aria-label="Projekt suchen" />
+      <label class="klein leise" style="display:flex;gap:6px;align-items:center"><input type="checkbox" checked=${alle} onChange=${(e) => setAlle(e.target.checked)} />archivierte zeigen</label>
+      <span style="flex:1"></span>
+      <button class="btn primaer" onClick=${() => setNeu(true)}><${Icon} n="plus" g=${15} />Neues Projekt</button>
+    </div>
+    ${!gruppiert && kategorien.length > 0 && html`<div class="proj-filter" role="group" aria-label="Nach Kategorie filtern">
+      ${[["", "Alle"], ...kategorien.map((k) => [k, k]), ["_ohne", "Ohne Kategorie"]].map(([k, t]) => html`<button key=${k || "alle"}
+        class=${"btn klein" + (kat === k ? " an" : "")} aria-pressed=${kat === k} onClick=${() => setKat(k)}>${t}
+        <span class="zahl">${k === "" ? alleP.length : alleP.filter((p) => (k === "_ohne" ? !p.kategorie : p.kategorie === k)).length}</span></button>`)}</div>`}
+    ${!liste ? html`<div class="lade">Lade …</div>` : !liste.length ? html`<${Leer} titel="Keine Projekte gefunden." />` : html`
+    ${gruppiert && !kategorien.length && html`<p class="leise klein">Noch hat kein Projekt eine Kategorie. Vergeben kannst du sie im Projekt unter „Farbe & Kategorie“.</p>`}
+    ${gruppiert ? gruppen.map((g) => html`<section class="proj-gruppe" key=${g.k || "_ohne"}>
+        <h3 class="proj-gruppe-kopf">${g.k || "Ohne Kategorie"}<span class="zahl">${g.projekte.length}</span></h3>
+        <div class=${"proj-raster" + (zieht ? " beim-ziehen" : "")}>${g.projekte.map(kachel)}</div></section>`)
+      : html`<div class=${"proj-raster" + (zieht ? " beim-ziehen" : "")}>${liste.map(kachel)}</div>`}
     <p class="leise klein" style="margin-top:10px">Reihenfolge: am Griff <${Icon} n="griff" g=${12} /> ziehen -- oder Kachel wählen und Alt + Pfeiltaste.</p>`}
     ${neu && html`<${NeuesProjekt} zu=${() => setNeu(false)} kategorien=${kategorien} fertig=${(p) => { setNeu(false); laden(); navigiere("/projects/" + p.id); }} />`}`;
 }
