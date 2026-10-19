@@ -348,6 +348,12 @@ async def bild_hoch(datei: UploadFile = File(...)):
     return {"pfad": "/bilder/" + ziel.name}
 
 
+@router.get("/bausteine")
+async def bausteine_liste():
+    """Die fertig programmierten Bausteine -- für "Abschnitt einfügen"."""
+    return {"bausteine": sorted(f.stem for f in (KLON / "bausteine").glob("*.html"))}
+
+
 @router.get("/bilder")
 async def bilder_liste():
     return {"bilder": sorted("/bilder/" + f.name for f in (KLON / "bilder").glob("*") if f.suffix.lower() in BILD_ENDUNGEN)}
@@ -397,6 +403,9 @@ Die Seite ist ein HTML-Ausschnitt (nur der Inhalt, Kopf/Menü/Fuß kommen aus de
 - Zwei Spalten: <div class="spalten"><div>…</div><div>…</div></div>
 - Karten: <div class="karten"><div class="karte"><img src="/bilder/NAME" alt=""><h4>Titel</h4><p>Text</p></div>…</div>
 - Knopf: <p class="knopfzeile"><a class="knopf" href="/pfad">TEXT</a></p>
+- Zitat: <blockquote class="zitat"><p>…</p><cite>Name</cite></blockquote> (nur wörtliche, belegte Zitate)
+- Bild mit Unterschrift: <figure class="mittel"><img src="/bilder/NAME" alt="Beschreibung"><figcaption>…</figcaption></figure>
+- Trennlinie: <hr class="trenner">
 - Marken wie <!--baustein name--> und <!--blogliste--> stehen für fest eingebaute Teile: unverändert stehen lassen.
 
 Regeln:
@@ -419,10 +428,23 @@ async def assistent(d: dict[str, Any]):
         raise HTTPException(400, "Was soll geändert werden?")
     kopf = d.get("kopf") or {}
     inhalt = str(d.get("inhalt") or "")
+    # Drei Arten (19.10.2026): ganze Seite, EIN Abschnitt (abschnitt = sein HTML),
+    # oder ein NEUER Abschnitt (neu = True) -- dann ist "inhalt" nur Kontext.
+    abschnitt = str(d.get("abschnitt") or "")
+    neu_block = bool(d.get("neu"))
     bilder = sorted(f.name for f in (KLON / "bilder").glob("*") if f.suffix.lower() in BILD_ENDUNGEN)
-    nutzer = (f"SEITE: {kopf.get('titel', '')} ({d.get('pfad', '')})\n"
-              f"VORHANDENE BILDER: {', '.join(bilder)}\n\n"
-              f"AKTUELLER HTML-AUSSCHNITT:\n{inhalt}\n\nAUFTRAG VON VEIKO:\n{auftrag}")
+    kopfzeilen = (f"SEITE: {kopf.get('titel', '')} ({d.get('pfad', '')})\n"
+                  f"VORHANDENE BILDER: {', '.join(bilder)}\n\n")
+    if abschnitt:
+        nutzer = (kopfzeilen + f"DIE GANZE SEITE (nur als Zusammenhang, NICHT zurückgeben):\n{inhalt[:30000]}\n\n"
+                  f"DER ABSCHNITT, DEN DU BEARBEITEST:\n{abschnitt}\n\nAUFTRAG VON VEIKO:\n{auftrag}\n\n"
+                  "Gib zwischen <<<SEITE>>> und <<<ENDE>>> NUR den neuen Abschnitt zurück, nicht die ganze Seite.")
+    elif neu_block:
+        nutzer = (kopfzeilen + f"DIE GANZE SEITE (nur als Zusammenhang, NICHT zurückgeben):\n{inhalt[:30000]}\n\n"
+                  f"AUFTRAG VON VEIKO für einen NEUEN Abschnitt:\n{auftrag}\n\n"
+                  "Gib zwischen <<<SEITE>>> und <<<ENDE>>> NUR den neuen Abschnitt zurück (ein Baustein aus der Liste).")
+    else:
+        nutzer = kopfzeilen + f"AKTUELLER HTML-AUSSCHNITT:\n{inhalt}\n\nAUFTRAG VON VEIKO:\n{auftrag}"
     modell = llm.vorgabe("arbeit")
     try:
         antwort = await llm.mit_zweck("webspace:" + str(d.get("pfad", "")),
@@ -432,21 +454,354 @@ async def assistent(d: dict[str, Any]):
         raise HTTPException(503, f"Das Modell hat nicht geantwortet: {e}") from e
     m = re.search(r"<<<SEITE>>>\s*([\s\S]*?)\s*<<<ENDE>>>", antwort)
     if not m:
-        raise HTTPException(502, "Das Modell hat keine Seite geliefert. Bitte den Auftrag noch einmal, etwas konkreter.")
+        raise HTTPException(502, "Das Modell hat nichts Verwertbares geliefert. Bitte den Auftrag noch einmal, etwas konkreter.")
     neu = m.group(1).strip()
     neu = re.sub(r"^```(?:html)?\s*|\s*```$", "", neu)
     # Prüfungen statt Vertrauen: verbotene Teile fliegen raus, feste Marken müssen bleiben.
     neu = re.sub(r"<script[\s\S]*?</script>", "", neu, flags=re.I)
     neu = re.sub(r"<style[\s\S]*?</style>", "", neu, flags=re.I)
+    neu = re.sub(r"\s+on[a-z]+\s*=\s*(\"[^\"]*\"|'[^']*')", "", neu, flags=re.I)
     hinweise = []
-    for marke in re.findall(r"<!--(?:baustein [a-z0-9-]+|blogliste)-->", inhalt):
+    vorlage = abschnitt if abschnitt else ("" if neu_block else inhalt)
+    for marke in re.findall(r"<!--(?:baustein [a-z0-9-]+|blogliste)-->", vorlage):
         if marke not in neu:
             neu += "\n\n" + marke
             hinweise.append(f"{marke} fehlte in der Antwort und wurde wieder angehängt")
-    if inhalt and len(neu) < 0.4 * len(inhalt) and not re.search(r"kürz|streich|lösch|entfern|weg", auftrag, re.I):
-        raise HTTPException(502, "Das Modell hat die Seite stark gekürzt, ohne dass du das verlangt hast. Nichts übernommen.")
+    if vorlage and len(neu) < 0.4 * len(vorlage) and not re.search(r"kürz|knapp|streich|lösch|entfern|weg", auftrag, re.I):
+        raise HTTPException(502, "Das Modell hat den Text stark gekürzt, ohne dass du das verlangt hast. Nichts übernommen.")
     erklaerung = antwort[m.end():].strip()[:800]
-    return {"inhalt": neu, "erklaerung": erklaerung, "hinweise": hinweise, "modell": modell}
+    return {"inhalt": neu, "erklaerung": erklaerung, "hinweise": hinweise, "modell": modell,
+            "art": "abschnitt" if abschnitt else "neu" if neu_block else "seite"}
+
+
+# ---------------------------------------------------------------- Verlauf und Vergleich (19.10.2026)
+
+@router.get("/verlauf")
+async def verlauf(pfad: str):
+    """Veröffentlichte Fassungen einer Seite (aus der Git-Geschichte)."""
+    datei = _sicherer_pfad(pfad)
+    rel = "inhalt/" + datei.relative_to(KLON / "inhalt").as_posix()
+    async with _sperre:
+        try:
+            aus = await _git("log", "--follow", "-n", "40", "--format=%h%x1f%cI%x1f%s", "--", rel)
+        except WebspaceFehler as e:
+            raise HTTPException(502, str(e)) from e
+    liste = []
+    for z in aus.splitlines():
+        t = z.split("\x1f")
+        if len(t) == 3:
+            liste.append({"sha": t[0], "zeit": t[1], "text": t[2]})
+    return {"fassungen": liste}
+
+
+@router.get("/fassung")
+async def fassung(pfad: str, sha: str):
+    if not re.fullmatch(r"[0-9a-f]{4,40}", sha):
+        raise HTTPException(400, "Ungültige Fassung")
+    datei = _sicherer_pfad(pfad)
+    rel = "inhalt/" + datei.relative_to(KLON / "inhalt").as_posix()
+    async with _sperre:
+        try:
+            roh = await _git("show", f"{sha}:{rel}")
+        except WebspaceFehler as e:
+            raise HTTPException(404, "Diese Fassung gibt es für die Seite nicht (vielleicht hieß sie damals anders)") from e
+    kopf, inhalt = _zerlegen(roh, datei.stem)
+    return {"kopf": kopf, "inhalt": inhalt}
+
+
+def _zerlegen(roh: str, ersatz_titel: str) -> tuple[dict[str, Any], str]:
+    roh = roh.replace("\r\n", "\n")
+    m = KOPF_RE.match(roh)
+    if not m:
+        return {"titel": ersatz_titel}, roh
+    try:
+        return json.loads(m.group(1)), roh[m.end():]
+    except json.JSONDecodeError:
+        return {"titel": ersatz_titel}, roh[m.end():]
+
+
+@router.get("/vergleich")
+async def vergleich():
+    """Für den Veröffentlichen-Dialog: je geänderter Seite der veröffentlichte und der neue Stand."""
+    async with _sperre:
+        aend = await _aenderungen()
+        aus = []
+        for a in aend:
+            d = a["datei"]
+            if not d.startswith("inhalt/") or not d.endswith(".html"):
+                aus.append({**a})
+                continue
+            alt = ""
+            if a["art"] != "neu":
+                try:
+                    alt = await _git("show", f"HEAD:{d}")
+                except WebspaceFehler:
+                    alt = ""
+            neu = (KLON / d).read_text(encoding="utf-8") if (KLON / d).exists() else ""
+            ka, ia = _zerlegen(alt, d) if alt else ({}, "")
+            kn, iN = _zerlegen(neu, d) if neu else ({}, "")
+            aus.append({**a, "pfad": d[len("inhalt/"):], "alt": {"kopf": ka, "inhalt": ia}, "neu": {"kopf": kn, "inhalt": iN}})
+    return {"aenderungen": aus}
+
+
+# ---------------------------------------------------------------- Prüfungen vor dem Veröffentlichen
+
+def _adressen() -> set[str]:
+    return {_adresse(f.relative_to(KLON / "inhalt").as_posix()) for f in (KLON / "inhalt").rglob("*.html")}
+
+
+def _pruefen_seite(rel: str, kopf: dict[str, Any], inhalt: str, adressen: set[str]) -> list[dict[str, str]]:
+    w: list[dict[str, str]] = []
+    def warn(stufe: str, text: str) -> None:
+        w.append({"pfad": rel, "stufe": stufe, "text": text})
+    if not str(kopf.get("titel") or "").strip():
+        warn("fehler", "Die Seite hat keinen Titel.")
+    beschr = str(kopf.get("beschreibung") or "").strip()
+    if not beschr:
+        warn("hinweis", "Keine Beschreibung für Suchmaschinen (Reiter „Seite“).")
+    elif len(beschr) > 170:
+        warn("hinweis", f"Die Beschreibung ist {len(beschr)} Zeichen lang; Google zeigt etwa 155.")
+    for img in re.findall(r"<img\b[^>]*>", inhalt):
+        alt = re.search(r'\balt="([^"]*)"', img)
+        if not alt or not alt.group(1).strip():
+            name = (re.search(r'src="([^"]+)"', img) or [None, "?"])[1].split("/")[-1]
+            warn("hinweis", f"Bild „{name}“ hat keine Bildbeschreibung (wichtig für Barrierefreiheit und Google).")
+    for href in re.findall(r'href="([^"]+)"', inhalt):
+        if href.startswith("/") and not href.startswith(("/bilder/", "//")):
+            ziel = href.split("#")[0].split("?")[0]
+            if ziel not in adressen and ziel.rstrip("/") not in {a.rstrip("/") for a in adressen}:
+                warn("fehler", f"Der Link „{href}“ führt auf eine Seite, die es nicht gibt.")
+        elif href.startswith("http://"):
+            warn("hinweis", f"Der Link „{href}“ ist unverschlüsselt (http statt https).")
+    for src in re.findall(r'src="(/bilder/[^"]+)"', inhalt) + re.findall(r"url\('(/bilder/[^']+)'\)", inhalt):
+        if not (KLON / src.lstrip("/")).exists():
+            warn("fehler", f"Das Bild „{src}“ fehlt.")
+    if re.search(r"\[noch offen", inhalt, re.I):
+        warn("fehler", "Im Text steht noch ein Platzhalter „[noch offen: …]“.")
+    if re.search(r"<h[1-4][^>]*>\s*</h[1-4]>", inhalt):
+        warn("hinweis", "Eine Überschrift ist leer.")
+    blog = kopf.get("blog")
+    if blog is not None:
+        if not blog.get("bild"):
+            warn("hinweis", "Der Artikel hat kein Titelbild für die Übersicht.")
+        if not str(blog.get("auszug") or "").strip():
+            warn("hinweis", "Der Artikel hat keinen Auszug für die Übersicht.")
+    return w
+
+
+@router.get("/pruefen")
+async def pruefen(alle: bool = False):
+    adressen = _adressen()
+    async with _sperre:
+        aend = await _aenderungen()
+    if alle:
+        pfade = [f.relative_to(KLON / "inhalt").as_posix() for f in (KLON / "inhalt").rglob("*.html")]
+    else:
+        pfade = [a["datei"][len("inhalt/"):] for a in aend if a["datei"].startswith("inhalt/") and a["art"] != "gelöscht"]
+    warnungen: list[dict[str, str]] = []
+    for rel in pfade:
+        f = KLON / "inhalt" / rel
+        if f.exists():
+            kopf, inhalt = _lesen(f)
+            warnungen += _pruefen_seite(rel, kopf, inhalt, adressen)
+    # Menüpunkte, die ins Leere zeigen
+    def menue(liste: list[dict[str, Any]]) -> None:
+        for p in liste:
+            if p.get("href", "").startswith("/") and p["href"] not in adressen:
+                warnungen.append({"pfad": "seiten.json", "stufe": "fehler", "text": f"Menüpunkt „{p.get('text')}“ zeigt auf {p['href']}, das gibt es nicht."})
+            menue(p.get("unter") or [])
+    menue(_menue_lesen().get("navigation", []))
+    return {"warnungen": warnungen}
+
+
+# ---------------------------------------------------------------- Menü
+
+def _menue_pruefen(liste: Any, tiefe: int = 0) -> list[dict[str, Any]]:
+    if not isinstance(liste, list):
+        raise HTTPException(400, "Menü muss eine Liste sein")
+    aus = []
+    for p in liste:
+        text = str((p or {}).get("text") or "").strip()[:60]
+        href = str((p or {}).get("href") or "").strip()[:300]
+        if not text or not href:
+            raise HTTPException(400, "Jeder Menüpunkt braucht Text und Ziel")
+        if not (href.startswith("/") or href.startswith("https://")):
+            raise HTTPException(400, f"Ungültiges Ziel „{href}“ (eine Seite /… oder https://…)")
+        punkt: dict[str, Any] = {"text": text, "href": href}
+        if p.get("unter"):
+            if tiefe >= 1:
+                raise HTTPException(400, "Das Menü kennt nur eine Unterebene")
+            punkt["unter"] = _menue_pruefen(p["unter"], tiefe + 1)
+        aus.append(punkt)
+    return aus
+
+
+@router.post("/menue")
+async def menue_speichern(d: dict[str, Any]):
+    neu = _menue_pruefen(d.get("navigation"))
+    async with _sperre:
+        cfg = _menue_lesen()
+        cfg["navigation"] = neu
+        _menue_schreiben(cfg)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------- Seiten umbenennen und duplizieren
+
+def _links_ersetzen(alt: str, neu: str) -> int:
+    """Interne Links auf eine verschobene Seite in allen Seiten nachziehen."""
+    n = 0
+    muster = re.compile(r'href="' + re.escape(alt) + r'(["#?])')
+    for f in (KLON / "inhalt").rglob("*.html"):
+        s = f.read_text(encoding="utf-8")
+        s2, k = muster.subn(lambda m: f'href="{neu}{m.group(1)}', s)
+        if k:
+            f.write_text(s2, encoding="utf-8")
+            n += k
+    return n
+
+
+@router.post("/umbenennen")
+async def umbenennen(d: dict[str, Any]):
+    rel = str(d.get("pfad") or "")
+    datei = _sicherer_pfad(rel)
+    if rel == "index.html" or rel.endswith("/index.html"):
+        raise HTTPException(400, "Die Adresse einer Übersichtsseite lässt sich hier nicht ändern")
+    name = _slug(str(d.get("name") or ""))
+    if not name:
+        raise HTTPException(400, "Neuer Name fehlt")
+    neu_rel = (rel.rsplit("/", 1)[0] + "/" if "/" in rel else "") + name + ".html"
+    ziel = _sicherer_pfad(neu_rel)
+    if ziel.exists():
+        raise HTTPException(409, "Unter dieser Adresse gibt es schon eine Seite")
+    async with _sperre:
+        datei.rename(ziel)
+        alt_adr, neu_adr = _adresse(rel), _adresse(neu_rel)
+        cfg = _menue_lesen()
+        def nachziehen(liste: list[dict[str, Any]]) -> None:
+            for p in liste:
+                if p.get("href") == alt_adr:
+                    p["href"] = neu_adr
+                nachziehen(p.get("unter") or [])
+        nachziehen(cfg["navigation"])
+        _menue_schreiben(cfg)
+        links = _links_ersetzen(alt_adr, neu_adr)
+    return {"pfad": neu_rel, "adresse": neu_adr, "links": links}
+
+
+@router.post("/duplizieren")
+async def duplizieren(d: dict[str, Any]):
+    rel = str(d.get("pfad") or "")
+    datei = _sicherer_pfad(rel)
+    if not datei.exists():
+        raise HTTPException(404, "Seite gibt es nicht")
+    kopf, inhalt = _lesen(datei)
+    stamm = rel[:-5]
+    if stamm.endswith("/index"):
+        stamm = stamm[:-6] + "-uebersicht"
+    neu_rel, n = stamm + "-kopie.html", 2
+    while (KLON / "inhalt" / neu_rel).exists():
+        neu_rel, n = f"{stamm}-kopie-{n}.html", n + 1
+    kopf = {**kopf, "titel": f"{kopf.get('titel', '')} (Kopie)"}
+    if kopf.get("blog"):
+        kopf["blog"] = {**kopf["blog"]}
+    kopf.pop("blogliste", None)
+    async with _sperre:
+        _schreiben(_sicherer_pfad(neu_rel), kopf, inhalt.replace("<!--blogliste-->", ""))
+    return {"pfad": neu_rel, "adresse": _adresse(neu_rel)}
+
+
+# ---------------------------------------------------------------- Medien
+
+@router.get("/medien")
+async def medien():
+    texte = [f.read_text(encoding="utf-8") for b in ("inhalt", "bausteine") for f in (KLON / b).rglob("*.html")]
+    alles = "\n".join(texte)
+    aus = []
+    for f in sorted((KLON / "bilder").glob("*"), key=lambda x: -x.stat().st_mtime):
+        if f.suffix.lower() not in BILD_ENDUNGEN or f.name == "favicon.png":
+            continue
+        pfad = "/bilder/" + f.name
+        nutzung = alles.count(pfad) + (1 if f.name.startswith("vveorg-logo") else 0)
+        aus.append({"pfad": pfad, "groesse": f.stat().st_size, "nutzung": nutzung,
+                    "video": f.suffix.lower() == ".mp4"})
+    return {"medien": aus}
+
+
+@router.post("/medien/loeschen")
+async def medien_loeschen(d: dict[str, Any]):
+    pfad = str(d.get("pfad") or "")
+    if not re.fullmatch(r"/bilder/[a-z0-9.\-]+", pfad):
+        raise HTTPException(400, "Ungültiger Dateiname")
+    f = KLON / pfad.lstrip("/")
+    if not f.exists():
+        raise HTTPException(404, "Datei gibt es nicht")
+    texte = "\n".join(x.read_text(encoding="utf-8") for b in ("inhalt", "bausteine") for x in (KLON / b).rglob("*.html"))
+    if pfad in texte or f.name.startswith(("vveorg-logo", "favicon")):
+        raise HTTPException(409, "Das Bild wird noch verwendet und lässt sich deshalb nicht löschen")
+    async with _sperre:
+        f.unlink()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------- Suchen und Ersetzen über alle Seiten
+
+_TEIL = re.compile(r"(<!--[\s\S]*?-->|<[^>]+>)")
+
+
+def _im_text(s: str, such: str, ersatz: str | None) -> tuple[str, int]:
+    """Nur im sichtbaren Text suchen/ersetzen, nie in Tags oder Marken."""
+    teile = _TEIL.split(s)
+    n = 0
+    for i in range(0, len(teile), 2):
+        k = teile[i].count(such)
+        if k:
+            n += k
+            if ersatz is not None:
+                teile[i] = teile[i].replace(such, ersatz)
+    return "".join(teile), n
+
+
+@router.get("/suchen")
+async def suchen(q: str):
+    q = q.strip()
+    if len(q) < 2:
+        return {"treffer": []}
+    aus = []
+    for f in sorted((KLON / "inhalt").rglob("*.html")):
+        kopf, inhalt = _lesen(f)
+        _, n = _im_text(inhalt, q, None)
+        n_titel = str(kopf.get("titel") or "").count(q)
+        if n or n_titel:
+            text = re.sub(r"\s+", " ", _TEIL.sub(" ", inhalt))
+            i = text.find(q)
+            ausschnitt = ("…" + text[max(0, i - 60): i + len(q) + 60] + "…") if i >= 0 else ""
+            rel = f.relative_to(KLON / "inhalt").as_posix()
+            aus.append({"pfad": rel, "titel": kopf.get("titel"), "anzahl": n + n_titel, "ausschnitt": ausschnitt})
+    return {"treffer": aus}
+
+
+@router.post("/ersetzen")
+async def ersetzen(d: dict[str, Any]):
+    such, ersatz = str(d.get("suche") or ""), str(d.get("ersatz") or "")
+    if len(such) < 2:
+        raise HTTPException(400, "Suchbegriff zu kurz")
+    pfade = d.get("pfade")
+    gesamt = 0
+    async with _sperre:
+        for f in sorted((KLON / "inhalt").rglob("*.html")):
+            rel = f.relative_to(KLON / "inhalt").as_posix()
+            if pfade and rel not in pfade:
+                continue
+            kopf, inhalt = _lesen(f)
+            neu, n = _im_text(inhalt, such, ersatz)
+            if str(kopf.get("titel") or "").count(such):
+                kopf["titel"] = kopf["titel"].replace(such, ersatz)
+                n += 1
+            if n:
+                _schreiben(f, kopf, neu)
+                gesamt += n
+    return {"ersetzt": gesamt}
 
 
 # ---------------------------------------------------------------- Veröffentlichen
