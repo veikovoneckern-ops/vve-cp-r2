@@ -46,6 +46,9 @@ AKTIONEN = {
     "ersetzen": ("alt", "neu", "projekt_id"),
     # Daniel prueft ein vorhandenes Ergebnis (19.10.2026). ergebnis_id oder titel (beschriften loest auf).
     "pruefen": (),
+    # Ein LongRun aus Talk (19.10.2026): Veiko sagte "als Long Run … unter Einbeziehung von
+    # Demmis", Talk machte eine gewoehnliche Ausarbeitung daraus -- bei LongRuns stand nichts.
+    "langlauf": ("auftrag",),
     # BrainStrom und ExO (verfahren.py) -- Veiko, 01.10.: "wenn ich mit dem Cockpit
     # spreche, muss das auch fuer diese Elemente funktionieren".
     "brainstrom": ("thema",),
@@ -150,6 +153,7 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"notiz","text":"…","projekt_id":"p… oder null"}
 - {"aktion":"projekt_neu","name":"…"}
 - {"aktion":"neo","auftrag":"was Neo am Cockpit oder Server tun soll"} -- NUR für Programm und Server des Cockpits, NIE für Inhalte (Projekte, Aufgaben, Ergebnisse, Notizen).
+- {"aktion":"langlauf","titel":"kurzer Titel","auftrag":"was in Etappen entstehen soll, in mehreren Sätzen, mit allem, was Veiko dazu gesagt hat","art":"buch|dokument|video","projekt_id":"p… oder null","aufgabe_id":"t… oder null","pruefer":"dario|demmis","budget":5} -- ein LongRun: ein großes Vorhaben (ein ganzes Buch, ein langes Dokument, ein langes Video), das in Etappen entsteht und zwischendurch von Dario (Claude) oder Demmis (Gemini) geprüft wird. Sagt Veiko „Long Run“, „in Etappen“, „durchgängig und tief“ oder geht es um ein ganzes Buch: IMMER langlauf, nie ausarbeiten. Nennt er Demmis/Gemini, ist pruefer demmis, sonst dario. Vorhandene Ergebnisse und Unterlagen des Projekts nimmt das Cockpit selbst dazu. Die Prüfungen kosten Geld: nenne das Budget (Vorgabe 5 Dollar) und frag immer „Soll ich das so machen?“.
 - {"aktion":"pruefen","ergebnis_id":"r… aus LAGE/KONTEXT","titel":"Titel des Ergebnisses"} -- Daniel (Red Team) prüft ein VORHANDENES Ergebnis, z. B. ein Recherche-Dossier („ungeprüft“). „Lass Daniel das prüfen“ ist IMMER pruefen, NIE ausarbeiten -- eine Ausarbeitung macht etwas Neues, und sie macht nie Daniel.
 - {"aktion":"ersetzen","projekt_id":"p…","alt":"genauer bisheriger Begriff, z. B. OODA-Loop","neu":"neuer Begriff"} -- ersetzt einen Begriff in einem Projekt überall (Projektname und Ziel, Aufgaben, Ergebnisse, Cases). Für „benenne … um“, „korrigiere die Bezeichnung … durchgängig“. Braucht Veikos Ja.
 - {"aktion":"brainstrom","thema":"die Idee in ein, zwei Sätzen","projekt_id":"p… oder null"} -- startet BrainStrom (eine Idee Frage für Frage zuspitzen) und öffnet die Ansicht. Läuft sofort.
@@ -781,6 +785,21 @@ def beschriften(a: dict[str, Any]) -> str | None:
             return None
         a["ergebnis_id"] = e["id"]
         return f"Daniel prüft „{(e['titel'] or '')[:80]}“"
+    if art == "langlauf":
+        from . import langlauf
+        if a.get("art") not in langlauf.ARTEN:
+            a["art"] = "buch" if re.search(r"\bbuch|kapitel", str(a.get("auftrag")), re.I) else "dokument"
+        a["pruefer"] = a.get("pruefer") if a.get("pruefer") in langlauf.PRUEFER else "dario"
+        try:
+            a["budget"] = max(0.0, min(50.0, float(a.get("budget") or 5)))
+        except (TypeError, ValueError):
+            a["budget"] = 5.0
+        if len(str(a["auftrag"]).strip()) < 20:
+            return None
+        p = db.holen("projekte", str(a.get("projekt_id") or "")) if a.get("projekt_id") else None
+        titel = str(a.get("titel") or a["auftrag"])[:70]
+        return (f"LongRun starten: „{titel}“ ({langlauf.ARTEN[a['art']]['name']}{', ' + p['name'] if p else ''}; "
+                f"prüft {'Demmis' if a['pruefer'] == 'demmis' else 'Dario'}, Budget {a['budget']:.0f} $)")
     if art in ("entscheiden", "antworten"):
         e = db.holen("entscheidungen", a["entscheidung_id"])
         if not e or e["stand"] != "offen":
@@ -940,6 +959,18 @@ async def ausfuehren(a: dict[str, Any]) -> dict[str, Any]:
         else:
             return await verfahren.bs_uebernehmen()
         return {"ok": True}
+    if art == "langlauf":
+        from . import langlauf
+        # Was zum Projekt schon da ist, geht mit -- dieselbe Vorauswahl wie beim Anlegen von Hand
+        # (langlauf.bestand): Ergebnisse, Gespraeche, lesbare Unterlagen; Notizen nicht.
+        material = [{"art": m["art"], "id": m["id"]} for m in langlauf.bestand(a.get("projekt_id"), a.get("aufgabe_id"))
+                    if m.get("vorgewaehlt")]
+        try:
+            l = langlauf.anlegen(str(a.get("titel") or ""), str(a["auftrag"]), a.get("art") or "buch", a.get("projekt_id"),
+                                 a.get("pruefer") or "dario", 3, float(a.get("budget") or 5), None, a.get("aufgabe_id"), material)
+        except ValueError as f:
+            return {"ok": False, "grund": str(f)}
+        return {"ok": True, "langlauf_id": l.get("id"), "titel": l.get("titel"), "material": len(material)}
     if art == "pruefen":
         e = _pruef_ergebnis(a)
         if not e:
@@ -1098,11 +1129,17 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     # Im Projekt gehoert Neues in dieses Projekt, auch wenn das Modell die Kennung vergisst.
     if kontext and kontext.get("art") == "projekt" and db.holen("projekte", kontext.get("id") or ""):
         for v in vorschlaege:
-            if (v["aktion"] in ("aufgabe_neu", "notiz", "ausarbeiten") or (v["aktion"] == "zeigen" and v.get("ziel") in ZIELE))                     and not v.get("projekt_id"):
+            if (v["aktion"] in ("aufgabe_neu", "notiz", "ausarbeiten", "langlauf") or (v["aktion"] == "zeigen" and v.get("ziel") in ZIELE))                     and not v.get("projekt_id"):
                 v["projekt_id"] = kontext["id"]
                 v["label"] = beschriften(v) or v["label"]
     _bezug_einsetzen(vorschlaege, bez)
     _kontext_einsetzen(vorschlaege, kontext)
+    # Schon Ausgefuehrtes nicht noch einmal vorschlagen (19.10.2026: auf "Nein, warte damit"
+    # bot Talk die laengst laufende Zusammenfuehrung erneut an). Gleich = gleiche Aktion und
+    # gleiches Etikett in diesem Gespraech.
+    schon = {(v.get("aktion"), v.get("label")) for m in db.alle("SELECT daten FROM nachrichten WHERE gespraech_id=? AND rolle='assistent'", (gid,))
+             for v in ((m.get("daten") or {}).get("vorschlaege") or []) if v.get("erledigt")}
+    vorschlaege = [v for v in vorschlaege if (v.get("aktion"), v.get("label")) not in schon or v["aktion"] in ("zeigen", "oeffnen", "werkzeug")]
     # "Zeigen" aendert nichts -- das Cockpit fuehrt es sofort aus, ohne Knopf.
     zeigen = [v for v in vorschlaege if v["aktion"] == "zeigen" and (v.get("projekt_id") or v.get("ziel") in BEREICHE or v.get("ziel") == "chat")]
     oeffnen_roh = [v for v in vorschlaege if v["aktion"] == "oeffnen"]
@@ -1288,6 +1325,10 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
                 zeilen.append(f"Gestartet: {was}. Neo arbeitet daran.")
             elif "ersetzt" in r:
                 zeilen.append(f"Erledigt: {r['ersetzt']} Stellen ersetzt.")
+            elif r.get("langlauf_id"):
+                zeilen.append(f"Gestartet: {was}. Er steht jetzt unter LongRuns"
+                              + (f", mit {r['material']} vorhandenen Ergebnissen und Unterlagen als Grundlage" if r.get("material") else "")
+                              + " -- zuerst plant das Team die Etappen.")
             elif r.get("lief_schon"):
                 zeilen.append(f"Läuft schon: {was}. Sein Urteil steht in wenigen Minuten am Ergebnis.")
             elif r.get("geprueft_wird"):
@@ -1372,6 +1413,11 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     if recherche:
         sichtbar = (sichtbar + "\n\n" + recherche[0]).strip()
     sichtbar += stab.netz_fuss(quellen)
+    # Ein gerade gestarteter LongRun geht sofort auf (19.10.2026, Veiko: "wenn einer beauftragt
+    # wird, soll er sofort bei LongRuns erscheinen, damit ich sehe, dass er wirklich ausgefuehrt wird").
+    neu_ll = next((r for r in ausgefuehrt if r.get("ok") and r.get("langlauf_id")), None)
+    if neu_ll and not oeffnen:
+        oeffnen = [{"art": "langlauf", "id": neu_ll["langlauf_id"], "titel": neu_ll.get("titel") or ""}]
     mid = db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",
                         (gid, "assistent", sichtbar, json.dumps({"vorschlaege": vorschlaege, "modell": modell, "medien": medien_jobs,
                                                                  "bezug": bez}, ensure_ascii=False), time.time()))
@@ -1666,10 +1712,10 @@ def _bezug_einsetzen(vorschlaege: list[dict[str, Any]], b: dict[str, Any] | None
     if not b:
         return
     for v in vorschlaege:
-        if v["aktion"] in ("aufgabe_neu", "notiz", "ausarbeiten") and not v.get("projekt_id") and b.get("projekt_id"):
+        if v["aktion"] in ("aufgabe_neu", "notiz", "ausarbeiten", "langlauf") and not v.get("projekt_id") and b.get("projekt_id"):
             v["projekt_id"] = b["projekt_id"]
             v["label"] = beschriften(v) or v["label"]
-        if v["aktion"] == "ausarbeiten" and not v.get("aufgabe_id") and b.get("aufgabe_id"):
+        if v["aktion"] in ("ausarbeiten", "langlauf") and not v.get("aufgabe_id") and b.get("aufgabe_id"):
             v["aufgabe_id"] = b["aufgabe_id"]
 
 

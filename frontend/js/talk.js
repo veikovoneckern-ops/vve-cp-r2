@@ -37,7 +37,21 @@ const reinigen = (t) => String(t || "").trim().replace(/[.!?,]+$/, "").trim();
 // das jetzt aus" ging am 19.10.2026 als neue Frage ans Modell, und nichts lief).
 const JA_ANFANG = /^(ja|jawohl|genau|okay|ok|gerne|klar|einverstanden)\b/i;
 const istJa = (t) => !NEIN_WORT.test(t) && ((t.split(/\s+/).length <= 10 && JA_WORT.test(t)) || (t.split(/\s+/).length <= 18 && JA_ANFANG.test(t)));
-const istNein = (t) => t.split(/\s+/).length <= 5 && NEIN_WORT.test(t) && !JA_WORT.test(t.replace(/\bnein\b/i, ""));
+// "bitte" zaehlt hier nicht als Ja: "Nein, warte damit bitte" war sonst kein Nein (19.10.2026).
+const istNein = (t) => t.split(/\s+/).length <= 5 && NEIN_WORT.test(t) && !JA_WORT.test(t.replace(/\b(nein|bitte)\b/gi, ""));
+
+// Was eine ausgefuehrte Aktion angelegt hat, ist einen Klick entfernt (19.10.2026, Veiko:
+// "wenn ich ueber Talk Aktionen definiert habe, sollen sie so schnell wie moeglich im Cockpit
+// sichtbar sein").
+function ansehenKnopf(r) {
+  if (!r || !r.ok) return null;
+  const ziel = r.langlauf_id ? () => navigiere("/langlauf/" + r.langlauf_id)
+    : r.vorgang_id ? () => navigiere("/inbox/" + r.vorgang_id)
+    : r.neo_gespraech ? () => navigiere("/neo/" + r.neo_gespraech)
+    : r.geprueft_wird ? () => bus.sende("ergebnis-zeigen", r.geprueft_wird)
+    : r.projekt_id ? () => navigiere("/projects/" + r.projekt_id) : null;
+  return ziel && html`<button class="btn klein" onClick=${ziel}>Ansehen</button>`;
+}
 
 // Bild oder Visualisierung aus dem Gespraech: Fortschritt, dann Vorschau mit
 // Grossansicht und Download. Fragt den Stand ab, bis es fertig ist -- auch nach
@@ -234,9 +248,11 @@ export function Talk({ zu, kontext, setKontext, start }) {
   async function ausfuehren(mid, indizes) {
     try {
       const r = await api("/talk/ausfuehren", { methode: "POST", daten: { nachricht_id: mid, indizes } });
-      setMsgs((m) => m.map((x) => x.id === mid ? { ...x, vorschlaege: x.vorschlaege.map((v, i) => indizes.includes(i) ? { ...v, erledigt: true } : v) } : x));
+      setMsgs((m) => m.map((x) => x.id === mid ? { ...x, vorschlaege: x.vorschlaege.map((v, i) => indizes.includes(i) ? { ...v, erledigt: true, ergebnis: r.ergebnisse[indizes.indexOf(i)] || v.ergebnis } : v) } : x));
       const fehl = r.ergebnisse.filter((x) => !x.ok);
+      const ll = r.ergebnisse.find((x) => x.ok && x.langlauf_id);
       if (fehl.length) toast("Nicht alles ging: " + fehl.map((f) => f.grund).join("; "), { fehler: true });
+      else if (ll) { toast("LongRun gestartet."); navigiere("/langlauf/" + ll.langlauf_id); }
       else {
         const neo = r.ergebnisse.find((x) => x.neo_gespraech);
         const vg = r.ergebnisse.find((x) => x.vorgang_id);
@@ -458,7 +474,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
             <${Md} text=${m.text} />
             ${m.vorschlaege && m.vorschlaege.map((v, i) => html`<div class=${"vorschlag" + (v.erledigt && !v.abgelehnt ? " erledigt" : "")} key=${i}>
               <span style=${v.abgelehnt ? "text-decoration:line-through;color:var(--ink-3)" : ""}>${v.label}</span>
-              ${v.abgelehnt ? html`<span class="pill">abgelehnt</span>` : v.erledigt ? html`<span class="pill gruen">erledigt</span>`
+              ${v.abgelehnt ? html`<span class="pill">abgelehnt</span>` : v.erledigt ? html`<span class="pill gruen">erledigt</span>${ansehenKnopf(v.ergebnis)}`
                 : html`<button class="btn klein primaer" onClick=${() => ausfuehren(m.id, [i])}>Ausführen</button>`}
             </div>`)}
             ${m.vorschlaege && m.vorschlaege.filter((v) => !v.erledigt).length > 1 && html`<button class="btn klein" style="margin-top:6px"
