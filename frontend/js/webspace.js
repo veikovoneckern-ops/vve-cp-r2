@@ -450,10 +450,15 @@ function VeroeffentlichenDialog({ stand, zu, oeffnen, fertig, verworfen }) {
   const [nachricht, setNachricht] = useState("");
   const [laeuft, setLaeuft] = useState(false);
   const [verwerfenFrage, setVerwerfenFrage] = useState(false);
-  useEffect(() => {
+  // Hat die Prüfung durch Externe etwas im Text korrigiert, muss der Editor danach
+  // frisch laden -- sonst schriebe sein nächstes automatisches Speichern den alten Text zurück.
+  const [korrigiert, setKorrigiert] = useState(false);
+  const holen = () => {
     api("/webspace/vergleich").then(setDaten).catch(fehlerMelden);
     api("/webspace/pruefen").then((d) => setWarn(d.warnungen)).catch(() => setWarn([]));
-  }, []);
+  };
+  useEffect(holen, []);
+  const schliessen = () => (korrigiert ? verworfen() : zu());
   const aend = daten ? daten.aenderungen : [];
   const fehlerAnzahl = (warn || []).filter((w) => w.stufe === "fehler").length;
   async function los() {
@@ -461,7 +466,7 @@ function VeroeffentlichenDialog({ stand, zu, oeffnen, fertig, verworfen }) {
     try {
       const r = await api("/webspace/veroeffentlichen", { methode: "POST", daten: { bestaetigt: true, nachricht } });
       toast(r.nichts ? "Es gab nichts zu veröffentlichen." : "Veröffentlicht. In etwa einer Minute ist es auf veikovoneckern.org zu sehen.");
-      fertig();
+      if (korrigiert) verworfen(); else fertig();
     } catch (e) { fehlerMelden(e); setLaeuft(false); }
   }
   async function allesVerwerfen() {
@@ -469,11 +474,11 @@ function VeroeffentlichenDialog({ stand, zu, oeffnen, fertig, verworfen }) {
     catch (e) { fehlerMelden(e); }
   }
   const titelVon = (a) => (a.neu && a.neu.kopf && a.neu.kopf.titel) || (a.alt && a.alt.kopf && a.alt.kopf.titel) || a.datei;
-  return html`<${Modal} titel="Veröffentlichen" zu=${zu} breit=${true}
+  return html`<${Modal} titel="Veröffentlichen" zu=${schliessen} breit=${true}
     fuss=${aend.length ? html`${verwerfenFrage
         ? html`<span class="klein">Wirklich alles verwerfen?</span><button class="btn gefahr voll klein" onClick=${allesVerwerfen}>Ja, verwerfen</button><button class="btn geist klein" onClick=${() => setVerwerfenFrage(false)}>Nein</button>`
         : html`<button class="btn geist" onClick=${() => setVerwerfenFrage(true)}>Alles verwerfen</button>`}
-      <span class="luecke"></span><button class="btn geist" onClick=${zu}>Abbrechen</button>
+      <span class="luecke"></span><button class="btn geist" onClick=${schliessen}>Abbrechen</button>
       <button class="btn primaer" disabled=${laeuft || !daten} onClick=${los}><${Icon} n="globus" g=${15} />${laeuft ? "Wird veröffentlicht …" : fehlerAnzahl ? "Trotzdem veröffentlichen" : "Jetzt veröffentlichen"}</button>`
       : html`<span class="luecke"></span><button class="btn" onClick=${zu}>Schließen</button>`}>
     ${!daten ? html`<p class="leise">Änderungen werden zusammengestellt …</p>` : !aend.length ? html`<p>Alles ist veröffentlicht. Es gibt nichts Neues.</p>` : html`
@@ -489,9 +494,97 @@ function VeroeffentlichenDialog({ stand, zu, oeffnen, fertig, verworfen }) {
           ${a.pfad && html`<span class="wpd-auf">${offen === i ? "▾" : "▸"} Änderungen</span>`}</button>
         ${offen === i && a.pfad && html`<${Unterschied} a=${a} />`}
       </div>`)}</div>
+      <${ExternePruefung} oeffnen=${oeffnen} titelVon=${(p) => { const a = aend.find((x) => x.pfad === p); return a ? titelVon(a) : p; }}
+        korrigiert=${() => { setKorrigiert(true); holen(); }} />
       <div class="feld"><label>Was hast du geändert? (optional, steht dann im Verlauf)</label>
         <input class="eingabe" value=${nachricht} onInput=${(e) => setNachricht(e.target.value)} placeholder="z. B. Neuer Artikel über Davos" /></div>`}
   <//>`;
+}
+
+// ---------------------------------------------------------------- Prüfung durch Externe
+// Veiko: "die externen in meinem Setup auch vor Veröffentlichung prüfen lassen".
+// Der Assistent im Editor rechnet weiter lokal; hier gehen die GEÄNDERTEN Seiten
+// als lesbarer Text an Dario, Elon und/oder Demmis. Das kostet Geld, deshalb
+// zwei Schritte: erst auswählen (mit geschätztem Preis), dann ausdrücklich erlauben.
+// Ein Vorschlag wird nur übernommen, wenn die genannte Stelle wörtlich im Text steht --
+// geraten wird nichts.
+function ExternePruefung({ oeffnen, titelVon, korrigiert }) {
+  const [liste, setListe] = useState(null);
+  const [fehler, setFehler] = useState(null);
+  const [wahl, setWahl] = useState([]);
+  const [frage, setFrage] = useState(false);
+  const [laeuft, setLaeuft] = useState(0);
+  const [ergebnisse, setErgebnisse] = useState(null);
+  const [erledigt, setErledigt] = useState({});
+  useEffect(() => {
+    api("/webspace/externe").then((d) => {
+      setListe(d);
+      const da = d.externe.filter((x) => x.schluessel !== false);
+      setWahl(da.length ? [da[0].id] : []);
+    }).catch((e) => setFehler(e.message));
+  }, []);
+  useEffect(() => {
+    if (!laeuft) return;
+    const t = setInterval(() => setLaeuft((s) => (s ? s + 1 : 0)), 1000);
+    return () => clearInterval(t);
+  }, [laeuft > 0]);
+  if (fehler) return html`<div class="wpx"><b>Von Externen prüfen lassen</b><p class="leise klein">Nicht verfügbar: ${fehler}</p></div>`;
+  if (!liste) return html`<div class="wpx"><b>Von Externen prüfen lassen</b><p class="leise klein">Lädt …</p></div>`;
+  if (!liste.seiten.length) return null;
+  const gewaehlt = liste.externe.filter((x) => wahl.includes(x.id));
+  const summe = gewaehlt.reduce((a, x) => a + (x.kosten || 0), 0);
+  const usd = (v) => "$" + (v < 0.01 ? "<0,01" : v.toFixed(2).replace(".", ","));
+  const umschalten = (id) => setWahl((w) => (w.includes(id) ? w.filter((x) => x !== id) : [...w, id]));
+  async function pruefen() {
+    setFrage(false); setLaeuft(1); setErgebnisse(null); setErledigt({});
+    try {
+      const r = await api("/webspace/extern-pruefen", { methode: "POST", daten: { wer: wahl, freigabe: true } });
+      setErgebnisse(r.ergebnisse);
+    } catch (e) { fehlerMelden(e); }
+    setLaeuft(0);
+  }
+  async function uebernehmen(schl, p) {
+    try {
+      await api("/webspace/stelle-ersetzen", { methode: "POST", daten: { pfad: p.seite, alt: p.stelle, neu: p.vorschlag } });
+      setErledigt((e) => ({ ...e, [schl]: "ok" }));
+      toast("Übernommen (noch nicht veröffentlicht).");
+      korrigiert();
+    } catch (e) { setErledigt((x) => ({ ...x, [schl]: e.message })); }
+  }
+  const n = liste.seiten.length;
+  return html`<div class="wpx">
+    <div class="wpx-kopf"><b>Von Externen prüfen lassen</b><span class="leise klein">${n} geänderte Seite${n === 1 ? "" : "n"} · ca. ${Math.round(liste.zeichen / 1000)} Tsd. Zeichen</span></div>
+    <p class="leise klein">Der KI-Assistent im Editor rechnet auf deinem eigenen Server. Hier kannst du die Änderungen zusätzlich von einem Cloud-Modell gegenlesen lassen: Rechtschreibung, Ton, Verständlichkeit, Fakten, Google-Beschreibung. Die Kosten werden unter „Verbrauch“ gebucht.</p>
+    <div class="wpx-wahl">${liste.externe.map((x) => html`<label class=${"wpx-person" + (x.schluessel === false ? " aus" : "")} title=${x.schluessel === false ? "Kein Schlüssel hinterlegt" : x.modell}>
+      <input type="checkbox" disabled=${x.schluessel === false || laeuft} checked=${wahl.includes(x.id)} onChange=${() => umschalten(x.id)} />
+      <span><b>${x.name}</b> <span class="leise klein">${x.titel}</span><br /><span class="leise klein">${x.schluessel === false ? "kein Schlüssel hinterlegt" : `${x.modell} · ca. ${usd(x.kosten)}`}</span></span></label>`)}</div>
+    ${laeuft ? html`<div class="wpx-laeuft"><div class="wpx-balken"><i></i></div><span class="klein">${gewaehlt.map((x) => x.name).join(", ")} ${gewaehlt.length === 1 ? "liest" : "lesen"} gegen … ${laeuft} s</span></div>`
+      : frage ? html`<div class="ws2-frage"><span>Das schickt ${n} Seite${n === 1 ? "" : "n"} an ${gewaehlt.map((x) => x.name).join(" und ")} und kostet etwa <b>${usd(summe)}</b>. Erlauben?</span>
+          <span class="knopfreihe"><button class="btn klein primaer" onClick=${pruefen}>Erlauben und prüfen lassen</button><button class="btn klein geist" onClick=${() => setFrage(false)}>Abbrechen</button></span></div>`
+      : html`<button class="btn klein" disabled=${!wahl.length} onClick=${() => setFrage(true)}><${Icon} n="check" g=${14} />${ergebnisse ? "Noch einmal prüfen lassen" : "Prüfen lassen"}${wahl.length ? ` (ca. ${usd(summe)})` : ""}</button>`}
+    ${(ergebnisse || []).map((e) => html`<div class=${"wpx-erg" + (e.fehler ? " fehler" : e.urteil === "veroeffentlichen" ? " gut" : " nach")}>
+      <div class="wpx-erg-kopf"><b>${e.name}</b><span class="leise klein">${e.modell}</span>
+        <span class="wpx-urteil">${e.fehler ? "Fehler" : e.urteil === "veroeffentlichen" ? "✓ kann raus" : "⚠ nachbessern"}</span></div>
+      ${e.fehler ? html`<p class="klein">${e.fehler}</p>` : html`
+        ${e.zusammenfassung && html`<p class="klein">${e.zusammenfassung}</p>`}
+        ${!e.punkte.length && html`<p class="leise klein">Keine Einzelpunkte.</p>`}
+        <ul class="wpx-punkte">${e.punkte.map((p, i) => {
+          const schl = e.wer + ":" + i, st = erledigt[schl];
+          return html`<li class=${p.gewicht}>
+            <div class="wpx-p-kopf"><span class=${"wpx-gewicht " + p.gewicht}>${p.gewicht}</span>${p.art && html`<span class="leise klein">${p.art}</span>`}
+              <span class="leise klein">· ${titelVon(p.seite)}</span></div>
+            <div class="klein">${p.problem}</div>
+            ${p.stelle && html`<div class="wpx-stelle klein"><del>${p.stelle}</del>${p.vorschlag && html` → <ins>${p.vorschlag}</ins>`}</div>`}
+            ${!p.stelle && p.vorschlag && html`<div class="wpx-stelle klein"><ins>${p.vorschlag}</ins></div>`}
+            <div class="knopfreihe">
+              ${st === "ok" ? html`<span class="wpx-ok klein">✓ übernommen</span>`
+                : p.uebernehmbar ? html`<button class="btn klein primaer" onClick=${() => uebernehmen(schl, p)}>Übernehmen</button>` : ""}
+              ${st && st !== "ok" && html`<span class="wpx-nein klein">${st}</span>`}
+              ${p.seite && p.seite.endsWith(".html") && html`<button class="btn klein geist" onClick=${() => oeffnen(p.seite)}>Seite öffnen</button>`}
+            </div></li>`;
+        })}</ul>`}
+    </div>`)}
+  </div>`;
 }
 
 function Unterschied({ a }) {

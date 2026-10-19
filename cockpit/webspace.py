@@ -474,6 +474,144 @@ async def assistent(d: dict[str, Any]):
             "art": "abschnitt" if abschnitt else "neu" if neu_block else "seite"}
 
 
+# ---------------------------------------------------------------- Prüfung durch die Externen (19.10.2026)
+# Veiko: "die externen in meinem Setup auch vor Veröffentlichung prüfen lassen".
+# Der Assistent oben rechnet lokal; diese Prüfung geht an Dario/Elon/Demmis über
+# den Cloud-Weg des alten Backends (teamchat._cloud_chat, bucht in "Verbrauch")
+# und kostet Geld -- deshalb NUR mit ausdrücklicher Freigabe (freigabe=True, die
+# Oberfläche fragt vorher mit geschätzten Kosten). Geprüft wird, was veröffentlicht
+# würde: die geänderten Seiten in ihrer neuen Fassung, als lesbarer Text.
+
+EXTERN_AUS_TOKEN = 3000
+
+EXTERN_PRUEFEN = """Du bist {name} und prüfst für Veiko von Eckern Seiten seiner Website veikovoneckern.org (Themen: Künstliche Intelligenz, Singularität, HR-Strategie, Transformation), BEVOR er sie veröffentlicht. Die Seite ist öffentlich und trägt seinen Namen.
+Prüfe: Rechtschreibung und Grammatik, sachliche Richtigkeit (Fakten, Namen, Zahlen, Zitate), Verständlichkeit, Ton (souverän, fachlich, nicht werblich), Rechtliches (z. B. ungekennzeichnete Zitate, Bildrechte, Behauptungen über Personen), Google (Titel, Beschreibung) und Barrierefreiheit (Bildbeschreibungen).
+Antworte AUSSCHLIESSLICH mit JSON:
+{{"urteil": "veroeffentlichen|nachbessern", "zusammenfassung": "zwei bis vier Sätze für Veiko, Alltagssprache", "punkte": [{{"seite": "Pfad wie angegeben", "art": "Rechtschreibung|Fakten|Verständlichkeit|Ton|Rechtliches|Google|Barrierefreiheit", "gewicht": "wichtig|hinweis", "stelle": "WÖRTLICHES Zitat aus dem Text, genau so geschrieben", "problem": "ein Satz", "vorschlag": "der korrigierte Text für genau diese Stelle, oder leer"}}]}}
+Regeln: höchstens 15 Punkte, die wichtigsten zuerst. "stelle" muss Zeichen für Zeichen im Text vorkommen, sonst lass den Punkt weg. Erfinde keine Fehler; ist alles in Ordnung, ist "punkte" leer. Deutsch."""
+
+
+def _lesbar(inhalt: str) -> str:
+    """HTML-Ausschnitt als lesbarer Text für die Prüfung (Überschriften, Listen, Bilder, Links)."""
+    s = re.sub(r"<!--baustein ([a-z0-9-]+)-->", r"\n[Interaktiver Baustein: \1 -- nicht prüfen]\n", inhalt)
+    s = s.replace("<!--blogliste-->", "\n[Liste der Blogartikel]\n")
+    s = re.sub(r"<img\b[^>]*?src=\"([^\"]+)\"[^>]*?alt=\"([^\"]*)\"[^>]*>", lambda m: f"[Bild: {m.group(1).split('/')[-1]}; Bildbeschreibung: {m.group(2) or 'FEHLT'}]", s)
+    s = re.sub(r"<img\b[^>]*?src=\"([^\"]+)\"[^>]*>", lambda m: f"[Bild: {m.group(1).split('/')[-1]}; Bildbeschreibung: FEHLT]", s)
+    s = re.sub(r"<a\b[^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a>", r"\2 (Link: \1)", s, flags=re.S)
+    s = re.sub(r"<h([1-4])[^>]*>", lambda m: "\n\n" + "#" * int(m.group(1)) + " ", s)
+    s = re.sub(r"<li[^>]*>", "\n- ", s)
+    s = re.sub(r"</(p|h[1-4]|li|blockquote|figcaption|div|section)>", "\n", s)
+    s = re.sub(r"<br\s*/?>", "\n", s)
+    s = re.sub(r"<[^>]+>", "", s)
+    s = s.replace("&amp;", "&").replace("&nbsp;", " ").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"')
+    return re.sub(r"\n{3,}", "\n\n", re.sub(r"[ \t]+", " ", s)).strip()
+
+
+async def _pruefstoff() -> tuple[str, list[str]]:
+    aend = await _aenderungen()
+    teile, pfade = [], []
+    for a in aend:
+        d = a["datei"]
+        if not (d.startswith("inhalt/") and d.endswith(".html")) or a["art"] == "gelöscht" or not (KLON / d).exists():
+            continue
+        rel = d[len("inhalt/"):]
+        kopf, inhalt = _lesen(KLON / d)
+        pfade.append(rel)
+        teile.append(f"=== SEITE {rel} ({_adresse(rel)}) -- {'neu' if a['art'] == 'neu' else 'geändert'} ===\n"
+                     f"Titel: {kopf.get('titel', '')}\nBeschreibung für Google: {kopf.get('beschreibung', '') or 'FEHLT'}\n\n{_lesbar(inhalt)}")
+    return "\n\n".join(teile)[:120_000], pfade
+
+
+@router.get("/externe")
+async def externe():
+    """Wer prüfen kann, mit welchem Modell, und was es voraussichtlich kostet."""
+    from . import langlauf, teamchat
+    async with _sperre:
+        stoff, pfade = await _pruefstoff()
+    ein = int((len(EXTERN_PRUEFEN) + len(stoff)) / 3.5)
+    aus = []
+    for x in await teamchat.externe_liste():
+        modell = x.get("modell") or x.get("vorgabe")
+        anbieter = teamchat.EXTERNE[x["id"]]["anbieter"]
+        aus.append({"id": x["id"], "name": x["name"], "titel": x["titel"], "schluessel": x.get("schluessel"),
+                    "modell": modell, "kosten": round(langlauf._usd(anbieter, ein, EXTERN_AUS_TOKEN), 3)})
+    return {"externe": aus, "seiten": pfade, "zeichen": len(stoff)}
+
+
+@router.post("/extern-pruefen")
+async def extern_pruefen(d: dict[str, Any]):
+    from . import teamchat
+    if not d.get("freigabe"):
+        raise HTTPException(400, "Die Prüfung durch Externe kostet Geld und braucht deine Freigabe.")
+    wer = [w for w in (d.get("wer") or []) if w in teamchat.EXTERNE]
+    if not wer:
+        raise HTTPException(400, "Wer soll prüfen?")
+    async with _sperre:
+        stoff, pfade = await _pruefstoff()
+    if not pfade:
+        raise HTTPException(400, "Es gibt keine geänderten Seiten zu prüfen.")
+
+    async def einer(w: str) -> dict[str, Any]:
+        x = teamchat.EXTERNE[w]
+        modell = await teamchat._extern_modell(w)
+        try:
+            antwort = await teamchat._cloud_chat(w, modell, EXTERN_PRUEFEN.format(name=x["name"]),
+                                                 [{"role": "user", "content": stoff}])
+        except llm.ModellFehler as e:
+            return {"wer": w, "name": x["name"], "modell": modell, "fehler": str(e)}
+        j = llm.json_aus(antwort)
+        if not isinstance(j, dict):
+            return {"wer": w, "name": x["name"], "modell": modell, "fehler": "Die Antwort war kein lesbares Ergebnis.", "roh": antwort[:3000]}
+        punkte = []
+        for p in (j.get("punkte") or [])[:20]:
+            if not isinstance(p, dict):
+                continue
+            seite = str(p.get("seite") or "")
+            if seite not in pfade:
+                seite = pfade[0] if len(pfade) == 1 else seite
+            stelle = str(p.get("stelle") or "")
+            # Nur Stellen, die es wirklich gibt, bekommen einen Übernehmen-Knopf.
+            vorhanden = False
+            if seite in pfade and stelle:
+                k, inh = _lesen(KLON / "inhalt" / seite)
+                vorhanden = (_im_text(inh, stelle, None)[1] > 0 or stelle in str(k.get("titel") or "")
+                             or stelle in str(k.get("beschreibung") or ""))
+            punkte.append({"seite": seite, "art": str(p.get("art") or ""), "gewicht": str(p.get("gewicht") or "hinweis"),
+                           "stelle": stelle, "problem": str(p.get("problem") or ""), "vorschlag": str(p.get("vorschlag") or ""),
+                           "uebernehmbar": vorhanden and bool(p.get("vorschlag"))})
+        return {"wer": w, "name": x["name"], "modell": modell, "urteil": str(j.get("urteil") or ""),
+                "zusammenfassung": str(j.get("zusammenfassung") or ""), "punkte": punkte}
+
+    ergebnisse = await asyncio.gather(*(llm.mit_zweck("webspace:extern", einer(w)) for w in wer))
+    return {"ergebnisse": list(ergebnisse), "seiten": pfade}
+
+
+@router.post("/stelle-ersetzen")
+async def stelle_ersetzen(d: dict[str, Any]):
+    """Einen Vorschlag aus der Prüfung übernehmen: genau diese Stelle im sichtbaren Text."""
+    datei = _sicherer_pfad(str(d.get("pfad") or ""))
+    alt, neu = str(d.get("alt") or ""), str(d.get("neu") or "")
+    if not alt or not datei.exists():
+        raise HTTPException(400, "Stelle oder Seite fehlt")
+    async with _sperre:
+        kopf, inhalt = _lesen(datei)
+        teile = _TEIL.split(inhalt)
+        for i in range(0, len(teile), 2):
+            if alt in teile[i]:
+                teile[i] = teile[i].replace(alt, neu, 1)
+                _schreiben(datei, kopf, "".join(teile))
+                return {"ok": True}
+        if alt in str(kopf.get("beschreibung") or ""):
+            kopf["beschreibung"] = kopf["beschreibung"].replace(alt, neu, 1)
+            _schreiben(datei, kopf, inhalt)
+            return {"ok": True}
+        if alt in str(kopf.get("titel") or ""):
+            kopf["titel"] = kopf["titel"].replace(alt, neu, 1)
+            _schreiben(datei, kopf, inhalt)
+            return {"ok": True}
+    raise HTTPException(404, "Die Stelle steht so nicht (mehr) im Text -- vielleicht über mehrere Absätze oder schon geändert.")
+
+
 # ---------------------------------------------------------------- Verlauf und Vergleich (19.10.2026)
 
 @router.get("/verlauf")
