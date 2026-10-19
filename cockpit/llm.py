@@ -13,6 +13,7 @@ import contextvars
 import json
 import re
 import time
+import zlib
 from typing import Any, AsyncIterator
 
 import httpx
@@ -461,7 +462,7 @@ async def chat(modell: str, system: str, nachrichten: list[dict[str, Any]], *,
             # Ausserhalb der Zeitgrenze: das Warten auf ein Gespraech ist keine Rechenzeit.
             await _warten_auf_vorrang(e)
             teile.clear()
-            e.update(tok_aus=0, denk_tok=0, erstes=None, verdraengt=False)
+            e.update(tok_aus=0, denk_tok=0, erstes=None, verdraengt=False, _denk="")
             _beginn()
             # Ein eigener Task, damit vorrang() genau DIESE Anfrage abbrechen kann,
             # ohne den Aufrufer (Pipeline, Langlaeufer) mit abzubrechen.
@@ -528,6 +529,36 @@ async def strom(modell: str, system: str, nachrichten: list[dict[str, Any]], *,
         _abmelden(e, e.get("_fertig"), grund)
 
 
+class Denkschleife(ModellFehler):
+    """Das Modell denkt im Kreis (19.10.2026)."""
+
+
+# Denkschleifen erkennen statt Denken zu begrenzen (19.10.2026). Eine Pruefung im LongRun
+# dachte ueber 35.000 Token lang, das Tempo fiel von 75 auf 25 Token/s, der LongRun stand eine
+# halbe Stunde -- Veiko: "die Karten laufen nicht auf Hochtouren", und ausdruecklich: die
+# Token-Grenze soll NICHT sinken. Also wird nicht die Laenge begrenzt, sondern die Wiederholung
+# erkannt: die letzten DENK_FENSTER Zeichen des Denktexts lassen sich bei echtem Nachdenken auf
+# etwa 35-45 % packen, bei einer Schleife auf unter DENK_SCHLEIFE_QUOTE. Geprueft wird erst ab
+# DENK_AB Denk-Token und dann alle DENK_TAKT -- ein langer, echter Gedankengang bleibt unberuehrt.
+DENK_FENSTER, DENK_SCHLEIFE_QUOTE, DENK_AB, DENK_TAKT = 8000, 0.15, 3000, 400
+
+
+def denk_quote(text: str) -> float:
+    roh = text.encode("utf-8")
+    return len(zlib.compress(roh, 6)) / max(1, len(roh))
+
+
+def _denkschleife_pruefen(e: dict[str, Any], stueck: str) -> None:
+    e["_denk"] = ((e.get("_denk") or "") + stueck)[-DENK_FENSTER:]
+    n = e.get("denk_tok") or 0
+    if n >= DENK_AB and n % DENK_TAKT == 0 and len(e["_denk"]) >= DENK_FENSTER * 0.9:
+        q = denk_quote(e["_denk"])
+        if q < DENK_SCHLEIFE_QUOTE:
+            print(f"[llm] {e.get('was') or ''}: Denkschleife nach {n} Token erkannt (Packquote {q:.2f}) -- abgebrochen",
+                  flush=True)
+            raise Denkschleife(f"Das Modell dachte im Kreis ({n} Denk-Token, Packquote {q:.2f}).")
+
+
 def _zeile(body: dict[str, Any], e: dict[str, Any], zeile: str) -> str:
     """Eine Zeile aus Ollamas Strom: zaehlt mit (Current Actions) und gibt den Text."""
     if not zeile.strip():
@@ -542,6 +573,7 @@ def _zeile(body: dict[str, Any], e: dict[str, Any], zeile: str) -> str:
     m = d.get("message") or {}
     if m.get("thinking"):
         e["denk_tok"] += 1   # ein Stueck je Zeile -- bei Ollama ein Token
+        _denkschleife_pruefen(e, m["thinking"])
     t = m.get("content") or ""
     if t:
         e["tok_aus"] += 1
