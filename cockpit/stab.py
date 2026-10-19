@@ -1050,6 +1050,35 @@ HINWEIS_RE = re.compile(r"^\s*(bildbeschreibung|bild|bildidee|visual|image|layou
                         r"sprechernotiz|sprechertext|notiz|hinweis|farbwelt|stil)\b[^:]{0,40}:", re.I)
 
 
+PRUEFT_GERADE: set[str] = set()
+
+
+async def ergebnis_pruefen(eid: str) -> None:
+    """Daniel prueft ein VORHANDENES Ergebnis (19.10.2026, Talk-Aktion "pruefen"). Veiko:
+    "lass Daniel das zweite Recherche-Dossier pruefen" -- es gab dafuer keinen Weg, Talk
+    machte daraus einen neuen Auftrag an Neal. Dieselbe Pruefung wie in der Pipeline
+    (pruefen), das Urteil ersetzt das bisherige am Ergebnis; nachgebessert wird nicht --
+    das entscheidet Veiko danach ("Daniels Einwaende einarbeiten")."""
+    e = db.holen("ergebnisse", eid)
+    if not e or eid in PRUEFT_GERADE:
+        return
+    PRUEFT_GERADE.add(eid)
+    try:
+        v = db.holen("vorgaenge", e.get("vorgang_id") or "") or {"id": None, "titel": e["titel"], "projekt_id": e.get("projekt_id")}
+        a = v.get("auftrag") if isinstance(v.get("auftrag"), dict) else {}
+        a = {**a, "auftrag": a.get("auftrag") or e["titel"], "form": e.get("form") or a.get("form")}
+        quellen = e.get("quellen") if isinstance(e.get("quellen"), list) else []
+        quellen_text = "\n".join(f"[{i + 1}] {q.get('titel')} — {q.get('url')}" for i, q in enumerate(quellen) if isinstance(q, dict))
+        with llm.taetig(f"Daniel prüft „{(e['titel'] or '')[:60]}“"):
+            p = await pruefen(e.get("inhalt") or "", a, v, quellen_text)
+        db.aendern("ergebnisse", eid, {"pruefung": p}, wer="talk")
+        if v.get("id"):
+            db.ereignis(v["id"], "kritiker", "pruefung", p.get("begruendung", ""),
+                        {"urteil": p.get("urteil"), "maengel": p.get("maengel") or [], "nachgeprueft": True})
+    finally:
+        PRUEFT_GERADE.discard(eid)
+
+
 def _ohne_md(s: str) -> str:
     return re.sub(r"\*\*|__|\*", "", s)
 

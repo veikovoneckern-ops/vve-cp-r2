@@ -13,6 +13,8 @@ Modelle Werkzeugaufrufe unzuverlaessig liefern.
 """
 from __future__ import annotations
 
+import asyncio
+import contextvars
 import json
 import re
 import time
@@ -20,6 +22,8 @@ from typing import Any, AsyncIterator
 
 from . import db, llm, stab
 from .konfig import MODELL_TALK
+
+_LAUFEND: set[asyncio.Task] = set()   # Hintergrundarbeit aus Talk (Daniels Pruefung), damit nichts verloren geht
 
 AKTIONEN = {
     "entscheiden": ("entscheidung_id", "antwort"),
@@ -40,6 +44,8 @@ AKTIONEN = {
     # Einen Begriff in einem Projekt durchgaengig ersetzen (19.10.2026): vorher ging so
     # etwas an Neo, und Neo aenderte Code statt der Daten.
     "ersetzen": ("alt", "neu", "projekt_id"),
+    # Daniel prueft ein vorhandenes Ergebnis (19.10.2026). ergebnis_id oder titel (beschriften loest auf).
+    "pruefen": (),
     # BrainStrom und ExO (verfahren.py) -- Veiko, 01.10.: "wenn ich mit dem Cockpit
     # spreche, muss das auch fuer diese Elemente funktionieren".
     "brainstrom": ("thema",),
@@ -82,6 +88,16 @@ ZUSTIMMUNG_IM_SATZ = re.compile(
     # Befehle zum Eintragen (17.10.2026, Veiko: "es soll die Dinge machen, die ich sage")
     r"trag\w*|eintragen|markier\w*|änder\w*|aender\w*|setz\w*|verschieb\w*|notier\w*|hak\w*|schreib\w* .{0,20}(auf|ein|dazu))\b",
     re.I)
+# Ein Befehl AM SATZANFANG ist die Zustimmung -- auch wenn das Modell "zugestimmt" vergisst
+# (19.10.2026: "Leg mir eine Aufgabe an: beim Verlag Campus anrufen, bis Freitag" -- Talk
+# fragte trotzdem "Soll ich das so machen?"). Nur fuer Aktionen, die zum Verb passen und
+# sich zuruecknehmen lassen (BEFEHL_AKTIONEN); ZUSTIMMUNG_IM_SATZ allein ist zu breit
+# ("ja", "bitte" irgendwo im Satz).
+BEFEHL = re.compile(r"^\s*((okay|ok|gut|ja|dann|und|also|bitte)[,.]?\s+)*(leg|trag|markier|hak|verschieb|änder|aender|setz|notier|merk|"
+                    r"ersetz|korrigier|benenn|erstell|mach|prüf|pruef|lass|schreib)\w*\b", re.I)
+BEFEHL_AKTIONEN = ("aufgabe_neu", "aufgabe_erledigt", "aufgabe_aendern", "notiz", "merken", "ersetzen", "pruefen", "projekt_neu")
+# "Lass Daniel … pruefen" -- immer eine echte Pruefung, auch wenn das Modell meint, es sei schon geschehen.
+DANIEL_PRUEFEN = re.compile(r"\bdaniel\b.{0,60}\b(prüf|pruef|überprüf|anseh|anschau|begutacht)\w*|\b(prüf|pruef)\w*\b.{0,40}\bdaniel\b", re.I)
 # Eine Behauptung, eine Recherche laufe (19.10.2026) -- die ganze Zeile, damit kein halber Satz stehen bleibt.
 RECHERCHE_BEHAUPTET = re.compile(r"[^\n]*\b(Recherche gestartet|Recherche (läuft|ist gestartet|startet)|starte (die |eine )?(gründliche |neue |erneute )?Recherche)[^\n]*", re.I)
 # Was das Cockpit selbst an eine Antwort haengt (dossier.aus_antwort), sieht das Modell im Verlauf nur
@@ -134,6 +150,7 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"notiz","text":"…","projekt_id":"p… oder null"}
 - {"aktion":"projekt_neu","name":"…"}
 - {"aktion":"neo","auftrag":"was Neo am Cockpit oder Server tun soll"} -- NUR für Programm und Server des Cockpits, NIE für Inhalte (Projekte, Aufgaben, Ergebnisse, Notizen).
+- {"aktion":"pruefen","ergebnis_id":"r… aus LAGE/KONTEXT","titel":"Titel des Ergebnisses"} -- Daniel (Red Team) prüft ein VORHANDENES Ergebnis, z. B. ein Recherche-Dossier („ungeprüft“). „Lass Daniel das prüfen“ ist IMMER pruefen, NIE ausarbeiten -- eine Ausarbeitung macht etwas Neues, und sie macht nie Daniel.
 - {"aktion":"ersetzen","projekt_id":"p…","alt":"genauer bisheriger Begriff, z. B. OODA-Loop","neu":"neuer Begriff"} -- ersetzt einen Begriff in einem Projekt überall (Projektname und Ziel, Aufgaben, Ergebnisse, Cases). Für „benenne … um“, „korrigiere die Bezeichnung … durchgängig“. Braucht Veikos Ja.
 - {"aktion":"brainstrom","thema":"die Idee in ein, zwei Sätzen","projekt_id":"p… oder null"} -- startet BrainStrom (eine Idee Frage für Frage zuspitzen) und öffnet die Ansicht. Läuft sofort.
 - {"aktion":"brainstrom_antwort","text":"Veikos Antwort, ausformuliert"} -- beantwortet die AKTUELLE FRAGE in BrainStrom (siehe KONTEXT). „Die zweite“ oder „Option B“ heißt: der Text dieser Antwortmöglichkeit. Läuft sofort.
@@ -629,10 +646,12 @@ def oeffnen_suchen(text: str, art: str | None = None, ohne: str | None = None) -
     if not gesucht:
         return None
     if not art:
-        for a, muster in _ART_WORT:
-            if re.search(muster, text or "", re.I):
-                art = a
-                break
+        # Das ZUERST genannte Art-Wort zaehlt (19.10.2026): "oeffne die Aufgabe Kapitel Mensch
+        # und Oekonomie" oeffnete das ERGEBNIS, weil "Kapitel" (Ergebnis-Wort, Teil des Titels)
+        # in der Liste vor "Aufgabe" stand. Bei gleicher Stelle gilt die Reihenfolge der Liste.
+        treffer = [(m.start(), i, a) for i, (a, mu) in enumerate(_ART_WORT) for m in [re.search(mu, text or "", re.I)] if m]
+        if treffer:
+            art = min(treffer)[2]
     arten = [art] if art in OEFFNEN_TABELLE else ["ergebnis", "langlauf", "projekt", "aufgabe", "vorgang", "datei"]
     bestes, punkte = None, 0.0
     for a in arten:
@@ -715,8 +734,53 @@ def ersetzen_schreibweise(pid: str, alt: str) -> str | None:
     return formen.pop() if len(formen) == 1 else None
 
 
+_PRUEF_AUFTRAG = re.compile(r"^\s*(prüf|pruef|überprüf|ueberpruef|bewerte|begutachte|gib (ein|dein) urteil)", re.I)
+
+
+def _pruef_ergebnis(a: dict[str, Any]) -> dict[str, Any] | None:
+    """Das Ergebnis, das geprueft werden soll: Kennung, sonst ueber Titel oder Auftrag."""
+    e = db.holen("ergebnisse", str(a.get("ergebnis_id") or "")) if a.get("ergebnis_id") else None
+    if e:
+        return e
+    # Zuerst unter den UNGEPRUEFTEN suchen (19.10.2026): "lass Daniel das zweite Recherche-
+    # Dossier pruefen" traf sonst ein schon geprueftes Ergebnis, dessen Titel zufaellig mehr
+    # Woerter teilte ("Pruefe das zweite Recherche-Dossier …"). Verglichen wird ueber
+    # Wortanfaenge (5 Zeichen), damit "zweite" und "Zweiter" zusammenfinden.
+    offen = [e for e in db.alle("SELECT id, titel, pruefung FROM ergebnisse ORDER BY erstellt DESC LIMIT 200")
+             if ((e.get("pruefung") if isinstance(e.get("pruefung"), dict) else {}) or {}).get("urteil") in (None, "", "recherche", "ungeprueft")]
+    stamm = lambda s: {w[:5] for w in _woerter(s or "")}  # noqa: E731
+    for t in (a.get("titel"), a.get("auftrag")):
+        if not t:
+            continue
+        gesucht = stamm(str(t))
+        wertung = sorted(((len(gesucht & stamm(e["titel"])), i, e) for i, e in enumerate(offen)), key=lambda x: (-x[0], x[1]))
+        if wertung and wertung[0][0] >= 2 and (len(wertung) == 1 or wertung[0][0] > wertung[1][0]):
+            return db.holen("ergebnisse", wertung[0][2]["id"])
+    for t in (a.get("titel"), a.get("auftrag")):
+        o = oeffnen_suchen(str(t or ""), "ergebnis") if t else None
+        if o:
+            return db.holen("ergebnisse", o["id"])
+    # Gibt es in den letzten drei Tagen GENAU EIN ungeprueftes Ergebnis, ist es gemeint.
+    neu = [e for e in offen if (db.holen("ergebnisse", e["id"]) or {}).get("erstellt", 0) > time.time() - 3 * 86400]
+    return db.holen("ergebnisse", neu[0]["id"]) if len(neu) == 1 else None
+
+
 def beschriften(a: dict[str, Any]) -> str | None:
     art = a["aktion"]
+    # "Pruefe das Dossier …" als Ausarbeitung (gemessen am 19.10.: an Neal, Form Dokument)
+    # meint eine Pruefung des Vorhandenen -- dann wird daraus die Aktion pruefen.
+    if art == "ausarbeiten" and _PRUEF_AUFTRAG.search(str(a.get("auftrag") or "")):
+        e = _pruef_ergebnis(a)
+        if e:
+            a.clear()
+            a.update({"aktion": "pruefen", "ergebnis_id": e["id"]})
+            art = "pruefen"
+    if art == "pruefen":
+        e = _pruef_ergebnis(a)
+        if not e:
+            return None
+        a["ergebnis_id"] = e["id"]
+        return f"Daniel prüft „{(e['titel'] or '')[:80]}“"
     if art in ("entscheiden", "antworten"):
         e = db.holen("entscheidungen", a["entscheidung_id"])
         if not e or e["stand"] != "offen":
@@ -876,6 +940,21 @@ async def ausfuehren(a: dict[str, Any]) -> dict[str, Any]:
         else:
             return await verfahren.bs_uebernehmen()
         return {"ok": True}
+    if art == "pruefen":
+        e = _pruef_ergebnis(a)
+        if not e:
+            return {"ok": False, "grund": "Ergebnis nicht gefunden"}
+        if e["id"] in stab.PRUEFT_GERADE:
+            return {"ok": True, "geprueft_wird": e["id"], "lief_schon": True}
+        # Im Hintergrund: Daniels Pruefung dauert ein, zwei Minuten; Talk antwortet sofort.
+        # Als HINTERGRUND starten, nicht mit dem Vorrang des Gespraechs: die Aufgabe erbte sonst
+        # Talks Vorrang, und Veikos naechster Satz wartete 40 s hinter Daniel (gemessen 19.10.).
+        ctx = contextvars.copy_context()
+        ctx.run(llm.VORRANG.set, False)
+        t = asyncio.create_task(stab.ergebnis_pruefen(e["id"]), context=ctx)
+        _LAUFEND.add(t)
+        t.add_done_callback(_LAUFEND.discard)
+        return {"ok": True, "geprueft_wird": e["id"]}
     if art == "ersetzen":
         alt, neu = str(a["alt"]), str(a["neu"])
         pid = str(a.get("projekt_id") or "")
@@ -927,6 +1006,11 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
         db.ausfuehren("UPDATE gespraeche SET titel=? WHERE id=?", (text[:60] or "Gespräch", gid))
     # Ein reiner Bedienbefehl ("oeffne den Verbrauch") braucht kein Modell (bedienung_erkennen).
     bed = None if anhaenge else bedienung_erkennen(text, kontext, gid)
+    # "Was hast du (in diesem Gespraech) erledigt?" -- beantwortet das Cockpit aus dem, was es
+    # festgehalten hat, nicht das Modell aus dem Gedaechtnis (19.10.2026: es zaehlte eine
+    # ausgefuehrte Pruefung und eine angelegte Aufgabe als "vorgeschlagen").
+    if not bed and not anhaenge and ERLEDIGT_FRAGE.search(text) and len(text.split()) <= 16:
+        bed = {"satz": erledigt_satz(gid)}
     if bed:
         zeig = [zeigen_ziel(bed["zeigen"])] if bed.get("zeigen") else []
         oeff = [bed["oeffnen"]] if bed.get("oeffnen") else []
@@ -945,6 +1029,9 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     # Vorlese-Regeln kamen frueher VOR der Lage -- jede Minute und jeder Wechsel zwischen
     # Tippen und Sprechen liess so die ganze Anweisung neu rechnen.
     system = system_kern() + f"\n\n{kontext_text(kontext)}\n\nHEUTE: {time.strftime('%A, %d.%m.%Y %H:%M')}"
+    st = stand_text(gid)
+    if st:
+        system += "\n\n" + st
     if stimme:
         system += "\n\nDIESE ANTWORT WIRD VORGELESEN:\n" + STIMME_ZUSATZ
     # Zugeordnetes Projekt und Aufgabe (17.10.2026) -- gilt fuer jede Nachricht dieses Gespraechs.
@@ -998,6 +1085,8 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
         yield {"typ": "fehler", "text": str(f)}
         return
     sichtbar, vorschlaege = vorschlaege_aus(gesamt)
+    # Was nach Cockpit-Vermerk aussieht, hat das Modell abgeschrieben -- nie anzeigen.
+    sichtbar = VERMERK_RE.sub("", sichtbar).strip()
     # Dieselbe Aktion nicht zweimal vorschlagen (gemessen: zweimal "Ja: Kronis …" in einer Antwort).
     gesehen, eindeutig = set(), []
     for v in vorschlaege:
@@ -1072,6 +1161,7 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     hatte_offen = bool(vorher and any(not v.get("erledigt") for v in ((vorher.get("daten") or {}).get("vorschlaege") or [])))
     bestaetigt = bool(vorher and "?" in (vorher.get("text") or "") and not hatte_offen and ist_ja(text))
     auftrag = bool(AUFTRAG_AN_TEAM.search(text))
+    befehl = bool(BEFEHL.search(text)) and not _ABLEHNUNG.search(text)
     # Ja auf die offenen Vorschlaege der vorigen Antwort (19.10.2026: "Ja, das solltest du
     # vorhin schon ausführen. Führe das jetzt aus" -- zu lang fuer das kurze Ja im Browser,
     # ging ans Modell, das "Ich beauftrage Neo" schrieb, und nichts lief). Dann werden
@@ -1102,7 +1192,34 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
             vorschlaege += [v for v in nach if v["aktion"] not in ("zeigen", "bild", "visualisierung")]
         except llm.ModellFehler:
             pass
-    if not erledigt_in and not bestaetigt and not [v for v in vorschlaege if v["aktion"] in ("ausarbeiten", "neo")] and (TEAM_BEHAUPTET.search(sichtbar or "") or (auftrag and not zeigen and not oeffnen and not werkzeug)):
+    # "Lass Daniel … pruefen" (19.10.2026): erst ohne Modell aufloesen (Kontext, Titel in Veikos
+    # Worten, das eine ungepruefte Ergebnis), sonst den Block gezielt nachfordern. Gemessen:
+    # das Modell antwortete "Daniel hat das bereits geprueft" -- verwechselt mit einem
+    # anderen Ergebnis, das nur den Titel "Pruefe …" trug.
+    if not erledigt_in and DANIEL_PRUEFEN.search(text) and not [v for v in vorschlaege if v["aktion"] == "pruefen"]:
+        a: dict[str, Any] = {"aktion": "pruefen", "titel": text}
+        if (kontext or {}).get("art") == "ergebnis":
+            a["ergebnis_id"] = kontext["id"]
+        lab = beschriften(a)
+        if not lab:
+            try:
+                roh = await llm.chat(modell, system, verlauf + [{"role": "assistant", "content": gesamt},
+                                                                 {"role": "user", "content": "Veiko will, dass Daniel ein VORHANDENES Ergebnis prüft. Antworte NUR mit "
+                                                                  "```aktionen\n[{\"aktion\":\"pruefen\",\"ergebnis_id\":\"r… aus LAGE\",\"titel\":\"Titel des Ergebnisses\"}]\n``` ohne weiteren Text."}],
+                                       temperatur=0.1, denken=False)
+                _, nach = vorschlaege_aus(roh if "```aktionen" in roh else "```aktionen\n" + roh + "\n```")
+                a = next((v for v in nach if v["aktion"] == "pruefen"), a)
+                lab = a.get("label")
+            except llm.ModellFehler:
+                pass
+        if lab:
+            a["label"] = lab
+            vorschlaege = [v for v in vorschlaege if v["aktion"] != "ausarbeiten"] + [a]
+    # Nur wenn Veiko etwas veranlassen will (Auftrag, Befehl, Ja) -- in einem Lagebericht
+    # ("Neal arbeitet gerade am Kapitel") ist derselbe Satz ein Bericht, keine Behauptung
+    # (19.10.2026: "Ich moechte eine Gesamtlage" endete mit "konnte nicht ans Team geben").
+    will_was = auftrag or befehl or ist_ja(text)
+    if not erledigt_in and not bestaetigt and will_was and not [v for v in vorschlaege if v["aktion"] in ("ausarbeiten", "neo", "pruefen")] and (TEAM_BEHAUPTET.search(sichtbar or "") or (auftrag and not zeigen and not oeffnen and not werkzeug)):
         try:
             roh = await llm.chat(modell, system, verlauf + [{"role": "assistant", "content": gesamt}, {"role": "user", "content":
                 "Du hast gesagt, das Team (oder Neo) arbeite daran, aber keinen ```aktionen-Block geschickt -- gestartet ist nichts. "
@@ -1118,10 +1235,14 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
         if not [v for v in vorschlaege if v["aktion"] in ("ausarbeiten", "neo")] and TEAM_BEHAUPTET.search(sichtbar or ""):
             sichtbar = TEAM_BEHAUPTET.sub("", sichtbar).strip()
             sichtbar = (sichtbar + "\n\nIch konnte den Auftrag nicht ans Team geben -- gestartet ist nichts. Sag mir bitte noch einmal, wer was machen soll.").strip()
-    if not erledigt_in and not bestaetigt and not vorschlaege and AENDERUNG_BEHAUPTET.search(sichtbar or ""):
+    # Auch eine Frage "Soll ich das so machen?" OHNE Block (19.10.2026: "Ich schlage vor, die
+    # Aufgabe … als erledigt zu markieren. Soll ich das so machen?" -- es gab keinen Knopf, und
+    # ein Ja haette nichts ausfuehren koennen).
+    frage_ohne_block = bool(re.search(r"Soll ich das so machen\?\s*$", sichtbar or ""))
+    if not erledigt_in and not bestaetigt and not vorschlaege and (AENDERUNG_BEHAUPTET.search(sichtbar or "") or frage_ohne_block):
         try:
             roh = await llm.chat(modell, system, verlauf + [{"role": "assistant", "content": gesamt}, {"role": "user", "content":
-                "Du hast eine Änderung angekündigt, aber keinen ```aktionen-Block geschickt -- geändert ist nichts. "
+                "Du hast eine Aktion angekündigt oder vorgeschlagen, aber keinen ```aktionen-Block geschickt -- es gibt nichts zum Ausführen. "
                 "Antworte jetzt NUR mit dem ```aktionen-Block für genau diese Änderung, ohne weiteren Text."}],
                 temperatur=0.1, denken=False, num_ctx=24576)
             _, nach = vorschlaege_aus(roh if "```aktionen" in roh else "```aktionen\n" + roh + "\n```")
@@ -1132,15 +1253,17 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
         except llm.ModellFehler:
             pass
         if not vorschlaege:
-            sichtbar = AENDERUNG_BEHAUPTET.sub("", sichtbar).strip()
+            sichtbar = AENDERUNG_BEHAUPTET.sub("", sichtbar)
+            sichtbar = re.sub(r"[^.!?\n]*\b(ich schlage vor|schlage ich vor)\b[^.!?\n]*[.!?]?|\s*Soll ich das so machen\?\s*$", "", sichtbar, flags=re.I).strip()
             sichtbar = (sichtbar + "\n\nGeändert ist noch nichts -- ich konnte das keiner Aktion zuordnen. Sag mir bitte genau, was wo geändert werden soll.").strip()
     if bestaetigt:
         if not vorschlaege:
             sichtbar = re.sub(r"[^.!?\n]*(macht sich|arbeitet an|erscheint in der Inbox)[^.!?\n]*[.!?]?", "", sichtbar).strip()
             sichtbar = (sichtbar + "\n\nIch konnte deinem Ja keinen Auftrag zuordnen, gestartet ist noch nichts. Sag mir bitte noch einmal, was das Team tun soll.").strip()
     im_satz = zustimmung_im_satz(text)
-    gleich = [v for v in vorschlaege if v["aktion"] not in SOFORT_VERFAHREN
-              and (bestaetigt or (auftrag and v["aktion"] in ("ausarbeiten", "neo"))
+    gleich =[v for v in vorschlaege if v["aktion"] not in SOFORT_VERFAHREN
+              and (bestaetigt or (auftrag and v["aktion"] in ("ausarbeiten", "neo", "pruefen"))
+                   or (befehl and v["aktion"] in BEFEHL_AKTIONEN)
                    or (v.get("zugestimmt") is True and im_satz))]
     ausgefuehrt = list(vorab)
     for v in gleich[:3]:
@@ -1150,26 +1273,47 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
             r = {"ok": False, "grund": str(f)}
         v["erledigt"] = bool(r.get("ok"))
         v["ergebnis"] = r
-        ausgefuehrt.append(r)
+        ausgefuehrt.append({**r, "label": v.get("label")})
     if ausgefuehrt:
-        if all(r.get("ok") for r in ausgefuehrt):
-            hinweis = ("Neo arbeitet daran." if any(r.get("neo_gespraech") for r in ausgefuehrt)
-                       else f"Ersetzt: {sum(r.get('ersetzt') or 0 for r in ausgefuehrt)} Stellen." if any("ersetzt" in r for r in ausgefuehrt)
-                       and not any(r.get("vorgang_id") for r in ausgefuehrt)
-                       else "Ist beim Team, das Ergebnis erscheint in der Inbox." if any(r.get("vorgang_id") for r in ausgefuehrt) else "Erledigt.")
-        else:
-            hinweis = "Nicht alles ging: " + "; ".join(str(r.get("grund")) for r in ausgefuehrt if not r.get("ok"))
+        # Das Cockpit sagt selbst, WAS lief -- je Aktion eine Zeile mit ihrem Etikett
+        # (19.10.2026: "Ich schlage vor, dass Daniel … prüft" stand ueber "Ist beim Team",
+        # gestartet war aber Neal. Der Satz des Modells darf nie das Einzige sein, was
+        # Veiko ueber eine ausgefuehrte Aktion liest).
+        zeilen = []
+        for r in ausgefuehrt:
+            was = r.get("label") or "Aktion"
+            if not r.get("ok"):
+                zeilen.append(f"Ging nicht: {was} ({r.get('grund')})")
+            elif r.get("neo_gespraech"):
+                zeilen.append(f"Gestartet: {was}. Neo arbeitet daran.")
+            elif "ersetzt" in r:
+                zeilen.append(f"Erledigt: {r['ersetzt']} Stellen ersetzt.")
+            elif r.get("lief_schon"):
+                zeilen.append(f"Läuft schon: {was}. Sein Urteil steht in wenigen Minuten am Ergebnis.")
+            elif r.get("geprueft_wird"):
+                zeilen.append(f"Gestartet: {was}. Sein Urteil steht in wenigen Minuten am Ergebnis -- frag mich dann „Was sagt Daniel?“.")
+            elif r.get("vorgang_id"):
+                zeilen.append(f"Gestartet: {was}. Das Ergebnis erscheint in der Inbox.")
+            else:
+                zeilen.append(f"Erledigt: {was}.")
+        hinweis = "\n".join(zeilen)
         sichtbar = re.sub(r"\s*Soll ich das so machen\?\s*$", "", sichtbar).strip()
-        # "Ich beauftrage Neo …" stand ueber "Ersetzt: 8 Stellen" (19.10.2026) -- das Modell
-        # beschrieb etwas anderes als das, was lief. Ohne Neo/Team im Ausgefuehrten fallen
-        # solche Saetze weg; Ankuendigungen ("ich korrigiere") ersetzt die Meldung.
-        if not any(r.get("neo_gespraech") or r.get("vorgang_id") for r in ausgefuehrt):
-            sichtbar = TEAM_BEHAUPTET.sub("", sichtbar)
+        sichtbar = re.sub(r"[^.!?\n]*\b(ich schlage vor|schlage ich vor|mein vorschlag)\b[^.!?\n]*[.!?]?", "", sichtbar, flags=re.I).strip()
+        # Wer was tut, sagt die Zeile des Cockpits -- Saetze des Modells darueber fallen weg
+        # ("Ich beauftrage Neo …" ueber "Ersetzt: 8 Stellen", "Daniel prüft" ueber Neals Auftrag).
+        sichtbar = TEAM_BEHAUPTET.sub("", sichtbar)
+        if any(r.get("geprueft_wird") for r in ausgefuehrt):
+            # Vor Daniels Urteil kann das Modell nichts Belastbares ueber das Ergebnis sagen
+            # (gemessen: "Daniel hat das bereits geprueft … du musst nichts weiter tun" neben
+            # "Gestartet: Daniel prueft"). Die Zeile des Cockpits steht allein.
+            sichtbar = ""
+        if not any(r.get("neo_gespraech") for r in ausgefuehrt):
             sichtbar = re.sub(r"[^.!?\n]*\bNeo\b[^.!?\n]*[.!?]?", "", sichtbar)
-        sichtbar = AENDERUNG_BEHAUPTET.sub("", sichtbar).strip()
-        schon_gesagt = all(r.get("ok") for r in ausgefuehrt) and re.search(r"Inbox|arbeite|macht sich|kümmer|erledigt", sichtbar, re.I)
-        if not schon_gesagt:
-            sichtbar = (sichtbar + "\n\n" + hinweis).strip()
+        sichtbar = AENDERUNG_BEHAUPTET.sub("", sichtbar)
+        sichtbar = re.sub(r"[^.!?\n]*(erscheint in der Inbox|Ist beim Team|arbeitet daran)[^.!?\n]*[.!?]?", "", sichtbar).strip()
+        # Reste nach dem Streichen ("Oktober 2026." -- ein Datum hatte den Satz am Punkt geteilt).
+        sichtbar = "\n\n".join(p.strip() for p in re.split(r"\n\s*\n", sichtbar) if len(p.strip()) >= 30)
+        sichtbar = (sichtbar + "\n\n" + hinweis).strip()
     sofort = [v for v in vorschlaege if v["aktion"] in SOFORT_VERFAHREN][:1]
     vorschlaege = [v for v in vorschlaege if v["aktion"] not in SOFORT_VERFAHREN]
     if sofort:
@@ -1252,6 +1396,9 @@ def _kontext_einsetzen(vorschlaege: list[dict[str, Any]], kontext: dict[str, Any
     if not e:
         return
     for v in vorschlaege:
+        if v["aktion"] == "pruefen" and not db.holen("ergebnisse", str(v.get("ergebnis_id") or "")):
+            v["ergebnis_id"] = e["id"]
+            v["label"] = beschriften(v) or v["label"]
         if v["aktion"] == "ausarbeiten":
             v.setdefault("ergebnis_id", e["id"])
             if not v.get("projekt_id") and e.get("projekt_id"):
@@ -1265,25 +1412,65 @@ def _kontext_einsetzen(vorschlaege: list[dict[str, Any]], kontext: dict[str, Any
 # ein Vorschlag inzwischen per Knopf ausgefuehrt war, weil der Text das nicht sagte.
 _COCKPIT_ANHANG = re.compile(r"^(Noch nicht ausgeführt: .*|Ist beim Team, das Ergebnis erscheint in der Inbox\.|Neo arbeitet daran\.|"
                              r"Ersetzt: \d+ Stellen\.|Erledigt\.|Nicht alles ging: .*|Geändert ist noch nichts.*|"
+                             r"Gestartet: .*|Erledigt: .*|Ging nicht: .*|"
                              r"Ich konnte (den Auftrag|deinem Ja|die Recherche).*)$", re.M)
 
 
 def _fuers_modell(text: str, daten: dict[str, Any]) -> str:
-    t = _COCKPIT_ZEILE.sub("[Vermerk des Cockpits: hier wurde eine Recherche gestartet.]", text or "")
-    t = _COCKPIT_ANHANG.sub("", t).strip()
-    vermerke = []
-    for v in daten.get("vorschlaege") or []:
-        if v.get("abgelehnt"):
-            vermerke.append(f"abgelehnt: {v.get('label')}")
-        elif v.get("erledigt"):
-            vermerke.append(f"AUSGEFÜHRT: {v.get('label')}")
-        elif v.get("ergebnis") and not (v["ergebnis"] or {}).get("ok"):
-            vermerke.append(f"FEHLGESCHLAGEN: {v.get('label')} ({(v['ergebnis'] or {}).get('grund')})")
-        else:
-            vermerke.append(f"vorgeschlagen, noch NICHT ausgeführt: {v.get('label')}")
-    if vermerke:
-        t += "\n[Vermerk des Cockpits: " + "; ".join(vermerke) + "]"
-    return t
+    """Eine fruehere Antwort, wie das Modell sie im Verlauf sieht: ohne alles, was das
+    Cockpit selbst angehaengt hat. Was wirklich ausgefuehrt wurde, steht NICHT hier, sondern
+    in stand_text() in der Anweisung -- ein Vermerk im Verlauf wurde am 19.10.2026 woertlich
+    abgeschrieben ("[Vermerk des Cockpits: AUSGEFÜHRT: …]" stand in Veikos Antwort)."""
+    t = _COCKPIT_ZEILE.sub("", text or "")
+    return _COCKPIT_ANHANG.sub("", VERMERK_RE.sub("", t)).strip() or "(siehe WAS IN DIESEM GESPRÄCH SCHON PASSIERT IST)"
+
+
+VERMERK_RE = re.compile(r"\s*\[Vermerk des Cockpits[^\]]*\]?", re.I)
+
+
+ERLEDIGT_FRAGE = re.compile(r"\bwas (hast du|habt ihr|wurde|ist)\b.{0,40}\b(erledigt|gemacht|ausgeführt|ausgefuehrt|gestartet|getan|angelegt|geändert|geaendert)\b", re.I)
+
+
+def erledigt_satz(gid: str) -> str:
+    """Die Antwort auf "Was hast du erledigt?" -- aus den gespeicherten Vorschlaegen."""
+    getan, offen = [], []
+    for m in db.alle("SELECT daten FROM nachrichten WHERE gespraech_id=? AND rolle='assistent' ORDER BY id", (gid,)):
+        for v in (m.get("daten") or {}).get("vorschlaege") or []:
+            if v.get("erledigt") and not v.get("abgelehnt"):
+                getan.append(v.get("label"))
+            elif not v.get("erledigt") and not v.get("abgelehnt") and not v.get("ergebnis"):
+                offen.append(v.get("label"))
+    getan = list(dict.fromkeys(getan))
+    offen = [x for x in dict.fromkeys(offen) if x not in getan]
+    if not getan and not offen:
+        return "In diesem Gespräch habe ich noch nichts ausgeführt -- wir haben nur gesprochen."
+    teile = []
+    if getan:
+        teile.append("In diesem Gespräch ausgeführt:\n" + "\n".join(f"- {x}" for x in getan[-10:]))
+    if offen:
+        teile.append("Vorgeschlagen, wartet noch auf dein Ja:\n" + "\n".join(f"- {x}" for x in offen[-5:]))
+    return "\n\n".join(teile)
+
+
+def stand_text(gid: str) -> str:
+    """Was in diesem Gespraech wirklich passiert ist -- fuer die Anweisung, nicht den Verlauf."""
+    zeilen = []
+    for m in db.alle("SELECT text, daten FROM nachrichten WHERE gespraech_id=? AND rolle='assistent' ORDER BY id DESC LIMIT 12", (gid,)):
+        for z in _COCKPIT_ZEILE.findall(m.get("text") or ""):
+            zeilen.append(z[:160])
+        for v in (m.get("daten") or {}).get("vorschlaege") or []:
+            if v.get("abgelehnt"):
+                zeilen.append(f"von Veiko abgelehnt: {v.get('label')}")
+            elif v.get("erledigt"):
+                zeilen.append(f"AUSGEFÜHRT (läuft oder ist fertig, NICHT noch einmal vorschlagen): {v.get('label')}")
+            elif v.get("ergebnis") and not (v["ergebnis"] or {}).get("ok"):
+                zeilen.append(f"fehlgeschlagen: {v.get('label')} ({(v['ergebnis'] or {}).get('grund')})")
+            else:
+                zeilen.append(f"vorgeschlagen, wartet auf Veikos Ja: {v.get('label')}")
+    if not zeilen:
+        return ""
+    return ("WAS IN DIESEM GESPRÄCH SCHON PASSIERT IST (vom Cockpit festgehalten, jüngstes zuerst; schreib das nie ab, "
+            "sag es in eigenen Worten, wenn Veiko fragt):\n" + "\n".join("- " + z for z in zeilen[:12]))
 
 
 def zeigen_ziel(v: dict[str, Any]) -> dict[str, Any] | None:
@@ -1317,7 +1504,7 @@ async def vorschlaege_ausfuehren(nachricht_id: int, indizes: list[int]) -> list[
             r = {"ok": False, "grund": str(f)}
         vs[i]["erledigt"] = bool(r.get("ok"))
         vs[i]["ergebnis"] = r
-        ergebnisse.append(r)
+        ergebnisse.append({**r, "label": vs[i].get("label")})
     daten["vorschlaege"] = vs
     db.ausfuehren("UPDATE nachrichten SET daten=? WHERE id=?", (json.dumps(daten, ensure_ascii=False), nachricht_id))
     return ergebnisse
