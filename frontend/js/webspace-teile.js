@@ -8,12 +8,31 @@ export const BASIS = "/api/webspace/vorschau";
 const MARKE_RE = /<!--(baustein [a-z0-9-]+|blogliste)-->/g;
 
 // ---------------------------------------------------------------- Datei <-> Editor
+// Die Blog-Liste baut sich beim Veröffentlichen aus den Artikeln. Im Editor stand dort
+// bis zum 19.10. nur ein Platzhalter -- Veiko: "wieso sind auf dieser Seite keine Inhalte?".
+// Jetzt zeigt der Editor die echte Liste (aus dem Stand, gleiche Reihenfolge und Markup wie
+// bauen.js), nur lesend; ein Klick auf einen Beitrag öffnet ihn. Gespeichert wird weiter
+// nur die Marke.
+let blogArtikel = [];
+export function blogSetzen(seiten) {
+  blogArtikel = (seiten || []).filter((s) => s.blog).sort((a, b) => (a.blog.reihe ?? 999) - (b.blog.reihe ?? 999));
+}
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[c]));
+function blogVorschau() {
+  if (!blogArtikel.length) return "<p class=\"ws-marke-leer\">Noch keine Blogartikel. Neue Artikel legst du links über „Neue Seite oder Artikel“ an.</p>";
+  return "<div class=\"blogliste\">" + blogArtikel.map((a) => `<div class="blogeintrag" data-ws-pfad="${esc(a.pfad)}" title="Artikel öffnen">
+    ${a.blog.bild ? `<img src="${esc(a.blog.bild.startsWith("/bilder/") ? BASIS + a.blog.bild : a.blog.bild)}" alt="" loading="lazy">` : "<span></span>"}
+    <div><h2>${esc(a.titel)}</h2><p>${esc(a.blog.auszug || "")}</p></div></div>`).join("") + "</div>";
+}
+
 export function zuEditor(inhalt) {
   return inhalt
     .replace(/(["'(])\/bilder\//g, "$1" + BASIS + "/bilder/")
     .replace(MARKE_RE, (m, was) => {
-      const text = was === "blogliste" ? "Liste der Blogartikel — baut sich von selbst aus den Artikeln"
-        : `Interaktiver Baustein „${was.slice(9)}“ — wird von Neo gepflegt, hier nur verschiebbar`;
+      if (was === "blogliste") {
+        return `<div class="ws-marke ws-marke-blog" contenteditable="false" data-marke="blogliste"><div class="ws-marke-kopf"><span>⚙</span>Liste der Blogartikel (${blogArtikel.length}) — baut sich von selbst aus den Artikeln · Klick auf einen Beitrag öffnet ihn</div>${blogVorschau()}</div>`;
+      }
+      const text = `Interaktiver Baustein „${was.slice(9)}“ — wird von Neo gepflegt, hier nur verschiebbar`;
       return `<div class="ws-marke" contenteditable="false" data-marke="${was}"><span>⚙</span>${text}</div>`;
     });
 }

@@ -19,7 +19,7 @@
 // (Abschnitt verschoben, KI-Text) nicht kennt.
 import { html, useState, useEffect, useRef, Icon, Modal, toast, fehlerMelden, zeitText } from "./ui.js";
 import { api } from "./api.js";
-import { BASIS, zuEditor, ausEditor, abschnittArt, kurzText, VORLAGEN, youtubeId, saeubern } from "./webspace-teile.js";
+import { BASIS, blogSetzen, zuEditor, ausEditor, abschnittArt, kurzText, VORLAGEN, youtubeId, saeubern } from "./webspace-teile.js";
 
 const EDITOR_CSS = `
   main[contenteditable="true"]{outline:none}
@@ -28,6 +28,10 @@ const EDITOR_CSS = `
     background:repeating-linear-gradient(45deg,#f5f7fa,#f5f7fa 10px,#eef1f5 10px,#eef1f5 20px);
     color:#32465C;font:600 15px/1.4 system-ui,sans-serif;text-align:center;user-select:none}
   .ws-marke span{margin-right:8px}
+  .ws-marke-blog{max-width:none;padding:0;background:none;text-align:left;font:inherit;color:inherit;user-select:auto}
+  .ws-marke-blog .ws-marke-kopf{padding:10px 16px;background:#eef1f5;color:#32465C;font:600 14px/1.4 system-ui,sans-serif;text-align:center}
+  .ws-marke-blog .blogeintrag{cursor:pointer}
+  .ws-marke-leer{padding:24px;text-align:center;color:#5b6b7d}
   .video iframe{pointer-events:none}
   .video:has(iframe[src$="/embed/"])::after{content:"YouTube-Link rechts unter Eigenschaften eintragen";position:absolute;inset:0;display:grid;place-items:center;color:#fff;font:600 16px system-ui}
   .abstand{background:repeating-linear-gradient(0deg,transparent,transparent 7px,rgba(59,111,216,.08) 7px,rgba(59,111,216,.08) 8px)}
@@ -62,6 +66,7 @@ const KI_SCHNELL = [["Kürzer", "Mach den Text deutlich kürzer und knapper, ohn
   ["Auf Englisch", "Übersetze den Text ins Englische. Struktur und Bausteine bleiben gleich."]];
 
 export function Editor({ pfad, stand, sichernRef, geaendert: aufGeaendert, kopfLeiste, geloescht }) {
+  blogSetzen(stand && stand.seiten);
   const [seite, setSeite] = useState(null);
   const [kopf, setKopfZustand] = useState(null);
   const [fehler, setFehler] = useState(null);
@@ -274,6 +279,8 @@ export function Editor({ pfad, stand, sichernRef, geaendert: aufGeaendert, kopfL
     d.addEventListener("click", (e) => {
       const knopf = e.target.closest && e.target.closest("#ws-ui [data-a]");
       if (knopf) { e.preventDefault(); fn.current.leiste(knopf.dataset.a, d.getElementById("ws-ui")._fuer); return; }
+      const artikel = e.target.closest("[data-ws-pfad]");
+      if (artikel) { e.preventDefault(); fn.current.artikel(artikel.dataset.wsPfad); return; }
       if (e.target.closest("a")) e.preventDefault();
       if (e.target.closest(".ws-ende, header, footer")) { if (!e.target.closest(".ws-ende")) e.preventDefault(); return; }
       const b = blockVon(e.target);
@@ -493,6 +500,7 @@ export function Editor({ pfad, stand, sichernRef, geaendert: aufGeaendert, kopfL
 
   fn.current = { leiste, ziehen, uebernehmen, taste, einfuegen, bildHochUndEinfuegen,
     waehlen: (b, el) => waehlen(b, el),
+    artikel: (p) => aufGeaendert({ wechseln: p }),
     bibliothek: (nach, ersetzen) => setBibliothek({ nach, ersetzen }) };
 
   // ------------------------------------------------ Tasten auch außerhalb des Rahmens
