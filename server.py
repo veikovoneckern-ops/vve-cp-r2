@@ -12,10 +12,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import gzip
 
 import uvicorn
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from cockpit import anmeldung, dossier, folienbilder, importer, langlauf, medien, revision, stab, usage, webspace
@@ -69,9 +70,58 @@ async def anmeldung_pruefen(request: Request, call_next):
             return JSONResponse({"detail": "Nicht angemeldet"}, status_code=401)
     antwort = await call_next(request)
     if pfad == "/" or pfad.startswith("/static/"):
-        # Kein Zwischenspeichern: sonst sieht man nach einem Update tagelang die alte Oberflaeche.
-        antwort.headers["Cache-Control"] = "no-store"
+        # "no-cache" statt "no-store" (19.10.2026, Veiko am Handy: "es dauert ewig"): der Browser
+        # behaelt die Datei und fragt nur nach, ob sie sich geaendert hat (ETag -> 304, ein paar
+        # Byte). Ein Update ist trotzdem beim naechsten Laden da -- mit "no-store" holte das
+        # Handy bei JEDEM Laden alle 36 Programmdateien (940 KB) neu.
+        antwort.headers["Cache-Control"] = "no-cache"
     return antwort
+
+
+class Komprimieren:
+    """gzip fuer Oberflaeche und Daten (19.10.2026). Entschieden wird am INHALTSTYP der
+    Antwort, nicht am Pfad: die gestreamten Antworten (Talk, Team-Chat, application/x-ndjson)
+    muessen Wort fuer Wort ankommen und bleiben ungepackt, ebenso Bilder, Videos, Dateien
+    und Teilantworten (Range). Gepackte Antworten werden ganz gesammelt -- das sind JSON,
+    HTML, CSS und JavaScript, also hoechstens wenige hundert KB."""
+    TYPEN = ("application/json", "text/html", "text/css", "text/javascript", "application/javascript", "image/svg+xml", "text/plain")
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or b"gzip" not in b",".join(v for k, v in scope["headers"] if k == b"accept-encoding"):
+            return await self.app(scope, receive, send)
+        start: dict = {}
+        teile: list[bytes] = []
+        packen = False
+
+        async def senden(msg):
+            nonlocal packen
+            if msg["type"] == "http.response.start":
+                h = {k.lower(): v for k, v in msg.get("headers", [])}
+                typ = h.get(b"content-type", b"").decode("latin-1").split(";")[0].strip()
+                packen = (msg["status"] == 200 and typ in self.TYPEN and b"content-encoding" not in h
+                          and b"content-range" not in h and scope.get("method") != "HEAD")
+                if packen:
+                    start.update(msg)
+                    return
+                return await send(msg)
+            if msg["type"] == "http.response.body" and packen:
+                teile.append(msg.get("body", b""))
+                if msg.get("more_body"):
+                    return
+                roh = b"".join(teile)
+                koerper = gzip.compress(roh, 6) if len(roh) >= 1200 else roh
+                kopf = [(k, v) for k, v in start.get("headers", []) if k.lower() != b"content-length"]
+                kopf.append((b"content-length", str(len(koerper)).encode()))
+                if koerper is not roh:
+                    kopf += [(b"content-encoding", b"gzip"), (b"vary", b"Accept-Encoding")]
+                await send({**start, "headers": kopf})
+                return await send({"type": "http.response.body", "body": koerper})
+            return await send(msg)
+
+        await self.app(scope, receive, senden)
 
 
 app.include_router(router)
@@ -82,12 +132,23 @@ app.mount("/static", StaticFiles(directory=str(FRONTEND)), name="static")
 
 @app.get("/")
 async def start():
-    return FileResponse(FRONTEND / "index.html")
+    # Alle Programmteile vorab ankuendigen (modulepreload, 19.10.2026): ohne das holte der
+    # Browser app.js, las dort die Importe, holte die naechsten, las deren Importe ... -- eine
+    # Kette von Stufen, und jede kostet am Handy im WLAN gut 100 ms. So kommen sie parallel.
+    seite = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    module = sorted(p.relative_to(FRONTEND).as_posix() for p in (FRONTEND / "js").glob("*.js"))
+    module += sorted(p.relative_to(FRONTEND).as_posix() for p in (FRONTEND / "vendor").glob("*.js"))
+    vorab = "".join(f'<link rel="modulepreload" href="/static/{m}">\n' for m in module)
+    return HTMLResponse(seite.replace("</head>", vorab + "</head>", 1))
 
 
 @app.get("/status")
 async def status():
     return {"dienst": "vve-cockpit-neu", "ok": True}
+
+
+fastapi_app = app
+app = Komprimieren(fastapi_app)   # ganz aussen, nach allen Routen: auch Dateien aus /static werden gepackt
 
 
 if __name__ == "__main__":

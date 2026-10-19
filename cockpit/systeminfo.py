@@ -537,6 +537,29 @@ def _vram_gesamt(s: dict[str, Any] | None) -> float:
 # daran auch das Logo dreht; deshalb wird /status kurz gemerkt und die
 # apt-Simulation NIE hier angestossen, sondern nur ihr letzter Stand gelesen.
 _upd_task: asyncio.Task | None = None
+_im_hintergrund: dict[str, asyncio.Task] = {}
+
+
+async def _frisch_oder_alt(schluessel: str, sek: float, rechnen) -> Any:
+    """Gemerkter Stand, sonst der zuletzt gemerkte (bis 2 Minuten alt) -- und im Hintergrund
+    neu rechnen (19.10.2026, Veiko am Handy: "es dauert ewig"). Die Kopfzeile wird alle 3 bis
+    6 s abgefragt; vorher wartete fast jeder Abruf auf den Statusdienst (0,7-1,5 s) oder auf
+    die Prozessormessung (top, 0,7 s). Nur wenn es noch gar keinen Stand gibt, wird gewartet.
+    rechnen: eine Funktion ohne Argumente, die einen Coroutine liefert und selbst merkt."""
+    w = _gemerkt(schluessel, sek)
+    if w is not None:
+        return w
+    e = _cache.get(schluessel)
+    if e and time.time() - e["zeit"] < 120:
+        t = _im_hintergrund.get(schluessel)
+        if t is None or t.done():
+            _im_hintergrund[schluessel] = asyncio.create_task(rechnen())
+        return e["wert"]
+    return await rechnen()
+
+
+async def _status_kopf_rechnen() -> dict[str, Any] | None:
+    return _merken("status_kopf", await status())
 
 
 def _gpu_zeilen(s: dict[str, Any]) -> list[dict[str, Any]]:
@@ -564,6 +587,14 @@ _NAMEN = {"llama-server": "Ollama (Modell)", "ollama": "Ollama", "python3": "Pyt
 
 
 async def _prozessor_spitze() -> list[dict[str, Any]]:
+    return await _frisch_oder_alt("prozessor_spitze", 10, _prozessor_spitze_rechnen)
+
+
+async def _fremd_taetig() -> list[str]:
+    return await _frisch_oder_alt("fremd_taetig", 15, _fremd_taetig_rechnen)
+
+
+async def _prozessor_spitze_rechnen() -> list[dict[str, Any]]:
     """Die groessten Prozessorverbraucher JETZT (Veiko, 16.10.: "der Minisforum
     laeuft laut, aber die Anzeige sagt, es laeuft nichts" -- sie sah nur die
     Grafikkarten). top misst im ZWEITEN Durchgang ueber ein halbe Sekunde; der
@@ -591,7 +622,7 @@ async def _prozessor_spitze() -> list[dict[str, Any]]:
     return _merken("prozessor_spitze", out)
 
 
-async def _fremd_taetig() -> list[str]:
+async def _fremd_taetig_rechnen() -> list[str]:
     """Was AUSSERHALB dieser Fassung auf denselben Karten rechnet: das alte
     Cockpit (eigene Pipeline) und ComfyUI. 15 Sekunden gemerkt -- die Kopfzeile
     fragt alle 3 bis 6 Sekunden, und beide Antworten aendern sich langsamer."""
@@ -672,9 +703,8 @@ async def taetigkeit(gpu_last: float, geladen: list[str]) -> dict[str, Any]:
 async def kopf() -> dict[str, Any]:
     global _upd_task
     from . import llm, stab
-    s = _gemerkt("status_kopf", 4)
-    if s is None:
-        s = _merken("status_kopf", await status())
+    # Sofort mit dem letzten Stand, aufgefrischt im Hintergrund (_frisch_oder_alt, 19.10.2026).
+    s = await _frisch_oder_alt("status_kopf", 4, _status_kopf_rechnen)
     upd = _gemerkt("updates", 600)
     if upd is None and (_upd_task is None or _upd_task.done()):
         # Beim ersten Mal im Hintergrund rechnen; der naechste Abruf hat es.
