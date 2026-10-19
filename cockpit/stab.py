@@ -1228,7 +1228,10 @@ async def pruefen(entwurf: str, a: dict[str, Any], v: dict[str, Any], quellen_te
         # Folienregeln (folien.py, 17.10.2026): die Gestaltung macht das Cockpit,
         # die Qualitaet einer Folie entscheidet sich an diesen Punkten.
         frage += ("\n\nDAS IST EINE PRÄSENTATION. Prüfe zusätzlich als Mangel: Überschriften, die nur ein Thema statt einer "
-                  "Aussage sind; Folien mit deutlich mehr als 30 Wörtern sichtbarem Text (Notizen zählen nicht); fehlende "
+                  "Aussage sind; Folien mit mehr als etwa 250 Wörtern (dann ist es eine Seite, keine Folie -- aufteilen). "
+                  "Viel Text auf einer Folie ist KEIN Mangel: Veikos Präsentationen sind auch Unterlagen, die ohne Vortrag "
+                  "verständlich sein sollen (19.10.2026). Ein Mangel ist dagegen ein Erklärungsbedarf, der nur in den Notizen "
+                  "steht und auf der Folie fehlt. Weiter als Mangel: fehlende "
                   "'Typ:'-Zeilen; drei punkte-Folien hintereinander; Bildbeschreibungen, die Schrift, Zahlen oder Logos im Bild verlangen; Zitate, die nicht wörtlich im Material oder in den "
                   "Quellen stehen (ein bekannter Spruch ist nicht automatisch von der genannten Person); Tipp- und Rechtschreibfehler.")
     # Erster Versuch mit Nachdenken (gruendlicher), der zweite ohne: Denken und

@@ -38,7 +38,7 @@ import time
 from io import BytesIO
 from typing import Any
 
-TYPEN = ("titel", "kapitel", "aussage", "punkte", "zahlen", "zwei_spalten", "vergleich", "zitat", "bild", "abschluss", "quellen")
+TYPEN = ("titel", "kapitel", "aussage", "punkte", "text", "zahlen", "zwei_spalten", "vergleich", "zitat", "bild", "abschluss", "quellen")
 # Quellen der Internetsuche (stab.netz_fuss) und Link-Zeilen sind kein Folieninhalt:
 # sie standen am 17.10. als rohe Links in den Stichpunkten der letzten Folie. Sie
 # werden gesammelt und bekommen am Ende eine eigene, kleine Quellenfolie.
@@ -57,7 +57,10 @@ ANWEISUNG = (
     "- titel: '# Titel', 'Untertitel: …', dazu eine Bild-Zeile.\n"
     "- kapitel: '# Kapitelname' (trennt Abschnitte; die Nummer setzt das Cockpit).\n"
     "- aussage: '# die Kernaussage als ganzer Satz', darunter EIN Satz als Beleg.\n"
-    "- punkte: '# Überschrift als Aussage', darunter 3 bis 5 Punkte '- …' mit höchstens 12 Wörtern.\n"
+    "- punkte: '# Überschrift als Aussage', darunter 3 bis 6 Punkte '- …'.\n"
+    "- text: '# Überschrift als Aussage', darunter Absätze und Aufzählungen, gern mit '### Zwischenüberschrift' -- für "
+    "Erklärungen, Hintergründe, Vorgehen, Begründungen: so ausführlich, dass man die Folie OHNE Vortrag versteht "
+    "(bis etwa 200 Wörter; die Schrift passt sich an).\n"
     "- zahlen: '# Überschrift', darunter 2 bis 4 Zeilen '- 42 % | was die Zahl bedeutet' (nur belegte Zahlen).\n"
     "- zwei_spalten: '# Überschrift', dann '## Titel links' mit Punkten und '## Titel rechts' mit Punkten.\n"
     "- vergleich: wie zwei_spalten, links das Heute, rechts das Morgen.\n"
@@ -66,8 +69,10 @@ ANWEISUNG = (
     "- bild: '# kurze Überschrift' über einem Vollbild, dazu eine Bild-Zeile.\n"
     "- abschluss: '# Schlussgedanke', darunter 2 bis 4 nächste Schritte.\n"
     "REGELN WIE IN EINER GUTEN BERATER-PRÄSENTATION: Die Überschrift ist die Aussage der Folie als ganzer Satz, nicht "
-    "ein Thema („Agenten verdreifachen den Durchsatz“, nicht „Agenten“). Höchstens 30 Wörter Text je Folie -- was du "
-    "dazu sagen würdest, gehört in eine Zeile 'Notizen: …' (Sprechernotizen). Wechsle die Folientypen ab; nie drei "
+    "ein Thema („Agenten verdreifachen den Durchsatz“, nicht „Agenten“). VEIKOS PRÄSENTATIONEN SIND AUCH UNTERLAGEN, die "
+    "verteilt und ohne Vortrag gelesen werden (19.10.2026): wo etwas erklärt werden muss, schreib es AUF die Folie "
+    "(Folientyp text) statt nur in die Notizen; aussage, zahlen und zitat bleiben knapp und setzen Akzente. "
+    "Zusätzliches für den Vortrag gehört in eine Zeile 'Notizen: …'. Wechsle die Folientypen ab; nie drei "
     "punkte-Folien hintereinander. Erste Folie titel, letzte abschluss, bei mehr als acht Folien kapitel-Folien.\n"
     "UMFANG: eine vollständige Präsentation hat 18 bis 25 Folien (Veiko, 19.10.2026: „bis zu 25 Slides“); nennt der "
     "Auftrag eine Zahl, genau so viele. Lieber eine Folie mehr mit einem klaren Gedanken als eine überladene.\n"
@@ -100,6 +105,83 @@ def _rein(s: str) -> str:
     return re.sub(r"\*\*|__", "", s).strip()
 
 
+def _zu_voll(f: dict[str, Any]) -> bool:
+    """Wuerde die Gestaltung der Folienart Inhalt abschneiden oder unlesbar quetschen?"""
+    typ, b = f["typ"], f["bloecke"]
+    zeichen = sum(len(t) for _, t in b)
+    if typ in ("titel", "kapitel", "zitat", "quellen", "text") or (typ == "bild" and not b):
+        return False
+    if typ == "punkte" or typ == "bild":
+        return len(f["punkte"]) > 6 or bool(f["punkte"] and f["rest"]) or len(f["rest"]) > 6 or zeichen > 650
+    if typ in ("zwei_spalten", "vergleich"):
+        return (any(len(sp["punkte"]) > 6 or sum(len(p) for p in sp["punkte"]) > 520 for sp in f["spalten"])
+                or len(f["spalten"]) > 2 or bool(f["rest"]))
+    if typ == "aussage":
+        return len(f["rest"] + f["punkte"]) > 2 or zeichen > 320
+    if typ == "zahlen":
+        # Bis zu vier Kennzahlen bleiben Karten; die Erlaeuterung darunter steht vollstaendig da.
+        return len(f["zahlen"]) > 4 or sum(len(x) for x in f["rest"]) > 420
+    if typ == "abschluss":
+        return len(f["punkte"] + f["rest"]) > 4 or zeichen > 560
+    return False
+
+
+def text_passung(bloecke: list[tuple[str, str]], breite: float, hoehe: float,
+                 groessen: tuple[float, ...] = (20, 19, 18, 17, 16, 15, 14, 13, 12, 11.5, 11, 10.5, 10, 9.5, 9),
+                 zeile: float = 1.2, luecke: float = 26) -> tuple[float, int]:
+    """Groesste Schrift (pt) und Spaltenzahl (1 oder 2), bei der ALLE Bloecke in die Flaeche
+    passen. Geschaetzt ueber die mittlere Zeichenbreite (0,47 x Schriftgroesse, gemessen an
+    Segoe UI in der Vorschau) -- lieber eine Stufe kleiner als ein Satz, der unten aus der
+    Folie laeuft. Zwei Spalten nur, wenn die Schrift dadurch spuerbar groesser wird. Eine
+    Stelle fuer PowerPoint, Vorschau und beide Stile."""
+    def hoehe_bei(g: float, w: float, teil: list[tuple[str, str]]) -> float:
+        h = 0.0
+        for art, t in teil:
+            gg = g * 1.08 if art == "h" else g
+            je_zeile = max(8, int((w - (gg * 1.3 if art == "li" else 0)) / (gg * 0.47)))
+            zeilen = max(1, -(-len(t) // je_zeile))
+            h += zeilen * gg * zeile + gg * (0.55 if art != "li" else 0.3)
+        return h
+
+    def beste(spalten: int) -> float | None:
+        w = breite if spalten == 1 else (breite - luecke) / 2
+        teile = text_spalten(bloecke, spalten)
+        for g in groessen:
+            if all(hoehe_bei(g, w, t) <= hoehe for t in teile):
+                return g
+        return None
+
+    g1, g2 = beste(1), beste(2)
+    if g2 and (not g1 or g2 >= g1 + 1.5):
+        return g2, 2
+    return (g1, 1) if g1 else (groessen[-1], 2)
+
+
+def text_spalten(bloecke: list[tuple[str, str]], spalten: int) -> list[list[tuple[str, str]]]:
+    """Bloecke auf Spalten verteilen (nach Zeichen, eine Zwischenueberschrift bleibt bei ihrem Text)."""
+    if spalten == 1 or len(bloecke) < 2:
+        return [bloecke]
+    gesamt, lauf = sum(len(t) + 40 for _, t in bloecke), 0
+    # Liegt eine Zwischenueberschrift nahe der Mitte, wird DORT geteilt -- "Chancen" links,
+    # "Risiken" rechts, statt zwei Chancen unter die Risiken-Spalte zu schieben.
+    bisher, kandidaten = 0, []
+    for i, (art, t) in enumerate(bloecke):
+        if art == "h" and i > 0:
+            kandidaten.append((abs(bisher - gesamt / 2), i))
+        bisher += len(t) + 40
+    if kandidaten and min(kandidaten)[0] <= gesamt * 0.22:
+        i = min(kandidaten)[1]
+        return [bloecke[:i], bloecke[i:]]
+    for i, (art, t) in enumerate(bloecke):
+        lauf += len(t) + 40
+        if lauf >= gesamt / 2 and i + 1 < len(bloecke):
+            schnitt = i + 1
+            if bloecke[i][0] == "h":
+                schnitt = i
+            return [bloecke[:schnitt], bloecke[schnitt:]]
+    return [bloecke]
+
+
 def parse(md: str) -> list[dict[str, Any]]:
     from . import folienbilder
     from .stab import HINWEIS_RE, _ohne_md
@@ -107,7 +189,9 @@ def parse(md: str) -> list[dict[str, Any]]:
     quellen: list[tuple[str, str]] = []
     for nr, roh in enumerate(folienbilder.folien_roh(md)):
         f: dict[str, Any] = {"typ": "", "titel": "", "unter": "", "punkte": [], "spalten": [], "zahlen": [], "zitat": "",
-                             "quelle": "", "notizen": [], "rest": [], "bild": folienbilder.bild_prompt(roh)}
+                             "quelle": "", "notizen": [], "rest": [], "bild": folienbilder.bild_prompt(roh),
+                             # Alles Sichtbare in der geschriebenen Reihenfolge -- fuer Textfolien (19.10.2026).
+                             "bloecke": []}
         spalte = None
         notiz_folgt = False
         quellen_folgen = False
@@ -130,7 +214,9 @@ def parse(md: str) -> list[dict[str, Any]]:
                 t = m.group(1).strip().lower().replace(" ", "_").replace("-", "_")
                 f["typ"] = {"zwei_spalten": "zwei_spalten", "zweispaltig": "zwei_spalten", "zahl": "zahlen", "kennzahlen": "zahlen",
                             "titelfolie": "titel", "abschnitt": "kapitel", "kernaussage": "aussage", "statement": "aussage",
-                            "quote": "zitat", "vollbild": "bild", "schluss": "abschluss", "fazit": "abschluss"}.get(t, t)
+                            "quote": "zitat", "vollbild": "bild", "schluss": "abschluss", "fazit": "abschluss", "fliesstext": "text",
+                            "fließtext": "text", "textfolie": "text", "unterlage": "text", "erklaerung": "text",
+                            "erklärung": "text"}.get(t, t)
                 continue
             if m := _NOTIZ.match(_ohne_md(s)):
                 f["notizen"].append(m.group(1).strip())
@@ -147,8 +233,11 @@ def parse(md: str) -> list[dict[str, Any]]:
             if s.startswith("## "):
                 spalte = {"titel": _rein(s[3:]), "punkte": []}
                 f["spalten"].append(spalte)
+                f["bloecke"].append(("h", spalte["titel"]))
                 continue
             if s.startswith("#"):
+                if f["titel"]:
+                    f["bloecke"].append(("h", _rein(s.lstrip("#"))))   # "### Zwischenueberschrift"
                 f["titel"] = f["titel"] or _rein(s.lstrip("#"))
                 continue
             if s.startswith(">"):
@@ -163,8 +252,10 @@ def parse(md: str) -> list[dict[str, Any]]:
                     spalte["punkte"].append(p)
                 else:
                     f["punkte"].append(p)
+                f["bloecke"].append(("li", p))
                 continue
             f["rest"].append(_rein(s))
+            f["bloecke"].append(("p", _rein(s)))
         # Zahlen erkennen (auch ohne Typ, wenn jede Zeile so aussieht)
         if f["typ"] == "zahlen" or (not f["typ"] and f["punkte"] and all(_ZAHL.match(p) for p in f["punkte"])):
             for p in f["punkte"]:
@@ -182,10 +273,16 @@ def parse(md: str) -> list[dict[str, Any]]:
             f["zitat"] = " ".join(f["rest"] or f["punkte"][:1])
         if f["typ"] == "titel" and not f["unter"] and f["rest"]:
             f["unter"] = f["rest"].pop(0)
+        if _zu_voll(f):
+            # Die Gestaltung einer Folienart zeigt nur eine feste Menge (6 Punkte, 5 je Spalte,
+            # 4 Kennzahlen ...) und schnitt den Rest still ab. Veikos Folien sind auch Unterlagen
+            # (19.10.2026) -- was mehr ist, wird eine Textfolie, die ALLES zeigt.
+            f["typ_vorher"], f["typ"] = f["typ"], "text"
         folien.append(f)
     if quellen:
         folien.append({"typ": "quellen", "titel": "Quellen", "unter": "", "punkte": [], "spalten": [], "zahlen": [], "zitat": "",
-                       "quelle": "", "notizen": [], "rest": [], "bild": None, "quellen": list(dict.fromkeys(quellen))[:24]})
+                       "quelle": "", "notizen": [], "rest": [], "bild": None, "bloecke": [],
+                       "quellen": list(dict.fromkeys(quellen))[:24]})
     k = 0
     for f in folien:
         if f["typ"] == "kapitel":
@@ -343,13 +440,18 @@ def zu_pptx(titel: str, md: str, eid: str | None = None, stil: Any = None) -> by
             zahlen = f["zahlen"][:4] or [("", p) for p in f["punkte"][:4]]
             n = max(1, len(zahlen))
             bw = (B - Inches(1.4) - Inches(0.4) * (n - 1)) / n
+            rest = " ".join(f["rest"])   # die Erlaeuterung stand bisher nirgends (19.10.2026)
             for k, (zahl, was) in enumerate(zahlen):
                 x = Inches(0.7) + k * (bw + Inches(0.4))
-                flaeche(s, x, Inches(2.6), bw, Inches(3.6), "FFFFFF")
+                flaeche(s, x, Inches(2.6), bw, Inches(3.0 if rest else 3.6), "FFFFFF")
                 flaeche(s, x, Inches(2.6), bw, Emu(57150), AKZENT if k % 2 == 0 else AKZENT2)
                 text(s, x + Inches(0.35), Inches(3.0), bw - Inches(0.7), Inches(1.4), zahl or "–", _schrift(len(zahl), 54, 34, 6),
                      AKZENT if k % 2 == 0 else AKZENT2, KOPF_SCHRIFT)
-                text(s, x + Inches(0.35), Inches(4.45), bw - Inches(0.7), Inches(1.7), was, _schrift(len(was), 17, 13, 70), TEXT)
+                text(s, x + Inches(0.35), Inches(4.45), bw - Inches(0.7), Inches(1.1 if rest else 1.7), was,
+                     _schrift(len(was), 17, 12, 70), TEXT)
+            if rest:
+                text(s, Inches(0.7), Inches(5.75), B - Inches(1.4), Inches(0.85), rest, _schrift(len(rest), 17, 12, 140), AKZENT2,
+                     kursiv=True)
         elif typ in ("zwei_spalten", "vergleich"):
             kopf(s, t)
             for k, sp in enumerate(f["spalten"][:2]):
@@ -391,6 +493,32 @@ def zu_pptx(titel: str, md: str, eid: str | None = None, stil: Any = None) -> by
                     text(s, Inches(0.7) + k * Inches(6.1), Inches(2.0), Inches(5.8), Inches(4.6),
                          [[(f"{n + 1 + k * haelfte}. {q[0][:80]}", TEXT, False), (f"  {re.sub(r'^https?://(www[.])?', '', q[1]).split('/')[0]}", GRAU, False)]
                           for n, q in enumerate(teil)], 11, abstand=1.05)
+        elif typ == "text":
+            # Textfolie (19.10.2026): alles, in Reihenfolge, Schrift und Spalten passend gerechnet.
+            breit = Inches(7.0) if roh else B - Inches(1.4)
+            kopf(s, t, breit)
+            bl = f["bloecke"] or [("p", x) for x in f["rest"]] + [("li", x) for x in f["punkte"]]
+            g, n = text_passung(bl, breit / 12700, (H - Inches(2.45) - Inches(0.85)) / 12700)
+            sw = (breit - Inches(0.36) * (n - 1)) / n
+            for k, teil in enumerate(text_spalten(bl, n)):
+                tb = s.shapes.add_textbox(Inches(0.7) + k * (sw + Inches(0.36)), Inches(2.45), sw, H - Inches(2.45) - Inches(0.85))
+                tf = tb.text_frame
+                tf.word_wrap = True
+                tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
+                for j, (art, inhalt) in enumerate(teil):
+                    p = tf.paragraphs[0] if j == 0 else tf.add_paragraph()
+                    p.line_spacing = 1.12
+                    p.space_after = Pt(g * (0.3 if art == "li" else 0.55))
+                    if art == "li":
+                        aufzaehlung(p, g, AKZENT)
+                    r = p.add_run()
+                    r.text = inhalt
+                    r.font.size = Pt(g * 1.08 if art == "h" else g)
+                    r.font.name = KOPF_SCHRIFT if art == "h" else TEXT_SCHRIFT
+                    r.font.bold = art == "h"
+                    r.font.color.rgb = farbe(AKZENT2 if art == "h" else TEXT)
+            if roh:
+                bild(s, roh, Inches(8.3), 0, B - Inches(8.3), H)
         else:  # punkte (und bild ohne gerechnetes Bild)
             breit = Inches(7.0) if roh else B - Inches(1.4)
             kopf(s, t, breit)
@@ -443,7 +571,8 @@ def zu_html(titel: str, md: str, eid: str | None = None, stil: Any = None) -> st
         elif typ == "zahlen":
             zahlen = f["zahlen"][:4] or [("", p) for p in f["punkte"][:4]]
             innen = f"<div class='strich'></div><h2>{t}</h2><div class='zahlen'>" + "".join(
-                f"<div class='karte k{k % 2}'><b>{htmlmod.escape(z) or '–'}</b><span>{_inline(w)}</span></div>" for k, (z, w) in enumerate(zahlen)) + "</div>"
+                f"<div class='karte k{k % 2}'><b>{htmlmod.escape(z) or '–'}</b><span>{_inline(w)}</span></div>" for k, (z, w) in enumerate(zahlen)) + "</div>" \
+                + (f"<p class='zrest'>{_inline(' '.join(f['rest']))}</p>" if f["rest"] else "")
         elif typ in ("zwei_spalten", "vergleich"):
             innen = f"<div class='strich'></div><h2>{t}</h2><div class='spalten {typ}'>" + "".join(
                 f"<div class='sp sp{k}'><h3>{_inline(sp['titel'])}</h3><ul>" + "".join(f"<li>{_inline(p)}</li>" for p in sp["punkte"][:5]) + "</ul></div>"
@@ -459,9 +588,24 @@ def zu_html(titel: str, md: str, eid: str | None = None, stil: Any = None) -> st
             innen = "<div class='strich'></div><h2>Quellen</h2><ol class='ql'>" + "".join(
                 f"<li>{htmlmod.escape(q[0][:80])} <span>{htmlmod.escape(re.sub(r'^https?://(www[.])?', '', q[1]).split('/')[0])}</span></li>"
                 for q in f.get("quellen") or []) + "</ol>"
+        elif typ == "text":
+            bl = f["bloecke"] or [("p", x) for x in f["rest"]] + [("li", x) for x in f["punkte"]]
+            g, n = text_passung(bl, (1280 * (0.56 if bild else 1) - 136) * 0.75, (720 - 130 - 110) * 0.75)
+            stuecke, offen = [], False
+            for art, x in bl:
+                if art == "li" and not offen:
+                    stuecke.append("<ul>")
+                    offen = True
+                if art != "li" and offen:
+                    stuecke.append("</ul>")
+                    offen = False
+                stuecke.append(f"<li>{_inline(x)}</li>" if art == "li" else f"<h3>{_inline(x)}</h3>" if art == "h" else f"<p>{_inline(x)}</p>")
+            stuecke.append("</ul>" if offen else "")
+            innen = (f"<div class='strich'></div><h2>{t}</h2><div class='txt' style='font-size:{g * 4 / 3:.1f}px;"
+                     f"column-count:{n}'>" + "".join(stuecke) + "</div>")
         else:
             innen = f"<div class='strich'></div><h2>{t}</h2><ul class='pk'>" + "".join(f"<li>{_inline(p)}</li>" for p in (f["punkte"] or f["rest"])[:6]) + "</ul>"
-        mitbild = bild and typ in ("titel", "kapitel", "aussage", "punkte")
+        mitbild = bild and typ in ("titel", "kapitel", "aussage", "punkte", "text")
         voll = bild and typ == "bild"
         fuss = "" if typ in ("titel", "bild") else f"<div class='fuss'><span>{htmlmod.escape(deck)}</span><span>{i + 1} / {len(folien)}</span></div>"
         notiz = f"<details class='notiz'><summary>Sprechernotizen</summary>{''.join(f'<p>{_inline(n)}</p>' for n in f['notizen'])}</details>" if f["notizen"] else ""
@@ -485,6 +629,9 @@ def zu_html(titel: str, md: str, eid: str | None = None, stil: Any = None) -> st
         f"h1,h2,h3{{font-family:'Segoe UI Semibold','Segoe UI',system-ui,sans-serif;font-weight:600;margin:0;color:#{DUNKEL};line-height:1.08}}"
         "section.dunkel h1,section.dunkel h2{color:#fff}"
         "h2{font-size:42px;margin-bottom:34px}"
+        f".zrest{{font-size:21px;font-style:italic;color:#{AKZENT2};margin:22px 0 0;line-height:1.3}}"
+        f".txt{{line-height:1.12;column-gap:34px;color:#{TEXT}}}.txt p{{margin:0 0 .55em}}.txt ul{{margin:0 0 .5em;padding-left:1.25em}}"
+        f".txt li{{margin:0 0 .3em}}.txt li::marker{{color:#{AKZENT}}}.txt h3{{font-size:1.08em;color:#{AKZENT2};margin:.15em 0 .35em;break-after:avoid}}"
         "section.titel .inhalt{justify-content:center}section.titel h1{font-size:60px}"
         ".unter{font-size:26px;color:#E8C27A;margin:24px 0 0}.unter.hell{color:#B9C3CF}.datum{position:absolute;bottom:-30px;font-size:16px;color:#8A97A8}"
         f".knr{{font-size:150px;font-weight:600;color:#{AKZENT};line-height:1;margin-top:40px}}section.kapitel h1{{font-size:56px;margin-top:20px}}"

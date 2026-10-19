@@ -305,9 +305,10 @@ def _folie(f: dict[str, Any], deck_titel: str, roh: bytes | None, w: dict[str, A
                             anker="unten", zeile=1.0))
             el.append(_flaeche(x + 22, 224, 40, 2, reihe[k % 4]))
             el.append(_text(x + 22, 238, bw - 44, 118, [[_lauf(was, _passend(len(was), 15, 11.5, 80), tt, S["text"])]], zeile=1.2))
-        rest = f["rest"][:1]
+        rest = " ".join(f["rest"])   # vorher nur der erste Satz (19.10.2026)
         if rest:
-            el.append(_text(40, 390, 880, 50, [[_lauf(rest[0], 15, F["akzent_hell"], S["text"], fett=True, kursiv=True)]], zeile=1.15))
+            el.append(_text(40, 380, 880, 108, [[_lauf(rest, _passend(len(rest), 16, 12, 260), F["akzent_hell"], S["text"],
+                                                       fett=True, kursiv=True)]], zeile=1.15))
 
     elif typ in ("zwei_spalten", "vergleich"):
         farben = (F["titel_hell"], F["akzent_hell"]) if typ == "zwei_spalten" else ("3E8E5E", F["akzent_hell"])
@@ -347,6 +348,23 @@ def _folie(f: dict[str, Any], deck_titel: str, roh: bytes | None, w: dict[str, A
                                 [[_lauf(f"{n + 1 + k * haelfte}. {q[0][:80]}  ", 12, tt, S["text"]),
                                   _lauf(re.sub(r"^https?://(www[.])?", "", q[1]).split("/")[0], 12, tg, S["text"])] for n, q in enumerate(teil)],
                                 zeile=1.1))
+
+    elif typ == "text":
+        # Textfolie (19.10.2026): Veikos Folien sind auch Unterlagen. Alles in Reihenfolge,
+        # Schrift und Spalten ueber folien.text_passung -- dieselbe Rechnung wie im Cockpit-Design.
+        from . import folien as _f
+        bl = f.get("bloecke") or [("p", x) for x in f["rest"]] + [("li", x) for x in f["punkte"]]
+        breite = 500 if roh else 880
+        g, n = _f.text_passung(bl, breite, 372, luecke=26)
+        sw = (breite - 26 * (n - 1)) / n
+        for k, teil in enumerate(_f.text_spalten(bl, n)):
+            el.append(_text(40 + k * (sw + 26), 112, sw, 376,
+                            [[_lauf(x, round(g * 1.08, 1) if art == "h" else g, F["akzent_hell"] if art == "h" else tt, S["text"],
+                                    fett=art == "h")] for art, x in teil],
+                            zeile=1.15, aufz=[F["akzent_hell"] if art == "li" else None for art, _ in teil]))
+            el[-1]["nach"] = [round(g * (0.3 if art == "li" else 0.55), 1) for art, _ in teil]
+        if roh:
+            el.append(_bild(roh, 560, 112, 360, 360, rund=0.04))
 
     else:   # punkte (und bild ohne gerechnetes Bild)
         ps = (f["punkte"] or f["rest"])[:6]
@@ -467,20 +485,24 @@ def zu_pptx(titel: str, md: str, eid: str | None, w: dict[str, Any]) -> bytes:
                     par = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
                     par.alignment = ausr[e["ausr"]]
                     par.line_spacing = e["zeile"]
-                    if e["aufz"]:
+                    # aufz: eine Farbe fuer alle Absaetze -- oder (Textfolie, 19.10.2026) eine Liste je Absatz.
+                    az = e["aufz"][i] if isinstance(e["aufz"], list) else e["aufz"]
+                    if az:
                         g = laeufe[0]["g"] if laeufe else 14
                         ppr = par._p.get_or_add_pPr()
                         einzug = int(Pt(g * 1.1))
                         ppr.set("marL", str(einzug))
                         ppr.set("indent", str(-einzug))
                         clr = etree.SubElement(ppr, A + "buClr")
-                        etree.SubElement(clr, A + "srgbClr").set("val", e["aufz"])
+                        etree.SubElement(clr, A + "srgbClr").set("val", az)
                         etree.SubElement(ppr, A + "buSzPct").set("val", "100000")
                         etree.SubElement(ppr, A + "buFont").set("typeface", "Arial")
                         etree.SubElement(ppr, A + "buChar").set("char", "•")
                         par.space_after = Pt(g * 0.5)
                     elif len(e["abs"]) > 1:
                         par.space_after = Pt(4)
+                    if e.get("nach"):
+                        par.space_after = Pt(e["nach"][i])
                     for l in laeufe:
                         r = par.add_run()
                         r.text = l["t"]
@@ -532,15 +554,17 @@ def zu_html(titel: str, md: str, eid: str | None, w: dict[str, Any]) -> str:
                 jc = {"oben": "flex-start", "mitte": "center", "unten": "flex-end"}[e["anker"]]
                 ta = {"links": "left", "mitte": "center", "rechts": "right"}[e["ausr"]]
                 ps = []
-                for laeufe in e["abs"]:
+                for i, laeufe in enumerate(e["abs"]):
+                    az = e["aufz"][i] if isinstance(e["aufz"], list) else e["aufz"]
+                    nach = f"margin-bottom:{e['nach'][i]}px;" if e.get("nach") else ""
                     spans = "".join(
                         f"<span style=\"font:{'italic ' if l['i'] else ''}{700 if l['b'] else 400} {l['g']}px/{e['zeile']} '{l['s']}',"
                         f"'Segoe UI',Calibri,sans-serif;color:#{l['c']};letter-spacing:{l['spc'] / 100}px\">{htmlmod.escape(l['t'])}</span>"
                         for l in laeufe)
-                    if e["aufz"]:
-                        ps.append(f"<p class='az' style='--bc:#{e['aufz']}'>{spans}</p>")
+                    if az:
+                        ps.append(f"<p class='az' style='--bc:#{az};{nach}'>{spans}</p>")
                     else:
-                        ps.append(f"<p>{spans}</p>")
+                        ps.append(f"<p style='{nach}'>{spans}</p>" if nach else f"<p>{spans}</p>")
                 innen.append(f"<div class='e t' style='{pos}height:{e['h']}px;justify-content:{jc};text-align:{ta}'>{''.join(ps)}</div>")
         grund = w["farben"]["dunkel"] if fo["dunkel"] else w["farben"]["hell"]
         hinweis = "<div class='kommt'>Bild wird gerechnet …</div>" if fo["bild_fehlt"] else ""
