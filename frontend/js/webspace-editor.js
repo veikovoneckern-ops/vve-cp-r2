@@ -357,7 +357,7 @@ export function Editor({ pfad, stand, sichernRef, geaendert: aufGeaendert, kopfL
     if (a === "weg") {
       const art = abschnittArt(block).name;
       block.remove(); hover.current = null; uebernehmen(); waehlen(null, null);
-      toast(`Abschnitt „${art}“ gelöscht.`, { aktion: { text: "Rückgängig", fn: rueckgaengig } });
+      toast(`Abschnitt „${art}“ gelöscht.`, { dauer: 10000, aktion: { text: "Rückgängig", fn: rueckgaengig } });
     }
     if (a === "plus") setBibliothek({ nach: block });
     if (a === "ki") { waehlen(block, block); setRechts("ki"); }

@@ -117,7 +117,7 @@ function SeitenBaum({ stand, pfad, waehlen, neu, neuLaden, menueGeaendert }) {
     try {
       await api("/webspace/menue", { methode: "POST", daten: { navigation: neuNav } });
       await menueGeaendert();
-      toast(meldung + " Online erst nach dem Veröffentlichen.", { aktion: { text: "Rückgängig", fn: async () => {
+      toast(meldung + " Online erst nach dem Veröffentlichen.", { dauer: 10000, aktion: { text: "Rückgängig", fn: async () => {
         try { await api("/webspace/menue", { methode: "POST", daten: { navigation: vorher } }); await menueGeaendert(); } catch (e) { fehlerMelden(e); }
       } } });
     } catch (e) { fehlerMelden(e); }
