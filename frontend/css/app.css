@@ -1731,3 +1731,23 @@ html.zieht iframe{pointer-events:none}
   .wse-flaeche.geraet{padding:0}
   .wse-flaeche.geraet .wse-rahmen{width:100%!important;max-width:none;border-radius:0;box-shadow:none}
 }
+
+/* Seitenbaum mit Ziehen (19.10.2026) */
+.ws2-gruppe-box{border-radius:8px;padding-bottom:4px}
+.ws2-gruppe-box.ziel{outline:2px dashed var(--fuell);outline-offset:2px;background:var(--hover)}
+.ws2-tipp{font-weight:500;letter-spacing:0;text-transform:none;color:var(--ink-4);font-size:10.5px;margin-left:4px}
+.ws2-griff{flex:none;width:18px;display:grid;place-items:center;color:var(--ink-4);cursor:grab;font-size:14px;touch-action:none;user-select:none;opacity:.35}
+.ws2-zeile:hover .ws2-griff,.ws2-zeile.an .ws2-griff{opacity:1}
+@media (pointer:coarse){.ws2-griff{opacity:.8}}
+.ws2-zeile.kind{margin-left:20px}
+.ws2-zeile.kind::before{content:"";position:absolute;left:-11px;top:-2px;bottom:50%;width:9px;border-left:1.5px solid var(--line);border-bottom:1.5px solid var(--line);border-bottom-left-radius:5px}
+.ws2-zeile.zieht{opacity:.35}
+.ws2-zeile.ziel-vor{box-shadow:inset 0 3px 0 var(--fuell)}
+.ws2-zeile.ziel-nach{box-shadow:inset 0 -3px 0 var(--fuell)}
+.ws2-zeile.ziel-in{background:var(--knopf-grund);outline:2px solid var(--fuell);outline-offset:-2px}
+.ws2-seiten.zieht,.ws2-seiten.zieht *{cursor:grabbing!important;user-select:none}
+.ws2-leer{font-size:12px;color:var(--ink-4);padding:6px 10px;border:1px dashed var(--line);border-radius:7px;margin:2px 4px}
+.ws2-geist{position:fixed;z-index:300;pointer-events:none;background:var(--surface);border:1px solid var(--fuell);border-radius:8px;padding:6px 10px;font-size:13px;font-weight:650;box-shadow:0 8px 24px rgba(0,0,0,.25);display:flex;flex-direction:column;gap:2px;max-width:260px}
+.ws2-geist span{font-size:11.5px;font-weight:600;color:var(--fuell)}
+[data-theme="dark"] .ws2-geist span{color:var(--ink-2)}
+.ws2-umbenennen{flex:1;min-height:30px;padding:3px 8px;margin:4px 0}

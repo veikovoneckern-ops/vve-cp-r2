@@ -646,6 +646,30 @@ async def menue_speichern(d: dict[str, Any]):
     return {"ok": True}
 
 
+@router.post("/blog-reihenfolge")
+async def blog_reihenfolge(d: dict[str, Any]):
+    """Reihenfolge der Artikel in der Inspiration-Übersicht (19.10.2026): die Liste
+    der Pfade in neuer Reihenfolge; jeder bekommt reihe = Position (1, 2, …).
+    Geschrieben wird nur, wo sich die Zahl wirklich ändert."""
+    pfade = d.get("pfade")
+    if not isinstance(pfade, list) or not pfade:
+        raise HTTPException(400, "Reihenfolge fehlt")
+    geaendert = 0
+    async with _sperre:
+        for i, rel in enumerate(pfade, start=1):
+            f = _sicherer_pfad(str(rel))
+            if not f.exists():
+                raise HTTPException(404, f"Artikel {rel} gibt es nicht")
+            kopf, inhalt = _lesen(f)
+            if not isinstance(kopf.get("blog"), dict):
+                raise HTTPException(400, f"{rel} ist kein Blogartikel")
+            if kopf["blog"].get("reihe") != i:
+                kopf["blog"]["reihe"] = i
+                _schreiben(f, kopf, inhalt)
+                geaendert += 1
+    return {"ok": True, "geaendert": geaendert}
+
+
 # ---------------------------------------------------------------- Seiten umbenennen und duplizieren
 
 def _links_ersetzen(alt: str, neu: str) -> int:

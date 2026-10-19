@@ -19,7 +19,7 @@ export function WebSpace({ pfad: pfadAusAdresse }) {
   const [stand, setStand] = useState(null);
   const [fehler, setFehler] = useState(null);
   const [pfad, setPfad] = useState(pfadAusAdresse || "index.html");
-  const [links, setLinks] = useState(() => { try { return localStorage.getItem("ws-links") || "seiten"; } catch (e) { return "seiten"; } });
+  const [links, setLinks] = useState(() => { try { const t = localStorage.getItem("ws-links"); return t && t !== "menue" ? t : "seiten"; } catch (e) { return "seiten"; } });
   const [neu, setNeu] = useState(false);
   const [pub, setPub] = useState(false);
   const [editorNr, setEditorNr] = useState(0);
@@ -64,11 +64,10 @@ export function WebSpace({ pfad: pfadAusAdresse }) {
   return html`<div class="ws2">
     <aside class="ws2-links">
       <div class="segment ws2-tabs">
-        ${[["seiten", "Seiten"], ["menue", "Menü"], ["medien", "Medien"], ["suchen", "Suchen"]].map(([id, t]) => html`<button class=${links === id ? "an" : ""} onClick=${() => linksWaehlen(id)}>${t}</button>`)}
+        ${[["seiten", "Seiten"], ["medien", "Medien"], ["suchen", "Suchen"]].map(([id, t]) => html`<button class=${links === id ? "an" : ""} onClick=${() => linksWaehlen(id)}>${t}</button>`)}
       </div>
       <div class="ws2-links-inhalt">
-        ${links === "seiten" && html`<${SeitenListe} stand=${stand} pfad=${pfad} waehlen=${wechseln} neu=${() => setNeu(true)} neuLaden=${laden} />`}
-        ${links === "menue" && html`<${MenueEditor} stand=${stand} gespeichert=${neuAufbauen} />`}
+        ${(links === "seiten" || links === "menue") && html`<${SeitenBaum} stand=${stand} pfad=${pfad} waehlen=${wechseln} neu=${() => setNeu(true)} neuLaden=${laden} menueGeaendert=${neuAufbauen} />`}
         ${links === "medien" && html`<${MedienVerwaltung} />`}
         ${links === "suchen" && html`<${SuchenErsetzen} oeffnen=${wechseln} vorher=${() => editorRef.current.sichern()} fertig=${neuAufbauen} />`}
       </div>
@@ -85,44 +84,270 @@ export function WebSpace({ pfad: pfadAusAdresse }) {
   </div>`;
 }
 
-// ---------------------------------------------------------------- Seiten
-function SeitenListe({ stand, pfad, waehlen, neu, neuLaden }) {
+// ---------------------------------------------------------------- Seiten (Struktur der Website)
+// Veiko, 19.10.2026: "per Drag and Drop Seiten von der Position verschieben und
+// Seiten zu Unterseiten und umgekehrt machen". Die Liste zeigt deshalb die Struktur
+// der Website = Reihenfolge und Verschachtelung des Menüs (seiten.json). Was hier
+// verschoben wird, ändert das Menü; die ADRESSE einer Seite bleibt dabei gleich
+// (alte Links und Google-Einträge funktionieren weiter) -- wie bei Wix/Squarespace.
+// Ziehen über Pointer Events am Griff (nie natives Drag, siehe CLAUDE.md); auf
+// dem Tablet geht dasselbe über das "…"-Menü. Das Menü kennt nur EINE Unterebene.
+function SeitenBaum({ stand, pfad, waehlen, neu, neuLaden, menueGeaendert }) {
   const [suche, setSuche] = useState("");
-  const [menue, setMenue] = useState(null);
+  const [menue, setMenue] = useState(null);       // offenes "…"-Menü (Schlüssel der Zeile)
+  const [zug, setZug] = useState(null);           // { quelle, ziel, x, y, text }
+  const [umbenennen, setUmbenennen] = useState(null);
+  const liste = useRef(null);
+  const zugRef = useRef(null);
+  const start = useRef(null);
+  const gezogen = useRef(false);
+
+  const seiteVon = (adr) => stand.seiten.find((s) => s.adresse === adr);
+  const nav = stand.menue;
+  const imMenue = new Set();
+  nav.forEach((p) => { imMenue.add(p.href); (p.unter || []).forEach((u) => imMenue.add(u.href)); });
+  const frei = stand.seiten.filter((s) => !s.blog && !imMenue.has(s.adresse)).sort((a, b) => a.adresse.localeCompare(b.adresse));
+  const blog = stand.seiten.filter((s) => s.blog).sort((a, b) => (a.blog.reihe ?? 999) - (b.blog.reihe ?? 999));
   const q = suche.trim().toLowerCase();
-  const passt = (s) => !q || (s.titel + " " + s.adresse).toLowerCase().includes(q);
-  const seiten = stand.seiten.filter((s) => !s.blog && passt(s)).sort((a, b) => a.adresse.localeCompare(b.adresse));
-  const blog = stand.seiten.filter((s) => s.blog && passt(s)).sort((a, b) => (a.blog.reihe ?? 999) - (b.blog.reihe ?? 999));
-  async function aktion(a, s) {
+  const passt = (t, a) => !q || (t + " " + a).toLowerCase().includes(q);
+
+  // ------------------------------------------------ Menü ändern (sofort gespeichert, mit Rückgängig)
+  async function menueSpeichern(neuNav, meldung) {
+    const vorher = JSON.parse(JSON.stringify(nav));
+    try {
+      await api("/webspace/menue", { methode: "POST", daten: { navigation: neuNav } });
+      await menueGeaendert();
+      toast(meldung + " Online erst nach dem Veröffentlichen.", { aktion: { text: "Rückgängig", fn: async () => {
+        try { await api("/webspace/menue", { methode: "POST", daten: { navigation: vorher } }); await menueGeaendert(); } catch (e) { fehlerMelden(e); }
+      } } });
+    } catch (e) { fehlerMelden(e); }
+  }
+  const kopie = () => JSON.parse(JSON.stringify(nav));
+  const holen = (l, weg) => (weg.length === 1 ? l[weg[0]] : l[weg[0]].unter[weg[1]]);
+  function herausnehmen(l, weg) {
+    if (weg.length === 1) return l.splice(weg[0], 1)[0];
+    const p = l[weg[0]];
+    const x = p.unter.splice(weg[1], 1)[0];
+    if (!p.unter.length) delete p.unter;
+    return x;
+  }
+  // Quelle an Ziel einsortieren. Ziel: { art: "vor"|"nach"|"in", weg } oder { art: "ende" }.
+  function einsortieren(quelle, ziel) {
+    const l = kopie();
+    let punkt;
+    let zielPunkt = ziel.weg ? holen(l, ziel.weg) : null;
+    if (quelle.art === "menue") {
+      if (ziel.weg && JSON.stringify(ziel.weg) === JSON.stringify(quelle.weg)) return null;
+      punkt = herausnehmen(l, quelle.weg);
+    } else {
+      const s = stand.seiten.find((x) => x.adresse === quelle.adresse);
+      punkt = { text: kurzTitel(s.titel), href: s.adresse };
+    }
+    if (ziel.art === "in") {
+      if (punkt.unter) { toast("Eine Seite mit Unterseiten kann selbst keine Unterseite werden (das Menü hat nur eine Unterebene).", { fehler: true }); return null; }
+      (zielPunkt.unter = zielPunkt.unter || []).push(punkt);
+      return { l, text: `„${punkt.text}“ ist jetzt Unterseite von „${zielPunkt.text}“.` };
+    }
+    if (ziel.art === "ende") { l.push(punkt); return { l, text: `„${punkt.text}“ steht jetzt im Menü.` }; }
+    // vor/nach: Position des Zielpunkts NACH dem Herausnehmen suchen (Objekt bleibt gleich).
+    const oben = l.indexOf(zielPunkt);
+    if (oben >= 0) {
+      l.splice(oben + (ziel.art === "nach" ? 1 : 0), 0, punkt);
+      return { l, text: `„${punkt.text}“ verschoben.` };
+    }
+    const eltern = l.find((p) => (p.unter || []).includes(zielPunkt));
+    if (!eltern) return null;
+    if (punkt.unter) { toast("Eine Seite mit Unterseiten kann selbst keine Unterseite werden (das Menü hat nur eine Unterebene).", { fehler: true }); return null; }
+    eltern.unter.splice(eltern.unter.indexOf(zielPunkt) + (ziel.art === "nach" ? 1 : 0), 0, punkt);
+    return { l, text: `„${punkt.text}“ ist jetzt Unterseite von „${eltern.text}“.` };
+  }
+  function ausDemMenue(weg) {
+    const l = kopie();
+    const p = holen(l, weg);
+    if (p.unter && p.unter.length) { toast("Erst die Unterseiten woanders hinziehen, dann lässt sich diese Seite aus dem Menü nehmen.", { fehler: true }); return; }
+    herausnehmen(l, weg);
+    menueSpeichern(l, `„${p.text}“ steht nicht mehr im Menü (die Seite selbst bleibt).`);
+  }
+  async function blogSortieren(quellPfad, zielPfad, art) {
+    const reihe = blog.map((s) => s.pfad).filter((p) => p !== quellPfad);
+    const i = reihe.indexOf(zielPfad);
+    reihe.splice(i + (art === "nach" ? 1 : 0), 0, quellPfad);
+    if (reihe.join() === blog.map((s) => s.pfad).join()) return;
+    try { await api("/webspace/blog-reihenfolge", { methode: "POST", daten: { pfade: reihe } }); await neuLaden(); toast("Reihenfolge der Artikel geändert. Online erst nach dem Veröffentlichen."); }
+    catch (e) { fehlerMelden(e); }
+  }
+
+  // ------------------------------------------------ Ziehen
+  function runter(e, quelle, text) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    start.current = { quelle, text, x: e.clientX, y: e.clientY };
+    addEventListener("pointermove", bewegen);
+    addEventListener("pointerup", hoch);
+    addEventListener("pointercancel", abbruch);
+  }
+  function loesen() {
+    removeEventListener("pointermove", bewegen);
+    removeEventListener("pointerup", hoch);
+    removeEventListener("pointercancel", abbruch);
+  }
+  function abbruch() { loesen(); start.current = null; zugRef.current = null; setZug(null); }
+  function zielBestimmen(x, y, quelle) {
+    const el = document.elementFromPoint(x, y);
+    const zeile = el && el.closest && el.closest("[data-wsz]");
+    const gruppe = el && el.closest && el.closest("[data-wsg]");
+    if (quelle.art === "blog") {
+      if (!zeile || zeile.dataset.art !== "blog" || zeile.dataset.pfad === quelle.pfad) return null;
+      const r = zeile.getBoundingClientRect();
+      return { art: y < r.top + r.height / 2 ? "vor" : "nach", pfad: zeile.dataset.pfad };
+    }
+    if (zeile && zeile.dataset.art === "menue") {
+      const weg = JSON.parse(zeile.dataset.weg);
+      if (quelle.art === "menue" && JSON.stringify(weg) === JSON.stringify(quelle.weg)) return null;
+      // Nicht in die eigenen Unterseiten ziehen.
+      if (quelle.art === "menue" && quelle.weg.length === 1 && weg.length === 2 && weg[0] === quelle.weg[0]) return null;
+      const r = zeile.getBoundingClientRect();
+      const rel = (y - r.top) / r.height;
+      // Mitte = Unterseite (nur unter Hauptseiten), Ränder = davor/danach.
+      if (weg.length === 1 && rel > 0.28 && rel < 0.72) return { art: "in", weg };
+      return { art: rel < 0.5 ? "vor" : "nach", weg };
+    }
+    if (gruppe && gruppe.dataset.wsg === "frei" && quelle.art === "menue") return { art: "frei" };
+    if (gruppe && gruppe.dataset.wsg === "menue" && quelle.art === "frei") return { art: "ende" };
+    return null;
+  }
+  function bewegen(e) {
+    const s = start.current;
+    if (!s) return;
+    if (!zugRef.current && Math.abs(e.clientY - s.y) < 6 && Math.abs(e.clientX - s.x) < 6) return;
+    const ziel = zielBestimmen(e.clientX, e.clientY, s.quelle);
+    zugRef.current = { quelle: s.quelle, text: s.text, ziel, x: e.clientX, y: e.clientY };
+    setZug(zugRef.current);
+    // Am Rand der Liste mitscrollen.
+    const r = liste.current && liste.current.getBoundingClientRect();
+    if (r) { if (e.clientY < r.top + 40) liste.current.scrollTop -= 14; else if (e.clientY > r.bottom - 40) liste.current.scrollTop += 14; }
+  }
+  function hoch() {
+    loesen();
+    const z = zugRef.current;
+    start.current = null; zugRef.current = null; setZug(null);
+    if (!z) return;
+    gezogen.current = true;
+    setTimeout(() => { gezogen.current = false; }, 0);
+    if (!z.ziel) return;
+    if (z.quelle.art === "blog") { blogSortieren(z.quelle.pfad, z.ziel.pfad, z.ziel.art); return; }
+    if (z.ziel.art === "frei") { ausDemMenue(z.quelle.weg); return; }
+    const r = einsortieren(z.quelle, z.ziel);
+    if (r) menueSpeichern(r.l, r.text);
+  }
+  useEffect(() => () => loesen(), []);
+  useEffect(() => { if (!zug) return; const k = (e) => { if (e.key === "Escape") abbruch(); }; addEventListener("keydown", k); return () => removeEventListener("keydown", k); }, [!!zug]);
+
+  // ------------------------------------------------ Aktionen im "…"-Menü
+  async function aktion(a, s, weg) {
     setMenue(null);
     try {
       if (a === "kopie") { const r = await api("/webspace/duplizieren", { methode: "POST", daten: { pfad: s.pfad } }); toast(`Kopie angelegt: ${r.adresse}`); await neuLaden(); waehlen(r.pfad); }
       if (a === "weg") { await api("/webspace/loeschen", { methode: "POST", daten: { pfad: s.pfad } }); toast(`„${s.titel}“ gelöscht. Online weg ist sie erst nach dem Veröffentlichen.`); await neuLaden(); if (s.pfad === pfad) waehlen("index.html"); }
       if (a === "live") window.open(stand.live + s.adresse, "_blank", "noopener");
+      if (a === "hoch" || a === "runter") {
+        const geschw = weg.length === 1 ? nav : nav[weg[0]].unter;
+        const i = weg[weg.length - 1] + (a === "hoch" ? -1 : 1);
+        if (i < 0 || i >= geschw.length) return;
+        const r = einsortieren({ art: "menue", weg }, { art: a === "hoch" ? "vor" : "nach", weg: weg.length === 1 ? [i] : [weg[0], i] });
+        if (r) menueSpeichern(r.l, r.text);
+      }
+      if (a === "unter") { const r = einsortieren({ art: "menue", weg }, { art: "in", weg: [weg[0] - 1] }); if (r) menueSpeichern(r.l, r.text); }
+      if (a === "oben") { const r = einsortieren({ art: "menue", weg }, { art: "nach", weg: [weg[0]] }); if (r) menueSpeichern(r.l, r.text); }
+      if (a === "ausmenue") ausDemMenue(weg);
+      if (a === "insmenue") { const r = einsortieren({ art: "frei", adresse: s.adresse }, { art: "ende" }); if (r) menueSpeichern(r.l, r.text); }
     } catch (e) { fehlerMelden(e); }
   }
-  const zeile = (s) => html`<div class=${"ws2-zeile" + (s.pfad === pfad ? " an" : "")} key=${s.pfad}>
-    <button class="ws2-zeile-haupt" onClick=${() => waehlen(s.pfad)} title=${s.adresse}>
-      <span class="ws2-zeile-titel">${s.titel}</span>
-      <span class="ws2-zeile-adr">${s.adresse}</span></button>
-    ${s.geaendert && html`<span class="ws-punkt" title="Geändert, noch nicht veröffentlicht"></span>`}
-    <button class="btn geist icon klein ws2-mehr" title="Weitere Aktionen" aria-label="Weitere Aktionen" onClick=${() => setMenue(menue === s.pfad ? null : s.pfad)}><${Icon} n="mehr" g=${15} /></button>
-    ${menue === s.pfad && html`<div class="ws2-menue" role="menu">
-      <button onClick=${() => aktion("live", s)}><${Icon} n="extern" g=${14} />Online ansehen</button>
-      <button onClick=${() => aktion("kopie", s)}><${Icon} n="kopie" g=${14} />Duplizieren</button>
-      ${s.pfad !== "index.html" && html`<${Bestaetigen} text="Löschen" frage=${`„${s.titel}“ löschen?`} tun=${() => aktion("weg", s)} />`}
-    </div>`}
-  </div>`;
-  return html`<div class="ws2-seiten">
+  async function textSetzen(weg, text) {
+    setUmbenennen(null);
+    const l = kopie();
+    const p = holen(l, weg);
+    if (!text.trim() || text.trim() === p.text) return;
+    p.text = text.trim().slice(0, 60);
+    menueSpeichern(l, `Menütext geändert: „${p.text}“.`);
+  }
+
+  // ------------------------------------------------ Zeilen
+  const zielKlasse = (art, schluessel) => {
+    if (!zug || !zug.ziel) return "";
+    const z = zug.ziel;
+    if (art === "blog") return z.pfad === schluessel ? " ziel-" + z.art : "";
+    return z.weg && JSON.stringify(z.weg) === schluessel ? " ziel-" + z.art : "";
+  };
+  const zeile = ({ art, s, punkt, weg, schluessel }) => {
+    const titel = punkt ? punkt.text : s ? s.titel : "?";
+    const adr = s ? s.adresse : punkt && punkt.href;
+    const gezogenHier = zug && ((art === "menue" && zug.quelle.art === "menue" && JSON.stringify(zug.quelle.weg) === schluessel)
+      || (art === "frei" && zug.quelle.adresse === adr) || (art === "blog" && zug.quelle.pfad === schluessel));
+    const quelle = art === "menue" ? { art, weg } : art === "frei" ? { art, adresse: adr } : { art, pfad: s.pfad };
+    const geschw = art === "menue" ? (weg.length === 1 ? nav : nav[weg[0]].unter) : null;
+    return html`<div class=${"ws2-zeile" + (s && s.pfad === pfad ? " an" : "") + (weg && weg.length === 2 ? " kind" : "") + (gezogenHier ? " zieht" : "") + zielKlasse(art, schluessel)}
+        key=${art + schluessel} data-wsz="1" data-art=${art} data-weg=${weg ? JSON.stringify(weg) : undefined} data-pfad=${s ? s.pfad : undefined}>
+      <span class="ws2-griff" title="Ziehen zum Verschieben" onPointerDown=${(e) => runter(e, quelle, titel)}>⠿</span>
+      ${umbenennen === schluessel ? html`<input class="eingabe ws2-umbenennen" autofocus value=${titel}
+          onKeyDown=${(e) => { if (e.key === "Enter") textSetzen(weg, e.target.value); if (e.key === "Escape") { e.stopPropagation(); setUmbenennen(null); } }}
+          onBlur=${(e) => textSetzen(weg, e.target.value)} />`
+        : html`<button class="ws2-zeile-haupt" onClick=${() => { if (!gezogen.current && s) waehlen(s.pfad); }} title=${s ? s.titel + " · " + s.adresse : adr}>
+        <span class="ws2-zeile-titel">${titel}</span><span class="ws2-zeile-adr">${s ? s.adresse : adr + " (keine eigene Seite)"}</span></button>`}
+      ${s && s.geaendert && html`<span class="ws-punkt" title="Geändert, noch nicht veröffentlicht"></span>`}
+      <button class="btn geist icon klein ws2-mehr" title="Weitere Aktionen" aria-label="Weitere Aktionen" onClick=${() => setMenue(menue === art + schluessel ? null : art + schluessel)}><${Icon} n="mehr" g=${15} /></button>
+      ${menue === art + schluessel && html`<div class="ws2-menue" role="menu">
+        ${art === "menue" && html`
+          ${weg[weg.length - 1] > 0 && html`<button onClick=${() => aktion("hoch", s, weg)}>↑ Nach oben</button>`}
+          ${weg[weg.length - 1] < geschw.length - 1 && html`<button onClick=${() => aktion("runter", s, weg)}>↓ Nach unten</button>`}
+          ${weg.length === 1 && weg[0] > 0 && !punkt.unter && html`<button onClick=${() => aktion("unter", s, weg)}>→ Unterseite von „${nav[weg[0] - 1].text}“</button>`}
+          ${weg.length === 2 && html`<button onClick=${() => aktion("oben", s, weg)}>← Auf die oberste Ebene</button>`}
+          <button onClick=${() => { setMenue(null); setUmbenennen(schluessel); }}><${Icon} n="stift" g=${14} />Menütext ändern</button>
+          ${adr !== "/" && html`<button onClick=${() => aktion("ausmenue", s, weg)}>Aus dem Menü nehmen</button>`}`}
+        ${art === "frei" && html`<button onClick=${() => aktion("insmenue", s)}><${Icon} n="plus" g=${14} />Ins Menü aufnehmen</button>`}
+        ${s && html`<button onClick=${() => aktion("live", s)}><${Icon} n="extern" g=${14} />Online ansehen</button>
+          <button onClick=${() => aktion("kopie", s)}><${Icon} n="kopie" g=${14} />Duplizieren</button>
+          ${s.pfad !== "index.html" && html`<${Bestaetigen} text="Seite löschen" frage=${`„${s.titel}“ löschen?`} tun=${() => aktion("weg", s)} />`}`}
+      </div>`}
+    </div>`;
+  };
+
+  const menueZeilen = [];
+  nav.forEach((p, i) => {
+    const s = seiteVon(p.href);
+    const kinder = (p.unter || []).map((u, j) => ({ u, j })).filter(({ u }) => passt(u.text, u.href));
+    if (passt(p.text, p.href) || kinder.length) menueZeilen.push(zeile({ art: "menue", s, punkt: p, weg: [i], schluessel: JSON.stringify([i]) }));
+    kinder.forEach(({ u, j }) => menueZeilen.push(zeile({ art: "menue", s: seiteVon(u.href), punkt: u, weg: [i, j], schluessel: JSON.stringify([i, j]) })));
+  });
+  const freiZeilen = frei.filter((s) => passt(s.titel, s.adresse)).map((s) => zeile({ art: "frei", s, schluessel: s.adresse }));
+  const blogZeilen = blog.filter((s) => passt(s.titel, s.adresse)).map((s) => zeile({ art: "blog", s, schluessel: s.pfad }));
+  const freiZiel = zug && zug.ziel && zug.ziel.art === "frei";
+  const endeZiel = zug && zug.ziel && zug.ziel.art === "ende";
+  return html`<div class=${"ws2-seiten" + (zug ? " zieht" : "")}>
     <button class="btn primaer ws2-neu" onClick=${neu}><${Icon} n="plus" g=${15} />Neue Seite oder Artikel</button>
     <input class="eingabe ws2-suche" placeholder="Seite suchen …" value=${suche} onInput=${(e) => setSuche(e.target.value)} />
-    <div class="ws2-liste">
-      <div class="ws-gruppe">Seiten</div>${seiten.map(zeile)}
-      <div class="ws-gruppe">Blog „Inspiration“</div>${blog.map(zeile)}
-      ${!seiten.length && !blog.length && html`<p class="leise klein" style="padding:8px">Nichts gefunden.</p>`}
+    <div class="ws2-liste" ref=${liste}>
+      <div class=${"ws2-gruppe-box" + (endeZiel ? " ziel" : "")} data-wsg="menue">
+        <div class="ws-gruppe" title="Reihenfolge und Verschachtelung wie im Menü der Website">Im Menü <span class="ws2-tipp">⠿ ziehen: Kante = davor/danach, Mitte = Unterseite</span></div>
+        ${menueZeilen}
+      </div>
+      <div class=${"ws2-gruppe-box" + (freiZiel ? " ziel" : "")} data-wsg="frei">
+        <div class="ws-gruppe">Nicht im Menü</div>
+        ${freiZeilen.length ? freiZeilen : html`<div class="ws2-leer">${zug && zug.quelle.art === "menue" ? "Hierher ziehen, um eine Seite aus dem Menü zu nehmen" : "Alle Seiten stehen im Menü."}</div>`}
+      </div>
+      <div class="ws2-gruppe-box" data-wsg="blog">
+        <div class="ws-gruppe" title="Reihenfolge in der Übersicht „Inspiration“">Blog „Inspiration“ <span class="ws2-tipp">neueste oben</span></div>
+        ${blogZeilen}
+      </div>
+      ${q && !menueZeilen.length && !freiZeilen.length && !blogZeilen.length && html`<p class="leise klein" style="padding:8px">Nichts gefunden.</p>`}
     </div>
+    ${zug && html`<div class="ws2-geist" style=${`left:${zug.x + 14}px;top:${zug.y + 8}px`}>⠿ ${zug.text}
+      <span>${!zug.ziel ? "" : zug.ziel.art === "in" ? "→ als Unterseite" : zug.ziel.art === "frei" ? "aus dem Menü nehmen" : zug.ziel.art === "ende" ? "ins Menü aufnehmen" : zug.ziel.art === "vor" ? "↑ davor" : "↓ danach"}</span></div>`}
   </div>`;
 }
+
+// Menütexte sind kurz; aus „Veiko von Eckern – Künstliche Intelligenz …“ wird „Veiko von Eckern“.
+function kurzTitel(t) { return String(t || "").split(/\s[–|-]\s/)[0].slice(0, 40); }
 
 function Bestaetigen({ text, frage, tun, ja = "Löschen" }) {
   const [auf, setAuf] = useState(false);
@@ -141,67 +366,6 @@ function OnlineStand({ stand }) {
     else lage = html`<span class="ws-lage rot">● Letzte Veröffentlichung gescheitert · <a href=${v.url} target="_blank" rel="noopener">Ansehen</a></span>`;
   }
   return html`<div class="ws2-online">${lage}<a href=${stand.live} target="_blank" rel="noopener" class="ws-live"><${Icon} n="extern" g=${13} />${stand.live.replace("https://", "")}</a></div>`;
-}
-
-// ---------------------------------------------------------------- Menü
-function MenueEditor({ stand, gespeichert }) {
-  const [liste, setListe] = useState(() => JSON.parse(JSON.stringify(stand.menue)));
-  const [geaendert, setGeaendert] = useState(false);
-  const [speichert, setSpeichert] = useState(false);
-  const [hinzu, setHinzu] = useState("");
-  const neu = (l) => { setListe(l); setGeaendert(true); };
-  const kopie = () => JSON.parse(JSON.stringify(liste));
-  // Ein Punkt wird über seinen Weg angesprochen: [i] oder [i, j] (Unterpunkt).
-  function holen(l, weg) { return weg.length === 1 ? [l, weg[0]] : [l[weg[0]].unter, weg[1]]; }
-  function bewegen(weg, d) { const l = kopie(); const [arr, i] = holen(l, weg); const j = i + d; if (j < 0 || j >= arr.length) return; [arr[i], arr[j]] = [arr[j], arr[i]]; neu(l); }
-  function entfernen(weg) { const l = kopie(); const [arr, i] = holen(l, weg); arr.splice(i, 1); if (weg.length === 2 && !l[weg[0]].unter.length) delete l[weg[0]].unter; neu(l); }
-  function einruecken(weg) {
-    const l = kopie();
-    if (weg.length !== 1 || weg[0] === 0) return;
-    const [p] = l.splice(weg[0], 1);
-    const eltern = l[weg[0] - 1];
-    if (p.unter) { toast("Ein Punkt mit Unterpunkten kann nicht eingerückt werden.", { fehler: true }); return; }
-    (eltern.unter = eltern.unter || []).push(p);
-    neu(l);
-  }
-  function ausruecken(weg) {
-    const l = kopie();
-    if (weg.length !== 2) return;
-    const [p] = l[weg[0]].unter.splice(weg[1], 1);
-    if (!l[weg[0]].unter.length) delete l[weg[0]].unter;
-    l.splice(weg[0] + 1, 0, p);
-    neu(l);
-  }
-  function text(weg, t) { const l = kopie(); const [arr, i] = holen(l, weg); arr[i].text = t; neu(l); }
-  async function speichern() {
-    setSpeichert(true);
-    try { await api("/webspace/menue", { methode: "POST", daten: { navigation: liste } }); setGeaendert(false); toast("Menü gespeichert (noch nicht veröffentlicht)."); gespeichert(); }
-    catch (e) { fehlerMelden(e); }
-    setSpeichert(false);
-  }
-  const zeile = (p, weg) => html`<div class=${"ws2-menuezeile" + (weg.length === 2 ? " unter" : "")}>
-    <input class="eingabe" value=${p.text} onInput=${(e) => text(weg, e.target.value)} aria-label="Text des Menüpunkts" />
-    <span class="ws2-menueziel leise" title=${p.href}>${p.href}</span>
-    <span class="ws2-menueknoepfe">
-      <button class="btn geist icon klein" title="Nach oben" onClick=${() => bewegen(weg, -1)}>↑</button>
-      <button class="btn geist icon klein" title="Nach unten" onClick=${() => bewegen(weg, 1)}>↓</button>
-      ${weg.length === 1 ? html`<button class="btn geist icon klein" title="Unter den Punkt darüber einrücken" disabled=${weg[0] === 0} onClick=${() => einruecken(weg)}>→</button>`
-        : html`<button class="btn geist icon klein" title="Auf die oberste Ebene holen" onClick=${() => ausruecken(weg)}>←</button>`}
-      <button class="btn geist icon klein" title="Aus dem Menü nehmen (die Seite bleibt)" onClick=${() => entfernen(weg)}><${Icon} n="x" g=${13} /></button>
-    </span></div>`;
-  const imMenue = new Set(); liste.forEach((p) => { imMenue.add(p.href); (p.unter || []).forEach((u) => imMenue.add(u.href)); });
-  const frei = stand.seiten.filter((s) => !imMenue.has(s.adresse) && !s.blog);
-  return html`<div class="ws2-menueed">
-    <p class="leise klein">So sieht das Menü oben auf deiner Website aus. Mit → wird ein Punkt zum Unterpunkt des darüberliegenden.</p>
-    ${liste.map((p, i) => html`${zeile(p, [i])}${(p.unter || []).map((u, j) => zeile(u, [i, j]))}`)}
-    <div class="ws2-hinzu"><select class="eingabe" value=${hinzu} onChange=${(e) => setHinzu(e.target.value)}>
-      <option value="">Seite ins Menü aufnehmen …</option>${frei.map((s) => html`<option value=${s.adresse}>${s.titel}</option>`)}</select>
-      <button class="btn klein" disabled=${!hinzu} onClick=${() => { const s = stand.seiten.find((x) => x.adresse === hinzu); neu([...kopie(), { text: s.titel, href: s.adresse }]); setHinzu(""); }}>Hinzufügen</button></div>
-    <div class="knopfreihe ws2-menuefuss">
-      <button class="btn primaer klein" disabled=${!geaendert || speichert} onClick=${speichern}>${speichert ? "Speichert …" : "Menü speichern"}</button>
-      ${geaendert && html`<button class="btn klein geist" onClick=${() => { setListe(JSON.parse(JSON.stringify(stand.menue))); setGeaendert(false); }}>Zurücksetzen</button>`}
-    </div>
-  </div>`;
 }
 
 // ---------------------------------------------------------------- Medien
