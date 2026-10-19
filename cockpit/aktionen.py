@@ -48,7 +48,7 @@ def sammeln(gespraeche: dict[str, dict[str, Any]], wer_name) -> dict[str, Any]:
         z = {"id": "download:" + j["name"], "art": "download", "titel": j["name"], "stand": j.get("stand"),
              "schritt": j.get("schritt"), "start": j.get("start"), "prozent": j.get("prozent"), "gb": j.get("gb"),
              "geladen_gb": j.get("geladen_gb"), "mb_s": j.get("mb_s"), "rest_s": j.get("rest_s"),
-             "fehler": j.get("fehler"), "link": "#/team/besetzung"}
+             "fehler": j.get("fehler"), "link": "#/empfehlungen/modelle"}
         if j.get("stand") == "laeuft":
             z["steuerung"] = ["pausieren", "abbrechen"]
             laufend.append(z)
@@ -158,7 +158,7 @@ def sammeln(gespraeche: dict[str, dict[str, Any]], wer_name) -> dict[str, Any]:
                         "schritt": ruf.STAND.get("schritt"), "start": ruf.STAND.get("start"), "stand": "laeuft",
                         "teile": f"{ruf.STAND.get('fertig') or 0} von {g} Modellen" if g else None,
                         "prozent": round((ruf.STAND.get("fertig") or 0) / g * 100) if g else None,
-                        "link": "#/team/besetzung", "steuerung": ["abbrechen"]})
+                        "link": "#/empfehlungen/modelle", "steuerung": ["abbrechen"]})
     for art, t in list(verfahren._TASKS.items()):
         if t and not t.done():
             laufend.append({"id": "verfahren:" + art, "art": "verfahren", "titel": {"brainstrom": "BrainStrom", "exo": "ExO"}.get(art, art),

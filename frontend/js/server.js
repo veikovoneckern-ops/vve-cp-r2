@@ -112,7 +112,7 @@ function Aufbau({ s, beiKlick }) {
 // ------------------------------------------------------------ Updates, Empfehlungen, Sicherungen
 const STUFE = { einspielen: ["gruen", "einspielen"], nicht: ["", "nicht einspielen"], achtung: ["rot", "Achtung"], info: ["blau", "Hinweis"] };
 
-function Empfehlung({ e, auftrag, starten, laden, modellLaden }) {
+export function Empfehlung({ e, auftrag, starten, laden, modellLaden }) {
   const [frage, setFrage] = useState(false);
   if (e.aktion && e.aktion.art === "modell") return html`<${ModellEmpfehlung} e=${e} l=${(laden || {})[e.aktion.name]} modellLaden=${modellLaden} />`;
   const [st, label] = STUFE[e.stufe] || ["", e.stufe];
@@ -134,7 +134,7 @@ function Empfehlung({ e, auftrag, starten, laden, modellLaden }) {
 // Modell laden: kein Eingriff ins System (nur ein Download ueber Ollama), deshalb
 // ohne Rueckfrage und nicht rot -- aber mit sichtbarem Fortschritt, denn 20 GB
 // sind eine halbe Stunde Stille.
-function ModellEmpfehlung({ e, l, modellLaden }) {
+export function ModellEmpfehlung({ e, l, modellLaden }) {
   return html`<div class="empf einspielen">
     <div class="empf-kopf"><span class="pill gruen">Modell</span></div>
     <b>${e.titel}</b>
@@ -548,20 +548,27 @@ function Taetigkeit() {
   </div>`;
 }
 
-// Aufbau links, Updates/Empfehlungen/Sicherungen rechts -- in der Server-Sektion
+// Die Empfehlungen selbst stehen seit dem 19.10.2026 auf der Seite Recommendations
+// (Ein Ort je Sache); hier nur, wie viele es gibt, und der Weg dorthin.
+function EmpfehlungenHinweis({ det }) {
+  if (!det) return html`<div class="leise klein sv-empf-hin">Prüfe …</div>`;
+  const e = det.empfehlungen || [];
+  const jetzt = e.filter((x) => x.stufe === "achtung").length;
+  return html`<a class=${"sv-empf-hin" + (jetzt ? " achtung" : "")} href="#/empfehlungen/server">
+    <${Icon} n="tipp" g=${15} /><span>${e.length ? `${e.length} Empfehlung${e.length === 1 ? "" : "en"}${jetzt ? `, ${jetzt} davon jetzt` : ""}` : "Keine Empfehlungen offen"} -- unter Recommendations</span></a>`;
+}
+
+// Aufbau links, Updates/Sicherungen rechts -- in der Server-Sektion
 // und (wie im alten Cockpit, auf Veikos Wunsch vom 11.09.2026) zusaetzlich im WatchDog.
 export function AufbauReihe({ d, beiKlick }) {
   const { det, starten, detLaden, modellLaden } = d;
   const s = det ? det.status : null;
   return html`<div class="sv-reihe">
     <${Kachel} titel="Aufbau" neben="Bauteil anklicken für Einzelheiten"><${Aufbau} s=${s} beiKlick=${beiKlick} /><${Taetigkeit} /></${Kachel}>
-    <${Kachel} titel="Updates, Empfehlungen und Sicherungen" klasse="sv-folgt">
+    <${Kachel} titel="Updates und Sicherungen" klasse="sv-folgt">
       <div class="sv-zwei"><${UpdatesBlock} u=${det && det.updates} s=${s} auftrag=${det && det.auftrag} starten=${starten} neuPruefen=${() => detLaden(true)} />
         <${SicherungenBlock} sich=${det && det.sicherungen} /></div>
-      <h5 class="sv-empf-titel">Empfehlungen</h5>
-      ${!det ? html`<div class="leise klein">Prüfe …</div>` : det.empfehlungen.length
-        ? html`<div class="empf-raster">${det.empfehlungen.map((x, i) => html`<${Empfehlung} key=${i} e=${x} auftrag=${det.auftrag} starten=${starten} laden=${det.laden} modellLaden=${modellLaden} />`)}</div>`
-        : html`<div class="leise klein">Nichts zu tun: keine Updates offen, alle Dienste laufen, Sicherungen frisch.</div>`}
+      <${EmpfehlungenHinweis} det=${det} />
     </${Kachel}>
   </div>`;
 }

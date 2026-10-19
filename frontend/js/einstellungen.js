@@ -35,7 +35,7 @@ function PraesentationStil() {
 export function Einstellungen({ konto, thema, abschnitt }) {
   const [d, laden] = useAbruf("/system", 30000, []);
   const [laeuft, setLaeuft] = useState("");
-  useEffect(() => { bus.sende("talk-kontext", { art: "einstellungen", id: "einstellungen", titel: "Einstellungen" }); return () => bus.sende("talk-kontext", null); }, []);
+  useEffect(() => { bus.sende("talk-kontext", { art: "einstellungen", id: "einstellungen", titel: "Settings" }); return () => bus.sende("talk-kontext", null); }, []);
   useAbschnitt(abschnitt);
 
   async function abgleich() {

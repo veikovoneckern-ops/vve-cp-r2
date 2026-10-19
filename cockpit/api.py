@@ -1904,6 +1904,9 @@ async def langlauf_steuern(lid: str, aktion: str, request: Request):
 # ================================================================ Modell-Revision
 # Das Cockpit sucht selbst nach besseren Modellen und belegt jeden Vorschlag mit
 # einer Messung (Veiko, 17.10.2026). Details: revision.py.
+REVISION_ZULETZT: dict[str, Any] = {}
+
+
 @router.get("/revision")
 async def revision_uebersicht():
     from . import modellkatalog, revision, ruf, systeminfo
@@ -1917,7 +1920,10 @@ async def revision_uebersicht():
     except Exception:  # noqa: BLE001
         neu = None
     plan = await revision.gesamtplan(neu)
-    return {"stand": revision.stand(), "bestand": await revision.bestand(), "vorschlaege": await revision.vorschlaege(plan),
+    vs = await revision.vorschlaege(plan)
+    # Fuer Talk auf der Seite Recommendations (gespraech._empfehlungen_kontext), ohne neuen Abruf.
+    REVISION_ZULETZT.update(vorschlaege=vs, fazit=(plan or {}).get("fazit"), zeit=time.time())
+    return {"stand": revision.stand(), "bestand": await revision.bestand(), "vorschlaege": vs,
             "laden": revision.laden_vorschlaege(neu), "neue_rollen": revision.neue_rollen(neu),
             "messungen": db.alle("SELECT * FROM messungen ORDER BY zeit DESC LIMIT 20"),
             "umgestellt": (db.einstellung("revision_umgestellt", []) or [])[:10],

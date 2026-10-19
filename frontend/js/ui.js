@@ -32,6 +32,8 @@ const PFADE = {
   explorer: "M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v3H3zM3 11h18l-1.5 8H4.5zM8 15h8",
   stapel: "M12 3 3 7.5 12 12l9-4.5zM3 12l9 4.5 9-4.5M3 16.5 12 21l9-4.5",
   usage: "M3 20h18M6 16v-4M10 16V8M14 16v-6M18 16V5",
+  // Recommendations (19.10.2026): eine Gluehbirne.
+  tipp: "M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V17h5v-1.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z",
   neo: "M4 6l6 6-6 6M12 18h8",
   talk: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3",
   griff: "M9 5.5h.01M15 5.5h.01M9 12h.01M15 12h.01M9 18.5h.01M15 18.5h.01",

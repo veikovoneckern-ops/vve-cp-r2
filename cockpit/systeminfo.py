@@ -246,6 +246,8 @@ def empfehlungen(s: dict[str, Any] | None, upd: dict[str, Any], ollama_neu: str 
 
 # ------------------------------------------------------------ Auftraege (apt, Neustart)
 AUFTRAG: dict[str, Any] = {"art": None, "laeuft": False, "log": "", "rc": None, "start": None, "ende": None}
+# Die zuletzt gerechneten Empfehlungen -- fuer Talk auf der Seite Recommendations, ohne neuen Abruf.
+EMPF_ZULETZT: list[dict[str, Any]] = []
 
 
 async def _ausfuehren(befehle: list[list[str]]) -> None:
@@ -511,6 +513,7 @@ async def gesamt(frisch: bool = False) -> dict[str, Any]:
         neu_ollama = None
     e = (empfehlungen(s, upd, neu, sich, stab.gesundheit()) + modellkatalog.vorschlaege(katalog, _vram_gesamt(s))
          + modellkatalog.neu_vorschlaege(neu_ollama))
+    EMPF_ZULETZT[:] = e
     return {"status": s, "updates": upd, "ollama_neueste": neu, "sicherungen": sich, "modelle": modelle(s),
             "empfehlungen": e, "auftrag": AUFTRAG, "laden": modellkatalog.LADEN,
             "katalog_stand": katalog and katalog.get("zeit"), "karten": await asyncio.to_thread(karten),

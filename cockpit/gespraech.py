@@ -91,7 +91,7 @@ So antwortest du:
 - Nenne im Text NIE interne Kennungen (e…, t…, p…, v…). Die gehören nur in den aktionen-Block. Im Text sagst du den Titel.
 - Auf "Was liegt an?" antwortest du knapp: höchstens fünf Punkte, in DIESER Reihenfolge -- wie das Briefing, das Veiko daneben sieht: 1. OFFENE ENTSCHEIDUNGEN (stehen dort „keine“, sag genau das), 2. NEU ENTSTANDEN (zuletzt bearbeitete zuerst, mit Daniels Urteil in einfachen Worten), 3. WAS GERADE LÄUFT (steht dort „nichts“, sag genau das), 4. OFFENE AUFGABEN (die ersten drei, in der Reihenfolge der Liste). Nur, was in LAGE steht. Einen eigenen, noch nicht ausgeführten Vorschlag aus diesem Gespräch nennst du getrennt am Ende („Aus unserem Gespräch noch offen: …“) -- er ist keine Entscheidung des Teams. Keine vollständigen Listen.
 - Kein Fachjargon ohne Erklärung.
-- Wortwahl wie im Cockpit: „Team“ (nicht „Stab“), „Case“ (nicht „Akte“), „Memory“ (nicht „Gedächtnis“), „Advisory Board“ (nicht „Beirat“), „LongRun“ (nicht „Langläufer“), „Stack“ (nicht „Maschine“), „Usage“ für den Verbrauch, „Explorer“ für alle erzeugten Inhalte.
+- Wortwahl wie im Cockpit: „Team“ (nicht „Stab“), „Case“ (nicht „Akte“), „Memory“ (nicht „Gedächtnis“), „Advisory Board“ (nicht „Beirat“), „LongRun“ (nicht „Langläufer“), „Stack“ (nicht „Maschine“), „Usage“ für den Verbrauch, „Explorer“ für alle erzeugten Inhalte, „Settings“ (nicht „Einstellungen“), „Recommendations“ für alle Empfehlungen.
 {STIMME}
 
 Wenn Veiko etwas tun lassen will, schlägst du es vor. Hänge dafür GANZ ANS ENDE einen Block in genau dieser Form an:
@@ -108,7 +108,7 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"bild","prompt":"ausführliche Bildbeschreibung auf ENGLISCH (Motiv, Stil, Licht, Perspektive)","titel":"kurzer deutscher Titel","format":"quadrat|quer|hoch","vorlage":"z-image"} -- erzeugt ein Bild auf dem eigenen Server. Vorlage IMMER z-image (etwa 15 Sekunden), auch für fotorealistische Bilder; qwen nur, wenn lesbarer Text im Bild stehen soll; flux2 nur, wenn Veiko ausdrücklich höchste Qualität verlangt (dauert mehrere Minuten). Läuft sofort.
 - {"aktion":"visualisierung","beschreibung":"was dargestellt werden soll, mit allen Inhalten (Schritte, Begriffe, Zahlen) auf Deutsch","titel":"kurzer Titel"} -- zeichnet ein Schaubild (Ablauf, Mindmap, Diagramm, Vergleich). Läuft sofort.
 - {"aktion":"oeffnen","art":"ergebnis|langlauf|aufgabe|vorgang|projekt|notiz|gespraech|datei","id":"r…|l…|t…|v…|p…|n…|d… aus LAGE/KONTEXT","titel":"der Titel, wie Veiko ihn nennt"} -- öffnet GENAU DIESES eine Ding sofort, ohne Rückfrage (ändert nichts): „öffne das Ergebnis zu X“ = art ergebnis, „zeig mir den Langläufer X“ = art langlauf. Das Ergebnis eines Langläufers steht in LANGLÄUFER als „Ergebnis r…“. Kennst du die id nicht sicher, lass sie weg und gib nur den titel -- das Cockpit sucht dann selbst.
-- {"aktion":"zeigen","ziel":"board|briefing|inbox|projects|team|neo|system|watchdog|website_stand|brainstrom|exo|langlauf|aktionen|modelle|einstellungen|memory|usage|explorer|uebersicht_modelle|installiert|optimierung|neue_modelle|alle_aufgaben|alle_notizen|neuer_langlaeufer"} -- öffnet einen Bereich oder Abschnitt des Cockpits sofort (system = Stack: Server, Updates, WatchDog, ganz unten website_stand = Stand der Website; langlauf = LongRuns; usage = Verbrauch an Token, Kosten und Strom nach Projekt, Aufgabe, Modell; explorer = alle erzeugten Inhalte zum Suchen und Filtern; memory = was das Team über Veiko weiß, unter Einstellungen; optimierung = Modell-Revision, neue_modelle = Neu bei Ollama).
+- {"aktion":"zeigen","ziel":"board|briefing|inbox|projects|team|neo|system|watchdog|website_stand|brainstrom|exo|langlauf|aktionen|modelle|einstellungen|memory|usage|explorer|empfehlungen|uebersicht_modelle|installiert|optimierung|neue_modelle|alle_aufgaben|alle_notizen|neuer_langlaeufer"} -- öffnet einen Bereich oder Abschnitt des Cockpits sofort (system = Stack: Server, Updates, WatchDog, ganz unten website_stand = Stand der Website; langlauf = LongRuns; usage = Verbrauch an Token, Kosten und Strom nach Projekt, Aufgabe, Modell; explorer = alle erzeugten Inhalte zum Suchen und Filtern; memory = was das Team über Veiko weiß, unter Settings; empfehlungen = Recommendations, alle Empfehlungen zu Server, Software, Modellen und Website; optimierung = Modell-Revision, neue_modelle = Neu bei Ollama).
 - {"aktion":"zeigen","ziel":"chat","wer":"Name des Teammitglieds"} -- öffnet den Chat mit diesem Mitglied (Neo: ziel neo).
 - {"aktion":"werkzeug","was":"erfassen|suche|hell|dunkel|zurueck|fenster_zu"} -- Capture öffnen, Suche öffnen, helle oder dunkle Darstellung, eine Seite zurück, oberstes Fenster schließen. Sofort, ohne Rückfrage. Will Veiko „mit dem Advisory Board sprechen“: ziel board. Stellt er dabei schon eine Frage ans Board, gib sie als "frage" mit -- das Board antwortet dann selbst, du antwortest nicht an seiner Stelle.
 - {"aktion":"ausarbeiten","rolle":"stratege|buch|designer|video","form":"text|aufstellung|konzept|dokument|webseite|praesentation|video","auftrag":"…","recherche":"Suchanfrage oder null","vorgang_id":"v… oder null","projekt_id":"p… oder null","aufgabe_id":"t… oder null (die Aufgabe, zu der das gehört)","stil":"vveorg|cockpit|eigen oder null","stil_text":"…"} -- stil nur bei einer Präsentation und nur, wenn Veiko das Aussehen nennt: „im VVEORG-Look“/„in meiner Vorlage“ = vveorg, „im Cockpit-Design“ = cockpit, eigene Gestaltungswünsche (Farben, Schrift, Footer) = eigen mit stil_text in seinen Worten. Sonst weglassen (dann gilt die Vorgabe, die VVEORG-Vorlage).
@@ -320,7 +320,7 @@ def _team_kontext() -> str:
 def _einstellungen_kontext() -> str:
     from . import folien_stil, stimme
     e = {"stab_aktiv": stab.stab_aktiv(), "talk_stimme": stimme.gewaehlte_stimme(), "praesentation_stil": folien_stil.vorgabe()}
-    return ("VEIKO SCHAUT AUF DIE EINSTELLUNGEN (Freigaben, Team-Pipeline, Präsentationen, Stimme, Memory, Daten, Konto). "
+    return ("VEIKO SCHAUT AUF DIE SETTINGS (Freigaben, Team-Pipeline, Präsentationen, Stimme, Memory, Daten, Konto). "
             f"Team-Pipeline: {'an' if e.get('stab_aktiv') else 'aus'}; Stimme: {e.get('talk_stimme') or 'Vorgabe'}; "
             f"Präsentationen: {e.get('praesentation_stil') or 'vveorg'}. Einträge ins Memory gehen mit der Aktion merken.\n"
             "MEMORY:\n" + stab.gedaechtnis_text())
@@ -340,13 +340,28 @@ def _stack_kontext() -> str:
             + "\n" + webspace.stack_text())
 
 
+def _empfehlungen_kontext() -> str:
+    from . import systeminfo
+    from .api import REVISION_ZULETZT
+    e = systeminfo.EMPF_ZULETZT
+    stufe = {"achtung": "JETZT", "einspielen": "empfohlen", "info": "Hinweis", "nicht": "nicht einspielen"}
+    zeilen = [f"- [{stufe.get(x.get('stufe'), x.get('stufe'))}] {x.get('titel')}: {str(x.get('warum') or '')[:160]}" for x in e[:14]]
+    vs = REVISION_ZULETZT.get("vorschlaege") or []
+    mod = [f"- {str(v.get('platz') or '').replace('rolle:', '').replace('vorgabe:', '')}: {v.get('kandidat')} statt {v.get('bisher')} ({str(v.get('warum') or '')[:120]})" for v in vs[:8]]
+    return ("VEIKO SCHAUT AUF RECOMMENDATIONS (alle Empfehlungen an einem Ort: Server und Software, Modelle für das Team, neue Modelle zum Laden, "
+            "Hinweise zur Website). Einspielen, Umstellen und Laden geht dort per Knopf, nicht über Talk.\n"
+            + ("Server, Software, Modellkatalog:\n" + "\n".join(zeilen) if zeilen else "Server und Software: Stand noch nicht abgerufen oder nichts offen.")
+            + ("\nGemessen bessere Modelle je Rolle:\n" + "\n".join(mod) if mod else "")
+            + (f"\nGesamtplan der Karten: {REVISION_ZULETZT['fazit']}" if REVISION_ZULETZT.get("fazit") else ""))
+
+
 def _explorer_kontext() -> str:
     from . import explorer
     return explorer.kontext_text()
 
 
 SEITEN_KONTEXT = {"team": _team_kontext, "einstellungen": _einstellungen_kontext, "usage": _usage_kontext,
-                  "stack": _stack_kontext, "explorer": _explorer_kontext}
+                  "stack": _stack_kontext, "explorer": _explorer_kontext, "empfehlungen": _empfehlungen_kontext}
 
 
 def vorschlaege_aus(text: str) -> tuple[str, list[dict[str, Any]]]:
@@ -377,8 +392,8 @@ ZIELE = {"ueberblick": "Überblick", "aufgaben": "Aufgaben", "zeitplan": "Zeitpl
 # "Langläufer" heisst LongRuns (Kennung bleibt langlauf), Memory steht unter Einstellungen.
 BEREICHE = {"board": "Advisory Board", "briefing": "Briefing", "inbox": "Inbox", "projects": "Projects", "team": "Team",
             "neo": "Neo", "system": "Stack", "stack": "Stack", "watchdog": "WatchDog", "brainstrom": "BrainStrom", "exo": "ExO",
-            "langlauf": "LongRuns", "aktionen": "Current Actions", "webspace": "WebSpace", "modelle": "Team: Modelle", "einstellungen": "Einstellungen",
-            "usage": "Usage", "explorer": "Explorer", "memory": "Memory", "website_stand": "Stack: Website",
+            "langlauf": "LongRuns", "aktionen": "Current Actions", "webspace": "WebSpace", "modelle": "Team: Modelle", "einstellungen": "Settings",
+            "usage": "Usage", "explorer": "Explorer", "memory": "Memory", "empfehlungen": "Recommendations", "website_stand": "Stack: Website",
             # Reiter und Listen (18.10.2026): erreichbar wie die Bereiche.
             "uebersicht_modelle": "Team: Besetzung und Empfehlungen", "installiert": "Installierte Modelle", "optimierung": "Optimierung",
             "neue_modelle": "Neu bei Ollama", "verbrauch": "Usage", "alle_aufgaben": "Alle Aufgaben",
@@ -406,6 +421,7 @@ SEITEN = [
     ("optimierung", r"optimierung|revision", "die Optimierung"),
     ("installiert", r"installiert\w*( modelle)?", "die installierten Modelle"),
     ("modelle", r"stab (und|&) modelle|modelle|besetzung", "die Besetzung im Team"),
+    ("empfehlungen", r"recommendations?|empfehlungen|vorschläge|vorschlaege", "die Recommendations"),
     ("explorer", r"explorer|alle inhalte|alle ergebnisse|ablage", "den Explorer"),
     ("memory", r"memory|gedächtnis|gedaechtnis", "das Memory"),
     ("website_stand", r"(stand|zustand|überblick|ueberblick) (meiner|der) (website|webseite)", "den Stand deiner Website"),
@@ -421,7 +437,7 @@ SEITEN = [
     ("board", r"advisory board|\bboard\b|beirat|advisors|vordenker", "das Advisory Board"),
     ("brainstrom", r"brain ?strom|brainstorm\w*", "BrainStrom"),
     ("exo", r"\bexo\b", "ExO"),
-    ("einstellungen", r"einstellungen|settings", "die Einstellungen"),
+    ("einstellungen", r"einstellungen|settings", "die Settings"),
     ("system", r"\bstack\b|maschine|\bsystem\b|server|watch ?dog|updates|sicherung\w*", "den Stack"),
     ("neo", r"\bneo\b", "Neo"),
     ("team", r"\bteam\b|teamseite", "die Teamseite"),

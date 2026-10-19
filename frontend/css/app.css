@@ -1942,3 +1942,38 @@ html.zieht iframe{pointer-events:none}
 .ws-menue>li{padding:5px 0;border-bottom:1px solid var(--line-2)}
 .ws-menue ul{list-style:none;padding-left:16px;margin:4px 0 0}
 .ws-menue ul li{padding:2px 0;font-size:13px}
+
+/* Recommendations (empfehlungen.js) */
+.emp-kacheln{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-auto-rows:1fr;gap:12px;margin-bottom:14px}
+.emp-kachel{display:flex;flex-direction:column;gap:2px;text-align:left;cursor:pointer;font:inherit;color:var(--ink);border-top:3px solid var(--line);min-width:0}
+.emp-kachel b{font-size:20px;font-weight:700}
+.emp-kachel.rot{border-top-color:var(--signal)}.emp-kachel.gelb{border-top-color:var(--amber)}.emp-kachel.gruen{border-top-color:var(--sea)}.emp-kachel.blau{border-top-color:var(--steel)}
+.emp-kachel:hover{border-color:var(--ink-4)}
+@media (max-width:1000px){.emp-kacheln{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.emp-h{margin:14px 0 8px;font-size:13px;color:var(--ink-2)}
+.emp-raster{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-bottom:12px}
+.emp-raster>.mo-rolle{margin:0}
+.emp-web{display:flex;flex-direction:column;gap:10px}
+.emp-web-seite .karte-kopf{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.mo-empf-hin{display:inline-flex;align-items:center;gap:6px;margin:6px 0;color:var(--amber);font-weight:600}
+.sv-empf-hin{display:flex;align-items:center;gap:8px;margin-top:12px;padding:9px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface-2);color:var(--ink-2);font-size:13px}
+.sv-empf-hin.achtung{border-color:var(--signal);color:var(--signal)}
+.sv-empf-hin:hover{border-color:var(--ink-4)}
+/* Briefing in Zeilen (19.10.2026): nebeneinander gleich hoch, Einzelnes ueber die volle Breite. */
+.briefing-raster>.karte{margin:0;min-width:0}
+.briefing-raster>.breit{grid-column:1/-1}
+.briefing-voll{margin-bottom:14px}
+/* Zwei Spalten mit gestapelten Kaesten (Projekt-Ueberblick, Case): die kuerzere Spalte
+   fuellt ihren letzten Kasten bis unten auf -- so enden beide Spalten buendig, egal
+   welche laenger ist (19.10.2026, "die Rahmen sind nicht buendig"). */
+.raster.zwei>div{display:flex;flex-direction:column;min-width:0}
+.raster.zwei>div>.karte:last-child{flex:1 0 auto}
+/* Kaesten in einem Raster bekommen ihren Abstand vom Raster (gap), nie zusaetzlich von
+   ".karte+.karte" -- sonst sass jeder zweite Kasten einer Reihe 12 Punkt tiefer als der
+   erste (19.10.2026 gemessen: Team, Usage, Recommendations, Settings). Wer ein neues
+   Raster mit .karte baut, nimmt es hier auf. */
+:where(.raster,.raster-gleich,.team-raster,.us-kacheln,.emp-kacheln,.emp-raster,.ex-kacheln,.vb-karten,.briefing-raster,.empf-raster)>.karte+.karte{margin-top:0}
+/* Steht ein Auswahlfeld in einer Reihe mit einem Umschalter (.segment, 40 Punkt), ist es
+   genauso hoch -- vorher 36 gegen 40, die Kanten der Filterzeilen sassen versetzt. */
+:where(:has(> .segment))>:is(select.eingabe,input.eingabe){min-height:40px}
+:where(:has(> .segment))>.ex-suche>input.eingabe{min-height:40px}

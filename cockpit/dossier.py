@@ -486,7 +486,7 @@ def _abschluss(j: dict[str, Any], kurz: list[str]) -> None:
     aufgabe = db.holen("aufgaben", ziel.get("aufgabe_id") or "") if ziel.get("aufgabe_id") else None
     if aufgabe:
         from .langlauf import _aufgabe_vermerken
-        _aufgabe_vermerken(aufgabe["id"], f"Recherche-Dossier „{titel}“ liegt bei den Anhängen ({len(kurz)} Quellen).")
+        _aufgabe_vermerken(aufgabe["id"], f"„{titel}“ liegt bei den Anhängen ({len(kurz)} Quellen).")
         meldung += f" Es hängt an deiner Aufgabe „{aufgabe['titel']}“."
     else:
         meldung += " Du findest es auch unter den Unterlagen" + (" des Projekts." if ziel.get("projekt_id") else " (Anhänge).") + " Und im Explorer."

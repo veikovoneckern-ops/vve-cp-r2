@@ -17,6 +17,7 @@ import { LeisteNav, useLeiste, FENSTER } from "./leiste.js";
 import { Einstellungen } from "./einstellungen.js";
 import { Usage } from "./usage.js";
 import { Explorer } from "./explorer.js";
+import { Empfehlungen } from "./empfehlungen.js";
 import { DateiFenster } from "./datei.js";
 import { Langlaeufer } from "./langlauf.js";
 import { BrainStrom, ExO } from "./verfahren.js";
@@ -42,6 +43,8 @@ const BEREICHE = [
   { id: "team", titel: "Team", icon: "team", unter: "Mitglieder, Besetzung, Modelle, Optimierung" },
   // Verbrauch als eigene Seite (19.10.2026): Token, Rechenzeit, Kosten, Strom -- nach Projekt, Aufgabe, Modell.
   { id: "usage", titel: "Usage", icon: "usage", unter: "Token, Rechenzeit, Kosten und Strom" },
+  // Alle Empfehlungen an einem Ort (Veiko, 19.10.2026): Server, Software, Modelle, Website.
+  { id: "empfehlungen", titel: "Recommendations", kurz: "Tipps", icon: "tipp", unter: "Was sich verbessern lässt: Server, Modelle, Website" },
   { id: "board", titel: "Advisory Board", kurz: "Board", icon: "board", unter: "Deine Advisors" },
   // Die Website veikovoneckern.org bearbeiten und veröffentlichen (Veiko, 18.10.2026).
   { id: "webspace", titel: "WebSpace", icon: "globus", unter: "Deine Website veikovoneckern.org" },
@@ -54,7 +57,8 @@ const BEREICHE = [
   // Einstellungen = Freigaben, Pipeline, Stimme, Memory, Daten, Konto. Alte Adressen leitet route() um.
   // "Maschine" heisst seit dem 19.10.2026 "Stack"; die Kennung bleibt system (Kopfzeile, alte Links).
   { id: "system", titel: "Stack", icon: "stapel", unter: "Server, Updates, Sicherungen, WatchDog, Website" },
-  { id: "einstellungen", titel: "Einstellungen", icon: "einstellungen", unter: "Freigaben, Pipeline, Stimme, Memory, Daten, Konto" },
+  // Heisst seit dem 19.10.2026 "Settings" (Veikos Wunsch); die Kennung bleibt einstellungen.
+  { id: "einstellungen", titel: "Settings", icon: "einstellungen", unter: "Freigaben, Pipeline, Stimme, Memory, Daten, Konto" },
 ];
 
 function route() {
@@ -309,6 +313,7 @@ function App() {
         ${r.bereich === "einstellungen" && html`<${Einstellungen} konto=${konto} thema=${thema} abschnitt=${r.id} />`}
         ${r.bereich === "usage" && html`<${Usage} />`}
         ${r.bereich === "explorer" && html`<${Explorer} />`}
+        ${r.bereich === "empfehlungen" && html`<${Empfehlungen} abschnitt=${r.id} />`}
         ${r.bereich === "neo" && html`<${Neo} id=${r.id} />`}
         ${r.bereich === "board" && html`<${Board} id=${r.id} />`}
         ${r.bereich === "brainstrom" && html`<${BrainStrom} />`}
