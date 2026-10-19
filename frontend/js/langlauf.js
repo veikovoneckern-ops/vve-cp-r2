@@ -369,5 +369,6 @@ function FrageKnopf({ text, frage, ja, tun: aktion }) {
 let naechsteVorlage = null;
 export function langlaufStarten(vorlage) {
   naechsteVorlage = vorlage || {};
+  bus.sende("fenster-alle-zu");
   location.hash = "#/langlauf/neu";
 }

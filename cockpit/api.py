@@ -1972,7 +1972,15 @@ async def langlauf_erkennen(request: Request):
     from . import langlauf
     d = await _koerper(request)
     t = str(d.get("text") or "")
-    return {"gross": langlauf.gross(t), "nachher": bool(langlauf._NACHHER.search(t))}
+    # Stammt das Ergebnis, an dem gesprochen wird, selbst aus einem LongRun, sagt die Antwort
+    # das: dann ist "Kapitel fuer Kapitel ueberarbeiten" (der Weg im Chat) die naheliegende
+    # Wahl, ein neuer LongRun die andere (19.10.2026).
+    von = None
+    lid = langlauf.zum_ergebnis(str(d.get("ergebnis_id"))) if d.get("ergebnis_id") else None
+    if lid:
+        l = langlauf.holen(lid) or {}
+        von = {"id": lid, "titel": l.get("titel"), "etappen": langlauf.ARTEN.get(l.get("art"), {}).get("mehrzahl", "Etappen")}
+    return {"gross": langlauf.gross(t), "nachher": bool(langlauf._NACHHER.search(t)), "langlauf_von": von}
 
 
 @router.post("/langlaeufe/vorschlag")

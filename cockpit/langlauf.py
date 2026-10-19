@@ -67,6 +67,11 @@ ARTEN = {
     "webseite": {"name": "Große Webseite", "rolle": "designer", "etappe": "Seitenabschnitt", "mehrzahl": "Seitenabschnitte"},
 }
 BILDER_JE_GRUPPE = "3 bis 6"
+# Etappen, die ihrem Titel nach Arbeit AM Werk sind und nicht Teil davon -- feste Regel, weil
+# das Modell "werk": false nicht verlaesslich setzt (gemessen am Moonshots-Plan, 19.10.2026).
+# Nur eindeutige Arbeitsschritte: ein Kapitel "Marktanalyse" in einer Studie IST Teil des Werks.
+_ARBEITSSCHRITT = re.compile(r"revisionsplan|gap-analyse|quellen-check|fakten-?verifikation|übergabepaket|uebergabepaket|"
+                             r"finale fassung|ganzbuch-kohärenz|ganzbuch-kohaerenz|lektorats?durchgang|revisionsnotizen", re.I)
 
 
 def _form(art: str) -> str:
@@ -486,9 +491,16 @@ async def _planen(l: dict[str, Any]) -> None:
     frage = (f"VORHABEN: {d['auftrag']}\n\n{stab._vorgang_kontext(db.holen('vorgaenge', vid) or {'id': vid})[:20000]}\n\n"
              + (mt + "\n\nIst im Material schon eine Gliederung oder sind schon Teile fertig, übernimm sie in den Plan, statt neu zu erfinden.\n\n" if mt else "")
              + f"PLANE das Vorhaben in Etappen ({n}). Antworte AUSSCHLIESSLICH mit JSON: "
-             '{"titel": "...", "etappen": [{"titel": "...", "inhalt": "was hineingehört, drei bis fünf Sätze"}]}. '
+             '{"titel": "...", "etappen": [{"titel": "...", "inhalt": "was hineingehört, drei bis fünf Sätze", "werk": true}]}. '
              f"Zwischen 3 und {MAX_ETAPPEN} Etappen, so viele, wie das Vorhaben wirklich braucht.{extra} "
-             "Wenn das Vorhaben eine Länge nennt (Seiten, Minuten, Kapitel), halte dich daran.")
+             "Wenn das Vorhaben eine Länge nennt (Seiten, Minuten, Kapitel), halte dich daran.\n"
+             "WICHTIG -- am Ende entsteht EIN fertiges Werk aus allen Etappen mit \"werk\": true, in ihrer Reihenfolge: "
+             "jede solche Etappe ist ein fertiger TEIL des Werks (z. B. ein Kapitel), so wie er später gelesen wird. "
+             "Ist das Vorhaben eine Überarbeitung eines vorhandenen Werks, dann ist jede Werk-Etappe die fertige NEUE "
+             "Fassung eines Teils -- keine Liste der Änderungen. Analysen, Pläne, Prüfungen oder Quellen-Checks brauchst du "
+             "meist nicht als Etappe (das Cockpit prüft jede Etappe ohnehin, und die Externen prüfen das Ganze); wenn doch, "
+             "höchstens eine am Anfang mit \"werk\": false -- sie erscheint nicht im Werk, die folgenden Etappen sehen sie. "
+             "Plane KEINE Etappe \"finale Fassung\" oder \"Übergabe\" -- das fertige Werk setzt das Cockpit selbst zusammen.")
     plan = llm.json_aus(await stab._chat_robust(modell, _system(rid, art), [{"role": "user", "content": frage}],
                                                 json_format=True, temperatur=0.3, denken=stab.DENKEN,
                                                 num_ctx=65536, timeout=stab.LANGE_FRIST))
@@ -496,8 +508,15 @@ async def _planen(l: dict[str, Any]) -> None:
                if isinstance(x, dict) and str(x.get("titel") or "").strip()][:MAX_ETAPPEN]
     if len(etappen) < 2:
         raise llm.ModellFehler("Der Plan enthielt keine lesbaren Etappen.")
+    # werk: gehoert die Etappe ins fertige Werk? (19.10.2026) Beim Moonshots-LongRun plante Neal
+    # Analyse, Revisionsplan, Ton-Check und "Finale Fassung" als Etappen -- der Abschluss klebte
+    # alles hintereinander, das "Buch" war ein Arbeitsprotokoll mit mehreren Fassungen.
     d["etappen"] = [{"nr": i + 1, "titel": stab._kurz(x["titel"], 120), "inhalt": stab._kurz(x.get("inhalt"), 800),
+                     "werk": x.get("werk") is not False and not _ARBEITSSCHRITT.search(str(x["titel"])),
                      "stand": "offen"} for i, x in enumerate(etappen)]
+    if not any(e["werk"] for e in d["etappen"]):
+        for e in d["etappen"]:
+            e["werk"] = True
     if isinstance(plan, dict) and plan.get("titel"):
         d["werk_titel"] = stab._kurz(plan["titel"], 120)
     _speichern(l, stand="laeuft")
@@ -586,7 +605,12 @@ async def _etappe(l: dict[str, Any], e: dict[str, Any]) -> None:
     else:
         frage = (grund + f"\n\nSchreibe JETZT NUR {n} {e['nr']} von {gesamt}: „{e['titel']}“ -- {e.get('inhalt') or ''}\n"
                  f"Beginne mit der Zeile „## {e['titel']}“. Ausführlich und vollständig; keine Wiederholung früherer Etappen, "
-                 "kein Vorgriff auf spätere.")
+                 "kein Vorgriff auf spätere.\n"
+                 + ("Das ist ein ARBEITSSCHRITT für das Team (Analyse, Plan): er erscheint nicht im Werk, die folgenden "
+                    "Etappen bauen darauf auf. Schreib ihn knapp und brauchbar." if e.get("werk") is False else
+                    "Das ist ein TEIL DES FERTIGEN WERKS: schreib nur den Text, wie ihn der Leser liest -- keine "
+                    "Revisionsnotizen, keine Begründungen deiner Änderungen, keine Abschnitte wie „Was sich ändert und "
+                    "warum“, keine Hinweise an Prüfer oder das Team. Ist es eine Überarbeitung: die fertige neue Fassung."))
         text = (await stab.abschnittsweise(modell, system, frage, "dokument", rid, vid)
                 or await stab._chat_robust(modell, system, [{"role": "user", "content": frage}], temperatur=0.6,
                                            denken=stab.DENKEN_SCHREIBEN, num_ctx=65536, timeout=stab.LANGE_FRIST))
@@ -596,7 +620,10 @@ async def _etappe(l: dict[str, Any], e: dict[str, Any]) -> None:
     # Daniel prueft lokal; "nachbessern" -> genau eine Ueberarbeitung. Eine
     # Rueckfrage haelt den Lauf NICHT an -- sie steht als Mangel an der Etappe.
     stab.laeuft("kritiker", f"Langläufer: prüft {n} {e['nr']}", vid)
-    a = {"auftrag": f"{d['auftrag']} -- {n} {e['nr']}: {e['titel']}: {e.get('inhalt') or ''}",
+    a = {"auftrag": f"{d['auftrag']} -- {n} {e['nr']}: {e['titel']}: {e.get('inhalt') or ''}"
+                    + ("" if e.get("werk") is False else
+                       " -- DIESER TEIL STEHT SO IM FERTIGEN WERK: Revisionsnotizen, Änderungslisten, Analysen oder Hinweise "
+                       "an Prüfer statt fertigem Text sind ein Mangel."),
          "form": _form(art)}
     p = await stab.pruefen(text, a, v)
     if p.get("urteil") in ("nachbessern", "rueckfrage") and (p.get("maengel") or p.get("frage")):
@@ -807,6 +834,10 @@ def _abschliessen(l: dict[str, Any], vorlaeufig: bool = False) -> str | None:
     fertig = [e for e in d.get("etappen") or [] if e.get("stand") == "fertig"]
     if not fertig:
         raise ValueError("Noch keine Etappe fertig.")
+    # Ins Werk nur die Etappen, die Teil davon sind (werk); Arbeitsschritte (Analyse, Plan)
+    # bleiben im LongRun lesbar. Alte LongRuns ohne Marke: alles wie bisher.
+    werk = [e for e in fertig if e.get("werk", True)]
+    fertig = werk or fertig
     titel = d.get("werk_titel") or l["titel"]
     v = db.holen("vorgaenge", vid) or {"id": vid, "projekt_id": l.get("projekt_id")}
     letzte = (d.get("pruefungen") or [{}])[-1]

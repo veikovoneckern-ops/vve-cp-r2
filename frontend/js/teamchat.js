@@ -58,9 +58,9 @@ function genannteExterne(text) { return EXTERN_NAMEN.filter(([, re]) => re.test(
 // Beides beantwortet der Server (langlauf.gross, dieselbe Regel wie Talk und Pipeline) --
 // hier steht keine eigene Regel (19.10.2026). Im Chat schreibt das Mitglied alles in EINE
 // Antwort; ein komplettes Buch oder eine grosse Praesentation wird dort zwangslaeufig ein Auszug.
-async function erkennen(text) {
-  try { return await api("/langlaeufe/erkennen", { methode: "POST", daten: { text } }); }
-  catch (e) { return { gross: null, nachher: false }; }
+async function erkennen(text, ergebnisId) {
+  try { return await api("/langlaeufe/erkennen", { methode: "POST", daten: { text, ergebnis_id: ergebnisId || null } }); }
+  catch (e) { return { gross: null, nachher: false, langlauf_von: null }; }
 }
 
 // wer: Kennung des Mitglieds; gid: Gespraech oder null; ergebnisId/projektId: Kontext.
@@ -119,10 +119,10 @@ export function TeamChat({ wer, partnerListe, gid, ergebnisId = "", projektId = 
     if (lauf) return false;
     if (ich.extern && !kostenOk) { setWartet({ text, dateien, namen }); return true; }
     const dazu = ich.extern ? [] : genannteExterne(text).filter((x) => partnerListe.some((p) => p.id === x));
-    const erk = ich.extern ? { gross: null, nachher: false } : await erkennen(text);
+    const erk = ich.extern ? { gross: null, nachher: false } : await erkennen(text, ergebnisId);
     const nachher = dazu.length > 0 && erk.nachher;
     // In einem LongRun-Gespraech gehen Anweisungen ohnehin an den LongRun.
-    if (!imChat && !langlaufId && erk.gross) { setWartet({ text, dateien, namen, dazu, nachher, langlauf: erk.gross }); return true; }
+    if (!imChat && !langlaufId && erk.gross) { setWartet({ text, dateien, namen, dazu, nachher, langlauf: erk.gross, von: erk.langlauf_von }); return true; }
     if (dazu.length && !dazu.every((x) => externFrei.includes(x))) { setWartet({ text, dateien, namen, dazu, nachher }); return true; }
     return sendenFrei(text, dateien, dazu, nachher);
   }
@@ -196,13 +196,18 @@ export function TeamChat({ wer, partnerListe, gid, ergebnisId = "", projektId = 
           <div class="leise klein" style="margin-top:6px">Du kannst das Fenster schließen. Die Antwort wird fertig gerechnet und erscheint hier.</div></div></div>`}
     </div>
     ${wartet && wartet.langlauf && html`<div class="hinweisbox tc-kosten">
-      <b>Das ist ein großes Vorhaben (${wartet.langlauf.art_name}) -- dafür gibt es den LongRun.</b> Hier im Chat schreibt ${ich.name} alles in eine einzige Antwort;
+      <div class="tc-zitat">Deine Nachricht: „${wartet.text}“</div>
+      ${wartet.von ? html`<b>Dieses Ergebnis stammt aus dem LongRun „${wartet.von.titel}“.</b> Soll ihn ${ich.name} ${wartet.von.etappen === "Kapitel" ? "Kapitel für Kapitel" : "Etappe für Etappe"} nach deinem Wunsch überarbeiten (jede Etappe einzeln, Daniel prüft jede -- nichts wird gekürzt)?
+      Oder soll ein NEUER LongRun eine eigene, neue Fassung schreiben? Den startest du im nächsten Schritt selbst, dort steht auch das Budget für die Prüfung.`
+      : html`<b>Das ist ein großes Vorhaben (${wartet.langlauf.art_name}) -- dafür gibt es den LongRun.</b> Hier im Chat schreibt ${ich.name} alles in eine einzige Antwort;
       ein großes Werk wird so zwangsläufig ein Auszug. Als LongRun plant ${ich.name} es in Etappen und arbeitet eine nach der anderen aus, jede gründlich
       und von Daniel geprüft, und ${wartet.langlauf.pruefer === "demmis" ? "Demmis" : "Dario"} prüft ${wartet.langlauf.pruef_alle === 0 ? "am Ende das fertige Werk" : "zwischendurch"}.
-      Im nächsten Schritt siehst du alles im Formular und startest selbst -- dort steht auch das Budget für die Prüfung.
+      Im nächsten Schritt siehst du alles im Formular und startest selbst -- dort steht auch das Budget für die Prüfung.`}
       <div class="knopfreihe" style="margin-top:8px">
-        <button class="btn primaer klein" onClick=${() => alsLangLauf(wartet)}><${Icon} n="langlauf" g=${14} />Als LongRun starten</button>
-        <button class="btn klein" onClick=${() => { const w = wartet; setWartet(null); setTimeout(() => senden(w.text, w.dateien, w.namen, true), 0); }}>Trotzdem hier im Chat</button>
+        ${wartet.von && html`<button class="btn primaer klein" onClick=${() => { const w = wartet; setWartet(null); setTimeout(() => senden(w.text, w.dateien, w.namen, true), 0); }}>
+          <${Icon} n="langlauf" g=${14} />Diesen LongRun überarbeiten</button>`}
+        <button class=${"btn klein" + (wartet.von ? "" : " primaer")} onClick=${() => alsLangLauf(wartet)}><${Icon} n="langlauf" g=${14} />${wartet.von ? "Neuen LongRun starten" : "Als LongRun starten"}</button>
+        ${!wartet.von && html`<button class="btn klein" onClick=${() => { const w = wartet; setWartet(null); setTimeout(() => senden(w.text, w.dateien, w.namen, true), 0); }}>Trotzdem hier im Chat</button>`}
         <button class="btn klein geist" onClick=${() => { feld.current && feld.current.setzen(wartet.text); setWartet(null); }}>Abbrechen</button></div></div>`}
     ${wartet && !wartet.langlauf && wartet.dazu && wartet.dazu.length > 0 && html`<div class="hinweisbox tc-kosten">
       <b>Du holst ${wartet.dazu.map((x) => partner(x).name).join(" und ")} dazu.</b>${" "}${wartet.dazu.map((x) => `${partner(x).name} (${partner(x).titel})`).join(", ")} ${wartet.dazu.length > 1 ? "sind bezahlte Cloud-Modelle" : "ist ein bezahltes Cloud-Modell"}:

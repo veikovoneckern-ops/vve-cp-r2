@@ -249,6 +249,9 @@ function App() {
   // ergebnis-zeigen: eine Kennung, oder { id, vorlage } -- dann steht die Bitte schon im Chat (Daniels Einwände einarbeiten).
   useEffect(() => bus.an("ergebnis-zeigen", (x) => setAnzeige({ art: "ergebnis", id: (x && x.id) || x, vorlage: x && x.vorlage, n: Date.now() })), []);
   useEffect(() => bus.an("notiz-zeigen", (id) => setAnzeige({ art: "notiz", id })), []);
+  // Eine Seite oeffnet sich, die nicht HINTER einem Fenster liegen darf (19.10.2026: das
+  // LongRun-Formular ging aus dem Ergebnisfenster heraus verdeckt auf, Veiko sah nichts).
+  useEffect(() => bus.an("fenster-alle-zu", () => { setAnzeige(null); setAufgabe(null); setErfassen(false); }), []);
   // Eine Unterlage im Cockpit lesen (datei.js, 19.10.2026): Explorer, Talk, Aufgabe.
   useEffect(() => bus.an("datei-zeigen", (id) => setAnzeige({ art: "datei", id, n: Date.now() })), []);
   // Das Aufgabenfenster (17.10.2026): von jeder Stelle, an der eine Aufgabe steht.
