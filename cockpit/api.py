@@ -1214,12 +1214,27 @@ async def explorer_liste(q: str = ""):
     return d
 
 
+@router.get("/explorer/vorschau/{art}/{eid}")
+async def explorer_vorschau(art: str, eid: str, breite: int = 480):
+    """Vorschaubild einer Kachel (explorer.vorschau_bild); 404 heisst: dort steht der Textauszug."""
+    from . import explorer
+    r = await asyncio.to_thread(explorer.vorschau_bild, art, eid, breite)
+    if not r:
+        raise HTTPException(404, "Keine Bildvorschau")
+    return Response(r[0], media_type=r[1], headers={"Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff"})
+
+
 @router.get("/dateien/{did}")
-async def datei_holen(did: str):
+async def datei_holen(did: str, anzeigen: bool = False):
     d = db.holen("dateien", did)
     if not d or not Path(d["pfad"]).is_file():
         raise HTTPException(404, "Datei nicht gefunden")
-    return FileResponse(d["pfad"], filename=d["name"], headers={"X-Content-Type-Options": "nosniff"})
+    # anzeigen=1 (Explorer: Foto, PDF, Ton, Film): im Browser zeigen statt herunterladen -- nur fuer
+    # Arten, die kein Skript tragen koennen (kein HTML, kein SVG), sonst liefe fremder Code im Cockpit.
+    mime = (d.get("typ") or mimetypes.guess_type(d["name"] or "")[0] or "").lower()
+    sicher = anzeigen and mime != "image/svg+xml" and mime.startswith(("image/", "audio/", "video/", "application/pdf"))
+    return FileResponse(d["pfad"], filename=d["name"], headers={"X-Content-Type-Options": "nosniff"},
+                        media_type=mime if sicher else None, content_disposition_type="inline" if sicher else "attachment")
 
 
 @router.post("/stimme/hoeren")

@@ -18,7 +18,21 @@ import { ZuordnungWahl } from "./datei.js";
 const GRUPPEN = [["alle", "Alles", "explorer"], ["ergebnis", "Ergebnisse", "check"], ["recherche", "Recherche & Abschriften", "suche"],
   ["bild", "Bilder", "auge"], ["unterlage", "Unterlagen", "clip"], ["notiz", "Notizen", "stift"]];
 const ICON = { text: "liste", aufstellung: "liste", konzept: "liste", dokument: "liste", webseite: "globus", praesentation: "voll",
-  video: "play", dossier: "suche", abschrift: "welle", unterlage: "clip", bild: "auge", visualisierung: "auge", notiz: "stift" };
+  video: "play", dossier: "suche", abschrift: "welle", unterlage: "clip", bild: "auge", visualisierung: "auge", notiz: "stift",
+  pdf: "liste", word: "liste", excel: "liste", powerpoint: "voll", audio: "welle", film: "play", webdatei: "globus", textdatei: "liste" };
+// Was der Browser selbst zeigen kann, oeffnet direkt (Foto, PDF, Ton, Film) -- das Unterlagenfenster
+// zeigt Text, und ein Foto hat keinen.
+const DIREKT = new Set(["bild", "pdf", "audio", "film"]);
+const vorschauUrl = (e, breite = 480) => "/api/explorer/vorschau/" + e.art + "/" + encodeURIComponent(e.art === "bild" ? e.datei : e.id) + "?breite=" + breite;
+
+// Kachel-Vorschau (19.10.2026): ein Bild, wo es eines gibt (explorer.vorschau_bild), sonst der
+// Anfang des Inhalts, sonst das Symbol. Scheitert das Bild, faellt sie still auf den Auszug zurueck.
+function KachelBlick({ e }) {
+  const [fehler, setFehler] = useState(false);
+  if (e.vorschau && !fehler) return html`<img src=${vorschauUrl(e)} alt="" loading="lazy" onError=${() => setFehler(true)} />`;
+  if (e.auszug) return html`<span class="ex-kachel-text">${e.auszug}</span>`;
+  return html`<span class="ex-kachel-ic"><${Icon} n=${ICON[e.typ] || "clip"} g=${28} /></span>`;
+}
 const ZEIT = [["", "jederzeit"], ["1", "heute"], ["7", "7 Tage"], ["30", "30 Tage"], ["365", "1 Jahr"]];
 const groesse = (e) => (e.einheit === "Byte"
   ? (e.groesse >= 1048576 ? (e.groesse / 1048576).toFixed(1).replace(".", ",") + " MB" : e.groesse >= 1024 ? Math.round(e.groesse / 1024) + " KB" : e.groesse + " B")
@@ -28,6 +42,7 @@ const merk = (k, v) => { try { localStorage.setItem("ex-" + k, v); } catch (e) {
 
 export function oeffnen(e) {
   if (e.art === "ergebnis") bus.sende("ergebnis-zeigen", e.id);
+  else if (e.art === "datei" && DIREKT.has(e.typ)) window.open("/api/dateien/" + e.id + "?anzeigen=1", "_blank", "noopener");
   else if (e.art === "datei") bus.sende("datei-zeigen", e.id);
   else if (e.art === "notiz") bus.sende("notiz-zeigen", e.id);
   else if (e.art === "bild") window.open("/api/medien/datei/" + e.datei, "_blank", "noopener");
@@ -134,7 +149,7 @@ export function Explorer() {
           : ansicht === "kacheln" ? html`<div class="ex-kacheln">${liste.slice(0, 400).map((e) => html`<button key=${e.id}
               class=${"karte ex-kachel" + (wahl === e.id ? " an" : "")} onClick=${() => klick(e)} onDblClick=${() => oeffnen(e)}
               onKeyDown=${(k) => { if (k.key === "Enter") { k.preventDefault(); oeffnen(e); } }}>
-              ${e.art === "bild" ? html`<img src=${"/api/medien/datei/" + e.datei} alt="" loading="lazy" />` : html`<span class="ex-kachel-ic"><${Icon} n=${ICON[e.typ] || "clip"} g=${28} /></span>`}
+              <${KachelBlick} e=${e} />
               <b>${e.titel}</b><span class="leise klein">${e.typ_name}${e.projekt_name ? " · " + e.projekt_name : ""}</span>
               <span class="leise klein">${zeitText(e.zeit)}${e.wer ? " · " + e.wer : ""}</span></button>`)}</div>`
           : html`<div class="tabelle-wrap ex-liste"><table class="tabelle">
@@ -177,8 +192,9 @@ function Vorschau({ e, zu, neu }) {
     ${u && html`<div style="margin-top:6px"><span class=${"pill " + u.farbe}>${u.wort}</span></div>`}
     <div class="ex-vorschau-ort klein">${e.projekt_name ? html`Projekt <b>${e.projekt_name}</b>` : "ohne Projekt"}${e.aufgabe_titel ? html` · Aufgabe <a href="#" onClick=${(x) => { x.preventDefault(); bus.sende("aufgabe-zeigen", e.aufgabe_id); }}>${e.aufgabe_titel}</a>` : ""}</div>
     ${e.art === "datei" && html`<details class="klein"><summary>Zuordnung ändern</summary><${ZuordnungWahl} projektId=${e.projekt_id} aufgabeId=${e.aufgabe_id} setzen=${zuordnen} /></details>`}
-    <div class="ex-vorschau-blick">${e.art === "bild" ? html`<img src=${"/api/medien/datei/" + e.datei} alt=${e.titel} />`
-      : text == null ? html`<div class="lade">Lade …</div>` : text ? html`<${Md} text=${text + (text.length >= 1600 ? " …" : "")} />` : html`<span class="leise">Keine Textvorschau.</span>`}</div>
+    <div class="ex-vorschau-blick">${e.vorschau ? html`<img src=${vorschauUrl(e, 900)} alt=${e.titel} />` : ""}${e.art === "bild" ? ""
+      : text == null ? html`<div class="lade">Lade …</div>` : text ? html`<${Md} text=${text + (text.length >= 1600 ? " …" : "")} />`
+      : e.vorschau ? "" : html`<span class="leise">Keine Vorschau -- „Öffnen“ zeigt die Datei.</span>`}</div>
     <div class="knopfreihe">
       <button class="btn primaer klein" onClick=${() => oeffnen(e)}><${Icon} n="voll" g=${13} />Öffnen</button>
       ${e.art !== "bild" && html`<button class="btn klein" onClick=${() => bus.sende("talk-oeffnen", { kontext: { art: e.art === "datei" ? "datei" : e.art === "notiz" ? "notiz" : "ergebnis", id: e.id, titel: e.titel } })}>

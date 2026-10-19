@@ -2239,3 +2239,6 @@ html.zieht iframe{pointer-events:none}
    begann erst eine Bildschirmhoehe tiefer. Dann ist er kompakt und scrollt selbst. */
 @media (max-width:900px){.ex-baum{position:static;max-height:240px}}
 @container inhalt (max-width:648px){.ex-baum{position:static;max-height:240px}}
+/* Kachel ohne Bild: der Anfang des Inhalts, wie die Dokumentvorschau in Windows (19.10.2026). */
+.ex-kachel-text{width:100%;aspect-ratio:4/3;border-radius:6px;background:var(--surface-2);padding:8px 9px;font-size:10.5px;line-height:1.4;color:var(--ink-3);overflow:hidden;display:-webkit-box;-webkit-line-clamp:7;-webkit-box-orient:vertical;overflow-wrap:anywhere}
+.ex-vorschau-blick img{max-width:100%;border-radius:6px;display:block;margin-bottom:8px}
