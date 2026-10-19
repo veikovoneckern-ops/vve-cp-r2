@@ -53,7 +53,7 @@ const EDITOR_CSS = `
   html.ws-nurlesen main{opacity:.96}
 `;
 
-const GERAETE = [["desktop", "Rechner", "system", null], ["tablet", "Tablet", "projects", 820], ["handy", "Handy", "talk", 390]];
+const GERAETE = [["desktop", "Rechner", null], ["tablet", "Tablet", 820], ["handy", "Handy", 390]];
 const KI_SCHNELL = [["Kürzer", "Mach den Text deutlich kürzer und knapper, ohne Inhalt zu verlieren."],
   ["Verständlicher", "Formuliere verständlicher und klarer, für Leser ohne Vorwissen."],
   ["Ausführlicher", "Arbeite den Text etwas ausführlicher aus, ohne Fakten zu erfinden."],
@@ -294,6 +294,18 @@ export function Editor({ pfad, stand, sichernRef, geaendert: aufGeaendert, kopfL
       const zeile = n && n.closest("p, h2, h3, h4");
       if (zeile && zeile.textContent === "/") fn.current.bibliothek(blockVon(zeile), zeile);
     });
+    // Dreifachklick markiert im Browser über das Absatzende hinaus; wer dann tippt,
+    // zieht den nächsten Absatz (z. B. die Quelle eines Zitats) mit hinein.
+    // Deshalb: genau den Inhalt des angeklickten Absatzes markieren.
+    d.addEventListener("mouseup", (e) => {
+      if (e.detail < 3) return;
+      const z = e.target.closest && e.target.closest("p, h1, h2, h3, h4, li, cite, figcaption");
+      if (!z) return;
+      const r = d.createRange();
+      r.selectNodeContents(z);
+      const s = d.getSelection();
+      s.removeAllRanges(); s.addRange(r);
+    });
     d.addEventListener("keydown", (e) => fn.current.taste(e));
     d.addEventListener("paste", (e) => fn.current.einfuegen(e));
     d.addEventListener("dragover", (e) => { if ([...(e.dataTransfer.items || [])].some((i) => i.kind === "file")) e.preventDefault(); });
@@ -512,14 +524,14 @@ export function Editor({ pfad, stand, sichernRef, geaendert: aufGeaendert, kopfL
 
   const srcdoc = huelle ? huelle.replace("<!--EDITOR-->", "").replace("</head>", `<style>${EDITOR_CSS}</style></head>`) : null;
   const h = hist.current;
-  const breite = (GERAETE.find((g) => g[0] === geraet) || [])[3];
+  const breite = (GERAETE.find((g) => g[0] === geraet) || [])[2];
 
   return html`<div class="wse">
     <div class="wse-kopf">
       <div class="wse-titel"><b title=${kopf.titel}>${kopf.titel}</b>
         <span class="leise"><a href=${stand.live + seite.adresse} target="_blank" rel="noopener" title="Die veröffentlichte Seite öffnen">${seite.adresse}</a> · <${SpeicherStand} s=${speicher} jetzt=${() => speichern()} /></span></div>
       <div class="segment wse-geraete" role="group" aria-label="Gerät">
-        ${GERAETE.map(([id, name, icon]) => html`<button class=${geraet === id ? "an" : ""} title=${"Ansicht: " + name} aria-label=${name} onClick=${() => geraetWaehlen(id)}><${Icon} n=${icon} g=${15} /></button>`)}
+        ${GERAETE.map(([id, name]) => html`<button class=${geraet === id ? "an" : ""} title=${"Ansicht: " + name} aria-label=${name} onClick=${() => geraetWaehlen(id)}><span class=${"ws-ger " + id}></span></button>`)}
       </div>
       <span class="knopfreihe">
         <button class="btn geist icon" title="Rückgängig (Strg+Z)" aria-label="Rückgängig" disabled=${h.i <= 0 || modus !== "visuell"} onClick=${rueckgaengig}><${Icon} n="undo" g=${16} /></button>
@@ -567,8 +579,17 @@ export function Editor({ pfad, stand, sichernRef, geaendert: aufGeaendert, kopfL
         let ziel = nach;
         if (ersetzen && ersetzen.isConnected) {
           // Die Zeile mit dem "/" verschwindet; war sie allein im Abschnitt, der ganze Abschnitt.
+          // Steht danach noch Text im selben Abschnitt, wird er an dieser Stelle geteilt --
+          // der neue Abschnitt landet genau dort, wo das "/" stand (wie in Notion/WordPress).
           const b = blockVon(ersetzen);
-          if (b && b.textContent.trim() === "/") { ziel = b.previousElementSibling; b.remove(); } else ersetzen.remove();
+          if (b && b.textContent.trim() === "/") { ziel = b.previousElementSibling; b.remove(); }
+          else if (b && ersetzen.parentElement === b && ersetzen.nextElementSibling) {
+            const rest = b.cloneNode(false);
+            while (ersetzen.nextSibling) rest.appendChild(ersetzen.nextSibling);
+            ersetzen.remove();
+            b.after(rest);
+            ziel = b;
+          } else ersetzen.remove();
         }
         setBibliothek(null);
         const knoten = einfuegenNach(ziel, v.html);
@@ -641,10 +662,10 @@ function Bibliothek({ zu, waehlen, ki, stand }) {
       onKeyDown=${(e) => { if (e.key === "Enter" && liste[0]) waehlen(liste[0]); }} />
     ${gruppen.map((g) => html`<div class="wsb-gruppe">${g}</div>
       <div class="wsb-raster">${liste.filter((v) => v.gruppe === g).map((v) => html`<button class="wsb-kachel" onClick=${() => waehlen(v)}>
-        <span class=${"wsb-bild wsb-" + v.id}></span><b>${v.name}</b><span class="leise">${v.text}</span></button>`)}</div>`)}
+        <span class=${"wsb-vorschau wsb-v-" + v.id}></span><b>${v.name}</b><span class="leise">${v.text}</span></button>`)}</div>`)}
     ${!q && bausteine.length > 0 && html`<div class="wsb-gruppe">Interaktive Bausteine (bereits gebaut)</div>
       <div class="wsb-raster">${bausteine.map((b) => html`<button class="wsb-kachel" onClick=${() => waehlen({ id: "baustein", html: `<!--baustein ${b}-->` })}>
-        <span class="wsb-bild wsb-baustein"></span><b>${b}</b><span class="leise">fertig programmiert, wird eingesetzt</span></button>`)}</div>`}
+        <span class="wsb-vorschau wsb-v-baustein"></span><b>${b}</b><span class="leise">fertig programmiert, wird eingesetzt</span></button>`)}</div>`}
   <//>`;
 }
 

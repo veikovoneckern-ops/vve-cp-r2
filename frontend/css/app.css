@@ -1589,7 +1589,11 @@ html.zieht iframe{pointer-events:none}
 .wse-geraete button{padding:5px 9px;min-height:30px}
 .wse-werkzeug{display:flex;align-items:center;gap:2px;flex-wrap:wrap;padding:5px 10px;border-bottom:1px solid var(--line);background:var(--surface)}
 .wse-werkzeug .btn{color:var(--ink-2)}
-.wse-format{min-height:30px;padding:3px 8px;width:auto;font-size:12.5px}
+.wse-werkzeug .wse-format{min-height:30px;padding:3px 8px;width:auto;flex:none;max-width:170px;font-size:12.5px}
+.ws-ger{display:inline-block;border:1.8px solid currentColor;border-radius:2px}
+.ws-ger.desktop{width:16px;height:11px;border-bottom-width:3px}
+.ws-ger.tablet{width:11px;height:14px;border-radius:2px}
+.ws-ger.handy{width:8px;height:14px;border-radius:2px}
 .ws-trenner{width:1px;height:20px;background:var(--line);margin:0 4px}
 .ws-hinweis{margin-left:auto;font-size:11.5px}
 .ws-ausr{display:inline-block;width:14px;height:10px;background:linear-gradient(currentColor,currentColor) 0 0/100% 2px no-repeat,linear-gradient(currentColor,currentColor) 0 4px/70% 2px no-repeat,linear-gradient(currentColor,currentColor) 0 8px/100% 2px no-repeat}
@@ -1655,23 +1659,23 @@ html.zieht iframe{pointer-events:none}
 .wsb-kachel{display:flex;flex-direction:column;gap:3px;text-align:left;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);cursor:pointer;color:var(--ink)}
 .wsb-kachel:hover{border-color:var(--fuell);box-shadow:0 4px 14px rgba(0,0,0,.08)}
 .wsb-kachel b{font-size:13px}.wsb-kachel .leise{font-size:11.5px;line-height:1.35}
-.wsb-bild{height:64px;border-radius:7px;margin-bottom:4px;background:#eef1f5;position:relative;overflow:hidden}
-.wsb-titelband,.wsb-bandknopf,.wsb-balken{background:#3c3c3c}
-.wsb-titelband::after{content:"";position:absolute;left:14%;right:30%;top:36%;height:9px;background:#fff;border-radius:2px;box-shadow:0 14px 0 -3px #bbb}
-.wsb-bandknopf::after{content:"";position:absolute;left:14%;right:40%;top:28%;height:8px;background:#fff;border-radius:2px;box-shadow:24px 22px 0 -1px #fff}
-.wsb-balken{background:linear-gradient(#eef1f5,#eef1f5) 0 0/100% 34% no-repeat,linear-gradient(#3c3c3c,#3c3c3c) 0 50%/100% 30% no-repeat,#eef1f5}
-.wsb-text::after,.wsb-absatz::after,.wsb-liste::after,.wsb-zitat::after{content:"";position:absolute;left:12%;right:12%;top:22%;height:42%;background:repeating-linear-gradient(#98a6b8 0 3px,transparent 3px 9px)}
-.wsb-text::before{content:"";position:absolute;left:12%;width:40%;top:10%;height:6px;background:#32465c;border-radius:2px}
-.wsb-spalten::after{content:"";position:absolute;left:10%;right:10%;top:22%;height:50%;background:repeating-linear-gradient(90deg,transparent 0 0,transparent 0 0),repeating-linear-gradient(#98a6b8 0 3px,transparent 3px 9px);-webkit-mask:linear-gradient(90deg,#000 0 45%,transparent 45% 55%,#000 55%);mask:linear-gradient(90deg,#000 0 45%,transparent 45% 55%,#000 55%)}
-.wsb-zitat::before{content:"“";position:absolute;left:8%;top:-6px;font:700 40px Georgia;color:#991b1b}
-.wsb-bild.wsb-bild,.wsb-karten,.wsb-video{background:#eef1f5}
-.wsb-bild::after{content:"";position:absolute;left:25%;right:25%;top:12%;bottom:22%;background:linear-gradient(135deg,#6b8fbf,#2c4a73);border-radius:3px}
-.wsb-karten::after{content:"";position:absolute;left:8%;right:8%;top:16%;bottom:16%;background:linear-gradient(90deg,#6b8fbf 0 29%,transparent 29% 35.5%,#6b8fbf 35.5% 64.5%,transparent 64.5% 71%,#6b8fbf 71%)}
-.wsb-video::after{content:"▶";position:absolute;inset:14% 22%;background:#111;color:#fff;display:grid;place-items:center;border-radius:4px;font-size:16px}
-.wsb-knopf::after{content:"";position:absolute;left:32%;right:32%;top:38%;height:16px;background:#3c3c3c;border-radius:2px}
-.wsb-trenner::after{content:"";position:absolute;left:10%;right:10%;top:50%;height:1px;background:#98a6b8}
-.wsb-abstand::after{content:"↕";position:absolute;inset:0;display:grid;place-items:center;color:#98a6b8;font-size:20px}
-.wsb-baustein::after{content:"⚙";position:absolute;inset:0;display:grid;place-items:center;color:#647388;font-size:24px}
+.wsb-vorschau{height:64px;border-radius:7px;margin-bottom:4px;background:#eef1f5;position:relative;overflow:hidden}
+.wsb-v-titelband,.wsb-v-bandknopf,.wsb-v-balken{background:#3c3c3c}
+.wsb-v-titelband::after{content:"";position:absolute;left:14%;right:30%;top:36%;height:9px;background:#fff;border-radius:2px;box-shadow:0 14px 0 -3px #bbb}
+.wsb-v-bandknopf::after{content:"";position:absolute;left:14%;right:40%;top:28%;height:8px;background:#fff;border-radius:2px;box-shadow:24px 22px 0 -1px #fff}
+.wsb-v-balken{background:linear-gradient(#eef1f5,#eef1f5) 0 0/100% 34% no-repeat,linear-gradient(#3c3c3c,#3c3c3c) 0 50%/100% 30% no-repeat,#eef1f5}
+.wsb-v-text::after,.wsb-v-absatz::after,.wsb-v-liste::after,.wsb-v-zitat::after{content:"";position:absolute;left:12%;right:12%;top:22%;height:42%;background:repeating-linear-gradient(#98a6b8 0 3px,transparent 3px 9px)}
+.wsb-v-text::before{content:"";position:absolute;left:12%;width:40%;top:10%;height:6px;background:#32465c;border-radius:2px}
+.wsb-v-spalten::after{content:"";position:absolute;left:10%;right:10%;top:22%;height:50%;background:repeating-linear-gradient(90deg,transparent 0 0,transparent 0 0),repeating-linear-gradient(#98a6b8 0 3px,transparent 3px 9px);-webkit-mask:linear-gradient(90deg,#000 0 45%,transparent 45% 55%,#000 55%);mask:linear-gradient(90deg,#000 0 45%,transparent 45% 55%,#000 55%)}
+.wsb-v-zitat::before{content:"“";position:absolute;left:8%;top:-6px;font:700 40px Georgia;color:#991b1b}
+.wsb-v-bild,.wsb-v-karten,.wsb-v-video{background:#eef1f5}
+.wsb-v-bild::after{content:"";position:absolute;left:25%;right:25%;top:12%;bottom:22%;background:linear-gradient(135deg,#6b8fbf,#2c4a73);border-radius:3px}
+.wsb-v-karten::after{content:"";position:absolute;left:8%;right:8%;top:16%;bottom:16%;background:linear-gradient(90deg,#6b8fbf 0 29%,transparent 29% 35.5%,#6b8fbf 35.5% 64.5%,transparent 64.5% 71%,#6b8fbf 71%)}
+.wsb-v-video::after{content:"▶";position:absolute;inset:14% 22%;background:#111;color:#fff;display:grid;place-items:center;border-radius:4px;font-size:16px}
+.wsb-v-knopf::after{content:"";position:absolute;left:32%;right:32%;top:38%;height:16px;background:#3c3c3c;border-radius:2px}
+.wsb-v-trenner::after{content:"";position:absolute;left:10%;right:10%;top:50%;height:1px;background:#98a6b8}
+.wsb-v-abstand::after{content:"↕";position:absolute;inset:0;display:grid;place-items:center;color:#98a6b8;font-size:20px}
+.wsb-v-baustein::after{content:"⚙";position:absolute;inset:0;display:grid;place-items:center;color:#647388;font-size:24px}
 
 /* Link-Fenster, Medienwahl */
 .wsl-liste{display:flex;flex-direction:column;gap:2px;margin-top:8px;max-height:240px;overflow:auto}
@@ -1723,4 +1727,7 @@ html.zieht iframe{pointer-events:none}
   .wse-rechts{border-left:0;border-top:1px solid var(--line)}
   .wse-rechts-inhalt{max-height:none}
   .ws2-zwei,.ws2-artwahl{grid-template-columns:1fr}
+  .wse-geraete{display:none}
+  .wse-flaeche.geraet{padding:0}
+  .wse-flaeche.geraet .wse-rahmen{width:100%!important;max-width:none;border-radius:0;box-shadow:none}
 }
