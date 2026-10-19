@@ -65,6 +65,10 @@ export function Composer({ platzhalter = "Schreib oder sprich …", beimSenden, 
     }
   }
 
+  // Klick oder Taste ins Feld beendet ein laufendes Diktat (19.10.2026, Veiko: "wenn ich
+  // reinklicke und versuche, etwas im diktierten Text zu aendern, muss die Diktierfunktion
+  // beendet sein"). Vorher war das Feld waehrend des Diktats gesperrt.
+  const AENDERN = "Diktat beendet -- du kannst den Text jetzt ändern.";
   // Diktat mit Mitlesen: fester Text steht sofort im Feld, der gerade gesprochene
   // Satz erscheint vorlaeufig dahinter (stimme.js, diktieren()).
   // Ein Diktat beenden -- per Knopf, oder weil ein anderer die Vorfahrt am Mikrofon
@@ -108,7 +112,7 @@ export function Composer({ platzhalter = "Schreib oder sprich …", beimSenden, 
 
   const sek = aufnahme ? Math.floor((jetzt - aufnahme.start) / 1000) : 0;
   let info = "";
-  if (aufnahme) info = `Diktat läuft · ${Math.floor(sek / 60)}:${String(sek % 60).padStart(2, "0")} · zum Beenden tippen`;
+  if (aufnahme) info = `Diktat läuft · ${Math.floor(sek / 60)}:${String(sek % 60).padStart(2, "0")} · zum Beenden ins Feld klicken oder aufs Mikrofon tippen`;
   else if (erkenne) info = "Letzter Satz wird erkannt …";
   else if (laedt) info = "Lade hoch …";
 
@@ -129,7 +133,11 @@ export function Composer({ platzhalter = "Schreib oder sprich …", beimSenden, 
       class=${aufnahme ? "diktat" : ""} readOnly=${!!aufnahme} placeholder=${aufnahme ? "Sprich einfach, der Text erscheint hier …" : platzhalter} aria-label=${platzhalter}
       onInput=${(e) => setText(e.target.value)}
       onPaste=${(e) => { const f = [...(e.clipboardData?.files || [])]; if (erlaubeAnhang && f.length) { e.preventDefault(); dateienDazu(f); } }}
-      onKeyDown=${(e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); senden(); } }}></textarea>
+      onPointerDown=${() => { if (aufnahmeRef.current) diktatEnde(AENDERN); }}
+      onKeyDown=${(e) => {
+        // Wer waehrend des Diktats ins Feld tippt, will aendern: Diktat beenden (Enter sendet wie immer).
+        if (aufnahmeRef.current && e.key !== "Enter" && !["Shift", "Control", "Alt", "Meta", "CapsLock", "Tab"].includes(e.key)) { diktatEnde(AENDERN); return; }
+        if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); senden(); } }}></textarea>
     <div class="composer-leiste">
       ${erlaubeAnhang && html`<button type="button" class="sym" title="Datei anhängen (PDF, Word, Excel, PowerPoint, Text, Bild)" aria-label="Datei anhängen"
         onClick=${() => datei.current.click()}><${Icon} n="plus" g=${19} /></button>
