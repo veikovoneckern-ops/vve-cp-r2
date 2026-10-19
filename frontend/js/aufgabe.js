@@ -9,7 +9,7 @@
 // der Kennung, gezeigt von app.js. Was es zeigt, kommt aus /aufgaben/{id};
 // geschrieben wird ueber dieselben Wege wie anderswo (PATCH /aufgaben, Upload
 // /dateien mit aufgabe_id, langlaufStarten) -- kein zweiter Weg.
-import { html, useState, useEffect, useRef, Icon, Modal, toast, fehlerMelden, zeitText, bus, aktualisieren, navigiere } from "./ui.js";
+import { html, useState, useEffect, useRef, Icon, Modal, toast, fehlerMelden, zeitText, bus, aktualisieren, navigiere, useFensterKontext } from "./ui.js";
 import { api, hochladen } from "./api.js";
 import { langlaufStarten } from "./langlauf.js";
 
@@ -25,6 +25,7 @@ export function AufgabeFenster({ id, zu }) {
   const [ziehen, setZiehen] = useState(false);
   const [speichert, setSpeichert] = useState(false);
   const wahl = useRef(null);
+  useFensterKontext(a && { art: "aufgabe", id: a.id, titel: a.titel });
   const holen = () => api("/aufgaben/" + id).then((x) => {
     setA(x);
     setF((alt) => alt || { titel: x.titel, notiz: x.notiz || "", faellig: x.faellig || "", start: x.start || "", prio: x.prio || 2, projekt_id: x.projekt_id || "" });

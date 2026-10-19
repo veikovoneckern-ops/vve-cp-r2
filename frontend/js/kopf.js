@@ -150,17 +150,42 @@ export function ServerKaesten({ offen, umschalten, gesundheit }) {
   </button>`;
 }
 
+const TALK_TXT = { hoert: "Talk hört zu", erkennt: "Talk versteht …", denkt: "Talk denkt nach …", spricht: "Talk spricht …", pausiert: "Talk pausiert · dein Diktat hat Vorfahrt" };
+
+// Talk bleibt sichtbar, auch wenn ein Fenster darueber liegt (19.10.2026): Veiko sah
+// nicht, ob Talk noch zuhoert, waehrend er im Fenster diktierte -- und beide nahmen
+// dasselbe Mikrofon. Die Pille sagt, wer gerade Vorfahrt hat, und laesst Talk
+// weiterlaufen oder beenden. Auf breiten Bildschirmen liegt das Fenster ohnehin
+// neben Talk (CSS), dort blendet sie sich aus.
+// Der Zustand wird hier mitgefuehrt: die Pille entsteht erst, wenn ein Fenster aufgeht --
+// Talk hat seinen Zustand da laengst gemeldet, und ohne Gedaechtnis stuende sie leer da.
+let talkZustand = null;
+bus.an("dialog-zustand", (z) => { talkZustand = z; });
+
+export function TalkPille() {
+  const [zustand, setZustand] = useState(() => talkZustand);
+  useEffect(() => bus.an("dialog-zustand", setZustand), []);
+  if (!zustand) return null;
+  const pause = zustand === "pausiert";
+  return html`<div class=${"talk-pille " + zustand} role="status" aria-live="polite">
+    <span class="talk-pille-punkt" aria-hidden="true"><${Icon} n=${pause ? "play" : "mic"} g=${13} w=${2.2} /></span>
+    <span class="talk-pille-text">${TALK_TXT[zustand] || "Talk läuft"}</span>
+    ${pause && html`<button class="btn klein primaer" onClick=${() => bus.sende("dialog-weiter")}>Weiter zuhören</button>`}
+    <button class="btn klein" onClick=${() => bus.sende("dialog-ende")}>Beenden</button>
+  </div>`;
+}
+
 // Der zentrale Knopf: ein Klick, und das Gespraech laeuft. Der Zustand kommt vom Talk.
 // Nur das Mikrofon, ohne Beschriftung (Veiko: "es reicht das Mikrofonsymbol");
 // was er tut, steht im Hinweis beim Ueberfahren.
 export function SprechKnopf() {
   const [zustand, setZustand] = useState(null);
   useEffect(() => bus.an("dialog-zustand", setZustand), []);
-  const TXT = { hoert: "Ich höre zu", erkennt: "Verstehe …", denkt: "Denke nach …", spricht: "Spreche …" };
   const an = !!zustand;
+  const pause = zustand === "pausiert";
   return html`<button class=${"sprech-knopf" + (an ? " an " + zustand : "")} aria-pressed=${an}
-    onClick=${() => bus.sende(an ? "dialog-ende" : "dialog-start")}
-    title=${an ? (TXT[zustand] || "Im Gespräch") + " · Klicken oder „Dialog beenden“ sagen zum Beenden" : "Mit dem Cockpit sprechen"}
+    onClick=${() => bus.sende(pause ? "dialog-weiter" : an ? "dialog-ende" : "dialog-start")}
+    title=${pause ? "Talk ist pausiert, weil du diktierst · Klicken: Talk hört wieder zu" : an ? (TALK_TXT[zustand] || "Im Gespräch") + " · Klicken oder „Dialog beenden“ sagen zum Beenden" : "Mit dem Cockpit sprechen"}
     aria-label=${an ? "Gespräch beenden" : "Mit dem Cockpit sprechen"}>
     <${Icon} n="mic" g=${19} w=${2.1} />
   </button>`;

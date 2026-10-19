@@ -16,7 +16,7 @@ import { escFensterZu, useEsc, html, useState, useEffect, useRef, Icon, Md, toas
 import { api, strom } from "./api.js";
 import { Composer } from "./composer.js";
 import { boardFrageMerken } from "./board.js";
-import { aufnehmen, erkennen, vorlesen, vorleseStopp, mikrofonGrund } from "./stimme.js";
+import { aufnehmen, erkennen, vorlesen, vorleseStopp, mikrofonGrund, mikroAnfordern, mikroFreigeben } from "./stimme.js";
 
 const NEIN_WORT = /\b(nein|nee|nö|nicht|lieber nicht|ablehnen|falsch|stopp)\b/i;
 const JA_WORT = /\b(ja|jawohl|jep|genau|klar|gerne|ok|okay|einverstanden|passt|richtig|bitte|mach(e)? (das|es)|tu (das|es)|(kannst|sollst|darfst) du (so )?(machen|tun)|so machen|so tun|anlegen|merken|ausführen)\b/i;
@@ -76,16 +76,16 @@ function BezugZeile({ b }) {
 }
 
 function StimmeKreis({ zustand, pegel, text, beiKlick }) {
-  const TXT = { bereit: "Antippen und sprechen", hoert: "Ich höre zu …", erkennt: "Verstehe …", denkt: "Denke nach …", spricht: "Spreche …" };
+  const TXT = { bereit: "Antippen und sprechen", hoert: "Ich höre zu …", erkennt: "Verstehe …", denkt: "Denke nach …", spricht: "Spreche …", pausiert: "Pausiert" };
   // Kompakt (Veiko, 01.10.: der grosse Kreis war zu gross und seine Wellen
   // strahlten ueber die Nachbarn). Die Wellen laufen jetzt INNERHALB eines
   // festen Feldes um den Kreis aus; die Lautstaerke hebt ihn nur leicht an.
   const s = zustand === "hoert" ? 1 + Math.min(0.12, pegel * 0.18) : 1;
   return html`<div class=${"stimme-kreis " + zustand} role="status">
     <span class="kreis-feld"><button class="kreis" style=${`transform:scale(${s})`} onClick=${beiKlick}
-      aria-label=${zustand === "bereit" ? "Freisprechen starten" : zustand === "hoert" ? "Fertig gesprochen" : "Freisprechen beenden"}
-      title=${zustand === "bereit" ? "Freisprechen starten" : zustand === "hoert" ? "Antippen, wenn du fertig bist" : "Antippen zum Beenden"}>
-      <${Icon} n=${zustand === "denkt" || zustand === "erkennt" ? "mehr" : zustand === "spricht" ? "welle" : "mic"} g=${19} w=${2.1} />
+      aria-label=${zustand === "bereit" ? "Freisprechen starten" : zustand === "pausiert" ? "Weiter zuhören" : zustand === "hoert" ? "Fertig gesprochen" : "Freisprechen beenden"}
+      title=${zustand === "bereit" ? "Freisprechen starten" : zustand === "pausiert" ? "Antippen: Talk hört wieder zu" : zustand === "hoert" ? "Antippen, wenn du fertig bist" : "Antippen zum Beenden"}>
+      <${Icon} n=${zustand === "denkt" || zustand === "erkennt" ? "mehr" : zustand === "spricht" ? "welle" : zustand === "pausiert" ? "play" : "mic"} g=${19} w=${2.1} />
     </button></span>
     <span class="kreis-text"><span class="zustand">${TXT[zustand] || ""}</span>
     ${text ? html`<span class="unter">${text}</span>` : zustand === "hoert" ? html`<span class="unter">Sag „Dialog beenden“, wenn du fertig bist.</span>` : null}</span>
@@ -105,6 +105,8 @@ export function Talk({ zu, kontext, setKontext, start }) {
   const talkFeld = useRef(null);
   const abbruch = useRef(null);
   const freiAn = useRef(false);
+  const pausiertRef = useRef(null);   // Grund, warum Talk gerade nicht zuhoert (Vorfahrt am Mikrofon)
+  const runde = useRef(0);             // jede Freisprech-Schleife hat ihre Nummer: eine alte, die noch auf eine Antwort wartet, laeuft nach dem Weiter nicht zweimal mit
   const aufn = useRef(null);
   const letzterStart = useRef(0);
   const ausKopf = useRef(false);
@@ -131,11 +133,12 @@ export function Talk({ zu, kontext, setKontext, start }) {
     // Veiko sagt selbst, was mit der Aufgabe passieren soll.
     else if (start.vorlage) setTimeout(() => talkFeld.current && talkFeld.current.setzen(start.vorlage), 60);
   }, [start]);
-  useEffect(() => () => { freiAn.current = false; if (aufn.current) aufn.current.abbrechen(); vorleseStopp(); bus.sende("dialog-zustand", null); }, []);
+  useEffect(() => () => { freiAn.current = false; pausiertRef.current = null; if (aufn.current) aufn.current.abbrechen(); vorleseStopp(); mikroFreigeben("talk"); bus.sende("dialog-zustand", null); }, []);
   // Der Sprechen-Knopf im Kopf zeigt, was gerade passiert, und kann beenden.
   useEffect(() => { bus.sende("dialog-zustand", frei ? frei.zustand : null); }, [frei && frei.zustand]);
-  useEffect(() => bus.an("dialog-ende", () => { ausKopf.current = false; freiStopp(); }), []);
-  useEsc(() => { if (freiAn.current) freiStopp(); else zu(); }, true, "talk");
+  useEffect(() => bus.an("dialog-ende", () => { ausKopf.current = false; freiBeenden(); }), []);
+  useEffect(() => bus.an("dialog-weiter", () => { if (pausiertRef.current) freiStart(); }), []);
+  useEsc(() => { if (freiAn.current || pausiertRef.current) freiBeenden(); else zu(); }, true, "talk");
 
   function zuAnzeige(m) {
     const d = m.daten || {};
@@ -267,12 +270,29 @@ export function Talk({ zu, kontext, setKontext, start }) {
   async function sprechen(text) {
     if (!freiAn.current || !text) return;
     setFrei((f) => f && { ...f, zustand: "spricht", text: "" });
-    try { await vorlesen(text); } catch (e) { /* ohne Ton weiter */ }
+    try { await vorlesen(text, { vonTalk: true }); } catch (e) { /* ohne Ton weiter */ }
   }
+
+  // Vorfahrt am Mikrofon (stimme.mikroAnfordern, 19.10.2026): Talk meldet sich an; drueckt
+  // Veiko woanders Diktieren oder liest etwas vor, HAELT Talk AN -- sichtbar, und erst
+  // auf seinen Klick hoert es wieder zu. Vorher hoerte Talk das Diktat mit und machte
+  // daraus einen eigenen Auftrag.
+  function pausieren(wer) {
+    pausiertRef.current = String(wer || "").startsWith("diktat")
+      ? "Du diktierst gerade -- das Diktat hat Vorfahrt. Antippen, wenn Talk wieder zuhören soll."
+      : "Gerade wird etwas vorgelesen. Antippen, wenn Talk wieder zuhören soll.";
+    freiAn.current = false;
+    if (aufn.current) aufn.current.abbrechen();
+    vorleseStopp();
+    setFrei((f) => f && { ...f, zustand: "pausiert", pegel: 0, text: pausiertRef.current });
+  }
+  function mikroNehmen() { pausiertRef.current = null; mikroAnfordern("talk", pausieren); return ++runde.current; }
 
   async function freiStart() {
     const grund = mikrofonGrund();
     if (grund) { toast(grund, { fehler: true }); return; }
+    const nr = mikroNehmen();
+    const an = () => freiAn.current && runde.current === nr;
     freiAn.current = true;
     setFrei({ modus: "frei", zustand: "hoert", pegel: 0, text: "" });
     // Im Projekt (oder an einer Akte) ist der Rahmen sofort gesetzt -- und das
@@ -297,35 +317,41 @@ export function Talk({ zu, kontext, setKontext, start }) {
       await sprechen(`Wir sprechen über ${was} ${k.titel}. Was möchtest du wissen oder tun?`.replace("über  ", "über "));
     }
     let leer = 0;
-    while (freiAn.current) {
+    while (an()) {
       let t = "";
       try { t = await zuhoeren(); } catch (e) { toast(e.message, { fehler: true }); break; }
-      if (!freiAn.current) break;
+      if (!an()) return;
       if (!t) { if (++leer >= 3) { await sprechen("Ich höre nichts mehr und beende das Freisprechen."); break; } continue; }
       leer = 0;
       if (istEnde(t)) {
         setMsgs((m) => [...m, { id: "d" + Date.now(), rolle: "du", text: t }]);
         await sprechen("Gut, ich beende unser Gespräch.");
         // Ueber den Kopf begonnen: dann auch ohne weiteren Klick wieder zu.
-        if (ausKopf.current) { ausKopf.current = false; freiStopp(); zu(); return; }
+        if (ausKopf.current) { ausKopf.current = false; freiBeenden(); zu(); return; }
         break;
       }
       setFrei((f) => f && { ...f, zustand: "denkt", text: t });
       const r = await eingabe(t, [], true);
+      if (!an()) return;
       if (r && r.text) await sprechen(r.text);
     }
-    freiStopp();
+    if (runde.current === nr) freiStopp();
   }
+  // freiStopp: die Schleife ist zu Ende. Ist Talk nur pausiert, bleibt der Kreis mit
+  // "Pausiert" stehen; beenden tut erst freiBeenden (Knopf, "Dialog beenden", Escape).
   function freiStopp() {
     freiAn.current = false;
     if (aufn.current) aufn.current.abbrechen();
     vorleseStopp();
+    if (pausiertRef.current) return;
     setFrei(null);
+    mikroFreigeben("talk");
   }
+  function freiBeenden() { pausiertRef.current = null; freiStopp(); }
   function kreisKlick() {
-    if (!frei) return freiStart();
+    if (!frei || frei.zustand === "pausiert") return freiStart();
     if (frei.zustand === "hoert" && aufn.current) aufn.current.stopp();
-    else freiStopp();
+    else freiBeenden();
   }
 
   // ------------------------------------------------------------ Durchgehen
@@ -338,6 +364,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
     const liste = lage.entscheidungen || [];
     if (!liste.length) { systemZeile("Es wartet keine Entscheidung auf dich."); return; }
     if (grund) { toast(grund, { fehler: true }); return; }
+    const nr = mikroNehmen();
     freiAn.current = true;
     setFrei({ modus: "durch", zustand: "spricht", pegel: 0, text: "" });
     await sprechen(`Es ${liste.length === 1 ? "wartet eine Entscheidung" : `warten ${liste.length} Entscheidungen`}. Sag ja, nein, später, oder antworte frei. Mit Stopp hörst du auf.`);
@@ -373,7 +400,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
     }
     if (freiAn.current) await sprechen(erledigt ? `Das waren alle. ${erledigt} erledigt.` : "Das waren alle.");
     aktualisieren();
-    freiStopp();
+    if (runde.current === nr) freiStopp();
   }
 
   function neu() { if (laufRef.current) return; setGid(null); setMsgs([]); }
@@ -383,7 +410,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
     <div class="talk-kopf">
       <h2><${Icon} n="talk" g=${17} />Talk</h2>
       <${Zuordnung} gid=${gid} klein=${true} />
-      ${frei && html`<button class="btn klein" onClick=${() => { ausKopf.current = false; freiStopp(); }} title="Gespräch beenden (oder sag „Dialog beenden“)"><${Icon} n="stopp" g=${12} />Beenden</button>`}
+      ${frei && html`<button class="btn klein" onClick=${() => { ausKopf.current = false; freiBeenden(); }} title="Gespräch beenden (oder sag „Dialog beenden“)"><${Icon} n="stopp" g=${12} />Beenden</button>`}
       <button class="btn geist icon" onClick=${neu} title="Neues Gespräch" aria-label="Neues Gespräch"><${Icon} n="neu" g=${17} /></button>
       <button class="btn geist icon" onClick=${zu} title="Schließen (Esc)" aria-label="Talk schließen"><${Icon} n="x" /></button>
     </div>

@@ -2,7 +2,7 @@
 // Dateien, Verlauf. Dazu die Uebersichten "Alle Aufgaben" und "Alle Notizen".
 // Ersetzt Projekte, Aufgaben, Notizen, Artefakte und Archiv des alten Cockpits.
 import { escEigen, html, enterBestaetigt, useState, useEffect, useRef, Icon, Avatar, Leer, Md, Modal, StandPill, bus, toast, fehlerMelden, aktualisieren,
-  zeitText, datumText, useAbruf, navigiere, kopieren, rolleName, Ziehgriff } from "./ui.js";
+  zeitText, datumText, useAbruf, navigiere, kopieren, rolleName, Ziehgriff, useFensterKontext } from "./ui.js";
 import { api, hochladen } from "./api.js";
 import { Zeitplan, Struktur } from "./projektansichten.js";
 import { Ausarbeiten } from "./inbox.js";
@@ -327,6 +327,7 @@ export function ErgebnisAnsicht({ id, zu, vorlage = "" }) {
   // Vorbereitete Bitte im Chat (z. B. "Daniels Einwände einarbeiten"); n zaehlt, damit derselbe Text erneut greift.
   const [chatVorlage, setChatVorlage] = useState(() => (vorlage ? { text: vorlage, n: 1 } : null));
   useEffect(() => { if (vorlage) setChatAuf(true); }, []);
+  useFensterKontext(e && { art: "ergebnis", id: e.id, titel: e.kurztitel || e.titel });
   const laden = () => api("/ergebnisse/" + id).then((x) => { setE(x); return x; });
   useEffect(() => {
     laden().then((x) => { setAnsicht(!!x.ansicht); setWer((w) => w || (x.rolle === "recherche" ? "stratege" : x.rolle) || "buch"); }).catch((x) => { fehlerMelden(x); zu(); });
@@ -415,6 +416,7 @@ export function ErgebnisAnsicht({ id, zu, vorlage = "" }) {
 export function NotizAnsicht({ id, zu }) {
   const [n, setN] = useState(null);
   const [projekte, setProjekte] = useState([]);
+  useFensterKontext(n && { art: "notiz", id: n.id, titel: n.titel || "Notiz" });
   useEffect(() => {
     api("/notizen/" + id).then(setN).catch((x) => { fehlerMelden(x); zu(); });
     api("/projekte").then((d) => setProjekte(d.projekte)).catch(() => {});

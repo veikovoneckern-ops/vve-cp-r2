@@ -194,26 +194,59 @@ export async function diktieren({ beiText, pegel } = {}) {
   };
 }
 
+// ------------------------------------------------------------ EINE Vorfahrt fuers Mikrofon
+// Veiko, 19.10.2026: "ich hatte ueber Talk ein Thema oeffnen lassen und parallel die
+// Diktierfunktion gedrueckt, um einen Auftrag zu erteilen. Dann hat Talk das Diktierte
+// mitgehoert und einen Auftrag ausgeloest ... ich muesste sehen koennen, was gerade
+// Vorfahrt hat." Bis dahin konnten Talk-Freisprechen, ein Diktat im Composer und ein
+// Vorlesen gleichzeitig laufen -- Talk hoerte das Diktat (und jedes Vorlesen) mit.
+// Jetzt gilt: wer zuletzt anfaengt, hat das Mikrofon; wer es hatte, gibt es ab und
+// zeigt das (Talk pausiert sichtbar, ein Diktat endet mit dem Text, der schon da ist).
+// Der Stand geht als Ereignis "vvec-mikro" an alle, die ihn zeigen (app.js).
+let halter = null;   // { wer, abgeben }
+function mikroMelden() { window.dispatchEvent(new CustomEvent("vvec-mikro", { detail: halter ? halter.wer : null })); }
+export function mikroAnfordern(wer, abgeben) {
+  if (halter && halter.wer !== wer) {
+    const alt = halter;
+    halter = null;
+    try { alt.abgeben(wer); } catch (e) { /* der alte Halter darf das Anfordern nie verhindern */ }
+  }
+  halter = { wer, abgeben: abgeben || (() => {}) };
+  mikroMelden();
+}
+export function mikroFreigeben(wer) {
+  if (halter && halter.wer === wer) { halter = null; mikroMelden(); }
+}
+export function mikroHalter() { return halter ? halter.wer : null; }
+
 let laufend = null;
 export function vorleseStopp() {
   if (laufend) { laufend.pause(); laufend.dispatchEvent(new Event("ended")); laufend = null; }
 }
 
-export async function vorlesen(text) {
+// vonTalk: Talk liest seine eigene Antwort vor -- dann hoert Talk gerade ohnehin nicht zu.
+// Jedes andere Vorlesen (Team-Chat, Board, "Vorlesen"-Knopf) nimmt sich die Vorfahrt,
+// sonst hoerte ein freisprechendes Talk die Stimme mit und nahm sie fuer Veikos Satz.
+export async function vorlesen(text, { vonTalk = false } = {}) {
   vorleseStopp();
-  const sauber = String(text || "").replace(/```[\s\S]*?```/g, " ").replace(/[#*_`>|]/g, " ").replace(/\s+/g, " ").trim();
-  if (!sauber) return;
-  const r = await fetch("/api/stimme/sprechen", { method: "POST", credentials: "same-origin",
-    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: sauber.slice(0, 2500) }) });
-  if (!r.ok) throw new Error("Sprachausgabe nicht erreichbar");
-  const url = URL.createObjectURL(await r.blob());
-  const a = new Audio(url);
-  laufend = a;
-  await new Promise((ok) => {
-    a.addEventListener("ended", ok, { once: true });
-    a.addEventListener("error", ok, { once: true });
-    a.play().catch(ok);
-  });
-  URL.revokeObjectURL(url);
-  if (laufend === a) laufend = null;
+  if (!vonTalk) mikroAnfordern("vorlesen", () => vorleseStopp());
+  try {
+    const sauber = String(text || "").replace(/```[\s\S]*?```/g, " ").replace(/[#*_`>|]/g, " ").replace(/\s+/g, " ").trim();
+    if (!sauber) return;
+    const r = await fetch("/api/stimme/sprechen", { method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: sauber.slice(0, 2500) }) });
+    if (!r.ok) throw new Error("Sprachausgabe nicht erreichbar");
+    const url = URL.createObjectURL(await r.blob());
+    const a = new Audio(url);
+    laufend = a;
+    await new Promise((ok) => {
+      a.addEventListener("ended", ok, { once: true });
+      a.addEventListener("error", ok, { once: true });
+      a.play().catch(ok);
+    });
+    URL.revokeObjectURL(url);
+    if (laufend === a) laufend = null;
+  } finally {
+    if (!vonTalk) mikroFreigeben("vorlesen");
+  }
 }

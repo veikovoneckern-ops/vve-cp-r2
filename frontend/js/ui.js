@@ -139,6 +139,16 @@ export function fehlerMelden(e) { toast(e && e.message ? e.message : String(e), 
 const escStapel = [];
 // marke: wer den Eintrag gesetzt hat -- Talk nennt sich "talk", damit "schliess das
 // Fenster" per Sprache das Fenster darueber schliesst und nicht Talk selbst.
+// Ein offenes Fenster ist das, worueber Veiko gerade spricht (19.10.2026): solange es
+// offen ist, schaut Talk darauf; beim Schliessen gilt wieder der Bezug der Seite
+// darunter. Vorher bezog sich "lass Neal daraus eine Praesentation machen" auf die
+// Seite hinter dem Fenster, und Talk wusste nicht, welches Ergebnis gemeint war.
+export function useFensterKontext(k) {
+  const schluessel = k ? k.art + ":" + k.id + ":" + (k.titel || "") : "";
+  useEffect(() => { bus.sende("talk-fenster", k || null); }, [schluessel]);
+  useEffect(() => () => bus.sende("talk-fenster", null), []);
+}
+
 export function useEsc(zu, an = true, marke = "") {
   const ref = useRef(zu);
   ref.current = zu;

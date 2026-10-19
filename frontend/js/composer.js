@@ -3,7 +3,7 @@
 // Umschalt+Enter = neue Zeile. Dazu Ziehen-und-Fallenlassen und Einfuegen.
 import { html, useState, useRef, useEffect, Icon, toast } from "./ui.js";
 import { hochladen } from "./api.js";
-import { diktieren, mikrofonGrund } from "./stimme.js";
+import { diktieren, mikrofonGrund, mikroAnfordern, mikroFreigeben } from "./stimme.js";
 
 function groesse(b) { return b > 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1024)) + " KB"; }
 
@@ -67,31 +67,44 @@ export function Composer({ platzhalter = "Schreib oder sprich …", beimSenden, 
 
   // Diktat mit Mitlesen: fester Text steht sofort im Feld, der gerade gesprochene
   // Satz erscheint vorlaeufig dahinter (stimme.js, diktieren()).
+  // Ein Diktat beenden -- per Knopf, oder weil ein anderer die Vorfahrt am Mikrofon
+  // nimmt (stimme.mikroAnfordern, 19.10.2026). Der schon diktierte Text bleibt im Feld;
+  // gesendet wird erst mit Enter.
+  async function diktatEnde(grund) {
+    const a = aufnahmeRef.current;
+    if (!a) return;
+    aufnahmeRef.current = null;
+    setErkenne(true);
+    let fertig = "";
+    try { fertig = await a.ctl.stopp(); } catch (e) { toast(e.message, { fehler: true }); }
+    setText(a.basis + fertig);
+    setVorlaeufig("");
+    if (grund) toast(grund);
+    else if (!fertig) toast("Nichts verstanden. War das Mikrofon stumm?");
+    setAufnahme(null);
+    setErkenne(false);
+    mikroFreigeben(mikroId.current);
+    setTimeout(() => ta.current && ta.current.focus(), 0);
+  }
   async function mikro() {
-    if (aufnahme) {
-      setErkenne(true);
-      let fertig = "";
-      try { fertig = await aufnahme.ctl.stopp(); } catch (e) { toast(e.message, { fehler: true }); }
-      setText(aufnahme.basis + fertig);
-      setVorlaeufig("");
-      if (!fertig) toast("Nichts verstanden. War das Mikrofon stumm?");
-      setAufnahme(null);
-      setErkenne(false);
-      setTimeout(() => ta.current && ta.current.focus(), 0);
-      return;
-    }
+    if (aufnahme) return diktatEnde();
     const grund = mikrofonGrund();
     if (grund) { toast(grund, { fehler: true }); return; }
     const basis = text && !text.endsWith(" ") && !text.endsWith("\n") ? text + " " : text;
+    // Das Diktat hat ab jetzt Vorfahrt: ein freisprechendes Talk haelt an, ein Vorlesen endet.
+    mikroAnfordern(mikroId.current, (wer) => diktatEnde(wer === "talk" ? "Diktat beendet -- Talk hört jetzt zu. Dein Text steht im Feld, senden mit Enter."
+      : "Diktat beendet. Dein Text steht im Feld, senden mit Enter."));
     try {
       const ctl = await diktieren({ beiText: (fest, vor) => { setText(basis + fest); setVorlaeufig(vor); } });
-      setAufnahme({ start: Date.now(), ctl, basis });
-    } catch (e) { toast(e.message, { fehler: true }); }
+      const a = { start: Date.now(), ctl, basis };
+      aufnahmeRef.current = a;
+      setAufnahme(a);
+    } catch (e) { mikroFreigeben(mikroId.current); toast(e.message, { fehler: true }); }
   }
   // Wird das Feld geschlossen, waehrend diktiert wird: Mikrofon freigeben.
   const aufnahmeRef = useRef(null);
-  aufnahmeRef.current = aufnahme;
-  useEffect(() => () => { if (aufnahmeRef.current) aufnahmeRef.current.ctl.abbrechen(); }, []);
+  const mikroId = useRef("diktat:" + Math.random().toString(36).slice(2));
+  useEffect(() => () => { if (aufnahmeRef.current) aufnahmeRef.current.ctl.abbrechen(); mikroFreigeben(mikroId.current); }, []);
 
   const sek = aufnahme ? Math.floor((jetzt - aufnahme.start) / 1000) : 0;
   let info = "";

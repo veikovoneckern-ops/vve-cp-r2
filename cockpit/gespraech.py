@@ -57,6 +57,11 @@ _NEIN = re.compile(r"\b(nein|nee|nö|nicht|lieber nicht|ablehnen|falsch|stopp)\b
 AUFTRAG_AN_TEAM = re.compile(r"\b(lass|lasst|lassen)\b.{0,60}\b(team|neo|jason|clayton|neal|annie|ridley|daniel)\b"
                              r"|\b(team|neo|annie|clayton|neal|ridley)\b.{0,40}\b(soll|sollen|mach|macht|erstell|erstellt|bau|baut|schreib|schreibt|recherchier|arbeite|arbeitet)", re.I)
 
+# Das Modell sagt, das Team arbeite schon -- ohne den Block (19.10.2026: "Ich lasse Neal
+# eine PowerPoint-Präsentation erstellen", vorschlaege leer, nichts lief). Dieselbe Lage
+# wie bei Recherche und Oeffnen: einmal nachfordern, sonst ehrlich sagen.
+TEAM_BEHAUPTET = re.compile(r"[^.!?\n]*(\b(ich )?(lasse|gebe (das|es|den auftrag|deinen auftrag) (an|weiter))\b[^.!?\n]{0,60}\b(team|neo|jason|clayton|neal|annie|ridley|daniel|demmis)\b"
+                            r"|\b(neal|annie|clayton|ridley|neo|jason|das team)\b[^.!?\n]{0,30}\b(macht sich|erstellt|baut|schreibt|arbeitet|kümmert sich|legt los)\b)[^.!?\n]*[.!?]?", re.I)
 
 # Zustimmung oder Auftrag MITTEN in einem laengeren Satz (gemessen am 16.10.:
 # "Okay, du kannst Jensen sagen, er soll das Projekt anlegen und was muss ich
@@ -290,7 +295,7 @@ def kontext_text(k: dict[str, Any] | None) -> str:
     if art == "ergebnis":
         e = db.holen("ergebnisse", kid)
         if e:
-            return f"VEIKO LIEST GERADE DAS ERGEBNIS „{e['titel']}“ von {stab.rollen_name(e['rolle'])}:\n{(e['inhalt'] or '')[:8000]}"
+            return f"VEIKO LIEST GERADE DAS ERGEBNIS „{e['titel']}“ (id {e['id']}{', Projekt ' + e['projekt_id'] if e.get('projekt_id') else ''}) von {stab.rollen_name(e['rolle'])}. „Daraus“, „dazu“, „davon“ meint dieses Ergebnis:\n{(e['inhalt'] or '')[:8000]}"
     if art == "notiz":
         n = db.holen("notizen", kid)
         if n:
@@ -740,8 +745,12 @@ async def ausfuehren(a: dict[str, Any]) -> dict[str, Any]:
         return {"ok": True}
     if art == "ausarbeiten":
         vid = a.get("vorgang_id") if db.holen("vorgaenge", a.get("vorgang_id") or "") else None
+        grundlage = db.holen("ergebnisse", str(a.get("ergebnis_id") or "")) if a.get("ergebnis_id") else None
         if not vid:
-            v = stab.aus_text(a["auftrag"], quelle="gespraech", projekt_id=stab.projekt_finden(a.get("projekt_id")),
+            # Mit Ergebnis als Grundlage traegt die Notiz des Vorgangs dessen Inhalt -- dieselbe
+            # Form wie teamchat.ausarbeitung_starten, damit die Rolle nicht bei null anfaengt.
+            text_v = a["auftrag"] + (f"\n\nGRUNDLAGE -- das Ergebnis „{grundlage['titel']}“:\n" + (grundlage.get("inhalt") or "")[:30000] if grundlage else "")
+            v = stab.aus_text(text_v, quelle="gespraech", projekt_id=stab.projekt_finden(a.get("projekt_id")),
                               titel=a["auftrag"][:80])
             vid = v["id"]
             db.ausfuehren("UPDATE vorgaenge SET stand='eingeordnet' WHERE id=?", (vid,))
@@ -903,6 +912,7 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
                 v["projekt_id"] = kontext["id"]
                 v["label"] = beschriften(v) or v["label"]
     _bezug_einsetzen(vorschlaege, bez)
+    _kontext_einsetzen(vorschlaege, kontext)
     # "Zeigen" aendert nichts -- das Cockpit fuehrt es sofort aus, ohne Knopf.
     zeigen = [v for v in vorschlaege if v["aktion"] == "zeigen" and (v.get("projekt_id") or v.get("ziel") in BEREICHE or v.get("ziel") == "chat")]
     oeffnen_roh = [v for v in vorschlaege if v["aktion"] == "oeffnen"]
@@ -978,6 +988,23 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
             vorschlaege += [v for v in nach if v["aktion"] not in ("zeigen", "bild", "visualisierung")]
         except llm.ModellFehler:
             pass
+    if not bestaetigt and not [v for v in vorschlaege if v["aktion"] in ("ausarbeiten", "neo")] and (TEAM_BEHAUPTET.search(sichtbar or "") or (auftrag and not zeigen and not oeffnen and not werkzeug)):
+        try:
+            roh = await llm.chat(modell, system, verlauf + [{"role": "assistant", "content": gesamt}, {"role": "user", "content":
+                "Du hast gesagt, das Team (oder Neo) arbeite daran, aber keinen ```aktionen-Block geschickt -- gestartet ist nichts. "
+                "Antworte jetzt NUR mit dem ```aktionen-Block (ausarbeiten oder neo) für genau diesen Auftrag, ohne weiteren Text."}],
+                temperatur=0.1, denken=False, num_ctx=24576)
+            _, nach = vorschlaege_aus(roh if "```aktionen" in roh else "```aktionen\n" + roh + "\n```")
+            nach = [v for v in nach if v["aktion"] in ("ausarbeiten", "neo")][:1]
+            _kontext_einsetzen(nach, kontext)
+            _bezug_einsetzen(nach, bez)
+            vorschlaege += nach
+        except llm.ModellFehler:
+            pass
+        if not [v for v in vorschlaege if v["aktion"] in ("ausarbeiten", "neo")] and TEAM_BEHAUPTET.search(sichtbar or ""):
+            sichtbar = TEAM_BEHAUPTET.sub("", sichtbar).strip()
+            sichtbar = (sichtbar + "\n\nIch konnte den Auftrag nicht ans Team geben -- gestartet ist nichts. Sag mir bitte noch einmal, wer was machen soll.").strip()
+    if bestaetigt:
         if not vorschlaege:
             sichtbar = re.sub(r"[^.!?\n]*(macht sich|arbeitet an|erscheint in der Inbox)[^.!?\n]*[.!?]?", "", sichtbar).strip()
             sichtbar = (sichtbar + "\n\nIch konnte deinem Ja keinen Auftrag zuordnen, gestartet ist noch nichts. Sag mir bitte noch einmal, was das Team tun soll.").strip()
@@ -1029,7 +1056,7 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     # die Antwort mit der Frage, damit klar ist, dass ein Ja oder der Knopf fehlt.
     offen = [v for v in vorschlaege if not v.get("erledigt") and v["aktion"] not in ("zeigen",)]
     if offen and not sichtbar.rstrip().endswith("?"):
-        sichtbar = re.sub(r"[^.!?\n]*\b(gebe das (an \w+ )?weiter|leg(e|t) (es|das|ihn) an|kümmert sich|macht sich)\b[^.!?\n]*[.!?]?", "", sichtbar).strip()
+        sichtbar = re.sub(r"[^.!?\n]*\b(gebe das (an \w+ )?weiter|leg(e|t) (es|das|ihn) an|kümmert sich|macht sich|lasse \w+)\b[^.!?\n]*[.!?]?", "", sichtbar).strip()
         sichtbar = (sichtbar + "\n\nNoch nicht ausgeführt: " + "; ".join(v["label"] for v in offen) + ". Soll ich das so machen?").strip()
     if llm.fremdschrift(sichtbar):
         sichtbar = llm.FREMDSCHRIFT.sub("", sichtbar)
@@ -1068,6 +1095,28 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     yield {"typ": "fertig", "text": sichtbar, "vorschlaege": vorschlaege, "nachricht_id": mid, "modell": modell, "medien": medien_jobs, "bezug": bez,
            "zeigen": [z for z in (zeigen_ziel(v) for v in zeigen[:1]) if z],
            "oeffnen": oeffnen[:1], "werkzeug": werkzeug}
+
+
+def _kontext_einsetzen(vorschlaege: list[dict[str, Any]], kontext: dict[str, Any] | None) -> None:
+    """Ein offenes Ergebnis ist die Grundlage einer Ausarbeitung (19.10.2026): "lass Neal
+    daraus eine Praesentation machen" im Ergebnisfenster meint genau dieses Ergebnis --
+    das Modell vergisst die Kennung oft, deshalb setzt das Cockpit sie selbst."""
+    if kontext and kontext.get("art") == "projekt" and db.holen("projekte", kontext.get("id") or ""):
+        for v in vorschlaege:
+            if v["aktion"] == "ausarbeiten" and not v.get("projekt_id"):
+                v["projekt_id"] = kontext["id"]
+                v["label"] = beschriften(v) or v["label"]
+    if not kontext or kontext.get("art") != "ergebnis":
+        return
+    e = db.holen("ergebnisse", kontext.get("id") or "")
+    if not e:
+        return
+    for v in vorschlaege:
+        if v["aktion"] == "ausarbeiten":
+            v.setdefault("ergebnis_id", e["id"])
+            if not v.get("projekt_id") and e.get("projekt_id"):
+                v["projekt_id"] = e["projekt_id"]
+                v["label"] = beschriften(v) or v["label"]
 
 
 def zeigen_ziel(v: dict[str, Any]) -> dict[str, Any] | None:

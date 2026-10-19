@@ -7,7 +7,7 @@
 // Der Text steht als Seite wie in Word (Veiko: "eher in einer Ansicht wie die Vorschau
 // fuer ein Word-Dokument") -- dieselbe Ansicht wie bei Ergebnissen (/dateien/{id}/ansicht,
 // dokumente.zu_html), abgeschottet im Rahmen; dazu Word als Download.
-import { html, useState, useEffect, Icon, Modal, toast, fehlerMelden, zeitText, bus, aktualisieren } from "./ui.js";
+import { html, useState, useEffect, Icon, Modal, toast, fehlerMelden, zeitText, bus, aktualisieren, useFensterKontext } from "./ui.js";
 import { api } from "./api.js";
 
 const groesse = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1).replace(".", ",") + " MB" : b >= 1024 ? Math.round(b / 1024) + " KB" : (b || 0) + " Byte");
@@ -38,6 +38,7 @@ export function DateiFenster({ id, zu }) {
   const [fehler, setFehler] = useState("");
   const holen = () => api("/dateien/" + id + "/info").then(setD).catch((e) => setFehler(e.message));
   useEffect(() => { holen(); }, [id]);
+  useFensterKontext(d && { art: "datei", id: d.id, titel: d.name });
   async function zuordnen(z) {
     try {
       await api("/dateien/" + id, { methode: "PATCH", daten: z });

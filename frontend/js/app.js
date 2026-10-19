@@ -12,7 +12,7 @@ import { System } from "./system.js";
 import { Neo } from "./neo.js";
 import { Talk } from "./talk.js";
 import { Board } from "./board.js";
-import { Logo, CockpitLeiste, ServerKaesten, SprechKnopf, kopfAbruf } from "./kopf.js";
+import { Logo, CockpitLeiste, ServerKaesten, SprechKnopf, TalkPille, kopfAbruf } from "./kopf.js";
 import { LeisteNav, useLeiste, FENSTER } from "./leiste.js";
 import { Einstellungen } from "./einstellungen.js";
 import { Usage } from "./usage.js";
@@ -235,6 +235,9 @@ function App() {
   useEffect(() => { if (FENSTER) return; try { localStorage.setItem("vvec_talk", talk ? "1" : "0"); } catch (e) { /* egal */ } }, [talk]);
   useEffect(() => bus.an("talk-oeffnen", (d) => { setTalkStart({ ...(d || {}), n: Date.now() }); if (d && d.kontext) setKontext(d.kontext); setTalk(true); }), []);
   useEffect(() => bus.an("talk-kontext", (k) => setKontext(k)), []);
+  // Ein offenes Fenster ueberlagert den Bezug der Seite, ohne ihn zu loeschen (ui.useFensterKontext).
+  const [fensterKontext, setFensterKontext] = useState(null);
+  useEffect(() => bus.an("talk-fenster", (k) => setFensterKontext(k)), []);
   useEffect(() => bus.an("erfassen", () => setErfassen(true)), []);
   useEffect(() => bus.an("thema-setzen", (neu) => themaSetzen(neu)), []);
   // Die Server-Sektion steht fest auf der Seite System; wer sie von anderswo
@@ -330,7 +333,7 @@ function App() {
         ${r.bereich === "webspace" && html`<${WebSpace} pfad=${r.id} />`}
       </main>
     </div>
-    ${talk && html`<${Talk} zu=${() => setTalk(false)} kontext=${kontext} setKontext=${setKontext} start=${talkStart} />`}
+    ${talk && html`<${Talk} zu=${() => setTalk(false)} kontext=${fensterKontext || kontext} setKontext=${(k) => { setFensterKontext(null); setKontext(k); }} start=${talkStart} />`}
     ${!FENSTER && html`<${UntenNav} liste=${leiste} aktiv=${r.bereich} offen=${offen} />`}
     ${!talk && !FENSTER && html`<button class="talk-fab" onClick=${() => setTalk(true)} aria-label="Talk öffnen"><${Icon} n="talk" g=${24} /></button>`}
     ${anzeige && anzeige.art === "ergebnis" && html`<${ErgebnisAnsicht} key=${anzeige.n} id=${anzeige.id} vorlage=${anzeige.vorlage} zu=${() => setAnzeige(null)} />`}
@@ -341,6 +344,7 @@ function App() {
     ${neueFassung && html`<div class="neue-fassung" role="status"><${Icon} n="neu_laden" g=${15} /><span>Das Cockpit wurde aktualisiert.</span>
       <button class="btn klein primaer" onClick=${() => location.reload()}>Neu laden</button>
       <button class="btn klein geist icon" onClick=${() => setNeueFassung(false)} aria-label="Später" title="Später"><${Icon} n="x" g=${13} /></button></div>`}
+    ${talk && (anzeige || aufgabe || erfassen) && html`<${TalkPille} />`}
     <${Toasts} />
   </div>`;
 }
