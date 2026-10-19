@@ -1198,6 +1198,13 @@ async def datei_word(did: str):
                     headers={"Content-Disposition": f"attachment; filename=\"{name}\""})
 
 
+# ================================================================ Versionsverlauf (19.10.2026, versionen.py)
+@router.get("/versionen")
+async def versionen_liste():
+    from . import versionen
+    return versionen.verlauf()
+
+
 # ================================================================ Explorer (19.10.2026, explorer.py)
 @router.get("/explorer")
 async def explorer_liste(q: str = ""):

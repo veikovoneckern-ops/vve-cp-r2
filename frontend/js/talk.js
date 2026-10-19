@@ -90,12 +90,12 @@ function StimmeKreis({ zustand, pegel, text, beiKlick }) {
   const s = zustand === "hoert" ? 1 + Math.min(0.12, pegel * 0.18) : 1;
   return html`<div class=${"stimme-kreis " + zustand} role="status">
     <span class="kreis-feld"><button class="kreis" style=${`transform:scale(${s})`} onClick=${beiKlick}
-      aria-label=${zustand === "bereit" ? "Freisprechen starten" : zustand === "pausiert" ? "Weiter zuhören" : zustand === "hoert" ? "Fertig gesprochen" : "Freisprechen beenden"}
-      title=${zustand === "bereit" ? "Freisprechen starten" : zustand === "pausiert" ? "Antippen: Talk hört wieder zu" : zustand === "hoert" ? "Antippen, wenn du fertig bist" : "Antippen zum Beenden"}>
+      aria-label=${zustand === "bereit" ? "Freisprechen starten" : zustand === "pausiert" ? "Weiter zuhören" : "Gespräch beenden und Talk schließen"}
+      title=${zustand === "bereit" ? "Freisprechen starten" : zustand === "pausiert" ? "Antippen: Talk hört wieder zu" : "Antippen: Gespräch beenden und Talk schließen"}>
       <${Icon} n=${zustand === "denkt" || zustand === "erkennt" ? "mehr" : zustand === "spricht" ? "welle" : zustand === "pausiert" ? "play" : "mic"} g=${19} w=${2.1} />
     </button></span>
     <span class="kreis-text"><span class="zustand">${TXT[zustand] || ""}</span>
-    ${text ? html`<span class="unter">${text}</span>` : zustand === "hoert" ? html`<span class="unter">Sag „Dialog beenden“, wenn du fertig bist.</span>` : null}</span>
+    ${text ? html`<span class="unter">${text}</span>` : zustand === "hoert" ? html`<span class="unter">Zum Beenden antippen oder „Dialog beenden“ sagen.</span>` : null}</span>
   </div>`;
 }
 
@@ -143,7 +143,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
   useEffect(() => () => { freiAn.current = false; pausiertRef.current = null; if (aufn.current) aufn.current.abbrechen(); vorleseStopp(); mikroFreigeben("talk"); bus.sende("dialog-zustand", null); }, []);
   // Der Sprechen-Knopf im Kopf zeigt, was gerade passiert, und kann beenden.
   useEffect(() => { bus.sende("dialog-zustand", frei ? frei.zustand : null); }, [frei && frei.zustand]);
-  useEffect(() => bus.an("dialog-ende", () => { ausKopf.current = false; freiBeenden(); }), []);
+  useEffect(() => bus.an("dialog-ende", () => { ausKopf.current = false; freiBeenden(); zu(); }), []);
   useEffect(() => bus.an("dialog-weiter", () => { if (pausiertRef.current) freiStart(); }), []);
   useEsc(() => { if (freiAn.current || pausiertRef.current) freiBeenden(); else zu(); }, true, "talk");
 
@@ -337,9 +337,8 @@ export function Talk({ zu, kontext, setKontext, start }) {
       if (istEnde(t)) {
         setMsgs((m) => [...m, { id: "d" + Date.now(), rolle: "du", text: t }]);
         await sprechen("Gut, ich beende unser Gespräch.");
-        // Ueber den Kopf begonnen: dann auch ohne weiteren Klick wieder zu.
-        if (ausKopf.current) { ausKopf.current = false; freiBeenden(); zu(); return; }
-        break;
+        // Beenden heisst auch: Talk geht zu (Veiko, 19.10.2026).
+        ausKopf.current = false; freiBeenden(); zu(); return;
       }
       setFrei((f) => f && { ...f, zustand: "denkt", text: t });
       const r = await eingabe(t, [], true);
@@ -359,10 +358,14 @@ export function Talk({ zu, kontext, setKontext, start }) {
     mikroFreigeben("talk");
   }
   function freiBeenden() { pausiertRef.current = null; freiStopp(); }
+  // Ein Klick auf den Kreis oder das Mikrofon oben beendet das Gespraech und schliesst Talk --
+  // in jedem Zustand (Veiko, 19.10.2026: "da moechte ich einfach draufklicken koennen, dann
+  // soll der Dialog beendet werden und sich das Fenster schliessen"). Vorher hiess ein Klick
+  // beim Zuhoeren "fertig gesprochen"; das erledigt die Stille-Erkennung von selbst. Nur
+  // "pausiert" (Diktat hat Vorfahrt) setzt fort -- dort steht das Play-Zeichen.
   function kreisKlick() {
     if (!frei || frei.zustand === "pausiert") return freiStart();
-    if (frei.zustand === "hoert" && aufn.current) aufn.current.stopp();
-    else freiBeenden();
+    ausKopf.current = false; freiBeenden(); zu();
   }
 
   // ------------------------------------------------------------ Durchgehen
@@ -421,7 +424,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
     <div class="talk-kopf">
       <h2><${Icon} n="talk" g=${17} />Talk</h2>
       <${Zuordnung} gid=${gid} klein=${true} />
-      ${frei && html`<button class="btn klein" onClick=${() => { ausKopf.current = false; freiBeenden(); }} title="Gespräch beenden (oder sag „Dialog beenden“)"><${Icon} n="stopp" g=${12} />Beenden</button>`}
+      ${frei && html`<button class="btn klein" onClick=${() => { ausKopf.current = false; freiBeenden(); zu(); }} title="Gespräch beenden und Talk schließen (oder sag „Dialog beenden“)"><${Icon} n="stopp" g=${12} />Beenden</button>`}
       <button class="btn geist icon" onClick=${neu} title="Neues Gespräch" aria-label="Neues Gespräch"><${Icon} n="neu" g=${17} /></button>
       <button class="btn geist icon" onClick=${zu} title="Schließen (Esc)" aria-label="Talk schließen"><${Icon} n="x" /></button>
     </div>

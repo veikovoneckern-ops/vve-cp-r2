@@ -185,7 +185,7 @@ export function SprechKnopf() {
   const pause = zustand === "pausiert";
   return html`<button class=${"sprech-knopf" + (an ? " an " + zustand : "")} aria-pressed=${an}
     onClick=${() => bus.sende(pause ? "dialog-weiter" : an ? "dialog-ende" : "dialog-start")}
-    title=${pause ? "Talk ist pausiert, weil du diktierst · Klicken: Talk hört wieder zu" : an ? (TALK_TXT[zustand] || "Im Gespräch") + " · Klicken oder „Dialog beenden“ sagen zum Beenden" : "Mit dem Cockpit sprechen"}
+    title=${pause ? "Talk ist pausiert, weil du diktierst · Klicken: Talk hört wieder zu" : an ? (TALK_TXT[zustand] || "Im Gespräch") + " · Klicken: Gespräch beenden und Talk schließen" : "Mit dem Cockpit sprechen"}
     aria-label=${an ? "Gespräch beenden" : "Mit dem Cockpit sprechen"}>
     <${Icon} n="mic" g=${19} w=${2.1} />
   </button>`;

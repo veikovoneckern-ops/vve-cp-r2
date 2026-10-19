@@ -67,7 +67,7 @@ TEAM_BEHAUPTET = re.compile(r"[^.!?\n]*(\b(ich )?(lasse|gebe (das|es|den auftrag
                             r"|\b(neal|annie|clayton|ridley|neo|jason|das team)\b[^.!?\n]{0,30}\b(macht sich|erstellt|baut|schreibt|arbeitet|kümmert sich|legt los)\b)[^.!?\n]*[.!?]?", re.I)
 
 # "Ich korrigiere die Bezeichnung" ohne Block und ohne Frage (19.10.2026): nichts geschah.
-AENDERUNG_BEHAUPTET = re.compile(r"[^.!?\n]*\bich (korrigiere|ändere|aendere|benenne|ersetze|aktualisiere|lege|trage|markiere|verschiebe|lösche|loesche|beauftrage)\b[^.!?\n]*[.!?]?", re.I)
+AENDERUNG_BEHAUPTET = re.compile(r"Noch nicht ausgeführt: [^\n]*|[^.!?\n]*\bich (korrigiere|ändere|aendere|benenne|ersetze|aktualisiere|lege|trage|markiere|verschiebe|lösche|loesche|beauftrage)\b[^.!?\n]*[.!?]?", re.I)
 
 # Zustimmung oder Auftrag MITTEN in einem laengeren Satz (gemessen am 16.10.:
 # "Okay, du kannst Jensen sagen, er soll das Projekt anlegen und was muss ich
@@ -126,7 +126,7 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"bild","prompt":"ausführliche Bildbeschreibung auf ENGLISCH (Motiv, Stil, Licht, Perspektive)","titel":"kurzer deutscher Titel","format":"quadrat|quer|hoch","vorlage":"z-image"} -- erzeugt ein Bild auf dem eigenen Server. Vorlage IMMER z-image (etwa 15 Sekunden), auch für fotorealistische Bilder; qwen nur, wenn lesbarer Text im Bild stehen soll; flux2 nur, wenn Veiko ausdrücklich höchste Qualität verlangt (dauert mehrere Minuten). Läuft sofort.
 - {"aktion":"visualisierung","beschreibung":"was dargestellt werden soll, mit allen Inhalten (Schritte, Begriffe, Zahlen) auf Deutsch","titel":"kurzer Titel"} -- zeichnet ein Schaubild (Ablauf, Mindmap, Diagramm, Vergleich). Läuft sofort.
 - {"aktion":"oeffnen","art":"ergebnis|langlauf|aufgabe|vorgang|projekt|notiz|gespraech|datei","id":"r…|l…|t…|v…|p…|n…|d… aus LAGE/KONTEXT","titel":"der Titel, wie Veiko ihn nennt"} -- öffnet GENAU DIESES eine Ding sofort, ohne Rückfrage (ändert nichts): „öffne das Ergebnis zu X“ = art ergebnis, „zeig mir den Langläufer X“ = art langlauf. Das Ergebnis eines Langläufers steht in LANGLÄUFER als „Ergebnis r…“. Kennst du die id nicht sicher, lass sie weg und gib nur den titel -- das Cockpit sucht dann selbst.
-- {"aktion":"zeigen","ziel":"board|briefing|inbox|projects|team|neo|system|watchdog|website_stand|brainstrom|exo|langlauf|aktionen|modelle|einstellungen|memory|usage|explorer|empfehlungen|uebersicht_modelle|installiert|optimierung|neue_modelle|alle_aufgaben|alle_notizen|neuer_langlaeufer"} -- öffnet einen Bereich oder Abschnitt des Cockpits sofort (system = Stack: Server, Updates, WatchDog, ganz unten website_stand = Stand der Website; langlauf = LongRuns; usage = Verbrauch an Token, Kosten und Strom nach Projekt, Aufgabe, Modell; explorer = alle erzeugten Inhalte zum Suchen und Filtern; memory = was das Team über Veiko weiß, unter Settings; empfehlungen = Recommendations, alle Empfehlungen zu Server, Software, Modellen und Website; optimierung = Modell-Revision, neue_modelle = Neu bei Ollama).
+- {"aktion":"zeigen","ziel":"board|briefing|inbox|projects|team|neo|system|watchdog|website_stand|brainstrom|exo|langlauf|aktionen|modelle|einstellungen|memory|versionen|usage|explorer|empfehlungen|uebersicht_modelle|installiert|optimierung|neue_modelle|alle_aufgaben|alle_notizen|neuer_langlaeufer"} -- öffnet einen Bereich oder Abschnitt des Cockpits sofort (system = Stack: Server, Updates, WatchDog, ganz unten website_stand = Stand der Website; langlauf = LongRuns; usage = Verbrauch an Token, Kosten und Strom nach Projekt, Aufgabe, Modell; explorer = alle erzeugten Inhalte zum Suchen und Filtern; memory = was das Team über Veiko weiß, unter Settings; versionen = Versionsverlauf des Cockpits (was sich wann geändert hat), unter Settings; empfehlungen = Recommendations, alle Empfehlungen zu Server, Software, Modellen und Website; optimierung = Modell-Revision, neue_modelle = Neu bei Ollama).
 - {"aktion":"zeigen","ziel":"chat","wer":"Name des Teammitglieds"} -- öffnet den Chat mit diesem Mitglied (Neo: ziel neo).
 - {"aktion":"werkzeug","was":"erfassen|suche|hell|dunkel|zurueck|fenster_zu"} -- Capture öffnen, Suche öffnen, helle oder dunkle Darstellung, eine Seite zurück, oberstes Fenster schließen. Sofort, ohne Rückfrage. Will Veiko „mit dem Advisory Board sprechen“: ziel board. Stellt er dabei schon eine Frage ans Board, gib sie als "frage" mit -- das Board antwortet dann selbst, du antwortest nicht an seiner Stelle.
 - {"aktion":"ausarbeiten","rolle":"stratege|buch|designer|video","form":"text|aufstellung|konzept|dokument|webseite|praesentation|video","auftrag":"…","recherche":"Suchanfrage oder null","vorgang_id":"v… oder null","projekt_id":"p… oder null","aufgabe_id":"t… oder null (die Aufgabe, zu der das gehört)","stil":"vveorg|cockpit|eigen oder null","stil_text":"…"} -- stil nur bei einer Präsentation und nur, wenn Veiko das Aussehen nennt: „im VVEORG-Look“/„in meiner Vorlage“ = vveorg, „im Cockpit-Design“ = cockpit, eigene Gestaltungswünsche (Farben, Schrift, Footer) = eigen mit stil_text in seinen Worten. Sonst weglassen (dann gilt die Vorgabe, die VVEORG-Vorlage).
@@ -342,7 +342,12 @@ def _einstellungen_kontext() -> str:
     return ("VEIKO SCHAUT AUF DIE SETTINGS (Freigaben, Team-Pipeline, Präsentationen, Stimme, Memory, Daten, Konto). "
             f"Team-Pipeline: {'an' if e.get('stab_aktiv') else 'aus'}; Stimme: {e.get('talk_stimme') or 'Vorgabe'}; "
             f"Präsentationen: {e.get('praesentation_stil') or 'vveorg'}. Einträge ins Memory gehen mit der Aktion merken.\n"
-            "MEMORY:\n" + stab.gedaechtnis_text())
+            "MEMORY:\n" + stab.gedaechtnis_text() + "\n\n" + _versionen_text())
+
+
+def _versionen_text() -> str:
+    from . import versionen
+    return versionen.kontext_text()
 
 
 def _usage_kontext() -> str:
@@ -412,7 +417,7 @@ ZIELE = {"ueberblick": "Überblick", "aufgaben": "Aufgaben", "zeitplan": "Zeitpl
 BEREICHE = {"board": "Advisory Board", "briefing": "Briefing", "inbox": "Inbox", "projects": "Projects", "team": "Team",
             "neo": "Neo", "system": "Stack", "stack": "Stack", "watchdog": "WatchDog", "brainstrom": "BrainStrom", "exo": "ExO",
             "langlauf": "LongRuns", "aktionen": "Current Actions", "webspace": "WebSpace", "modelle": "Team: Modelle", "einstellungen": "Settings",
-            "usage": "Usage", "explorer": "Explorer", "memory": "Memory", "empfehlungen": "Recommendations", "website_stand": "Stack: Website",
+            "usage": "Usage", "explorer": "Explorer", "memory": "Memory", "versionen": "Settings: Versionsverlauf", "empfehlungen": "Recommendations", "website_stand": "Stack: Website",
             # Reiter und Listen (18.10.2026): erreichbar wie die Bereiche.
             "uebersicht_modelle": "Team: Besetzung und Empfehlungen", "installiert": "Installierte Modelle", "optimierung": "Optimierung",
             "neue_modelle": "Neu bei Ollama", "verbrauch": "Usage", "alle_aufgaben": "Alle Aufgaben",
@@ -420,7 +425,7 @@ BEREICHE = {"board": "Advisory Board", "briefing": "Briefing", "inbox": "Inbox",
 # Wohin ein Ziel im Browser fuehrt (Adresse hinter #/). Fehlt es hier, ist das Ziel selbst die Adresse.
 BEREICH_PFAD = {"watchdog": "system/watchdog", "stack": "system", "website_stand": "system/website", "modelle": "team/besetzung",
                 "uebersicht_modelle": "team/besetzung", "installiert": "team/installiert",
-                "optimierung": "team/optimierung", "neue_modelle": "team/neu", "verbrauch": "usage", "memory": "einstellungen/memory",
+                "optimierung": "team/optimierung", "neue_modelle": "team/neu", "verbrauch": "usage", "memory": "einstellungen/memory", "versionen": "einstellungen/versionen",
                 "alle_aufgaben": "projects/_aufgaben", "alle_notizen": "projects/_notizen", "neuer_langlaeufer": "langlauf/neu"}
 WERKZEUGE = {"erfassen": "Capture", "suche": "Suche", "hell": "Helle Darstellung", "dunkel": "Dunkle Darstellung",
              "zurueck": "Eine Seite zurück", "fenster_zu": "Fenster schließen"}
@@ -443,6 +448,7 @@ SEITEN = [
     ("empfehlungen", r"recommendations?|empfehlungen|vorschläge|vorschlaege", "die Recommendations"),
     ("explorer", r"explorer|alle inhalte|alle ergebnisse|ablage", "den Explorer"),
     ("memory", r"memory|gedächtnis|gedaechtnis", "das Memory"),
+    ("versionen", r"versionsverlauf|versionen|release\w*|changelog", "den Versionsverlauf"),
     ("website_stand", r"(stand|zustand|überblick|ueberblick) (meiner|der) (website|webseite)", "den Stand deiner Website"),
     ("neuer_langlaeufer", r"neue[nrs]? (langl(ä|ae)ufer|long ?run)", "einen neuen LongRun"),
     ("langlauf", r"langl(ä|ae)ufer|long ?runs?", "die LongRuns"),
@@ -666,13 +672,33 @@ def _ersetzen_zeilen(pid: str):
             yield tab, felder, z
 
 
+def _ersetzen_muster(alt: str) -> re.Pattern[str]:
+    """Nur am Wortanfang (19.10.2026): "ODA-Loop" -> "CUDA-Loop" machte aus "OODA-Loop"
+    ein "OCUDA-Loop", weil es mitten im Wort ersetzte. Nach hinten offen, damit
+    "OODA-Loops" mitgeht."""
+    return re.compile(r"(?<!\w)" + re.escape(alt))
+
+
 def ersetzen_zaehlen(pid: str, alt: str) -> tuple[int, int]:
+    mu = _ersetzen_muster(alt)
     n = e = 0
     for _tab, felder, z in _ersetzen_zeilen(pid):
-        k = sum(str(z.get(f) or "").count(alt) for f in felder)
+        k = sum(len(mu.findall(str(z.get(f) or ""))) for f in felder)
         n += k
         e += 1 if k else 0
     return n, e
+
+
+def ersetzen_schreibweise(pid: str, alt: str) -> str | None:
+    """Steht der Begriff nur als Teil eines laengeren Wortes da (Veiko sagt "ODA-Loop",
+    im Projekt steht "OODA-Loop" -- Whisper hoert das doppelte O nicht), wird die eine
+    Schreibweise genommen, die es wirklich gibt. Mehrere verschiedene: lieber nichts."""
+    mu = re.compile(r"(?<!\w)(\w+)" + re.escape(alt))
+    formen = set()
+    for _tab, felder, z in _ersetzen_zeilen(pid):
+        for f in felder:
+            formen.update(m.group(1) + alt for m in mu.finditer(str(z.get(f) or "")))
+    return formen.pop() if len(formen) == 1 else None
 
 
 def beschriften(a: dict[str, Any]) -> str | None:
@@ -732,7 +758,11 @@ def beschriften(a: dict[str, Any]) -> str | None:
             return None
         n, e = ersetzen_zaehlen(p["id"], str(a["alt"]))
         if not n:
-            return None
+            form = ersetzen_schreibweise(p["id"], str(a["alt"]))
+            if not form:
+                return None
+            a["alt"] = form
+            n, e = ersetzen_zaehlen(p["id"], form)
         return f"Im Projekt {p['name'][:40]} „{str(a['alt'])[:40]}“ durch „{str(a['neu'])[:40]}“ ersetzen ({n} Stellen in {e} Einträgen)"
     if art == "brainstrom":
         return f"BrainStrom: {str(a['thema'])[:90]}"
@@ -837,11 +867,12 @@ async def ausfuehren(a: dict[str, Any]) -> dict[str, Any]:
         pid = str(a.get("projekt_id") or "")
         if not db.holen("projekte", pid) or not alt.strip():
             return {"ok": False, "grund": "Projekt nicht gefunden"}
+        mu = _ersetzen_muster(alt)
         n = 0
         for tab, felder, z in list(_ersetzen_zeilen(pid)):
-            werte = {f: str(z.get(f) or "").replace(alt, neu) for f in felder if alt in str(z.get(f) or "")}
+            werte = {f: mu.sub(lambda _m: neu, str(z.get(f) or "")) for f in felder if mu.search(str(z.get(f) or ""))}
             if werte:
-                n += sum(str(z.get(f) or "").count(alt) for f in werte)
+                n += sum(len(mu.findall(str(z.get(f) or ""))) for f in werte)
                 db.aendern(tab, z["id"], werte, wer="talk")
         return {"ok": True, "ersetzt": n}
     if art == "neo":
@@ -892,9 +923,9 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
                "zeigen": [z for z in zeig if z], "oeffnen": oeff, "werkzeug": bed.get("werkzeug")}
         return
     verlauf = []
-    for m in reversed(db.alle("SELECT rolle, text FROM nachrichten WHERE gespraech_id=? ORDER BY id DESC LIMIT 12", (gid,))):
+    for m in reversed(db.alle("SELECT rolle, text, daten FROM nachrichten WHERE gespraech_id=? ORDER BY id DESC LIMIT 12", (gid,))):
         verlauf.append({"role": "user" if m["rolle"] == "du" else "assistant",
-                        "content": m["text"] if m["rolle"] == "du" else _COCKPIT_ZEILE.sub("[Vermerk des Cockpits: hier wurde eine Recherche gestartet.]", m["text"])})
+                        "content": m["text"] if m["rolle"] == "du" else _fuers_modell(m["text"], m.get("daten") or {})})
     system = (SYSTEM.replace("{STIMME}", STIMME_ZUSATZ if stimme else "") +
               f"\n\nHEUTE: {time.strftime('%A, %d.%m.%Y %H:%M')}\n\nLAGE:\n{lage_text()}\n\n{kontext_text(kontext)}")
     # Zugeordnetes Projekt und Aufgabe (17.10.2026) -- gilt fuer jede Nachricht dieses Gespraechs.
@@ -1105,10 +1136,18 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
         if all(r.get("ok") for r in ausgefuehrt):
             hinweis = ("Neo arbeitet daran." if any(r.get("neo_gespraech") for r in ausgefuehrt)
                        else f"Ersetzt: {sum(r.get('ersetzt') or 0 for r in ausgefuehrt)} Stellen." if any("ersetzt" in r for r in ausgefuehrt)
+                       and not any(r.get("vorgang_id") for r in ausgefuehrt)
                        else "Ist beim Team, das Ergebnis erscheint in der Inbox." if any(r.get("vorgang_id") for r in ausgefuehrt) else "Erledigt.")
         else:
             hinweis = "Nicht alles ging: " + "; ".join(str(r.get("grund")) for r in ausgefuehrt if not r.get("ok"))
         sichtbar = re.sub(r"\s*Soll ich das so machen\?\s*$", "", sichtbar).strip()
+        # "Ich beauftrage Neo …" stand ueber "Ersetzt: 8 Stellen" (19.10.2026) -- das Modell
+        # beschrieb etwas anderes als das, was lief. Ohne Neo/Team im Ausgefuehrten fallen
+        # solche Saetze weg; Ankuendigungen ("ich korrigiere") ersetzt die Meldung.
+        if not any(r.get("neo_gespraech") or r.get("vorgang_id") for r in ausgefuehrt):
+            sichtbar = TEAM_BEHAUPTET.sub("", sichtbar)
+            sichtbar = re.sub(r"[^.!?\n]*\bNeo\b[^.!?\n]*[.!?]?", "", sichtbar)
+        sichtbar = AENDERUNG_BEHAUPTET.sub("", sichtbar).strip()
         schon_gesagt = all(r.get("ok") for r in ausgefuehrt) and re.search(r"Inbox|arbeite|macht sich|kümmer|erledigt", sichtbar, re.I)
         if not schon_gesagt:
             sichtbar = (sichtbar + "\n\n" + hinweis).strip()
@@ -1199,6 +1238,33 @@ def _kontext_einsetzen(vorschlaege: list[dict[str, Any]], kontext: dict[str, Any
             if not v.get("projekt_id") and e.get("projekt_id"):
                 v["projekt_id"] = e["projekt_id"]
                 v["label"] = beschriften(v) or v["label"]
+
+
+# Was das Cockpit selbst an eine Antwort haengt. Im Verlauf fuers Modell steht statt dessen,
+# was WIRKLICH passiert ist (19.10.2026): das Modell schrieb "Noch nicht ausgeführt: …" ab,
+# ohne Block -- es sah aus wie ein Vorschlag, und nichts war da. Und es wusste nicht, dass
+# ein Vorschlag inzwischen per Knopf ausgefuehrt war, weil der Text das nicht sagte.
+_COCKPIT_ANHANG = re.compile(r"^(Noch nicht ausgeführt: .*|Ist beim Team, das Ergebnis erscheint in der Inbox\.|Neo arbeitet daran\.|"
+                             r"Ersetzt: \d+ Stellen\.|Erledigt\.|Nicht alles ging: .*|Geändert ist noch nichts.*|"
+                             r"Ich konnte (den Auftrag|deinem Ja|die Recherche).*)$", re.M)
+
+
+def _fuers_modell(text: str, daten: dict[str, Any]) -> str:
+    t = _COCKPIT_ZEILE.sub("[Vermerk des Cockpits: hier wurde eine Recherche gestartet.]", text or "")
+    t = _COCKPIT_ANHANG.sub("", t).strip()
+    vermerke = []
+    for v in daten.get("vorschlaege") or []:
+        if v.get("abgelehnt"):
+            vermerke.append(f"abgelehnt: {v.get('label')}")
+        elif v.get("erledigt"):
+            vermerke.append(f"AUSGEFÜHRT: {v.get('label')}")
+        elif v.get("ergebnis") and not (v["ergebnis"] or {}).get("ok"):
+            vermerke.append(f"FEHLGESCHLAGEN: {v.get('label')} ({(v['ergebnis'] or {}).get('grund')})")
+        else:
+            vermerke.append(f"vorgeschlagen, noch NICHT ausgeführt: {v.get('label')}")
+    if vermerke:
+        t += "\n[Vermerk des Cockpits: " + "; ".join(vermerke) + "]"
+    return t
 
 
 def zeigen_ziel(v: dict[str, Any]) -> dict[str, Any] | None:
