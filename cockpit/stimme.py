@@ -19,6 +19,7 @@ import asyncio
 import os
 import tempfile
 import threading
+import time
 from typing import Any
 
 import httpx
@@ -114,6 +115,22 @@ def _modell(geraet: str):
         if geraet not in _modelle:
             _modelle[geraet] = _laden(geraet)
         return _modelle[geraet]
+
+
+async def vorwaermen() -> dict[str, Any]:
+    """Talk wurde geoeffnet (19.10.2026): Whisper jetzt laden statt beim ersten Satz --
+    sonst wartete Veikos erste Spracheingabe auf das Laden des Modells. Wie _erkennen:
+    erst die Karte, sonst die CPU."""
+    t0 = time.time()
+    for geraet in ([WHISPER_GERAET, "cpu"] if WHISPER_GERAET != "cpu" else ["cpu"]):
+        schon = geraet in _modelle
+        try:
+            await asyncio.to_thread(_modell, geraet)
+            return {"ok": True, "geraet": geraet, "modell": _geladen_als.get(geraet), "war_geladen": schon,
+                    "sekunden": round(time.time() - t0, 1)}
+        except Exception:  # noqa: BLE001 -- naechstes Geraet
+            continue
+    return {"ok": False, "grund": "Whisper liess sich nicht laden"}
 
 
 def verfuegbar() -> dict[str, Any]:

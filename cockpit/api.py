@@ -1245,6 +1245,27 @@ async def sprechen(request: Request):
 
 
 # ================================================================ Talk
+@router.post("/talk/aufwaermen")
+async def talk_aufwaermen(request: Request):
+    """Talk ist offen (19.10.2026, Veiko: "wenn ich Talk anklicke, sollten die notwendigen
+    Modelle sofort geladen und auf Touren gebracht werden"). Drei Dinge gleichzeitig:
+    Sprachmodell laden und den festen Teil der Anweisung vorrechnen, Whisper laden, Piper
+    einmal sprechen lassen. Der Browser fragt alle paar Minuten erneut, solange Talk offen
+    ist -- das haelt das Modell im Speicher. frisch=True (Talk gerade geoeffnet) haelt den
+    Hintergrund kurz zurueck, damit der erste Satz nicht hinter einem Team-Schritt ansteht."""
+    d = await _koerper(request)
+    if d.get("frisch"):
+        llm.vorrang_anstossen()
+    t0 = time.time()
+    modell, whisper, piper = await asyncio.gather(gespraech.aufwaermen(), stimme.vorwaermen(), stimme.sprechen("Ja."),
+                                                  return_exceptions=True)
+    def teil(x: Any) -> dict[str, Any]:
+        if isinstance(x, BaseException):
+            return {"ok": False, "grund": str(x)[:200]}
+        return x if isinstance(x, dict) else {"ok": True}
+    return {"modell": teil(modell), "whisper": teil(whisper), "piper": teil(piper), "sekunden": round(time.time() - t0, 1)}
+
+
 @router.post("/talk/senden")
 async def talk_senden(request: Request):
     d = await _koerper(request)

@@ -49,6 +49,13 @@ ALT_COCKPIT_URL = os.environ.get("VVEC_ALT_COCKPIT_URL", "https://vveorgxais.tai
 WHISPER_MODELL = os.environ.get("VVEC_WHISPER_MODELL", "large-v3-turbo")
 WHISPER_GERAET = os.environ.get("VVEC_WHISPER_GERAET", "cuda")
 
+# EINE Kontextgroesse fuer alle Modellaufrufe (19.10.2026). Ollama laedt ein Modell neu,
+# sobald eine Anfrage eine andere Groesse verlangt als die geladene -- gemessen 6-7 s je
+# Wechsel bei qwen3.8:27b. Talk (24.576), Team (16.384/65.536), Pruefungen (32.768) …
+# wechselten sich ab, und jeder Talk-Satz nach einem Team-Schritt wartete aufs Neuladen.
+# 65.536 = OLLAMA_CONTEXT_LENGTH des Servers, also auch fuer Aufrufe ohne Angabe gleich.
+KONTEXT = int(os.environ.get("VVEC_KONTEXT", "65536"))
+
 # Vorgaben fuer Modelle, falls im Team nichts eingetragen ist.
 MODELL_STAB = os.environ.get("VVEC_MODELL_STAB", "llama3.3:70b")
 MODELL_ARBEIT = os.environ.get("VVEC_MODELL_ARBEIT", "qwen3.8:27b")

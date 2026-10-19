@@ -17,7 +17,7 @@ from typing import Any, AsyncIterator
 
 import httpx
 
-from .konfig import OLLAMA
+from .konfig import KONTEXT, OLLAMA
 
 _modelle_cache: dict[str, Any] = {"zeit": 0.0, "liste": []}
 
@@ -321,6 +321,25 @@ def json_aus(text: str) -> Any:
     return None
 
 
+async def aufwaermen(modell: str, system: str, halten: str = "30m") -> dict[str, Any]:
+    """Talk wird geoeffnet (19.10.2026): Modell in den Speicher holen UND den festen Teil
+    der Anweisung schon einmal durchrechnen, damit Ollama ihn beim ersten Satz aus dem
+    Zwischenspeicher nimmt. Ein Token Antwort, nicht als Verbrauch gebucht -- es ist
+    Vorbereitung, kein Gespraech. keep_alive haelt das Modell, solange Talk offen ist
+    (der Browser fragt alle paar Minuten erneut)."""
+    body = _body(modell, system, [{"role": "user", "content": "Bereit?"}], json_format=False, temperatur=0,
+                 denken=False, num_ctx=None, stream=False)
+    body["options"]["num_predict"] = 1
+    body["keep_alive"] = halten
+    t0 = time.time()
+    async with httpx.AsyncClient(timeout=httpx.Timeout(180, connect=10)) as c:
+        r = await c.post(f"{OLLAMA}/api/chat", json=body)
+        r.raise_for_status()
+        d = r.json()
+    return {"modell": modell, "sekunden": round(time.time() - t0, 1), "geladen_s": round((d.get("load_duration") or 0) / 1e9, 1),
+            "anweisung_s": round((d.get("prompt_eval_duration") or 0) / 1e9, 1)}
+
+
 def _body(modell: str, system: str, nachrichten: list[dict[str, Any]], *, json_format: bool,
           temperatur: float | None, denken: bool | None, num_ctx: int | None,
           stream: bool, tools: list | None = None) -> dict[str, Any]:
@@ -328,8 +347,9 @@ def _body(modell: str, system: str, nachrichten: list[dict[str, Any]], *, json_f
     opts: dict[str, Any] = {}
     if temperatur is not None:
         opts["temperature"] = temperatur
-    if num_ctx:
-        opts["num_ctx"] = num_ctx
+    # num_ctx der Aufrufer zaehlt nicht mehr: jede andere Groesse liesse Ollama das Modell
+    # neu laden (konfig.KONTEXT). Der Parameter bleibt, damit kein Aufrufer brechen muss.
+    opts["num_ctx"] = KONTEXT
     body: dict[str, Any] = {"model": modell, "messages": msgs, "stream": stream, "options": opts}
     if json_format:
         body["format"] = "json"

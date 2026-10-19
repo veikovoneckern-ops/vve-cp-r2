@@ -176,6 +176,20 @@ def _zeit(ts: float | None) -> str:
     return time.strftime("%d.%m.", time.localtime(ts))
 
 
+def system_kern() -> str:
+    """Der feste Anfang jeder Talk-Anweisung: Regeln und Lage. senden() haengt den Rest an,
+    aufwaermen() rechnet genau diesen Teil vorab durch."""
+    return SYSTEM.replace("{STIMME}", "") + "\n\nLAGE:\n" + lage_text()
+
+
+async def aufwaermen() -> dict[str, Any]:
+    """Talk wurde geoeffnet: das Talk-Modell laden und den festen Anfang vorrechnen."""
+    modell = await llm.modell_waehlen(llm.vorgabe("talk"), "qwen3.6:27b", "qwen3:30b-a3b", "llama3.3:70b")
+    if not modell:
+        return {"ok": False, "grund": "kein Talk-Modell installiert"}
+    return {"ok": True, **await llm.aufwaermen(modell, system_kern())}
+
+
 def lage_text() -> str:
     teile = []
     ents = db.alle("SELECT e.*, v.titel AS vtitel FROM entscheidungen e LEFT JOIN vorgaenge v ON v.id=e.vorgang_id "
@@ -926,8 +940,13 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     for m in reversed(db.alle("SELECT rolle, text, daten FROM nachrichten WHERE gespraech_id=? ORDER BY id DESC LIMIT 12", (gid,))):
         verlauf.append({"role": "user" if m["rolle"] == "du" else "assistant",
                         "content": m["text"] if m["rolle"] == "du" else _fuers_modell(m["text"], m.get("daten") or {})})
-    system = (SYSTEM.replace("{STIMME}", STIMME_ZUSATZ if stimme else "") +
-              f"\n\nHEUTE: {time.strftime('%A, %d.%m.%Y %H:%M')}\n\nLAGE:\n{lage_text()}\n\n{kontext_text(kontext)}")
+    # Reihenfolge mit Absicht (19.10.2026): was sich selten aendert zuerst, damit Ollama den
+    # Anfang aus dem Zwischenspeicher nimmt (system_kern, auch beim Vorwaermen). Uhrzeit und
+    # Vorlese-Regeln kamen frueher VOR der Lage -- jede Minute und jeder Wechsel zwischen
+    # Tippen und Sprechen liess so die ganze Anweisung neu rechnen.
+    system = system_kern() + f"\n\n{kontext_text(kontext)}\n\nHEUTE: {time.strftime('%A, %d.%m.%Y %H:%M')}"
+    if stimme:
+        system += "\n\nDIESE ANTWORT WIRD VORGELESEN:\n" + STIMME_ZUSATZ
     # Zugeordnetes Projekt und Aufgabe (17.10.2026) -- gilt fuer jede Nachricht dieses Gespraechs.
     zt = zuordnung_text(gid, (kontext or {}).get("id") if (kontext or {}).get("art") == "projekt" else None)
     if zt:

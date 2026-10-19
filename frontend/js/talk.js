@@ -146,6 +146,18 @@ export function Talk({ zu, kontext, setKontext, start }) {
   useEffect(() => bus.an("dialog-ende", () => { ausKopf.current = false; freiBeenden(); zu(); }), []);
   useEffect(() => bus.an("dialog-weiter", () => { if (pausiertRef.current) freiStart(); }), []);
   useEsc(() => { if (freiAn.current || pausiertRef.current) freiBeenden(); else zu(); }, true, "talk");
+  // Vorwaermen (19.10.2026): sobald Talk aufgeht, laedt der Server Sprachmodell, Whisper und
+  // Piper; alle 4 Minuten erneut, solange Talk offen ist -- das haelt das Modell im Speicher.
+  const [warm, setWarm] = useState("laedt");      // laedt | bereit | fehler
+  useEffect(() => {
+    let weg = false;
+    const los = (frisch) => api("/talk/aufwaermen", { methode: "POST", daten: { frisch } })
+      .then((r) => { if (!weg) setWarm(r.modell && r.modell.ok === false ? "fehler" : "bereit"); })
+      .catch(() => { if (!weg) setWarm("fehler"); });
+    los(true);
+    const t = setInterval(() => los(false), 4 * 60 * 1000);
+    return () => { weg = true; clearInterval(t); };
+  }, []);
 
   function zuAnzeige(m) {
     const d = m.daten || {};
@@ -428,6 +440,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
       <button class="btn geist icon" onClick=${neu} title="Neues Gespräch" aria-label="Neues Gespräch"><${Icon} n="neu" g=${17} /></button>
       <button class="btn geist icon" onClick=${zu} title="Schließen (Esc)" aria-label="Talk schließen"><${Icon} n="x" /></button>
     </div>
+    ${warm === "laedt" && html`<div class="talk-warm" role="status"><span class="talk-warm-punkt" aria-hidden="true"></span>Talk wird vorbereitet: Sprachmodell und Spracherkennung laden …</div>`}
     ${kontext && html`<div class="talk-kontext"><${Icon} n="auge" g=${14} /><span>schaut auf: ${kontext.titel || kontext.art}</span>
       <button class="btn klein geist icon" onClick=${() => setKontext(null)} aria-label="Bezug entfernen" title="Ohne Bezug weiterreden"><${Icon} n="x" g=${13} /></button></div>`}
     ${frei && html`<${StimmeKreis} zustand=${frei.zustand} pegel=${frei.pegel || 0} text=${frei.text} beiKlick=${kreisKlick} />`}
