@@ -205,7 +205,8 @@ async def fortsetzen() -> None:
                 j = await podcast_feed(e["url"], e.get("fokus") or "", ziel, int(e.get("anzahl") or VORGABE_FOLGEN), e.get("zusatz") or "")
             else:
                 continue
-            _melden(ziel, f"Die Recherche „{titel}“ wurde durch einen Neustart des Cockpits unterbrochen -- ich setze sie jetzt fort. "
+            # "meldung": ein von Hand nachgetragener Auftrag sagt selbst, was passiert (statt "unterbrochen").
+            _melden(ziel, e.get("meldung") or f"Die Recherche „{titel}“ wurde durch einen Neustart des Cockpits unterbrochen -- ich setze sie jetzt fort. "
                           "Schon geholte Abschriften nehme ich aus den Unterlagen. Das Dossier meldet sich hier, sobald es fertig ist.")
             print(f"[dossier] fortgesetzt: {titel} ({j['id']})", flush=True)
         except Exception as f:  # noqa: BLE001 -- ein kaputter Eintrag soll den Start nie aufhalten
@@ -495,7 +496,11 @@ def titel_kurz(text: str) -> str:
     t = re.sub(r"\s+", " ", text or "").strip()
     m = re.match(r"(.{25,90}?)[,?.:;](\s|$)", t)
     if m:
-        return m.group(1).strip()
+        s = m.group(1).strip()
+        # Nie mitten in einer Klammer enden ("… Sachbuch (KI"): dann vor der Klammer.
+        if s.count("(") > s.count(")") and len(s[:s.rfind("(")].strip()) >= 20:
+            s = s[:s.rfind("(")].strip()
+        return s
     if len(t) <= 90:
         return t
     return t[:88].rsplit(" ", 1)[0] + " …"

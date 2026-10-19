@@ -71,6 +71,11 @@ ZUSTIMMUNG_IM_SATZ = re.compile(
     # Befehle zum Eintragen (17.10.2026, Veiko: "es soll die Dinge machen, die ich sage")
     r"trag\w*|eintragen|markier\w*|änder\w*|aender\w*|setz\w*|verschieb\w*|notier\w*|hak\w*|schreib\w* .{0,20}(auf|ein|dazu))\b",
     re.I)
+# Eine Behauptung, eine Recherche laufe (19.10.2026) -- die ganze Zeile, damit kein halber Satz stehen bleibt.
+RECHERCHE_BEHAUPTET = re.compile(r"[^\n]*\b(Recherche gestartet|Recherche (läuft|ist gestartet|startet)|starte (die |eine )?(gründliche |neue |erneute )?Recherche)[^\n]*", re.I)
+# Was das Cockpit selbst an eine Antwort haengt (dossier.aus_antwort), sieht das Modell im Verlauf nur
+# als Vermerk -- sonst schreibt es die Zeile beim naechsten Mal ab, ohne etwas zu starten.
+_COCKPIT_ZEILE = re.compile(r"^Recherche gestartet: .*$", re.M)
 _ABLEHNUNG = re.compile(r"\b(nein|nee|lieber nicht|nicht anlegen|nicht machen|ablehnen|stopp)\b", re.I)
 
 
@@ -828,7 +833,8 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
         return
     verlauf = []
     for m in reversed(db.alle("SELECT rolle, text FROM nachrichten WHERE gespraech_id=? ORDER BY id DESC LIMIT 12", (gid,))):
-        verlauf.append({"role": "user" if m["rolle"] == "du" else "assistant", "content": m["text"]})
+        verlauf.append({"role": "user" if m["rolle"] == "du" else "assistant",
+                        "content": m["text"] if m["rolle"] == "du" else _COCKPIT_ZEILE.sub("[Vermerk des Cockpits: hier wurde eine Recherche gestartet.]", m["text"])})
     system = (SYSTEM.replace("{STIMME}", STIMME_ZUSATZ if stimme else "") +
               f"\n\nHEUTE: {time.strftime('%A, %d.%m.%Y %H:%M')}\n\nLAGE:\n{lage_text()}\n\n{kontext_text(kontext)}")
     # Zugeordnetes Projekt und Aufgabe (17.10.2026) -- gilt fuer jede Nachricht dieses Gespraechs.
@@ -1030,9 +1036,28 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     # Recherche-Dossier auf Zuruf (dossier.py, 17.10.2026)
     from . import dossier
     _z = zuordnung(gid)
-    sichtbar, recherche = await dossier.aus_antwort(sichtbar, {
-        "projekt_id": _z.get("projekt_id") or ((kontext or {}).get("id") if (kontext or {}).get("art") == "projekt" else None) or (bez or {}).get("projekt_id"),
-        "aufgabe_id": _z.get("aufgabe_id") or (bez or {}).get("aufgabe_id"), "gespraech_id": gid, "wer": "assistent"})
+    d_ziel = {"projekt_id": _z.get("projekt_id") or ((kontext or {}).get("id") if (kontext or {}).get("art") == "projekt" else None) or (bez or {}).get("projekt_id"),
+              "aufgabe_id": _z.get("aufgabe_id") or (bez or {}).get("aufgabe_id"), "gespraech_id": gid, "wer": "assistent"}
+    hatte_block = bool(dossier.BLOCK_RE.search(sichtbar or ""))
+    sichtbar, recherche = await dossier.aus_antwort(sichtbar, d_ziel)
+    # Angekuendigt, aber nicht gestartet (19.10.2026): auf "Führe die Recherche noch einmal
+    # durch" schrieb das Modell "Recherche gestartet: …" -- abgeschrieben von der Meldung des
+    # Cockpits weiter oben im Verlauf --, ohne den Block. Gestartet war nichts, und Veiko
+    # wartete auf ein Dossier. Jetzt: einmal gezielt nachfordern; kommt kein Block, wird
+    # die Behauptung gestrichen und ehrlich gesagt, dass nichts laeuft.
+    if not hatte_block and RECHERCHE_BEHAUPTET.search(sichtbar or ""):
+        try:
+            roh = await llm.chat(modell, system, verlauf + [{"role": "assistant", "content": gesamt}, {"role": "user", "content":
+                "Du hast eine Recherche angekündigt, aber den Block nicht geschickt -- gestartet ist nichts. Antworte jetzt NUR mit "
+                "<<<RECHERCHE>>>\ndas Thema und worauf es ankommt, in ein bis drei Sätzen\n<<<ENDE>>>\nohne weiteren Text."}],
+                temperatur=0.1, denken=False, num_ctx=24576)
+        except llm.ModellFehler:
+            roh = ""
+        if dossier.BLOCK_RE.search(roh or ""):
+            _, recherche = await dossier.aus_antwort(roh, d_ziel)
+        sichtbar = RECHERCHE_BEHAUPTET.sub("", sichtbar).strip()
+        if not recherche:
+            sichtbar = (sichtbar + "\n\nIch konnte die Recherche nicht starten -- gestartet ist nichts. Sag mir bitte noch einmal das Thema.").strip()
     if recherche:
         sichtbar = (sichtbar + "\n\n" + recherche[0]).strip()
     sichtbar += stab.netz_fuss(quellen)
@@ -1203,12 +1228,19 @@ def bezug_erkennen(text: str, gid: str | None, kontext: dict | None) -> dict[str
             # Klar heisst: zwei gemeinsame Woerter, oder der ganze (kurze) Aufgabentitel,
             # oder ein langes, eigenes Wort ("Verlage" ~ "Verlag finden").
             if len(gemein) >= 2 or (gemein and (gemein == w or max(len(x) for x in gemein) >= 6)):
-                treffer.append((len(gemein) + len(gemein) / len(w) + (1 if a["projekt_id"] in im_satz else 0), a))
+                # Laengere Woerter sind spezifischer: "Verlag" vor "Buch" (19.10.2026: "Recherche zum Thema
+                # Verlag fuer das Buch" traf "Verlag finden" und "Buch schreiben" gleich stark -- kein Bezug).
+                treffer.append((len(gemein) + len(gemein) / len(w) + sum(len(x) for x in gemein) / 20
+                                + (1 if a["projekt_id"] in im_satz else 0), a))
     treffer.sort(key=lambda x: -x[0])
     if treffer and (len(treffer) == 1 or treffer[0][0] > treffer[1][0]):
         a = treffer[0][1]
         return {"projekt_id": a["projekt_id"], "aufgabe_id": a["id"], "projekt_name": a.get("name"),
                 "aufgabe_titel": a["titel"], "erkannt": True}
+    # Gleichstand zwischen Aufgaben DESSELBEN Projekts: dann wenigstens das Projekt.
+    if treffer and not im_projekt and len({x[1]["projekt_id"] for x in treffer if x[0] == treffer[0][0]}) == 1 and treffer[0][1]["projekt_id"]:
+        a = treffer[0][1]
+        return {"projekt_id": a["projekt_id"], "aufgabe_id": None, "projekt_name": a.get("name"), "aufgabe_titel": None, "erkannt": True}
     if im_projekt:
         return None   # das Projekt steht ohnehin im Kontext
     # Kein eindeutiger Treffer: eine kurze Folgenachricht ("ja", "und die Kosten?")
