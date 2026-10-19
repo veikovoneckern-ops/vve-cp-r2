@@ -528,6 +528,7 @@ async def projekt(pid: str):
         # Zugeordnete Gespraeche und Langlaeufer (17.10.2026).
         "gespraeche": gespraeche_von(pid),
         "langlaeufe": _langlaeufe_von(pid),
+        "auftraege": _auftraege_von(pid),
     }
 
 
@@ -2098,6 +2099,25 @@ def gespraeche_von(projekt_id: str) -> list[dict[str, Any]]:
         aus.append({"id": g["id"], "art": g["art"], "titel": g["titel"], "geaendert": g["geaendert"], "anzahl": g["anzahl"],
                     "wer": wer, "wer_name": teamchat.wer_name(wer) if wer else None,
                     "aufgabe_id": k.get("aufgabe_id"), "aufgabe_titel": (a or {}).get("titel")})
+    return aus
+
+
+def _auftraege_von(projekt_id: str) -> list[dict[str, Any]]:
+    """Ausarbeitungen des Teams zu einem Projekt, mit ihrem juengsten Ergebnis (19.10.2026).
+
+    Veiko vermisste in "LongRuns und Gespraeche" einen Auftrag, den er per Talk gegeben hatte
+    ("... als LongRun ueberarbeiten") -- Talk hatte daraus eine Ausarbeitung gemacht, und die
+    Spalte kannte nur LongRuns und Gespraeche. Cases eines LongRuns fehlen hier, die zeigt der
+    LongRun selbst; Cases aus Notizen ohne Auftrag ebenso (die stehen unter Verlauf)."""
+    aus = []
+    for v in db.alle("SELECT v.id, v.titel, v.stand, v.geaendert, json_extract(v.auftrag,'$.rolle') AS rolle, "
+                     "COALESCE(json_extract(v.auftrag,'$.aufgabe_id'), (SELECT a.id FROM aufgaben a WHERE a.vorgang_id=v.id LIMIT 1)) AS aufgabe_id, "
+                     "(SELECT r.id FROM ergebnisse r WHERE r.vorgang_id=v.id ORDER BY r.erstellt DESC LIMIT 1) AS ergebnis_id "
+                     "FROM vorgaenge v WHERE v.projekt_id=? AND json_valid(v.auftrag) AND json_extract(v.auftrag,'$.rolle') IS NOT NULL "
+                     "AND v.id NOT IN (SELECT vorgang_id FROM langlaeufe WHERE vorgang_id IS NOT NULL) "
+                     "ORDER BY v.geaendert DESC LIMIT 20", (projekt_id,)):
+        a = db.holen("aufgaben", v["aufgabe_id"]) if v.get("aufgabe_id") else None
+        aus.append({**v, "wer_name": stab.rollen_name(v["rolle"]), "aufgabe_titel": (a or {}).get("titel")})
     return aus
 
 

@@ -322,6 +322,7 @@ function Projekt({ id, reiter }) {
   // Je Aufgabe: laufender Langlaeufer und Zahl zugeordneter Gespraeche (17.10.2026).
   const langlaeufe = d.langlaeufe || [];
   const gespraeche = d.gespraeche || [];
+  const auftraege = d.auftraege || [];
   const bezug = (t) => ({ langlauf: langlaeufe.find((l) => l.aufgabe_id === t.id && l.stand !== "abgebrochen"),
     gespraeche: gespraeche.filter((g) => g.aufgabe_id === t.id).length });
 
@@ -375,12 +376,16 @@ function Projekt({ id, reiter }) {
         ${offen.length > 12 && html`<button class="btn klein geist" onClick=${() => setTab("aufgaben")}>Alle ${offen.length} zeigen</button>`}
       </section>
       <div>
-        ${(langlaeufe.length > 0 || gespraeche.length > 0) && html`<section class="karte">
-          <div class="karte-kopf"><h3>LongRuns und Gespräche</h3><span class="leise klein">was zu diesem Projekt läuft und besprochen wurde</span></div>
+        ${(langlaeufe.length > 0 || auftraege.length > 0 || gespraeche.length > 0) && html`<section class="karte">
+          <div class="karte-kopf"><h3>Arbeit und Gespräche</h3><span class="leise klein">LongRuns, Ausarbeitungen des Teams und Gespräche zu diesem Projekt</span></div>
           ${langlaeufe.map((l) => html`<div class="zeile" key=${l.id}><${Icon} n="langlauf" g=${15} />
             <div class="haupt-text"><a href=${"#/langlauf/" + l.id} style="color:inherit"><b>${l.titel}</b></a>
               <div class="leise klein">${l.art_name} · ${l.fertig} von ${l.etappen || "?"} ${l.etappen_name}${l.aufgabe_id ? " · zu einer Aufgabe" : ""}</div></div>
             <span class=${"pill" + (l.stand === "fertig" ? " gruen" : l.stand === "wartet" ? " gelb" : l.stand === "laeuft" || l.stand === "plant" ? " lila" : "")}>${{ plant: "plant", laeuft: "läuft", wartet: "wartet auf dich", pausiert: "pausiert", fehler: "hängt", fertig: "fertig", abgebrochen: "abgebrochen" }[l.stand] || l.stand}</span></div>`)}
+          ${auftraege.slice(0, 8).map((v) => html`<div class="zeile" key=${v.id}><${Icon} n="stift" g=${15} />
+            <div class="haupt-text"><a href=${"#/inbox/" + v.id} style="color:inherit" onClick=${(ev) => { if (v.ergebnis_id) { ev.preventDefault(); bus.sende("ergebnis-zeigen", v.ergebnis_id); } }}><b>${v.titel}</b></a>
+              <div class="leise klein">${v.rolle === "recherche" ? "Recherche-Dossier" : "Ausarbeitung" + (v.wer_name ? " von " + v.wer_name : "")}${v.aufgabe_titel ? " · Aufgabe: " + v.aufgabe_titel : ""}${v.ergebnis_id ? " · Ergebnis liegt vor" : ""}</div></div>
+            <${StandPill} stand=${v.stand} /></div>`)}
           ${gespraeche.slice(0, 12).map((g) => html`<div class="zeile" key=${g.id}><${Icon} n="chat" g=${15} />
             <div class="haupt-text"><a href="#" style="color:inherit" onClick=${(e) => { e.preventDefault(); gespraechOeffnen(g, bus); }}><b>${g.titel}</b></a>
               <div class="leise klein">${GESPRAECH_ART[g.art] || g.art}${g.wer_name ? " mit " + g.wer_name : ""}${g.aufgabe_titel ? " · Aufgabe: " + g.aufgabe_titel : ""} · ${g.anzahl} Nachrichten</div></div>
