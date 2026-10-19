@@ -31,6 +31,10 @@ async def lebenszeit(app: FastAPI):
         importer.abgleichen()
     except Exception as e:  # noqa: BLE001 -- ohne alten Bestand soll es trotzdem starten
         print(f"Abgleich mit dem alten Cockpit gescheitert: {e}", flush=True)
+    try:
+        stab.zuordnung_nachziehen()
+    except Exception as e:  # noqa: BLE001 -- eine Nachpflege darf den Start nie verhindern
+        print(f"Zuordnung nachziehen gescheitert: {e}", flush=True)
     aufgabe = asyncio.create_task(stab.schleife())
     # Langlaeufer (17.10.2026): eigene Schleife, teilt sich die Sperre mit der Pipeline.
     lang = asyncio.create_task(langlauf.schleife())

@@ -143,7 +143,10 @@ def anlegen(titel: str, auftrag: str, art: str, projekt_id: str | None, pruefer:
     vid = v["id"] if isinstance(v, dict) else v
     db.ausfuehren("UPDATE vorgaenge SET titel=?, stand='in_arbeit', auftrag=?, einordnung=? WHERE id=?",
                   (f"LongRun: {titel}"[:120],
-                   json.dumps({"auftrag": auftrag, "langlauf": True, "rolle": rolle, "form": "dokument"}, ensure_ascii=False),
+                   json.dumps({"auftrag": auftrag, "langlauf": True, "rolle": rolle, "form": "dokument",
+                               # Die Aufgabe auch am Case (19.10.2026): Explorer, Aufgabenfenster, Talk und Usage
+                               # suchen sie dort -- in den LongRun-Daten allein fanden sie sie nicht.
+                               "aufgabe_id": aufgabe_id}, ensure_ascii=False),
                    "LongRun -- arbeitet in Etappen, mit Zwischenprüfung", vid))
     lid = db.neue_id("l")
     db.einfuegen("langlaeufe", {

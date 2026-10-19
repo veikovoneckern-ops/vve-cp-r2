@@ -1285,3 +1285,32 @@ def urteil_klartext(pruefung: Any) -> str:
             "nachbessern": "Daniel hat Einwände -- sie lassen sich im Ergebnisfenster einarbeiten",
             "rueckfrage": "Daniel hat eine Rückfrage an dich",
             "recherche": "Recherche-Dossier aus Quellen, nicht von Daniel geprüft"}.get(u, "noch nicht geprüft")
+
+
+# ---------------------------------------------------------------- Zuordnung nachziehen
+def zuordnung_nachziehen() -> dict[str, int]:
+    """Beim Start: fehlende Zuordnungen von Ergebnissen zu Projekt und Aufgabe ergaenzen
+    (19.10.2026, Veiko: "die automatische Zuordnung von Ergebnissen zu Projekten bzw. Aufgaben
+    funktioniert noch nicht so gut ... das muss fuer alle Projekte, Aufgaben etc. wirklich gut
+    funktionieren"). Eine Aufgabe gilt dort, wo Explorer, Aufgabenfenster, Talk und Usage sie
+    suchen: am Case (auftrag.aufgabe_id). Ergaenzt wird nur, was fehlt -- nie ueberschrieben."""
+    n = {"langlauf_aufgabe": 0, "ergebnis_projekt": 0}
+    # 1. LongRuns, die aus einer Aufgabe gestartet wurden: die Aufgabe an ihren Case.
+    for l in db.alle("SELECT l.vorgang_id, json_extract(l.daten,'$.aufgabe_id') AS aid FROM langlaeufe l "
+                     "JOIN vorgaenge v ON v.id=l.vorgang_id JOIN aufgaben a ON a.id=json_extract(l.daten,'$.aufgabe_id') "
+                     "WHERE json_extract(COALESCE(NULLIF(v.auftrag,''),'{}'),'$.aufgabe_id') IS NULL"):
+        db.ausfuehren("UPDATE vorgaenge SET auftrag=json_set(COALESCE(NULLIF(auftrag,''),'{}'),'$.aufgabe_id',?) WHERE id=?",
+                      (l["aid"], l["vorgang_id"]))
+        n["langlauf_aufgabe"] += 1
+    # 2. Ergebnisse ohne Projekt: das Projekt ihres Case, sonst das ihrer Aufgabe.
+    for r in db.alle("SELECT r.id, v.projekt_id AS vp, a.projekt_id AS ap FROM ergebnisse r "
+                     "LEFT JOIN vorgaenge v ON v.id=r.vorgang_id "
+                     "LEFT JOIN aufgaben a ON a.id=json_extract(v.auftrag,'$.aufgabe_id') "
+                     "WHERE COALESCE(r.projekt_id,'')=''"):
+        pid = r.get("vp") or r.get("ap")
+        if pid:
+            db.ausfuehren("UPDATE ergebnisse SET projekt_id=? WHERE id=?", (pid, r["id"]))
+            n["ergebnis_projekt"] += 1
+    if any(n.values()):
+        print(f"[stab] Zuordnung nachgezogen: {n}", flush=True)
+    return n
