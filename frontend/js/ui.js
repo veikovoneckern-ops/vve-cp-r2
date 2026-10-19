@@ -524,12 +524,19 @@ export function Ziehgriff({ name, seite = "rechts", faktor = 1 }) {
 // Zuklappfunktion aber gut sichtbar." Deshalb: der ganze Kopf ist der Knopf, der
 // Pfeil steht links in einem eigenen Kasten (Klapper immer links), und rechts steht
 // ausgeschrieben, was ein Klick tut. Der Inhalt wird erst gezeichnet, wenn offen --
-// ein zugeklappter Abschnitt fragt also auch nichts beim Server ab. Offen/zu merkt
-// sich jedes Geraet je Abschnitt (klappe-<id>).
+// ein zugeklappter Abschnitt fragt also auch nichts beim Server ab.
+// Nach dem Neuladen ist JEDER Abschnitt zu (Veiko, 19.10.2026: "Sektionen sollen immer
+// zugeklappt erscheinen, wenn ich die Cockpit-Webseite neu geladen habe"). Gemerkt wird
+// nur fuer diese Sitzung (KLAPPEN_AUF): wer die Seite wechselt und zurueckkommt, findet
+// sie, wie er sie verlassen hat. Frueher stand der Zustand im localStorage und ueberlebte
+// das Neuladen; "vorgabe" wird deshalb nicht mehr ausgewertet. Eine Adresse wie
+// #/einstellungen/versionen oeffnet ihren Abschnitt weiterhin (klappe-auf).
+const KLAPPEN_AUF = new Set();
 export function Klappe({ id, titel, unter, zahl, vorgabe = false, children, rechts }) {
-  const [auf, setAuf] = useState(() => { try { const v = localStorage.getItem("klappe-" + id); return v == null ? vorgabe : v === "1"; } catch (e) { return vorgabe; } });
-  useEffect(() => bus.an("klappe-auf", (x) => { if (x === id) setAuf(true); }), [id]);
-  const umschalten = () => { const n = !auf; setAuf(n); try { localStorage.setItem("klappe-" + id, n ? "1" : "0"); } catch (e) { /* egal */ } };
+  const [auf, setAuf] = useState(() => KLAPPEN_AUF.has(id));
+  const setzen = (n) => { setAuf(n); if (n) KLAPPEN_AUF.add(id); else KLAPPEN_AUF.delete(id); };
+  useEffect(() => bus.an("klappe-auf", (x) => { if (x === id) setzen(true); }), [id]);
+  const umschalten = () => setzen(!auf);
   return html`<section class=${"klappe" + (auf ? " auf" : "")} id=${"klappe-" + id}>
     <div class="klappe-kopf">
       <button class="klappe-knopf" onClick=${umschalten} aria-expanded=${auf} aria-controls=${"klappe-inhalt-" + id}>

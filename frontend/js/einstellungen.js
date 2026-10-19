@@ -95,7 +95,7 @@ function Versionen() {
   const [d] = useAbruf("/versionen", 0, []);
   const [q, setQ] = useState("");
   const [bereich, setBereich] = useState("");
-  const [auf, setAuf] = useState(null);          // aufgeklappte Version (null = die neueste)
+  const [auf, setAuf] = useState("");            // aufgeklappte Version -- anfangs keine (alles zu, wie jede Sektion)
   const [mehr, setMehr] = useState(8);
   if (!d) return html`<div class="lade">Lade …</div>`;
   if (d.quelle_fehlt) return html`<div class="hinweisbox">Der Versionsverlauf ist hier nicht abrufbar: das Cockpit findet seine Git-Geschichte nicht.</div>`;
@@ -104,7 +104,7 @@ function Versionen() {
     && (!such || (c.titel + " " + c.punkte.join(" ")).toLowerCase().includes(such));
   const liste = d.versionen.map((v) => ({ ...v, treffer: v.aenderungen.filter(passt) })).filter((v) => v.treffer.length);
   const gefiltert = !!(such || bereich);
-  const offen = auf ?? (d.versionen[0] && d.versionen[0].version);
+  const offen = auf;
   const datum = (tag) => { const [j, m, t] = tag.split("-"); return `${t}.${m}.${j}`; };
   const uhr = (s) => new Date(s * 1000).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
   const lf = d.laeuft || {};
