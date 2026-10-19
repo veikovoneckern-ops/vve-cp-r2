@@ -674,6 +674,19 @@ async def _antwort(gid: str, wer: str, system: str, verlauf: list[dict[str, str]
                                                      "Deshalb geht dein Wunsch an jedes Kapitel einzeln; Daniel prüft jedes.")
         fassung = None
     if fassung and kontext.get("ergebnis_id"):
+        # Eine Praesentation darf beim Ueberarbeiten nicht still schrumpfen (19.10.2026, "bis zu
+        # 25 Slides"): verliert die neue Fassung mehr als ein Viertel der Folien und hat Veiko
+        # nicht ums Kuerzen gebeten, bleibt die alte.
+        from . import folien as _folien
+        alt_e = db.holen("ergebnisse", kontext["ergebnis_id"]) or {}
+        if alt_e.get("form") == "praesentation" and not re.search(r"k(ü|ue)rz|weniger|reduzier|streich|zusammenfass", text, re.I):
+            vorher, nachher = len(_folien.teilen(alt_e.get("inhalt") or "")), len(_folien.teilen(fassung))
+            if vorher >= 8 and nachher < 0.75 * vorher:
+                prosa = (prosa + "\n\n" if prosa else "") + (
+                    f"Meine neue Fassung hatte nur {nachher} statt {vorher} Folien -- ich habe sie deshalb NICHT übernommen, "
+                    "die bisherige bleibt. Sag mir, welche Folien ich ändern soll, dann arbeite ich gezielt daran.")
+                fassung = None
+    if fassung and kontext.get("ergebnis_id"):
         eid = kontext["ergebnis_id"]
         e = db.holen("ergebnisse", eid) or {}
         db.aendern("ergebnisse", eid, {"inhalt": fassung, "modell": modell}, wer=wer, vorgang_id=e.get("vorgang_id"),

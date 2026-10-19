@@ -863,6 +863,85 @@ async def abschnittsweise(modell: str, system: str, frage: str, form: str, rid: 
     return (f"# {titel}\n\n" if titel else "") + "\n\n".join(teile)
 
 
+# ---------------------------------------------------------------- Praesentationen in Kapiteln
+# Veiko, 19.10.2026: "bei Praesentationen muss es deutlich mehr werden, bis zu 25 Slides".
+# Gemessen: die letzten Praesentationen hatten 6 und 7 Folien -- in EINEM Aufruf hoert das
+# Modell von selbst frueh auf, eine Zahl in der Anweisung allein aendert daran wenig.
+# Deshalb wie bei langen Dokumenten: erst Kapitel mit Folienzahl planen, dann je Kapitel
+# schreiben. Ueberarbeiten (Daniel) und Mitarbeit (Annie) laufen in Paketen zu
+# FOLIEN_PAKET Folien; ein Paket, das Folien verliert, bleibt im Original.
+FOLIEN_PAKET = 8
+
+
+async def folienweise(modell: str, system: str, frage: str, rid: str, vid: str, ziel: int) -> str | None:
+    laeuft(rid, f"plant die Präsentation ({ziel} Folien)", vid)
+    plan = llm.json_aus(await _chat_robust(modell, system, [{"role": "user", "content": frage + (
+        f"\n\nPLANE ZUERST die Präsentation, schreibe noch keine Folien. Insgesamt GENAU {ziel} Folien, Titel- und "
+        "Abschlussfolie mitgezählt, verteilt auf 3 bis 6 Kapitel mit einer durchgehenden Argumentation. Antworte "
+        'AUSSCHLIESSLICH mit JSON: {"titel": "...", "kapitel": [{"titel": "...", "inhalt": "was hineingehört, zwei Sätze", '
+        '"folien": N}]}')}], json_format=True, temperatur=0.3, denken=DENKEN, num_ctx=65536, timeout=LANGE_FRIST))
+    kapitel = [k for k in ((plan or {}).get("kapitel") if isinstance(plan, dict) else None) or []
+               if isinstance(k, dict) and str(k.get("titel") or "").strip()][:8]
+    if len(kapitel) < 2:
+        return None
+    for k in kapitel:
+        try:
+            k["folien"] = max(2, min(12, int(k.get("folien"))))
+        except (TypeError, ValueError):
+            k["folien"] = max(2, round(ziel / len(kapitel)))
+    gliederung = "\n".join(f"{i + 1}. {k['titel']} ({k['folien']} Folien) -- {k.get('inhalt') or ''}" for i, k in enumerate(kapitel))
+    db.ereignis(vid, rid, "info", f"Präsentation mit {sum(k['folien'] for k in kapitel)} Folien in {len(kapitel)} Kapiteln geplant:\n{gliederung}")
+    teile: list[str] = []
+    for i, k in enumerate(kapitel):
+        erst, letzt = i == 0, i == len(kapitel) - 1
+        laeuft(rid, f"schreibt Kapitel {i + 1} von {len(kapitel)}: {_kurz(k['titel'], 60)}", vid)
+        bisher = "\n\n---\n\n".join(teile)
+        auftrag = (f"{frage}\n\nGLIEDERUNG DER PRÄSENTATION:\n{gliederung}\n\n"
+                   + (f"BISHERIGE FOLIEN (Ende):\n…{bisher[-6000:]}\n\n" if bisher else "")
+                   + f"Schreibe JETZT NUR Kapitel {i + 1}: „{k['titel']}“ mit GENAU {k['folien']} Folien, getrennt durch '---'. "
+                   + ("Die erste davon ist die Titelfolie der ganzen Präsentation, die zweite die kapitel-Folie. " if erst
+                      else "Die erste ist die kapitel-Folie; KEINE Titelfolie. ")
+                   + ("Die letzte ist die abschluss-Folie der ganzen Präsentation." if letzt else "KEINE abschluss-Folie.")
+                   + " Jede Folie mit Notizen. Keine Wiederholung früherer Folien.")
+        t = await _chat_robust(modell, system, [{"role": "user", "content": auftrag}], temperatur=0.6,
+                               denken=DENKEN_SCHREIBEN, num_ctx=65536, timeout=LANGE_FRIST)
+        t = t.strip().strip("-").strip()
+        if t and not llm.fremdschrift(t):
+            teile.append(t)
+    if len(teile) < 2:
+        return None
+    return "\n\n---\n\n".join(teile)
+
+
+async def folien_stueckweise(modell: str, system: str, entwurf: str, anweisung: str, rid: str, vid: str,
+                             was: str) -> tuple[str, int]:
+    """Ein Deck paketweise ueberarbeiten. Gibt das neue Deck und die Zahl der Pakete
+    zurueck, die uebernommen wurden; ein Paket mit anderer Folienzahl oder fremder
+    Schrift bleibt im Original -- lieber unveraendert als gekuerzt."""
+    folien = _folien.teilen(entwurf)
+    pakete = [folien[i:i + FOLIEN_PAKET] for i in range(0, len(folien), FOLIEN_PAKET)]
+    neu_deck: list[str] = []
+    uebernommen = 0
+    for i, p in enumerate(pakete):
+        laeuft(rid, f"{was} (Folien {i * FOLIEN_PAKET + 1}–{i * FOLIEN_PAKET + len(p)} von {len(folien)})", vid)
+        auftrag = (f"{anweisung}\n\nDAS GANZE DECK HAT {len(folien)} FOLIEN. Hier die Folien {i * FOLIEN_PAKET + 1} bis "
+                   f"{i * FOLIEN_PAKET + len(p)}:\n\n" + "\n\n---\n\n".join(p)
+                   + f"\n\nLiefere GENAU diese {len(p)} Folien überarbeitet zurück, getrennt durch '---', in derselben "
+                   "Reihenfolge -- nicht mehr, nicht weniger, keine Vorrede.")
+        try:
+            t = await _chat_robust(modell, system, [{"role": "user", "content": auftrag}], temperatur=0.4,
+                                   denken=DENKEN_SCHREIBEN, num_ctx=65536, timeout=LANGE_FRIST)
+        except llm.ModellFehler:
+            t = ""
+        neu = _folien.teilen(t)
+        if len(neu) == len(p) and not llm.fremdschrift(t):
+            neu_deck += neu
+            uebernommen += 1
+        else:
+            neu_deck += p
+    return "\n\n---\n\n".join(neu_deck), uebernommen
+
+
 # ---------------------------------------------------------------- Zusammenarbeit in der Pipeline
 # Veiko, 18.10.2026: "Das Team soll eigenstaendig zusammenarbeiten, um das Ergebnis
 # zu liefern" -- im Team-Chat umgesetzt (teamchat.TEAMARBEIT), hier dasselbe fuer
@@ -941,6 +1020,18 @@ async def _zusammenarbeiten(entwurf: str, von: str, form: str, a: dict[str, Any]
             continue
         db.ereignis(vid, w["von"], "info", f"{vname} gibt an {tname} weiter: {w['auftrag']}")
         laeuft(tid, f"arbeitet mit ({vname} hat weitergegeben)", vid)
+        if form == "praesentation":
+            # Ein grosses Deck (bis 25 Folien, 19.10.2026) in Paketen: am Stueck neu
+            # geschrieben, kuerzt das Modell; ueber LANG_FUER_VOLLFASSUNG haette die
+            # zweite Rolle nur einen Abschnitt angefuegt -- als falsche Extra-Folie.
+            entwurf, n = await folien_stueckweise(
+                modell, _arbeits_system(tid, form, a), entwurf,
+                f"AUFTRAG DER PRÄSENTATION: {a.get('auftrag')}\n\nAUFTRAG VON {vname.upper()} AN DICH: {w['auftrag']}",
+                tid, vid, "arbeitet mit")
+            if n:
+                mit.append(tname)
+            db.ereignis(vid, tid, "info", f"{tname} hat mitgearbeitet ({n} Folienpakete eingearbeitet).")
+            continue
         voll = len(entwurf) <= LANG_FUER_VOLLFASSUNG
         aufgabe = (f"{frage}\n\nBISHERIGES ERGEBNIS VON {vname.upper()}:\n{entwurf}\n\n"
                    f"AUFTRAG VON {vname.upper()} AN DICH: {w['auftrag']}\n\n"
@@ -995,7 +1086,13 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
     for runde in range(RUNDEN_MAX):
         laeuft(rid, ("überarbeitet" if runde else "arbeitet aus") + f" ({form})", vid)
         nachricht = frage
-        if runde and pruefung:
+        if runde and pruefung and form == "praesentation":
+            kritik = (pruefung.get("begruendung", "") + "\n" + "\n".join("- " + m for m in pruefung.get("maengel") or []))
+            entwurf, n = await folien_stueckweise(
+                modell, system, entwurf, f"AUFTRAG: {a.get('auftrag')}\n\nKRITIK VON DANIEL AM GANZEN DECK:\n{kritik}\n\n"
+                "Behebe in diesen Folien, was die Kritik betrifft; was gut ist, bleibt.", rid, vid, "überarbeitet")
+            db.ereignis(vid, rid, "info", f"Überarbeitet in Paketen: {n} übernommen, der Rest blieb unverändert.")
+        elif runde and pruefung:
             nachricht += ("\n\nDEIN BISHERIGER ENTWURF:\n" + entwurf[:40000] +
                           "\n\nKRITIK VON DANIEL:\n" + pruefung.get("begruendung", "") + "\n" +
                           "\n".join("- " + m for m in pruefung.get("maengel") or []) +
@@ -1003,10 +1100,16 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
             entwurf = await _chat_robust(modell, system, [{"role": "user", "content": nachricht}],
                                      temperatur=0.5, denken=DENKEN_SCHREIBEN, num_ctx=65536, timeout=LANGE_FRIST)
         else:
-            entwurf = (await abschnittsweise(modell, system, frage, form, rid, vid)
+            entwurf = ((await folienweise(modell, system, frage, rid, vid, _folien.ziel(str(a.get("auftrag") or "")))
+                        if form == "praesentation" else None)
+                       or await abschnittsweise(modell, system, frage, form, rid, vid)
                        or await _chat_robust(modell, system, [{"role": "user", "content": nachricht}],
                                          temperatur=0.5, denken=DENKEN_SCHREIBEN, num_ctx=65536, timeout=LANGE_FRIST))
-        if llm.fremdschrift(entwurf):
+        if llm.fremdschrift(entwurf) and form == "praesentation":
+            entwurf, _n = await folien_stueckweise(modell, system + "\n\nWICHTIG: Ausschließlich deutsche Sprache und lateinische Schrift.",
+                                                   entwurf, "Schreibe diese Folien in deutscher Sprache und lateinischer Schrift neu; "
+                                                   "Inhalt und Aufbau bleiben.", rid, vid, "korrigiert die Schrift")
+        elif llm.fremdschrift(entwurf):
             entwurf = await llm.chat(modell, system + "\n\nWICHTIG: Ausschließlich deutsche Sprache und lateinische Schrift.",
                                      [{"role": "user", "content": nachricht + ("\n\nDEIN ENTWURF (in deutscher Sprache neu schreiben):\n" + entwurf[:40000] if runde == 0 else "")}],
                                      temperatur=0.3, denken=False, num_ctx=65536, timeout=LANGE_FRIST)

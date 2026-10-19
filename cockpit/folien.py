@@ -69,10 +69,26 @@ ANWEISUNG = (
     "ein Thema („Agenten verdreifachen den Durchsatz“, nicht „Agenten“). Höchstens 30 Wörter Text je Folie -- was du "
     "dazu sagen würdest, gehört in eine Zeile 'Notizen: …' (Sprechernotizen). Wechsle die Folientypen ab; nie drei "
     "punkte-Folien hintereinander. Erste Folie titel, letzte abschluss, bei mehr als acht Folien kapitel-Folien.\n"
+    "UMFANG: eine vollständige Präsentation hat 18 bis 25 Folien (Veiko, 19.10.2026: „bis zu 25 Slides“); nennt der "
+    "Auftrag eine Zahl, genau so viele. Lieber eine Folie mehr mit einem klaren Gedanken als eine überladene.\n"
     "BILDER: Titelfolie, bild-Folien und etwa jede dritte weitere Folie bekommen am Ende GENAU EINE Zeile "
     "'Bild: <Motiv, Stil, Licht, Farben, Stimmung>'. Beschreibe ein Motiv, keine Schrift, keine Logos, keine echten "
     "Personen; alle Bilder einer Präsentation im selben Stil. Gestaltungsanweisungen (Layout, Schrift, Farben der "
     "Folie) schreibst du NICHT -- das Design setzt das Cockpit.")
+
+ZIEL_VORGABE = 22   # Folien, wenn der Auftrag keine Zahl nennt ("bis zu 25", 19.10.2026)
+
+
+def ziel(auftrag: str) -> int:
+    """Wie viele Folien der Auftrag will: eine genannte Zahl, sonst ZIEL_VORGABE."""
+    m = re.search(r"\b(\d{1,2})\s*(folien|slides|charts|seiten)\b", auftrag or "", re.I)
+    return max(3, min(60, int(m.group(1)))) if m else ZIEL_VORGABE
+
+
+def teilen(md: str) -> list[str]:
+    """Die Folien eines Decks als Rohtext (Trenner: eine Zeile nur aus ---)."""
+    return [t.strip() for t in re.split(r"(?m)^\s*---+\s*$", md or "") if t.strip()]
+
 
 _TYP = re.compile(r"^\s*(?:typ|folientyp|layout)\s*:\s*([a-zäöü_ -]+)\s*$", re.I)
 _UNTER = re.compile(r"^\s*untertitel\s*:\s*(.+)$", re.I)

@@ -474,7 +474,8 @@ async def _planen(l: dict[str, Any]) -> None:
     stab.laeuft(rid, f"plant den Langläufer „{l['titel']}“", vid)
     n = ARTEN[art]["etappe"]
     extra = (f" Jeder {n} ist etwa eine Minute Video (rund {SZENEN_JE_AKT} Szenen zu je 5 Sekunden)." if art == "video" else
-             f" Jeder {n} wird 5 bis 10 Folien lang; der erste beginnt mit der Titelfolie, der letzte endet mit der "
+             f" Die ganze Präsentation hat GENAU {_folien_ziel(d)} Folien, verteilt auf 3 bis 6 {ARTEN[art]['mehrzahl']} "
+             "(nenne im Inhalt je Abschnitt die Folienzahl); der erste beginnt mit der Titelfolie, der letzte endet mit der "
              "Abschlussfolie. Plane so, dass die Präsentation eine durchgehende Argumentation hat." if art == "praesentation" else
              f" Jede {n} umfasst {BILDER_JE_GRUPPE} Bilder zu einem gemeinsamen Thema; nenne im Inhalt die geplanten Motive. "
              "Alle Bilder der Serie im selben Stil." if art == "bilder" else
@@ -548,7 +549,8 @@ async def _etappe(l: dict[str, Any], e: dict[str, Any]) -> None:
                  + ("Beginne mit der Titelfolie der ganzen Präsentation, danach eine kapitel-Folie für diesen Abschnitt. " if erst
                     else "Beginne mit einer kapitel-Folie für diesen Abschnitt; KEINE Titelfolie. ")
                  + ("Ende mit der abschluss-Folie der ganzen Präsentation." if letzt else "KEINE abschluss-Folie -- es geht danach weiter.")
-                 + " 5 bis 10 Folien, jede mit Notizen. Keine Wiederholung früherer Abschnitte.")
+                 + f" Dieser {n} hat GENAU {_folien_abschnitt(d, e, gesamt)} Folien (die Präsentation insgesamt "
+                 f"{_folien_ziel(d)}), getrennt durch '---', jede mit Notizen. Keine Wiederholung früherer Abschnitte.")
         text = await stab._chat_robust(modell, system, [{"role": "user", "content": frage}], temperatur=0.6,
                                        denken=stab.DENKEN_SCHREIBEN, num_ctx=65536, timeout=stab.LANGE_FRIST)
         text = text.strip().strip("-").strip()
@@ -619,6 +621,18 @@ async def _etappe(l: dict[str, Any], e: dict[str, Any]) -> None:
     _speichern(l)
     db.ereignis(vid, rid, "info", f"{n} {e['nr']} von {gesamt} fertig: {e['titel']} "
                                   f"({len(text.split())} Wörter, Daniel: {stab.urteil_klartext(p)}).")
+
+
+def _folien_ziel(d: dict[str, Any]) -> int:
+    """Folien der ganzen Praesentation: eine Zahl aus dem Auftrag, sonst bis zu 25 (folien.ziel)."""
+    from . import folien
+    return folien.ziel(d.get("auftrag") or "")
+
+
+def _folien_abschnitt(d: dict[str, Any], e: dict[str, Any], gesamt: int) -> int:
+    """Folien dieses Abschnitts: wie im Plan genannt ("6 Folien"), sonst gleich verteilt."""
+    m = re.search(r"(\d{1,2})\s*folien", e.get("inhalt") or "", re.I)
+    return max(2, min(15, int(m.group(1)))) if m else max(3, round(_folien_ziel(d) / max(1, gesamt)))
 
 
 def _ueberarbeitet(art: str, neu: str, titel: str, alt: str) -> str:
