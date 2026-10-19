@@ -363,7 +363,9 @@ export function TalkSchalter({ name, text, titel }) {
       setAn(e.target.checked); }} />${text}</label>`;
 }
 // Der Globus im Talk-Eingabefeld (Veiko, 16.10.: lieber der Knopf als ein
-// Haekchen): blau = Internet an, grau = aus. Derselbe Merker wie talkSchalter("netz").
+// Haekchen). Seit 19.10.: GRUEN = an, grauer Globus mit ROTEM Schraegstrich =
+// aus. Blau gegen Grau war auf einen Blick nicht zu unterscheiden; der Strich
+// sagt "aus" auch ohne Farbsehen. Derselbe Merker wie talkSchalter("netz").
 export function GlobusKnopf() {
   const [an, setAn] = useState(() => talkSchalter("netz"));
   const umschalten = () => {
@@ -374,7 +376,10 @@ export function GlobusKnopf() {
   return html`<button type="button" class=${"sym globus" + (an ? " an" : "")} onClick=${umschalten} aria-pressed=${an}
     aria-label=${an ? "Internet an -- ausschalten" : "Internet aus -- einschalten"}
     title=${an ? "Internet an: vor der Antwort wird geprüft, ob eine Websuche hilft (eigene SearXNG, dauert länger). Klicken zum Ausschalten."
-      : "Internet aus: Talk antwortet nur mit dem, was das Cockpit weiß -- schnell. Klicken zum Einschalten."}><${Icon} n="globus" g=${18} /></button>`;
+      : "Internet aus: Talk antwortet nur mit dem, was das Cockpit weiß -- schnell. Klicken zum Einschalten."}>
+    <svg class="ico" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9"
+      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d=${PFADE.globus} />
+      ${an ? "" : html`<path class="globus-strich" d="M4 4L20 20" />`}</svg></button>`;
 }
 export function tempoSchnell() { try { return localStorage.getItem("antwort-schnell") === "1"; } catch (e) { return false; } }
 export function TempoSchalter() {

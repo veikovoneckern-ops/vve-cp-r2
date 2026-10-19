@@ -1205,7 +1205,12 @@ details.eingetragen[open]>summary{margin-bottom:8px}
 /* Talk: zwei Schalter unter dem Eingabefeld -- Gruendlich, Internet (beide Vorgabe aus) */
 .talk-schalter{display:flex;gap:16px;flex-wrap:wrap}
 .composer-leiste .sym.globus{color:var(--text-3,#8A94A6)}
-.composer-leiste .sym.globus.an{color:var(--steel,#2C6BB3)}
+.composer-leiste .sym.globus.an{color:var(--matrix,#0b8f3e)}
+/* Roter Schraegstrich = aus. Etwas dicker als der Globus, damit er sich von
+   dessen Linien abhebt; im Dunkeln heller, sonst verschwindet er im Grund. */
+.composer-leiste .sym.globus .globus-strich{stroke:#D92D20;stroke-width:2.6}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .composer-leiste .sym.globus .globus-strich{stroke:#FF6B5B}}
+:root[data-theme="dark"] .composer-leiste .sym.globus .globus-strich{stroke:#FF6B5B}
 
 /* Verbrauch (verbrauch.js) */
 .vb-filter{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px}
