@@ -1131,6 +1131,14 @@ def aufgabe_text(aufgabe_id: str | None) -> str:
     # Anhaenge der Aufgabe (Aufgabenfenster, 17.10.2026): wer ueber die Aufgabe
     # spricht, soll auch die Unterlagen kennen, die Veiko dort abgelegt hat.
     platz = 24000
+    # Ergebnisse fuer diese Aufgabe zuerst (19.10.2026): ein Recherche-Dossier ist die
+    # verdichtete Fassung der langen Abschriften daneben -- es gehoert vor sie.
+    for r in db.alle("SELECT r.titel, r.inhalt FROM ergebnisse r JOIN vorgaenge v ON v.id=r.vorgang_id "
+                     "WHERE json_extract(v.auftrag,'$.aufgabe_id')=? ORDER BY r.erstellt DESC LIMIT 3", (aufgabe_id,)):
+        t = (r.get("inhalt") or "").strip()
+        if platz > 0 and t:
+            teile.append(f"ERGEBNIS ZUR AUFGABE „{r['titel']}“:\n" + t[:min(platz, 12000)])
+            platz -= min(len(t), 12000)
     for f in db.alle("SELECT name, text FROM dateien WHERE aufgabe_id=? ORDER BY erstellt", (aufgabe_id,)):
         t = (f.get("text") or "").strip()
         if platz <= 0:

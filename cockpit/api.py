@@ -26,6 +26,18 @@ from .konfig import (ALT_BACKEND, ALT_TOKEN, ALT_COCKPIT_URL, ALT_STATE, SEARX, 
 
 router = APIRouter(prefix="/api")
 
+
+def _fassung() -> str:
+    """Kennung der ausgelieferten Oberflaeche: juengste Aenderung einer Datei unter frontend/."""
+    from .konfig import FRONTEND
+    try:
+        return str(int(max(p.stat().st_mtime for p in FRONTEND.rglob("*") if p.is_file())))
+    except ValueError:
+        return ""
+
+
+FASSUNG = _fassung()
+
 SANDBOX = {"Content-Security-Policy": "sandbox allow-scripts allow-forms allow-popups",
            "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer"}
 
@@ -137,7 +149,7 @@ def kurztitel(e: dict[str, Any]) -> str:
     vt = e.get("vorgang_titel")
     if vt is None and e.get("vorgang_id"):
         vt = (db.holen("vorgaenge", e["vorgang_id"]) or {}).get("titel")
-    if vt and (len(t) > 55 or t.endswith(("…", ")")) and len(t) > 40) and not t.startswith("Video:"):
+    if vt and (len(t) > 55 or t.endswith(("…", ")")) and len(t) > 40) and not t.startswith(("Video:", "Recherche-Dossier:")):
         return f"{FORM_NAME.get(e.get('form'), 'Ergebnis')}: {vt}"
     return t or "Ergebnis"
 
@@ -225,6 +237,9 @@ async def lage():
     entschieden = db.alle("SELECT stand FROM entscheidungen WHERE erledigt>? AND art!='rueckfrage'", (woche,))
     neo_lauf = [{"gespraech_id": j["gespraech_id"], "seit": j["start"]} for j in neo.JOBS.values() if not j["fertig"]]
     return {
+        # Welche Fassung der Oberflaeche der Server ausliefert (19.10.2026): ein offener Tab
+        # zeigte nach einem Update weiter die alte -- die Seite vergleicht und bietet Neu laden an.
+        "fassung": FASSUNG,
         "entscheidungen": ents, "erledigt": erledigt[:12], "ergebnisse": ergebnisse, "laufend": laufend,
         "gesehen": gesehen, "videos": videos,
         "neu": {"ergebnisse": sum(1 for e in ergebnisse if e["bearbeitet"] > gesehen),
@@ -1156,6 +1171,31 @@ async def datei_info(did: str):
             "aufgabe_id": d.get("aufgabe_id"), "aufgabe_titel": (a or {}).get("titel"),
             "vorhanden": Path(d["pfad"]).is_file(), "text": (d.get("text") or "")[:200000],
             "gekuerzt": len(d.get("text") or "") > 200000}
+
+
+# Dieselbe Seitenansicht wie bei Ergebnissen (dokumente.zu_html, Seitenbild wie Word) und
+# Word als Download -- fuer Unterlagen mit lesbarem Text (19.10.2026).
+def _datei_text(did: str) -> tuple[str, str]:
+    d = db.holen("dateien", did)
+    if not d or not (d.get("text") or "").strip():
+        raise HTTPException(404, "Kein lesbarer Text in dieser Unterlage")
+    return re.sub(r"\.(md|txt)$", "", d["name"]), d["text"]
+
+
+@router.get("/dateien/{did}/ansicht")
+async def datei_ansicht(did: str):
+    from . import dokumente
+    titel, text = _datei_text(did)
+    return Response(dokumente.zu_html(titel, text) + ESC_WEITERGEBEN, media_type="text/html; charset=utf-8", headers=SANDBOX)
+
+
+@router.get("/dateien/{did}/word")
+async def datei_word(did: str):
+    from . import dokumente
+    titel, text = _datei_text(did)
+    name = dokumente.dateiname(titel, "docx")
+    return Response(dokumente.zu_docx(titel, text), media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    headers={"Content-Disposition": f"attachment; filename=\"{name}\""})
 
 
 # ================================================================ Explorer (19.10.2026, explorer.py)

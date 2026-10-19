@@ -160,6 +160,8 @@ def rollen_name(rid: str | None) -> str:
         return "Du"
     if rid == "system":
         return "Cockpit"
+    if rid == "recherche":   # Recherche-Dossier (dossier.py): das Cockpit hat Quellen verdichtet
+        return "Recherche"
     r = db.holen("team", rid)
     return r["name"] if r else rid
 
@@ -1252,4 +1254,5 @@ def urteil_klartext(pruefung: Any) -> str:
     u = (pruefung or {}).get("urteil")
     return {"tragfaehig": "geprüft, kann so verwendet werden",
             "nachbessern": "Daniel hat Einwände -- sie lassen sich im Ergebnisfenster einarbeiten",
-            "rueckfrage": "Daniel hat eine Rückfrage an dich"}.get(u, "noch nicht geprüft")
+            "rueckfrage": "Daniel hat eine Rückfrage an dich",
+            "recherche": "Recherche-Dossier aus Quellen, nicht von Daniel geprüft"}.get(u, "noch nicht geprüft")

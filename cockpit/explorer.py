@@ -27,7 +27,7 @@ GRUPPE = {"text": "ergebnis", "aufstellung": "ergebnis", "konzept": "ergebnis", 
           "webseite": "ergebnis", "praesentation": "ergebnis", "video": "ergebnis",
           "dossier": "recherche", "abschrift": "recherche", "unterlage": "unterlage",
           "bild": "bild", "visualisierung": "bild", "notiz": "notiz"}
-ROLLE = {"pmo": "Jason", "cockpit": "Neo", "stratege": "Clayton", "buch": "Neal", "kritiker": "Daniel",
+ROLLE = {"recherche": "Recherche", "pmo": "Jason", "cockpit": "Neo", "stratege": "Clayton", "buch": "Neal", "kritiker": "Daniel",
          "designer": "Annie", "video": "Ridley"}
 
 
@@ -73,7 +73,8 @@ def liste() -> dict[str, Any]:
         aus.append(e)
 
     for r in db.alle("SELECT id, vorgang_id, projekt_id, titel, form, rolle, pruefung, erstellt, length(inhalt) AS laenge FROM ergebnisse"):
-        eintrag(id=r["id"], art="ergebnis", typ=r.get("form") or "text", titel=r.get("titel") or "Ergebnis",
+        # Ein Recherche-Dossier ist ein Ergebnis (dossier._als_ergebnis), steht aber bei den Recherchen.
+        eintrag(id=r["id"], art="ergebnis", typ="dossier" if r.get("rolle") == "recherche" else (r.get("form") or "text"), titel=r.get("titel") or "Ergebnis",
                 projekt_id=r.get("projekt_id"), aufgabe_id=vg_aufgabe.get(r.get("vorgang_id") or ""),
                 wer=ROLLE.get(r.get("rolle") or "", r.get("rolle")), zeit=max(r.get("erstellt") or 0, bearbeitet.get(r["id"]) or 0),
                 erstellt=r.get("erstellt"), groesse=r.get("laenge") or 0, einheit="Zeichen", urteil=_urteil(r.get("pruefung")),

@@ -3,7 +3,11 @@
 // das Dossier aus Talk nicht; der Link fuehrte nur zu einem Download. EIN Fenster
 // (bus "datei-zeigen", gezeigt von app.js) fuer Explorer, Talk, Aufgabe und Projekt.
 // Hier laesst sich auch sagen, wohin die Unterlage gehoert (Projekt, Aufgabe).
-import { html, useState, useEffect, Icon, Md, Modal, toast, fehlerMelden, zeitText, bus, aktualisieren } from "./ui.js";
+//
+// Der Text steht als Seite wie in Word (Veiko: "eher in einer Ansicht wie die Vorschau
+// fuer ein Word-Dokument") -- dieselbe Ansicht wie bei Ergebnissen (/dateien/{id}/ansicht,
+// dokumente.zu_html), abgeschottet im Rahmen; dazu Word als Download.
+import { html, useState, useEffect, Icon, Modal, toast, fehlerMelden, zeitText, bus, aktualisieren } from "./ui.js";
 import { api } from "./api.js";
 
 const groesse = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1).replace(".", ",") + " MB" : b >= 1024 ? Math.round(b / 1024) + " KB" : (b || 0) + " Byte");
@@ -41,23 +45,23 @@ export function DateiFenster({ id, zu }) {
       holen(); aktualisieren(); bus.sende("explorer-neu");
     } catch (e) { fehlerMelden(e); }
   }
-  const md = d && /\.md$/i.test(d.name);
-  return html`<${Modal} titel=${d ? d.name.replace(/\.(md|txt)$/i, "") : "Unterlage"} zu=${zu} breit=${true}
+  const ort = d && (d.aufgabe_titel ? html`Hängt an der Aufgabe <b>${d.aufgabe_titel}</b>${d.projekt_name ? html` im Projekt <b>${d.projekt_name}</b>` : ""}`
+    : d.projekt_name ? html`Gehört zum Projekt <b>${d.projekt_name}</b>` : "Gehört noch zu keinem Projekt");
+  return html`<${Modal} titel=${d ? d.name.replace(/\.(md|txt)$/i, "") : "Unterlage"} zu=${zu} breit="voll"
     fuss=${d && html`<span class="leise klein" style="margin-right:auto">${groesse(d.groesse)} · ${zeitText(d.erstellt)}</span>
       <button class="btn" onClick=${() => { bus.sende("talk-oeffnen", { kontext: { art: "datei", id: d.id, titel: d.name } }); zu(); }}><${Icon} n="talk" g=${14} />Mit Talk besprechen</button>
-      ${d.vorhanden && html`<a class="btn primaer" href=${"/api/dateien/" + d.id} download><${Icon} n="download" g=${14} />Herunterladen</a>`}`}>
+      ${d.text && html`<a class="btn primaer" href=${"/api/dateien/" + d.id + "/word"} download><${Icon} n="download" g=${14} />Word</a>`}
+      ${d.vorhanden && html`<a class="btn" href=${"/api/dateien/" + d.id} download title="Die Datei, wie sie abgelegt ist"><${Icon} n="download" g=${14} />Original</a>`}`}>
     ${fehler && html`<div class="fehlerbox">${fehler}</div>`}
     ${!d && !fehler && html`<div class="lade">Lade …</div>`}
     ${d && html`<div class="datei-fenster">
-      <div class="karte datei-zuordnung">
-        <div class="leise klein" style="margin-bottom:6px">${d.aufgabe_titel ? html`Hängt an der Aufgabe <b>${d.aufgabe_titel}</b>${d.projekt_name ? html` im Projekt <b>${d.projekt_name}</b>` : ""}.`
-          : d.projekt_name ? html`Gehört zum Projekt <b>${d.projekt_name}</b>.` : "Gehört noch zu keinem Projekt."}
-          ${d.aufgabe_id && html` <button class="btn klein geist" onClick=${() => { bus.sende("aufgabe-zeigen", d.aufgabe_id); zu(); }}>Aufgabe öffnen</button>`}</div>
+      <details class="karte datei-zuordnung">
+        <summary class="klein">${ort}<span class="leise"> · ändern</span></summary>
+        ${d.aufgabe_id && html`<button class="btn klein geist" style="margin-top:6px" onClick=${() => { bus.sende("aufgabe-zeigen", d.aufgabe_id); zu(); }}>Aufgabe öffnen</button>`}
         <${ZuordnungWahl} projektId=${d.projekt_id} aufgabeId=${d.aufgabe_id} setzen=${zuordnen} />
-      </div>
-      ${d.text ? html`<div class="datei-text">${md ? html`<${Md} text=${d.text} />` : html`<pre>${d.text}</pre>`}</div>`
-        : html`<p class="leise">Den Inhalt konnte das Cockpit nicht als Text lesen. ${d.vorhanden ? "Herunterladen geht." : "Die Datei liegt nicht mehr auf dem Server."}</p>`}
-      ${d.gekuerzt && html`<p class="leise klein">Gezeigt sind die ersten 200.000 Zeichen; die ganze Datei gibt es per Download.</p>`}
+      </details>
+      ${d.text ? html`<iframe class="datei-seite" src=${"/api/dateien/" + d.id + "/ansicht"} sandbox="allow-scripts allow-popups" title=${d.name}></iframe>`
+        : html`<p class="leise">Den Inhalt konnte das Cockpit nicht als Text lesen. ${d.vorhanden ? "Das Original lässt sich herunterladen." : "Die Datei liegt nicht mehr auf dem Server."}</p>`}
     </div>`}
   <//>`;
 }

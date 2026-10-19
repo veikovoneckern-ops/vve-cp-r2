@@ -215,6 +215,10 @@ function App() {
   const [lage, setLage] = useState(null);
   const [anzeige, setAnzeige] = useState(null);
   const [aufgabe, setAufgabe] = useState(null);
+  // Neue Fassung auf dem Server (19.10.2026): ein offener Tab zeigte nach einem Update
+  // weiter die alte Oberflaeche. Die erste gesehene Fassung gilt; weicht /lage ab, Hinweis.
+  const fassung = useRef(null);
+  const [neueFassung, setNeueFassung] = useState(false);
   const [leiste, leisteSpeichern] = useLeiste(BEREICHE, !!(konto && konto.angemeldet));
 
   const pruefen = () => api("/konto/ich").then(setKonto).catch(() => setKonto({ angemeldet: false, fehler: true }));
@@ -248,7 +252,10 @@ function App() {
   useEffect(() => bus.an("aufgabe-zeigen", (id) => setAufgabe({ id, n: Date.now() })), []);
   useEffect(() => {
     if (!konto || !konto.angemeldet) return;
-    const holen = () => api("/lage").then((d) => { setLage(d); bus.sende("lage", d); }).catch(() => {});
+    const holen = () => api("/lage").then((d) => {
+      setLage(d); bus.sende("lage", d);
+      if (d.fassung) { if (fassung.current == null) fassung.current = d.fassung; else if (d.fassung !== fassung.current) setNeueFassung(true); }
+    }).catch(() => {});
     holen();
     const i = setInterval(() => { if (!document.hidden) holen(); }, 25000);
     const aus = bus.an("aktualisieren", holen);
@@ -331,6 +338,9 @@ function App() {
     ${erfassen && html`<${Erfassen} zu=${() => setErfassen(false)} />`}
     ${aufgabe && html`<${AufgabeFenster} key=${aufgabe.n} id=${aufgabe.id} zu=${() => setAufgabe(null)} />`}
     ${anzeige && anzeige.art === "datei" && html`<${DateiFenster} key=${anzeige.n} id=${anzeige.id} zu=${() => setAnzeige(null)} />`}
+    ${neueFassung && html`<div class="neue-fassung" role="status"><${Icon} n="neu_laden" g=${15} /><span>Das Cockpit wurde aktualisiert.</span>
+      <button class="btn klein primaer" onClick=${() => location.reload()}>Neu laden</button>
+      <button class="btn klein geist icon" onClick=${() => setNeueFassung(false)} aria-label="Später" title="Später"><${Icon} n="x" g=${13} /></button></div>`}
     <${Toasts} />
   </div>`;
 }

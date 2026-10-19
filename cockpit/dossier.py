@@ -217,7 +217,7 @@ async def kanal(url: str, fokus: str, ziel: dict[str, Any], anzahl: int, zusatz:
     name, folgen, gesamt = await asyncio.to_thread(_yt_liste, url)
     folgen = folgen[:anzahl]
     j = _neu("kanal", f"Dossier: {name} ({len(folgen)} Folgen)", len(folgen), ziel, url=url, kanal=name, gesamt=gesamt,
-             minuten=max(2, round(len(folgen) * 1.3)))
+             minuten=max(2, round(len(folgen) * 1.3)), auftrag_text=fokus)
     _offen_setzen(j["id"], {"art": "kanal", "url": url, "fokus": fokus, "zusatz": zusatz, "anzahl": anzahl, "ziel": ziel,
                             "start": time.time(), "titel": j["dossier_titel"]})
     if sperre_bis() > time.time():
@@ -232,7 +232,7 @@ async def podcast_feed(feed: str, fokus: str, ziel: dict[str, Any], anzahl: int,
     folgen = [{"quelle": "podcast", **f} for f in folgen[:anzahl]]
     # Whisper braucht je Folge Minuten statt Sekunden.
     j = _neu("podcast", f"Dossier: {name} ({len(folgen)} Folgen)", len(folgen), ziel, url=feed, kanal=name,
-             gesamt=len(folgen), minuten=max(3, len(folgen) * 6))
+             gesamt=len(folgen), minuten=max(3, len(folgen) * 6), auftrag_text=fokus)
     _offen_setzen(j["id"], {"art": "podcast", "url": feed, "fokus": fokus, "zusatz": zusatz, "anzahl": anzahl, "ziel": ziel,
                             "start": time.time(), "titel": j["dossier_titel"]})
     _TASKS[j["id"]] = asyncio.create_task(llm.mit_zweck("dossier:" + j["id"], _lauf(j, folgen, fokus, zusatz)))
@@ -241,8 +241,8 @@ async def podcast_feed(feed: str, fokus: str, ziel: dict[str, Any], anzahl: int,
 
 async def thema(text: str, ziel: dict[str, Any], quellen: list[dict[str, Any]] | None = None,
                 start: float | None = None) -> dict[str, Any]:
-    titel = stab._kurz(re.sub(r"\s+", " ", text), 70)
-    j = _neu("thema", f"Recherche-Dossier: {titel}", 0, ziel, url="", kanal=titel, gesamt=0, minuten=30)
+    titel = titel_kurz(text)
+    j = _neu("thema", f"Recherche-Dossier: {titel}", 0, ziel, url="", kanal=titel, gesamt=0, minuten=30, auftrag_text=text)
     _offen_setzen(j["id"], {"art": "thema", "text": text, "ziel": ziel, "start": start or time.time(), "titel": j["dossier_titel"],
                             "auswahl": quellen})
     if quellen:   # fortgesetzt: dieselben Quellen wie geplant, nicht neu suchen
@@ -459,16 +459,59 @@ def _datei(name: str, text: str, pid: str | None, aid: str | None) -> str:
     return did
 
 
+# Ein fertiges Dossier ist ein ERGEBNIS (19.10.2026) -- Veiko: "obwohl es ein neues
+# Ergebnis gibt, wird es im Briefing nicht angezeigt. Und wenn ich mir das Ergebnis
+# ansehen will, ist es eine .md-Datei. Das sollte eher in einer Ansicht geoeffnet werden
+# wie die Vorschau fuer ein Word-Dokument." Bis dahin lag es nur als Unterlage (.md) da:
+# kein Briefing, kein Talk ("Neu entstanden"), Download statt Ansicht. Jetzt bekommt es
+# einen eigenen, schon fertigen Case (Herkunft: Veikos Auftrag) und ein Ergebnis der
+# Form "dokument" -- damit gilt alles, was fuer Ergebnisse gebaut ist: Briefing,
+# Dokumentansicht wie Word, Word- und PDF-Download, Weiterarbeiten im Chat, Explorer,
+# Aufgabenfenster (ueber auftrag.aufgabe_id). Rolle "recherche": das Cockpit hat es aus
+# den Quellen verdichtet, Daniel hat es nicht geprueft -- so steht es auch am Ergebnis.
+def _als_ergebnis(j: dict[str, Any], titel: str, text: str, ziel: dict[str, Any], n: int) -> str:
+    pid, aid = ziel.get("projekt_id"), ziel.get("aufgabe_id")
+    v = stab.aus_text(f"Recherche-Auftrag: {j.get('auftrag_text') or j.get('kanal') or titel}", quelle="dossier",
+                      projekt_id=pid, titel=titel[:80])
+    db.ausfuehren("UPDATE vorgaenge SET stand='fertig', einordnung=?, auftrag=?, geaendert=? WHERE id=?",
+                  (f"Recherche-Dossier aus {n} Quellen (Webseiten, Podcasts, Videos), im Hintergrund zusammengestellt.",
+                   json.dumps({"form": "dokument", "rolle": "recherche", "auftrag": j.get("auftrag_text") or titel, "erledigt": True,
+                               "aufgabe_id": aid, "dossier": j["id"]}, ensure_ascii=False), time.time(), v["id"]))
+    eid = db.neue_id("r")
+    db.anlegen("ergebnisse", {
+        "id": eid, "vorgang_id": v["id"], "projekt_id": pid, "titel": titel[:120], "form": "dokument", "inhalt": text,
+        "rolle": "recherche", "modell": "", "quellen": [],
+        "pruefung": {"urteil": "recherche", "begruendung": f"Zusammengefasst aus {n} Quellen; nicht von Daniel geprüft. "
+                     "Die Quellen stehen jeweils über ihrem Abschnitt."},
+        "ansicht": 1, "erstellt": time.time(), "stil": {},
+    }, wer="recherche", vorgang_id=v["id"])
+    db.ereignis(v["id"], "recherche", "ergebnis", text[:600], {"ergebnis_id": eid, "form": "dokument", "urteil": "recherche"})
+    return eid
+
+
+def titel_kurz(text: str) -> str:
+    """Ein lesbarer Titel aus dem Recherche-Thema: bis zum ersten Satzzeichen, sonst an
+    einer Wortgrenze gekuerzt -- vorher brach er mitten im Wort ab ("welche Verla")."""
+    t = re.sub(r"\s+", " ", text or "").strip()
+    m = re.match(r"(.{25,90}?)[,?.:;](\s|$)", t)
+    if m:
+        return m.group(1).strip()
+    if len(t) <= 90:
+        return t
+    return t[:88].rsplit(" ", 1)[0] + " …"
+
+
 def _abschluss(j: dict[str, Any], kurz: list[str]) -> None:
     ziel = j["ziel"]
     titel = re.sub(r"\(\d+ Folgen\)", f"({len(kurz)} Quellen)", j["dossier_titel"]) if j["art"] == "kanal" or j["art"] == "podcast" else j["dossier_titel"]
     j["dossier_titel"] = titel
-    kopf = (f"# {titel}\n\n" + (f"Ausgangspunkt: {j['url']}\n\n" if j.get("url") else "")
+    # Ohne eigene Ueberschrift: die Dokumentansicht (dokumente.zu_html) setzt den Titel darueber.
+    kopf = ((f"Ausgangspunkt: {j['url']}\n\n" if j.get("url") else "")
             + f"{len(kurz)} Quellen ausgewertet" + (f", {j['ohne']} nicht lesbar übersprungen" if j["ohne"] else "")
             + (f" (Lauf {j['stand']})" if j["stand"] != "fertig" else "") + ". Abschriften von Videos und Podcasts liegen als eigene Unterlagen daneben.\n"
             + "".join(f"\n- {n}" for n in j["notizen"]) + "\n\n")
-    did = _datei(titel + ".md", kopf + "\n\n".join(kurz), ziel.get("projekt_id"), ziel.get("aufgabe_id"))
-    j["dossier_id"] = did
+    eid = _als_ergebnis(j, titel, kopf + "\n\n".join(kurz), ziel, len(kurz))
+    j["ergebnis_id"] = eid
     meldung = f"Das Dossier ist da: „{titel}“." + ("".join(" " + n for n in j["notizen"]) if j["notizen"] else "")
     lid = ziel.get("langlauf_id")
     if lid:
@@ -476,7 +519,7 @@ def _abschluss(j: dict[str, Any], kurz: list[str]) -> None:
         l = langlauf.holen(lid)
         if l:
             d = l["daten"]
-            d.setdefault("material", []).append({"art": "datei", "id": did})
+            d.setdefault("material", []).append({"art": "ergebnis", "id": eid})
             d.setdefault("hinweise", []).append({"zeit": time.time(), "von": "Cockpit",
                                                  "text": f"Neues Material: „{titel}“ -- stütze Aussagen über diese Quellen darauf."})
             langlauf._speichern(l)
@@ -486,14 +529,14 @@ def _abschluss(j: dict[str, Any], kurz: list[str]) -> None:
     aufgabe = db.holen("aufgaben", ziel.get("aufgabe_id") or "") if ziel.get("aufgabe_id") else None
     if aufgabe:
         from .langlauf import _aufgabe_vermerken
-        _aufgabe_vermerken(aufgabe["id"], f"„{titel}“ liegt bei den Anhängen ({len(kurz)} Quellen).")
-        meldung += f" Es hängt an deiner Aufgabe „{aufgabe['titel']}“."
+        _aufgabe_vermerken(aufgabe["id"], f"„{titel}“ ist fertig ({len(kurz)} Quellen) -- unter Ergebnisse dieser Aufgabe.")
+        meldung += f" Es hängt an deiner Aufgabe „{aufgabe['titel']}“ und steht im Briefing unter „Neu entstanden“."
     else:
-        meldung += " Du findest es auch unter den Unterlagen" + (" des Projekts." if ziel.get("projekt_id") else " (Anhänge).") + " Und im Explorer."
+        meldung += " Es steht im Briefing unter „Neu entstanden“" + (" und im Projekt." if ziel.get("projekt_id") else ".")
     if ziel.get("gespraech_id") and db.holen("gespraeche", ziel["gespraech_id"]):
         db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",
                       (ziel["gespraech_id"], ziel.get("wer") or "assistent", meldung,
-                       json.dumps({"dossier": j["id"], "datei_id": did, "bezug": {"projekt_id": ziel.get("projekt_id"),
+                       json.dumps({"dossier": j["id"], "ergebnis_id": eid, "bezug": {"projekt_id": ziel.get("projekt_id"),
                                    "aufgabe_id": (aufgabe or {}).get("id"), "aufgabe_titel": (aufgabe or {}).get("titel"),
                                    "projekt_name": (db.holen("projekte", ziel.get("projekt_id") or "") or {}).get("name")}
                                    if ziel.get("projekt_id") else None}, ensure_ascii=False), time.time()))

@@ -251,8 +251,15 @@ def zu_html(titel: str, md: str, eid: str | None = None) -> str:
             roh = folienbilder.vorhanden(eid, str(inhalt)) if eid else None
             teile.append(f"<img class='bild' alt='' src='{folienbilder.daten_uri(roh)}'>" if roh else
                          "<div class='bild-kommt'>Hier entsteht ein Bild – es wird gerade gerechnet.</div>")
+    # Seitenbild wie in Word (19.10.2026, Veiko: "eher in einer Ansicht wie die Vorschau fuer ein
+    # Word-Dokument"): weisse Seite in A4-Breite mit Rand und Schatten auf grauem Grund, Calibri.
+    # Auf dem Telefon faellt der Rand weg -- dort zaehlt jede Spalte Text.
     return ("<!doctype html><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
-            f"<title>{htmlmod.escape(titel)}</title><style>body{{font:16px/1.6 system-ui;max-width:860px;margin:32px auto;padding:0 20px;color:#0B1826}}"
+            f"<title>{htmlmod.escape(titel)}</title><style>html{{background:#E7E9ED}}"
+            "body{font:15.5px/1.62 Calibri,'Segoe UI',Carlito,system-ui,sans-serif;max-width:794px;min-height:1000px;margin:28px auto;"
+            "padding:64px 72px;color:#1B2430;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12),0 8px 28px rgba(0,0,0,.10);box-sizing:border-box}"
+            "h1{font-size:26px;margin:0 0 18px}h2{font-size:20px;margin:28px 0 8px}h3{font-size:16.5px;margin:20px 0 6px}"
+            "@media (max-width:700px){html{background:#fff}body{margin:0;padding:22px 18px;box-shadow:none;min-height:0}}"
             "h1,h2,h3{color:#0F5E68;line-height:1.25}table{border-collapse:collapse;margin:12px 0}td,th{border:1px solid #d8dee6;padding:6px 10px;text-align:left}"
             "th{background:#eef3f4}pre{background:#f4f6f8;padding:12px;border-radius:6px;overflow:auto}"
             ".bild{display:block;width:100%;border-radius:10px;margin:18px 0}"

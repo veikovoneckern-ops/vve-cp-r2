@@ -329,7 +329,7 @@ export function ErgebnisAnsicht({ id, zu, vorlage = "" }) {
   useEffect(() => { if (vorlage) setChatAuf(true); }, []);
   const laden = () => api("/ergebnisse/" + id).then((x) => { setE(x); return x; });
   useEffect(() => {
-    laden().then((x) => { setAnsicht(!!x.ansicht); setWer((w) => w || x.rolle || "buch"); }).catch((x) => { fehlerMelden(x); zu(); });
+    laden().then((x) => { setAnsicht(!!x.ansicht); setWer((w) => w || (x.rolle === "recherche" ? "stratege" : x.rolle) || "buch"); }).catch((x) => { fehlerMelden(x); zu(); });
     api("/team").then(setTeam).catch(() => {});
   }, [id]);
   // Das letzte Gespraech zu diesem Ergebnis mit dieser Person wieder aufnehmen.

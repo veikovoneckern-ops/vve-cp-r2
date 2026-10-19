@@ -132,9 +132,10 @@ def sammeln(gespraeche: dict[str, dict[str, Any]], wer_name) -> dict[str, Any]:
     for y in list(dossier.JOBS.values()):
         z = {"id": "dossier:" + y["id"], "art": "dossier", "titel": y["dossier_titel"], "wer": "Cockpit", "stand": y["stand"],
              "schritt": y["schritt"] + (f" · {y['ohne']} nicht lesbar" if y.get("ohne") else ""), "start": y["start"],
-             "prozent": round(y["fertig"] / y["anzahl"] * 100) if y["anzahl"] else None,
+             # Fertig ist fertig: 17 von 18 Quellen (eine nicht lesbar) zeigte sonst 94 % an einem fertigen Dossier.
+             "prozent": 100 if y["stand"] == "fertig" else round(y["fertig"] / y["anzahl"] * 100) if y["anzahl"] else None,
              "teile": f"{y['fertig']} von {y['anzahl']} Quellen" if y["anzahl"] else None, "fehler": y.get("fehler"),
-             "link": f"/api/dateien/{y['dossier_id']}" if y.get("dossier_id") else None}
+             "ergebnis_id": y.get("ergebnis_id")}
         if y["stand"] == "laeuft":
             z["steuerung"] = ["abbrechen"]
             laufend.append(z)
@@ -223,7 +224,8 @@ def _bezug(z: dict[str, Any]) -> dict[str, Any]:
     if art == "dossier":
         from . import dossier
         zi = (dossier.JOBS.get(ref) or {}).get("ziel") or {}
-        return {"langlauf_id": zi.get("langlauf_id"), "projekt_id": zi.get("projekt_id"), "aufgabe_id": zi.get("aufgabe_id")}
+        return {"langlauf_id": zi.get("langlauf_id"), "projekt_id": zi.get("projekt_id"), "aufgabe_id": zi.get("aufgabe_id"),
+                "ergebnis_id": (dossier.JOBS.get(ref) or {}).get("ergebnis_id")}
     return {}
 
 

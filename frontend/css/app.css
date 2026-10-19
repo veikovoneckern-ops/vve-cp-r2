@@ -1977,3 +1977,12 @@ html.zieht iframe{pointer-events:none}
    genauso hoch -- vorher 36 gegen 40, die Kanten der Filterzeilen sassen versetzt. */
 :where(:has(> .segment))>:is(select.eingabe,input.eingabe){min-height:40px}
 :where(:has(> .segment))>.ex-suche>input.eingabe{min-height:40px}
+/* Hinweis auf eine neue Fassung (app.js): unten mittig, ueber der Telefon-Leiste. */
+.neue-fassung{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:120;display:flex;align-items:center;gap:10px;
+  background:var(--surface);border:1px solid var(--line);box-shadow:var(--sh-3);border-radius:12px;padding:8px 10px 8px 14px;max-width:calc(100vw - 32px);font-size:13.5px}
+@media (max-width:820px){.neue-fassung{bottom:calc(76px + env(safe-area-inset-bottom,0px))}}
+/* Unterlage als Seite wie in Word (datei.js): der Rahmen fuellt das Fenster. */
+.modal.voll .datei-fenster{height:100%}
+.datei-seite{display:block;width:100%;height:calc(100vh - 230px);min-height:420px;border:1px solid var(--line);border-radius:8px;background:#E7E9ED}
+.datei-zuordnung summary{cursor:pointer}
+@media (max-width:820px){.datei-seite{height:70vh}}

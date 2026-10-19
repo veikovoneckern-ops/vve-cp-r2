@@ -140,7 +140,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
   function zuAnzeige(m) {
     const d = m.daten || {};
     return { id: m.id, rolle: m.rolle === "du" ? "du" : "ck", text: m.rolle === "du" ? (d.anzeige ?? m.text) : m.text, vorschlaege: d.vorschlaege || [], medien: d.medien || [],
-      bezug: m.rolle === "du" ? null : d.bezug || null, datei: d.datei_id || null };
+      bezug: m.rolle === "du" ? null : d.bezug || null, datei: d.datei_id || null, ergebnis: d.ergebnis_id || null };
   }
 
   async function senden(text, anhaenge, stimme) {
@@ -410,7 +410,8 @@ export function Talk({ zu, kontext, setKontext, start }) {
             ${m.vorschlaege && m.vorschlaege.filter((v) => !v.erledigt).length > 1 && html`<button class="btn klein" style="margin-top:6px"
               onClick=${() => ausfuehren(m.id, m.vorschlaege.map((v, i) => (v.erledigt ? -1 : i)).filter((i) => i >= 0))}>Alle ausführen</button>`}
             ${(m.medien || []).map((x) => html`<${MedienKarte} key=${x.id} m=${x} />`)}
-            ${m.datei && html`<button class="btn klein primaer" style="margin-top:6px" onClick=${() => bus.sende("datei-zeigen", m.datei)}><${Icon} n="voll" g=${12} />Dossier öffnen</button>`}
+            ${m.ergebnis ? html`<button class="btn klein primaer" style="margin-top:6px" onClick=${() => bus.sende("ergebnis-zeigen", m.ergebnis)}><${Icon} n="voll" g=${12} />Dossier öffnen</button>`
+              : m.datei && html`<button class="btn klein primaer" style="margin-top:6px" onClick=${() => bus.sende("datei-zeigen", m.datei)}><${Icon} n="voll" g=${12} />Dossier öffnen</button>`}
             ${m.bezug && html`<${BezugZeile} b=${m.bezug} />`}
             ${typeof m.id === "number" && html`<button class="btn klein geist" style="margin-top:4px" title="Vorlesen" onClick=${() => vorlesen(m.text).catch((e) => toast(e.message, { fehler: true }))}><${Icon} n="play" g=${12} />Vorlesen</button>`}
           </div>`)}

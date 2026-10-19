@@ -73,6 +73,8 @@ export const URTEIL = {
   tragfaehig: { wort: "Geprüft: in Ordnung", farbe: "gruen", tun: "Daniel hat nichts Wesentliches gefunden. Du kannst das Ergebnis so verwenden." },
   nachbessern: { wort: "Daniel hat Einwände", farbe: "gelb", tun: "Brauchbar, aber Daniel sieht Schwächen. Lies seine Punkte und lass sie einarbeiten, wenn du zustimmst." },
   rueckfrage: { wort: "Rückfrage an dich", farbe: "gelb", tun: "Daniel braucht eine Angabe von dir, bevor es weitergeht." },
+  // Recherche-Dossier (dossier.py, 19.10.2026): aus Quellen verdichtet, nicht von Daniel geprueft.
+  recherche: { wort: "Recherche, ungeprüft", farbe: "blau", tun: "Das Cockpit hat die Quellen zusammengefasst; die Quelle steht über jedem Abschnitt. Daniel hat es nicht geprüft -- wenn du mehr willst, lass im Chat rechts daraus ein Konzept oder einen Vorschlag machen." },
   ungeprueft: { wort: "Noch nicht geprüft", farbe: "", tun: "Die Prüfung ist ausgefallen; das Ergebnis ist ungeprüft." },
 };
 export function einarbeitenText(p) {
