@@ -386,7 +386,7 @@ def gespraeche(wer: str | None = None, ergebnis_id: str | None = None, langlauf_
 
 async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
                  kontext: dict[str, Any], schnell: bool = False,
-                 extern: list[str] | None = None) -> AsyncIterator[dict[str, Any]]:
+                 extern: list[str] | None = None, extern_danach: bool = False) -> AsyncIterator[dict[str, Any]]:
     """extern: Externe, die Veiko in dieser Nachricht dazuholt und fuer die er im
     Fenster die Kosten freigegeben hat. Sie antworten dann SELBST in diesem
     Gespraech, statt dass das Mitglied nur einen Auftrag an sie formuliert --
@@ -473,12 +473,29 @@ async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
 
     sprecher = [x for x in (extern or []) if x in EXTERNE] if not ist_extern(wer) else []
     netz = ("\n\n" + stab.netz_system(quellen)) if quellen else ""
-    if not sprecher:
+    auftrag_extern = ("Erledige Veikos letzte Nachricht selbst und vollständig hier im Gespräch -- nicht als Vorschlag, "
+                      "was jemand anderes tun könnte. Bei einer Korrektur: nenne jede Fundstelle mit Zitat und Verbesserung.")
+    if not sprecher or extern_danach:
         weiter: list[dict[str, str]] = []
+        mitglied = ""
         async for e in _antwort(gid, wer, system, verlauf, kontext, text, quellen, denken):
             if e.get("typ") == "fertig":
                 weiter += e.get("weitergeben") or []
+                mitglied = e.get("text") or ""
             yield e
+    if sprecher and extern_danach:
+        # "... und DANACH gibst du es Demmis zum Pruefen" (19.10.2026): erst arbeitet das
+        # Mitglied, dann prueft der Externe genau diese Arbeit. Vorher antwortete der
+        # Externe sofort und statt Neal. Liefert das Mitglied nichts, wird nichts geprueft.
+        if not mitglied.strip():
+            return
+        verlauf = verlauf + [{"role": "assistant", "content": f"[{wer_name(wer)}]: {mitglied}"},
+                             {"role": "user", "content": f"{wer_name(wer)} ist mit seinem Teil fertig. Prüfe jetzt, wie ich es verlangt habe."}]
+        auftrag_extern = (f"{wer_name(wer).upper()} HAT SEINEN TEIL ERLEDIGT (seine Antwort steht im Verlauf, eine neue Fassung "
+                          "gegebenenfalls oben bei der aktuellen Fassung). Deine Aufgabe ist die Prüfung, die Veiko für danach "
+                          "verlangt hat: beurteile die Arbeit, nenne jede Schwäche mit Zitat und konkreter Verbesserung und sag "
+                          "am Ende klar, ob sie so trägt. Schreib sie nicht selbst neu.")
+    elif not sprecher:
         # Das Team arbeitet selbst weiter, ohne Veiko zu fragen (TEAMARBEIT oben).
         dazu = zusatz + netz + (("\n\n" + ltext) if ltext else "") + \
             ("\n\n" + aufgabe_text(z["aufgabe_id"]) if z.get("aufgabe_id") else "")
@@ -490,8 +507,7 @@ async def senden(gid: str | None, wer: str, text: str, datei_ids: list[str],
         xsys = (system_text(xid, kontext) + "\n\n" + zusatz + netz + (("\n\n" + ltext) if ltext else "") +
                 ("\n\n" + aufgabe_text(z["aufgabe_id"]) if z.get("aufgabe_id") else "") +
                 f"\n\nDICH HAT {wer_name(wer).upper()} AUS VEIKOS TEAM AUF VEIKOS WUNSCH IN DIESES GESPRÄCH GEHOLT. "
-                "Erledige Veikos letzte Nachricht selbst und vollständig hier im Gespräch -- nicht als Vorschlag, "
-                "was jemand anderes tun könnte. Bei einer Korrektur: nenne jede Fundstelle mit Zitat und Verbesserung.")
+                + auftrag_extern)
         async for e in _antwort(gid, xid, xsys, verlauf, kontext, text, quellen, denken):
             yield e
 

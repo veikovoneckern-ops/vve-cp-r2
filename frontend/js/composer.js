@@ -51,7 +51,20 @@ export function Composer({ platzhalter = "Schreib oder sprich …", beimSenden, 
 
   async function senden() {
     if (!kannSenden) return;
-    const t = text.trim();
+    // Absenden beendet ein laufendes Diktat (19.10.2026, Veiko: "das Absenden beendet die
+    // Diktierfunktion offensichtlich nicht" -- das Mikrofon hoerte weiter, und was danach
+    // erkannt wurde, schrieb den gesendeten Text wieder ins Feld). Der gerade noch
+    // vorlaeufig erkannte Satz geht mit; was danach kommt, wird verworfen.
+    let roh = text;
+    if (aufnahmeRef.current) {
+      const a = aufnahmeRef.current;
+      aufnahmeRef.current = null;
+      if (vorlaeufig) roh = text + (text && !text.endsWith(" ") ? " " : "") + vorlaeufig;
+      try { a.ctl.abbrechen(); } catch (e) { /* egal */ }
+      setAufnahme(null); setVorlaeufig("");
+      mikroFreigeben(mikroId.current);
+    }
+    const t = roh.trim();
     const ids = bereit.map((a) => a.server);
     // SOFORT leeren, nicht erst nach der Antwort: Board und Talk streamen 20-30 s,
     // und so lange sah es aus, als haette Enter nichts getan (Veiko, 01.10.).

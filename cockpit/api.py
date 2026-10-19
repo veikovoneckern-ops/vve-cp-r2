@@ -1025,7 +1025,8 @@ async def teamchat_senden(request: Request):
     # Fenster die Kosten freigegeben hat. Ohne diese Liste ruft der Server keinen an.
     extern = [str(x) for x in (d.get("extern") or []) if str(x) in teamchat.EXTERNE][:3]
     return _im_hintergrund(teamchat.senden(d.get("gespraech_id"), wer, text or "(siehe Anhang)", dateien, kontext,
-                                           schnell=bool(d.get("schnell")), extern=extern), "team", wer)
+                                           schnell=bool(d.get("schnell")), extern=extern,
+                                           extern_danach=bool(d.get("extern_danach"))), "team", wer)
 
 
 @router.get("/team/{rid}")
@@ -1949,7 +1950,7 @@ async def langlauf_anlegen(request: Request):
     try:
         return langlauf.anlegen(str(d.get("titel") or ""), str(d.get("auftrag") or ""), str(d.get("art") or "buch"),
                                 d.get("projekt_id") or None, str(d.get("pruefer") or "dario"),
-                                int(d.get("pruef_alle") or 3), float(d.get("budget") or 0), d.get("rolle"), d.get("aufgabe_id") or None,
+                                (3 if d.get("pruef_alle") in (None, "") else int(d.get("pruef_alle"))), float(d.get("budget") or 0), d.get("rolle"), d.get("aufgabe_id") or None,
                                 d.get("material"))
     except (TypeError, ValueError) as e:
         raise HTTPException(400, str(e))

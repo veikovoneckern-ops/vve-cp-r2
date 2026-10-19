@@ -51,7 +51,7 @@ function Neu({ zu, fertig, d, vorlage }) {
   const [wahl, setWahl] = useState(new Set());
   const [vs, setVs] = useState(null);   // Vorschlag: null | {laeuft} | {begruendung, modell} | {fehler}
   // Was Veiko selbst getippt/gewaehlt hat, ueberschreibt kein Vorschlag.
-  const angefasst = useRef(new Set());
+  const angefasst = useRef(new Set((vorlage && vorlage.fest) || []));
   const vsNr = useRef(0);
   useEffect(() => { api("/projekte").then((x) => setProjekte(x.projekte || [])).catch(() => {}); }, []);
   const s = (k) => (e) => { const v = e.target.value; angefasst.current.add(k); setF((x) => ({ ...x, [k]: v })); };
@@ -80,6 +80,8 @@ function Neu({ zu, fertig, d, vorlage }) {
         if (weg) return;
         const b = x.bestand || [];
         const vor = new Set(b.filter((m) => m.vorgewaehlt).map(schluessel));
+        // Aus dem Gespraech an einem Ergebnis gestartet: dieses Ergebnis ist die Grundlage.
+        if (vorlage && vorlage.ergebnis_id && b.some((m) => m.art === "ergebnis" && m.id === vorlage.ergebnis_id)) vor.add("ergebnis:" + vorlage.ergebnis_id);
         setBestand(b); setWahl(vor);
         if (ersterVorschlag.current) { ersterVorschlag.current = false; vorschlagHolen(b.filter((m) => vor.has(schluessel(m))).map((m) => ({ art: m.art, id: m.id }))); }
       })
@@ -113,11 +115,13 @@ function Neu({ zu, fertig, d, vorlage }) {
         <select class="eingabe" value=${f.projekt_id} onChange=${s("projekt_id")}>
           <option value="">— ohne Projekt —</option>
           ${projekte.filter((p) => p.status !== "archiviert").map((p) => html`<option value=${p.id}>${p.name}</option>`)}</select></label>
-      <label>Zwischenprüfung durch
+      <label>Prüfung durch
         <select class="eingabe" value=${f.pruefer} onChange=${s("pruefer")}>
           ${Object.entries(PRUEFER).map(([k, n]) => html`<option value=${k}>${n}</option>`)}</select></label>
-      <label>Prüfen nach je … ${(d.arten[f.art] || {}).mehrzahl || "Etappen"}
-        <input class="eingabe" type="number" min="1" max="10" value=${f.pruef_alle} onInput=${s("pruef_alle")} /></label>
+      <label>Wann prüfen?
+        <select class="eingabe" value=${String(f.pruef_alle)} onChange=${s("pruef_alle")}>
+          <option value="0">nur am Ende, wenn alles fertig ist</option>
+          ${[1, 2, 3, 4, 5, 6, 8, 10].map((n) => html`<option value=${n}>nach je ${n} ${n === 1 ? (d.arten[f.art] || {}).etappe || "Etappe" : (d.arten[f.art] || {}).mehrzahl || "Etappen"}</option>`)}</select></label>
       <label>Budget für die Prüfungen (US-$)
         <input class="eingabe" type="number" min="0" step="0.5" value=${f.budget} onInput=${s("budget")} /></label>
     </div>
@@ -223,7 +227,7 @@ function Detail({ id, neuLaden }) {
       <div class="ll-zahlen">
         <span><b>${l.fertig} von ${l.etappen || "?"}</b> ${l.etappen_name}</span>
         <span>schreibt <b>${l.rolle_name}</b></span>
-        <span>prüft <b>${PRUEFER[l.pruefer] || l.pruefer}</b> nach je ${l.pruef_alle} ${l.pruef_alle == 1 ? l.etappe_name : l.etappen_name}</span>
+        <span>prüft <b>${PRUEFER[l.pruefer] || l.pruefer}</b> ${l.pruef_alle == 0 ? "am Ende das fertige Werk" : "nach je " + l.pruef_alle + " " + (l.pruef_alle == 1 ? l.etappe_name : l.etappen_name)}</span>
         <span><b>${usd(l.kosten)}</b> von ${usd(l.budget)}
           ${budget === null ? html`<button class="btn klein geist" onClick=${() => setBudget(l.budget)}>Budget ändern</button>`
             : html`<span class="ll-budget"><input class="eingabe" type="number" min="0" step="0.5" value=${budget} onInput=${(e) => setBudget(e.target.value)} />

@@ -148,17 +148,23 @@ def anlegen(titel: str, auftrag: str, art: str, projekt_id: str | None, pruefer:
                                # suchen sie dort -- in den LongRun-Daten allein fanden sie sie nicht.
                                "aufgabe_id": aufgabe_id}, ensure_ascii=False),
                    "LongRun -- arbeitet in Etappen, mit Zwischenprüfung", vid))
+    # 0 = Pruefung NUR am Ende (19.10.2026, Veiko: "wenn das Buch komplett geschrieben ist, dann gibst
+    # du es an Demis zum Ueberpruefen" -- vorher pruefte der Externe zwingend alle 1 bis 10 Etappen).
+    try:
+        pa = max(0, min(10, int(pruef_alle)))
+    except (TypeError, ValueError):
+        pa = 3
     lid = db.neue_id("l")
     db.einfuegen("langlaeufe", {
         "id": lid, "vorgang_id": vid, "projekt_id": projekt_id, "titel": titel, "art": art, "stand": "plant",
         "budget": max(0.0, float(budget or 0)), "erstellt": time.time(), "geaendert": time.time(),
-        "daten": {"auftrag": auftrag, "rolle": rolle, "pruefer": pruefer, "pruef_alle": max(1, min(10, int(pruef_alle or 3))), "aufgabe_id": aufgabe_id,
+        "daten": {"auftrag": auftrag, "rolle": rolle, "pruefer": pruefer, "pruef_alle": pa, "aufgabe_id": aufgabe_id,
                   "material": material,
                   "etappen": [], "hinweise": [], "pruefungen": [], "kosten": 0.0, "fehlversuche": 0}})
     namen = [s[0] for s in (_material_stueck(m) for m in material) if s]
     db.ereignis(vid, "du", "auftrag",
-                f"LongRun gestartet: {ARTEN[art]['name']}, {stab.rollen_name(rolle)} arbeitet, "
-                f"{'Dario' if pruefer == 'dario' else 'Demmis'} prüft nach je {pruef_alle} {ARTEN[art]['mehrzahl']}, "
+                f"LongRun gestartet: {ARTEN[art]['name']}, {stab.rollen_name(rolle)} arbeitet, " +
+                (f"{'Dario' if pruefer == 'dario' else 'Demmis'} prüft am Ende das fertige Werk, " if pa == 0 else f"{'Dario' if pruefer == 'dario' else 'Demmis'} prüft nach je {pa} {ARTEN[art]['mehrzahl']}, ") +
                 f"Budget $ {float(budget or 0):.2f}."
                 + (f"\nBaut auf: " + "; ".join(namen) if namen else ""))
     _aufgabe_vermerken(aufgabe_id, f"Läuft als Langläufer „{titel}“ ({ARTEN[art]['name']}) -- Fortschritt auf der Seite Langläufer.")
@@ -726,7 +732,8 @@ async def schritt(l: dict[str, Any]) -> None:
     neu_seit = [e for e in fertig if e["nr"] > geprueft_bis]
     # Ist das Budget erschoepft (extern_aus), wird nicht mehr geprueft, bis Veiko
     # es erhoeht -- dann holt die naechste Pruefung alles seit der letzten nach.
-    if neu_seit and (len(neu_seit) >= d.get("pruef_alle", 3) or not offen) and not d.get("extern_aus"):
+    pa = d.get("pruef_alle", 3)
+    if neu_seit and ((pa and len(neu_seit) >= pa) or not offen) and not d.get("extern_aus"):
         await _extern_pruefen(l, neu_seit, schluss=not offen)
         return
     if offen:

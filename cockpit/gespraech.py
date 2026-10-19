@@ -153,7 +153,7 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"notiz","text":"…","projekt_id":"p… oder null"}
 - {"aktion":"projekt_neu","name":"…"}
 - {"aktion":"neo","auftrag":"was Neo am Cockpit oder Server tun soll"} -- NUR für Programm und Server des Cockpits, NIE für Inhalte (Projekte, Aufgaben, Ergebnisse, Notizen).
-- {"aktion":"langlauf","titel":"kurzer Titel","auftrag":"was in Etappen entstehen soll, in mehreren Sätzen, mit allem, was Veiko dazu gesagt hat","art":"buch|dokument|video","projekt_id":"p… oder null","aufgabe_id":"t… oder null","pruefer":"dario|demmis","budget":5} -- ein LongRun: ein großes Vorhaben (ein ganzes Buch, ein langes Dokument, ein langes Video), das in Etappen entsteht und zwischendurch von Dario (Claude) oder Demmis (Gemini) geprüft wird. Sagt Veiko „Long Run“, „in Etappen“, „durchgängig und tief“ oder geht es um ein ganzes Buch: IMMER langlauf, nie ausarbeiten. Nennt er Demmis/Gemini, ist pruefer demmis, sonst dario. Vorhandene Ergebnisse und Unterlagen des Projekts nimmt das Cockpit selbst dazu. Die Prüfungen kosten Geld: nenne das Budget (Vorgabe 5 Dollar) und frag immer „Soll ich das so machen?“.
+- {"aktion":"langlauf","titel":"kurzer Titel","auftrag":"was in Etappen entstehen soll, in mehreren Sätzen, mit allem, was Veiko dazu gesagt hat","art":"buch|dokument|video","projekt_id":"p… oder null","aufgabe_id":"t… oder null","pruefer":"dario|demmis","pruef_alle":3,"budget":5} -- ein LongRun: ein großes Vorhaben (ein ganzes Buch, ein langes Dokument, ein langes Video), das in Etappen entsteht und zwischendurch von Dario (Claude) oder Demmis (Gemini) geprüft wird. Sagt Veiko „Long Run“, „in Etappen“, „durchgängig und tief“ oder geht es um ein ganzes Buch: IMMER langlauf, nie ausarbeiten. Nennt er Demmis/Gemini, ist pruefer demmis, sonst dario. pruef_alle: nach wie vielen Kapiteln/Teilen geprüft wird; 0 = NUR AM ENDE, wenn alles fertig ist -- immer dann, wenn Veiko „danach“, „am Ende“, „wenn es fertig ist“ oder „wenn du fertig bist“ sagt. Vorhandene Ergebnisse und Unterlagen des Projekts nimmt das Cockpit selbst dazu. Die Prüfungen kosten Geld: nenne das Budget (Vorgabe 5 Dollar) und frag immer „Soll ich das so machen?“.
 - {"aktion":"pruefen","ergebnis_id":"r… aus LAGE/KONTEXT","titel":"Titel des Ergebnisses"} -- Daniel (Red Team) prüft ein VORHANDENES Ergebnis, z. B. ein Recherche-Dossier („ungeprüft“). „Lass Daniel das prüfen“ ist IMMER pruefen, NIE ausarbeiten -- eine Ausarbeitung macht etwas Neues, und sie macht nie Daniel.
 - {"aktion":"ersetzen","projekt_id":"p…","alt":"genauer bisheriger Begriff, z. B. OODA-Loop","neu":"neuer Begriff"} -- ersetzt einen Begriff in einem Projekt überall (Projektname und Ziel, Aufgaben, Ergebnisse, Cases). Für „benenne … um“, „korrigiere die Bezeichnung … durchgängig“. Braucht Veikos Ja.
 - {"aktion":"brainstrom","thema":"die Idee in ein, zwei Sätzen","projekt_id":"p… oder null"} -- startet BrainStrom (eine Idee Frage für Frage zuspitzen) und öffnet die Ansicht. Läuft sofort.
@@ -794,12 +794,17 @@ def beschriften(a: dict[str, Any]) -> str | None:
             a["budget"] = max(0.0, min(50.0, float(a.get("budget") or 5)))
         except (TypeError, ValueError):
             a["budget"] = 5.0
+        try:
+            a["pruef_alle"] = max(0, min(10, int(a.get("pruef_alle"))))
+        except (TypeError, ValueError):
+            a["pruef_alle"] = 3
         if len(str(a["auftrag"]).strip()) < 20:
             return None
         p = db.holen("projekte", str(a.get("projekt_id") or "")) if a.get("projekt_id") else None
         titel = str(a.get("titel") or a["auftrag"])[:70]
+        wann = "am Ende" if a["pruef_alle"] == 0 else f"alle {a['pruef_alle']}"
         return (f"LongRun starten: „{titel}“ ({langlauf.ARTEN[a['art']]['name']}{', ' + p['name'] if p else ''}; "
-                f"prüft {'Demmis' if a['pruefer'] == 'demmis' else 'Dario'}, Budget {a['budget']:.0f} $)")
+                f"prüft {'Demmis' if a['pruefer'] == 'demmis' else 'Dario'} {wann}, Budget {a['budget']:.0f} $)")
     if art in ("entscheiden", "antworten"):
         e = db.holen("entscheidungen", a["entscheidung_id"])
         if not e or e["stand"] != "offen":
@@ -967,7 +972,7 @@ async def ausfuehren(a: dict[str, Any]) -> dict[str, Any]:
                     if m.get("vorgewaehlt")]
         try:
             l = langlauf.anlegen(str(a.get("titel") or ""), str(a["auftrag"]), a.get("art") or "buch", a.get("projekt_id"),
-                                 a.get("pruefer") or "dario", 3, float(a.get("budget") or 5), None, a.get("aufgabe_id"), material)
+                                 a.get("pruefer") or "dario", a.get("pruef_alle", 3), float(a.get("budget") or 5), None, a.get("aufgabe_id"), material)
         except ValueError as f:
             return {"ok": False, "grund": str(f)}
         return {"ok": True, "langlauf_id": l.get("id"), "titel": l.get("titel"), "material": len(material)}

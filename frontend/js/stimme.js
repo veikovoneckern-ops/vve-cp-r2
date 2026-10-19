@@ -116,7 +116,10 @@ export async function diktieren({ beiText, pegel } = {}) {
   let kette = Promise.resolve();                 // feste Stuecke der Reihe nach
   let seg = null;                                // { rec, teile, nr, gesprochen, start, stille }
   let nr = 0, zwischenLaeuft = false;
-  const melden = () => beiText && beiText(final, vorlaeufig);
+  // Nach abbrechen() meldet nichts mehr -- Stuecke, die noch beim Erkennen sind, schrieben
+  // sonst den Text in ein Feld zurueck, das gerade gesendet und geleert wurde (19.10.2026).
+  let verworfen = false;
+  const melden = () => !verworfen && beiText && beiText(final, vorlaeufig);
   const anhaengen = (t) => { t = (t || "").trim(); if (t) final = final ? final + " " + t : t; };
 
   function neuesStueck() {
@@ -186,7 +189,7 @@ export async function diktieren({ beiText, pegel } = {}) {
       return final;
     },
     abbrechen() {
-      aus = true; clearInterval(takt); clearInterval(zwischen);
+      aus = true; verworfen = true; clearInterval(takt); clearInterval(zwischen);
       if (seg && seg.rec.state === "recording") { seg.teile.length = 0; seg.gesprochen = false; seg.rec.stop(); }
       strom.getTracks().forEach((x) => x.stop());
       if (ctx) ctx.close().catch(() => {});
