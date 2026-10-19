@@ -323,6 +323,13 @@ function Projekt({ id, reiter }) {
   const langlaeufe = d.langlaeufe || [];
   const gespraeche = d.gespraeche || [];
   const auftraege = d.auftraege || [];
+  // Eine Liste, das zuletzt Bewegte oben (19.10.2026, Veiko: "es muessen immer die zuletzt
+  // entstandenen Dinge oben stehen") -- vorher drei Bloecke nacheinander, LongRuns immer zuerst.
+  const arbeitListe = [...langlaeufe.map((x) => ({ typ: "langlauf", x, zeit: x.geaendert || x.erstellt })),
+    ...auftraege.map((x) => ({ typ: "auftrag", x, zeit: x.geaendert })),
+    ...gespraeche.map((x) => ({ typ: "gespraech", x, zeit: x.geaendert }))].sort((a, b) => (b.zeit || 0) - (a.zeit || 0));
+  const arbeitAlle = arbeitListe.length;
+  const arbeit = arbeitListe.slice(0, 15);
   const bezug = (t) => ({ langlauf: langlaeufe.find((l) => l.aufgabe_id === t.id && l.stand !== "abgebrochen"),
     gespraeche: gespraeche.filter((g) => g.aufgabe_id === t.id).length });
 
@@ -378,18 +385,20 @@ function Projekt({ id, reiter }) {
       <div>
         ${(langlaeufe.length > 0 || auftraege.length > 0 || gespraeche.length > 0) && html`<section class="karte">
           <div class="karte-kopf"><h3>Arbeit und Gespräche</h3><span class="leise klein">LongRuns, Ausarbeitungen des Teams und Gespräche zu diesem Projekt</span></div>
-          ${langlaeufe.map((l) => html`<div class="zeile" key=${l.id}><${Icon} n="langlauf" g=${15} />
+          ${arbeit.map(({ typ, x: l }) => typ === "langlauf" ? html`<div class="zeile" key=${l.id}><${Icon} n="langlauf" g=${15} />
             <div class="haupt-text"><a href=${"#/langlauf/" + l.id} style="color:inherit"><b>${l.titel}</b></a>
-              <div class="leise klein">${l.art_name} · ${l.fertig} von ${l.etappen || "?"} ${l.etappen_name}${l.aufgabe_id ? " · zu einer Aufgabe" : ""}</div></div>
-            <span class=${"pill" + (l.stand === "fertig" ? " gruen" : l.stand === "wartet" ? " gelb" : l.stand === "laeuft" || l.stand === "plant" ? " lila" : "")}>${{ plant: "plant", laeuft: "läuft", wartet: "wartet auf dich", pausiert: "pausiert", fehler: "hängt", fertig: "fertig", abgebrochen: "abgebrochen" }[l.stand] || l.stand}</span></div>`)}
-          ${auftraege.slice(0, 8).map((v) => html`<div class="zeile" key=${v.id}><${Icon} n="stift" g=${15} />
-            <div class="haupt-text"><a href=${"#/inbox/" + v.id} style="color:inherit" onClick=${(ev) => { if (v.ergebnis_id) { ev.preventDefault(); bus.sende("ergebnis-zeigen", v.ergebnis_id); } }}><b>${v.titel}</b></a>
-              <div class="leise klein">${v.rolle === "recherche" ? "Recherche-Dossier" : "Ausarbeitung" + (v.wer_name ? " von " + v.wer_name : "")}${v.aufgabe_titel ? " · Aufgabe: " + v.aufgabe_titel : ""}${v.ergebnis_id ? " · Ergebnis liegt vor" : ""}</div></div>
-            <${StandPill} stand=${v.stand} /></div>`)}
-          ${gespraeche.slice(0, 12).map((g) => html`<div class="zeile" key=${g.id}><${Icon} n="chat" g=${15} />
-            <div class="haupt-text"><a href="#" style="color:inherit" onClick=${(e) => { e.preventDefault(); gespraechOeffnen(g, bus); }}><b>${g.titel}</b></a>
-              <div class="leise klein">${GESPRAECH_ART[g.art] || g.art}${g.wer_name ? " mit " + g.wer_name : ""}${g.aufgabe_titel ? " · Aufgabe: " + g.aufgabe_titel : ""} · ${g.anzahl} Nachrichten</div></div>
-            <span class="neben">${zeitText(g.geaendert)}</span></div>`)}
+              <div class="leise klein">LongRun · ${l.art_name} · ${l.fertig} von ${l.etappen || "?"} ${l.etappen_name}${l.aufgabe_id ? " · zu einer Aufgabe" : ""}</div></div>
+            <span class=${"pill" + (l.stand === "fertig" ? " gruen" : l.stand === "wartet" ? " gelb" : l.stand === "laeuft" || l.stand === "plant" ? " lila" : "")}>${{ plant: "plant", laeuft: "läuft", wartet: "wartet auf dich", pausiert: "pausiert", fehler: "hängt", fertig: "fertig", abgebrochen: "abgebrochen" }[l.stand] || l.stand}</span>
+            <span class="neben">${zeitText(l.geaendert || l.erstellt)}</span></div>`
+          : typ === "auftrag" ? html`<div class="zeile" key=${l.id}><${Icon} n="stift" g=${15} />
+            <div class="haupt-text"><a href=${"#/inbox/" + l.id} style="color:inherit" onClick=${(ev) => { if (l.ergebnis_id) { ev.preventDefault(); bus.sende("ergebnis-zeigen", l.ergebnis_id); } }}><b>${l.titel}</b></a>
+              <div class="leise klein">${l.rolle === "recherche" ? "Recherche-Dossier" : "Ausarbeitung" + (l.wer_name ? " von " + l.wer_name : "")}${l.aufgabe_titel ? " · Aufgabe: " + l.aufgabe_titel : ""}${l.ergebnis_id ? " · Ergebnis liegt vor" : ""}</div></div>
+            <${StandPill} stand=${l.stand} /><span class="neben">${zeitText(l.geaendert)}</span></div>`
+          : html`<div class="zeile" key=${l.id}><${Icon} n="chat" g=${15} />
+            <div class="haupt-text"><a href="#" style="color:inherit" onClick=${(e) => { e.preventDefault(); gespraechOeffnen(l, bus); }}><b>${l.titel}</b></a>
+              <div class="leise klein">${GESPRAECH_ART[l.art] || l.art}${l.wer_name ? " mit " + l.wer_name : ""}${l.aufgabe_titel ? " · Aufgabe: " + l.aufgabe_titel : ""} · ${l.anzahl} Nachrichten</div></div>
+            <span class="neben">${zeitText(l.geaendert)}</span></div>`)}
+          ${arbeitAlle > arbeit.length && html`<div class="leise klein" style="padding:6px 0">Die ${arbeit.length} jüngsten von ${arbeitAlle}. Ältere stehen unter Ergebnisse und Verlauf.</div>`}
         </section>`}
         <${UnterlagenKarte} projektId=${id} name=${p.name} nachher=${laden} />
         <section class="karte"><div class="karte-kopf"><h3>Ziel</h3></div>
