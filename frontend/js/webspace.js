@@ -480,7 +480,7 @@ function VeroeffentlichenDialog({ stand, zu, oeffnen, fertig, verworfen }) {
         : html`<button class="btn geist" onClick=${() => setVerwerfenFrage(true)}>Alles verwerfen</button>`}
       <span class="luecke"></span><button class="btn geist" onClick=${schliessen}>Abbrechen</button>
       <button class="btn primaer" disabled=${laeuft || !daten} onClick=${los}><${Icon} n="globus" g=${15} />${laeuft ? "Wird veröffentlicht …" : fehlerAnzahl ? "Trotzdem veröffentlichen" : "Jetzt veröffentlichen"}</button>`
-      : html`<span class="luecke"></span><button class="btn" onClick=${zu}>Schließen</button>`}>
+      : html`<span class="luecke"></span><button class="btn" onClick=${schliessen}>Schließen</button>`}>
     ${!daten ? html`<p class="leise">Änderungen werden zusammengestellt …</p>` : !aend.length ? html`<p>Alles ist veröffentlicht. Es gibt nichts Neues.</p>` : html`
       <p class="leise">Danach ist es für alle auf <b>veikovoneckern.org</b> zu sehen (etwa eine Minute später). Jede Veröffentlichung lässt sich später im Verlauf der Seite zurückholen.</p>
       ${warn && warn.length > 0 && html`<div class=${"wpd-warn" + (fehlerAnzahl ? " rot" : "")}>

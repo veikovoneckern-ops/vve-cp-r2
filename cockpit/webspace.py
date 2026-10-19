@@ -531,7 +531,7 @@ async def externe():
     ein = int((len(EXTERN_PRUEFEN) + len(stoff)) / 3.5)
     aus = []
     for x in await teamchat.externe_liste():
-        modell = x.get("modell") or x.get("vorgabe")
+        modell = await teamchat._extern_modell(x["id"])  # dasselbe Modell, das die Prüfung danach nimmt
         anbieter = teamchat.EXTERNE[x["id"]]["anbieter"]
         aus.append({"id": x["id"], "name": x["name"], "titel": x["titel"], "schluessel": x.get("schluessel"),
                     "modell": modell, "kosten": round(langlauf._usd(anbieter, ein, EXTERN_AUS_TOKEN), 3)})
