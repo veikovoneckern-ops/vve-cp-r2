@@ -437,9 +437,17 @@ async def projekte(alle: int = 0):
            "(SELECT COUNT(*) FROM aufgaben a WHERE a.projekt_id=p.id AND a.status='erledigt') AS erledigt, "
            "(SELECT COUNT(*) FROM notizen n WHERE n.projekt_id=p.id) AS notizen, "
            "(SELECT COUNT(*) FROM ergebnisse r WHERE r.projekt_id=p.id) AS ergebnisse, "
-           "(SELECT MAX(geaendert) FROM vorgaenge v WHERE v.projekt_id=p.id) AS bewegung "
+           "(SELECT MAX(geaendert) FROM vorgaenge v WHERE v.projekt_id=p.id) AS bewegung, "
+           # Etwas mehr Stand auf der Kachel (19.10.2026): naechste Faelligkeit, Ueberfaelliges, ob gerade gearbeitet wird.
+           "(SELECT a.faellig || '|' || a.titel FROM aufgaben a WHERE a.projekt_id=p.id AND a.status!='erledigt' AND a.archiviert=0 "
+           " AND COALESCE(a.faellig,'')!='' ORDER BY a.faellig LIMIT 1) AS naechste, "
+           "(SELECT COUNT(*) FROM aufgaben a WHERE a.projekt_id=p.id AND a.status!='erledigt' AND a.archiviert=0 "
+           " AND COALESCE(a.faellig,'')!='' AND a.faellig < date('now','localtime')) AS ueberfaellig, "
+           "(SELECT COUNT(*) FROM vorgaenge v WHERE v.projekt_id=p.id AND v.stand IN ('eingeordnet','in_arbeit','pruefung')) "
+           " + (SELECT COUNT(*) FROM langlaeufe l WHERE l.projekt_id=p.id AND l.stand NOT IN ('fertig','abgebrochen','angehalten')) AS laeuft "
            "FROM projekte p" + ("" if alle else " WHERE p.status!='archiviert'") + " ORDER BY p.sortierung, p.name")
-    return {"projekte": db.alle(sql)}
+    return {"projekte": db.alle(sql),
+            "kategorien": [z["kategorie"] for z in db.alle("SELECT DISTINCT kategorie FROM projekte WHERE COALESCE(kategorie,'')!='' ORDER BY kategorie")]}
 
 
 @router.post("/projekte")
@@ -449,7 +457,7 @@ async def projekt_neu(request: Request):
     pid = db.neue_id("p")
     db.anlegen("projekte", {"id": pid, "name": d["name"].strip()[:80], "farbe": d.get("farbe") or "#2C6BB3",
                             "status": "aktiv", "start": time.strftime("%Y-%m-%d"), "ziel": d.get("ziel") or "",
-                            "eltern_id": d.get("eltern_id"), "fruehere_namen": [],
+                            "eltern_id": d.get("eltern_id"), "fruehere_namen": [], "kategorie": str(d.get("kategorie") or "").strip()[:40],
                             "sortierung": int(db.wert("SELECT COALESCE(MAX(sortierung),0)+1 FROM projekte") or 0),
                             "erstellt": time.time(), "geaendert": time.time()})
     return db.holen("projekte", pid)
@@ -461,7 +469,11 @@ async def projekt_aendern(pid: str, request: Request):
     p = db.holen("projekte", pid)
     if not p:
         raise HTTPException(404, "Projekt nicht gefunden")
-    erlaubt = {k: d[k] for k in ("name", "farbe", "status", "ziel", "ende", "eltern_id", "leitung", "sortierung") if k in d}
+    erlaubt = {k: d[k] for k in ("name", "farbe", "status", "ziel", "ende", "eltern_id", "leitung", "sortierung", "kategorie") if k in d}
+    if "kategorie" in erlaubt:
+        erlaubt["kategorie"] = str(erlaubt["kategorie"] or "").strip()[:40]
+    if "farbe" in erlaubt and not re.fullmatch(r"#[0-9A-Fa-f]{6}", str(erlaubt["farbe"] or "")):
+        raise HTTPException(400, "Farbe als #RRGGBB.")
     if "name" in erlaubt and erlaubt["name"] != p["name"]:
         # Alter Name wird gemerkt -- Jason findet das Projekt auch unter dem alten Namen
         # (Veiko benannte EVE in BVE um: "dadurch darf nichts kaputtgehen").

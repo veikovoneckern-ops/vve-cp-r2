@@ -44,9 +44,86 @@ function Uebersicht({ art }) {
 function ProjektListe() {
   const [alle, setAlle] = useState(false);
   const [q, setQ] = useState("");
+  // Kategorie-Filter (19.10.2026) -- je Geraet gemerkt, "" = alle, "_ohne" = ohne Kategorie.
+  const [kat, setKat] = useState(() => { try { return localStorage.getItem("proj-kat") || ""; } catch (e) { return ""; } });
   const [d, laden] = useAbruf("/projekte?alle=" + (alle ? 1 : 0), 60000, []);
   const [neu, setNeu] = useState(false);
-  const liste = d ? d.projekte.filter((p) => !q || (p.name + " " + (p.fruehere_namen || []).join(" ")).toLowerCase().includes(q.toLowerCase())) : null;
+  // Reihenfolge per Ziehen (19.10.2026, Veiko: "die Projekte selbst nach Prioritaet per Drag and
+  // Drop anordnen"). Pointer Events am Griff, nicht natives HTML5-Ziehen -- das ist auf Knoepfen
+  // und Touch unzuverlaessig. Waehrend des Ziehens ordnet sich das Raster live um; beim Loslassen
+  // geht die GANZE Reihenfolge an den Server, auch bei aktivem Filter (ausgeblendete Projekte
+  // behalten ihren Platz zueinander).
+  const [reihe, setReihe] = useState(null);
+  const [zieht, setZieht] = useState(null);
+  const reiheRef = useRef(null);
+  const zug = useRef(null);
+  useEffect(() => { reiheRef.current = null; setReihe(null); }, [d]);
+  useEffect(() => { try { localStorage.setItem("proj-kat", kat); } catch (e) { /* egal */ } }, [kat]);
+  const alleP = d ? d.projekte : [];
+  const kategorien = d ? d.kategorien || [] : [];
+  const ordnung = reihe ? reihe.map((i) => alleP.find((p) => p.id === i)).filter(Boolean) : alleP;
+  const passt = (p) => (!q || (p.name + " " + (p.kategorie || "") + " " + (p.fruehere_namen || []).join(" ")).toLowerCase().includes(q.toLowerCase()))
+    && (!kat || (kat === "_ohne" ? !p.kategorie : p.kategorie === kat));
+  const liste = d ? ordnung.filter(passt) : null;
+
+  async function speichern(ids) {
+    try { await api("/projekte/reihenfolge", { methode: "POST", daten: { ids } }); toast("Reihenfolge gespeichert."); laden(); }
+    catch (x) { fehlerMelden(x); reiheRef.current = null; setReihe(null); }
+  }
+  function verschieben(id, zielId, dahinter) {
+    const ids = (reiheRef.current || alleP.map((p) => p.id)).filter((i) => i !== id);
+    let k = ids.indexOf(zielId);
+    if (k < 0) return;
+    if (dahinter) k++;
+    ids.splice(k, 0, id);
+    reiheRef.current = ids;
+    setReihe(ids);
+  }
+  // Verfolgt wird am FENSTER, nicht am Griff: beim Umsortieren haengt Preact die Kachel im
+  // Dokument um, und ein Element verliert dabei seine Zeigerverfolgung (setPointerCapture) --
+  // gemessen: die Kachel rueckte einen Platz, dann riss der Zug ab und nichts wurde gespeichert.
+  function runter(e, p) {
+    if (e.button !== undefined && e.button !== 0) return;
+    e.preventDefault(); e.stopPropagation();
+    zug.current = { id: p.id, x: e.clientX, y: e.clientY, aktiv: false };
+    const weg = () => { window.removeEventListener("pointermove", bewegt); window.removeEventListener("pointerup", ende); window.removeEventListener("pointercancel", ende); };
+    const ende = () => { weg(); hoch(); };
+    window.addEventListener("pointermove", bewegt);
+    window.addEventListener("pointerup", ende);
+    window.addEventListener("pointercancel", ende);
+  }
+  function bewegt(e) {
+    const z = zug.current;
+    if (!z) return;
+    if (!z.aktiv) {
+      if (Math.hypot(e.clientX - z.x, e.clientY - z.y) < 6) return;
+      z.aktiv = true; setZieht(z.id);
+    }
+    const ziel = document.elementsFromPoint(e.clientX, e.clientY).map((el) => el.closest && el.closest("[data-pid]")).find((el) => el && el.dataset.pid !== z.id);
+    if (!ziel) return;
+    const r = ziel.getBoundingClientRect();
+    verschieben(z.id, ziel.dataset.pid, e.clientX > r.left + r.width / 2);
+  }
+  function hoch() {
+    const z = zug.current;
+    zug.current = null;
+    if (!z || !z.aktiv) return;
+    setZieht(null);
+    if (reiheRef.current) speichern(reiheRef.current);
+  }
+  // Ohne Maus: Alt + Pfeil links/rechts verschiebt die fokussierte Kachel um einen Platz.
+  function taste(e, p) {
+    if (e.key === "Enter") { navigiere("/projects/" + p.id); return; }
+    if (!e.altKey || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+    e.preventDefault();
+    const sichtbar = liste.map((x) => x.id);
+    const i = sichtbar.indexOf(p.id), j = e.key === "ArrowLeft" ? i - 1 : i + 1;
+    if (j < 0 || j >= sichtbar.length) return;
+    verschieben(p.id, sichtbar[j], e.key === "ArrowRight");
+    speichern(reiheRef.current);
+    setTimeout(() => { const el = document.querySelector(`[data-pid="${p.id}"]`); if (el) el.focus(); }, 50);
+  }
+
   return html`
     <div class="knopfreihe" style="margin-bottom:12px">
       <input class="eingabe" style="max-width:280px" placeholder="Projekt suchen …" value=${q} onInput=${(e) => setQ(e.target.value)} aria-label="Projekt suchen" />
@@ -54,35 +131,65 @@ function ProjektListe() {
       <span style="flex:1"></span>
       <button class="btn primaer" onClick=${() => setNeu(true)}><${Icon} n="plus" g=${15} />Neues Projekt</button>
     </div>
+    ${kategorien.length > 0 && html`<div class="proj-filter" role="group" aria-label="Nach Kategorie filtern">
+      ${[["", "Alle"], ...kategorien.map((k) => [k, k]), ["_ohne", "Ohne Kategorie"]].map(([k, t]) => html`<button key=${k || "alle"}
+        class=${"btn klein" + (kat === k ? " an" : "")} aria-pressed=${kat === k} onClick=${() => setKat(k)}>${t}
+        <span class="zahl">${k === "" ? alleP.length : alleP.filter((p) => (k === "_ohne" ? !p.kategorie : p.kategorie === k)).length}</span></button>`)}</div>`}
     ${!liste ? html`<div class="lade">Lade …</div>` : !liste.length ? html`<${Leer} titel="Keine Projekte gefunden." />` : html`
-    <div class="proj-raster">${liste.map((p) => {
+    <div class=${"proj-raster" + (zieht ? " beim-ziehen" : "")}>${liste.map((p) => {
       const ges = (p.offen || 0) + (p.erledigt || 0);
-      return html`<button class="proj-karte" key=${p.id} onClick=${() => navigiere("/projects/" + p.id)}>
-        <h3><span class="punkt" style=${"background:" + (p.farbe || "#999")}></span><span>${p.name}</span>
-          ${p.status !== "aktiv" && html`<span class="pill">${p.status}</span>`}</h3>
-        ${p.ziel && html`<div class="leise klein" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.ziel}</div>`}
+      const [naechstFaellig, naechstTitel] = (p.naechste || "").split("|");
+      return html`<div class=${"proj-karte" + (zieht === p.id ? " zieht" : "")} key=${p.id} data-pid=${p.id} role="link" tabindex="0"
+          aria-label=${p.name + (p.kategorie ? ", " + p.kategorie : "")}
+          onClick=${() => { if (!zieht) navigiere("/projects/" + p.id); }} onKeyDown=${(e) => taste(e, p)}>
+        <h3><span class="punkt" style=${"background:" + (p.farbe || "#999")}></span><span class="proj-name">${p.name}</span>
+          ${p.status !== "aktiv" && html`<span class="pill">${p.status}</span>`}
+          <button class="proj-griff" type="button" aria-label=${"Ziehen, um " + p.name + " zu verschieben (oder Alt + Pfeiltaste)"}
+            title="Ziehen, um die Reihenfolge zu ändern" onPointerDown=${(e) => runter(e, p)} onClick=${(e) => e.stopPropagation()}><${Icon} n="griff" g=${15} /></button></h3>
+        ${(p.kategorie || p.ziel) && html`<div class="leise klein proj-unter">${p.kategorie && html`<span class="proj-kat">${p.kategorie}</span>`}${p.ziel && html`<span>${p.ziel}</span>`}</div>`}
         <div class="fortschritt" title=${`${p.erledigt} von ${ges} Aufgaben erledigt`}><i style=${`width:${ges ? Math.round(100 * p.erledigt / ges) : 0}%`}></i></div>
+        <div class="proj-stand klein">
+          ${p.laeuft > 0 && html`<span class="proj-laeuft" title="Das Team arbeitet gerade an diesem Projekt (Case oder LongRun)">Team arbeitet</span>`}
+          ${p.ueberfaellig > 0 ? html`<span class="proj-ueber">${p.ueberfaellig} überfällig</span>`
+            : naechstTitel ? html`<span class="proj-naechst" title=${naechstTitel}>Nächste: ${naechstTitel} · ${datumText(naechstFaellig)}</span>`
+            : !p.laeuft && html`<span class="leise">nichts fällig</span>`}
+        </div>
         <div class="zahlen"><span><b>${p.offen}</b> offen</span><span>${p.notizen} Notizen</span>${p.ergebnisse > 0 && html`<span>${p.ergebnisse} Ergebnisse</span>`}
           ${p.bewegung && html`<span>· ${zeitText(p.bewegung)}</span>`}</div>
-      </button>`;
-    })}</div>`}
-    ${neu && html`<${NeuesProjekt} zu=${() => setNeu(false)} fertig=${(p) => { setNeu(false); laden(); navigiere("/projects/" + p.id); }} />`}`;
+      </div>`;
+    })}</div>
+    <p class="leise klein" style="margin-top:10px">Reihenfolge: am Griff <${Icon} n="griff" g=${12} /> ziehen -- oder Kachel wählen und Alt + Pfeiltaste.</p>`}
+    ${neu && html`<${NeuesProjekt} zu=${() => setNeu(false)} kategorien=${kategorien} fertig=${(p) => { setNeu(false); laden(); navigiere("/projects/" + p.id); }} />`}`;
 }
 
-function NeuesProjekt({ zu, fertig }) {
+// Farbe und Kategorie eines Projekts (19.10.2026): die acht Farben des Cockpits plus eine
+// eigene ueber den Farbwaehler des Browsers; Kategorie als Freitext mit den benutzten als Vorschlag.
+function FarbWahl({ wert, setzen, gross }) {
+  const g = gross ? 28 : 22;
+  return html`<div class="farb-wahl" role="radiogroup" aria-label="Farbe">${FARBEN.map((f) => html`<button type="button" key=${f} role="radio"
+      aria-checked=${(wert || "").toUpperCase() === f} aria-label=${"Farbe " + f} title=${f} onClick=${() => setzen(f)}
+      style=${`width:${g}px;height:${g}px;background:${f};border-color:${(wert || "").toUpperCase() === f ? "var(--ink)" : "transparent"}`}></button>`)}
+    <label class="farb-eigen" title="Eigene Farbe wählen" style=${`width:${g}px;height:${g}px`}>
+      <input type="color" value=${wert || "#2C6BB3"} onChange=${(e) => setzen(e.target.value.toUpperCase())} aria-label="Eigene Farbe" /></label></div>`;
+}
+
+function NeuesProjekt({ zu, fertig, kategorien = [] }) {
   const [name, setName] = useState("");
   const [ziel, setZiel] = useState("");
   const [farbe, setFarbe] = useState(FARBEN[0]);
+  const [kategorie, setKategorie] = useState("");
   async function los() {
-    try { fertig(await api("/projekte", { methode: "POST", daten: { name, ziel, farbe } })); toast("Projekt angelegt."); } catch (e) { fehlerMelden(e); }
+    try { fertig(await api("/projekte", { methode: "POST", daten: { name, ziel, farbe, kategorie } })); toast("Projekt angelegt."); } catch (e) { fehlerMelden(e); }
   }
   return html`<${Modal} titel="Neues Projekt" zu=${zu} fuss=${html`<button class="btn geist" onClick=${zu}>Abbrechen</button>
       <button class="btn primaer" disabled=${!name.trim()} onClick=${los}>Anlegen</button>`}>
     <div class="feld"><label for="np-name">Name</label><input id="np-name" class="eingabe" value=${name} onInput=${(e) => setName(e.target.value)} autofocus
       onKeyDown=${(e) => { if (e.key === "Enter" && name.trim()) los(); }} /></div>
     <div class="feld" style="margin-top:10px"><label for="np-ziel">Ziel (optional, ein Satz)</label><input id="np-ziel" class="eingabe" value=${ziel} onInput=${(e) => setZiel(e.target.value)} onKeyDown=${(e) => { if (e.key === "Enter" && name.trim()) los(); }} /></div>
-    <div class="feld" style="margin-top:10px"><label>Farbe</label><div class="knopfreihe">${FARBEN.map((f) => html`
-      <button type="button" aria-label=${"Farbe " + f} onClick=${() => setFarbe(f)} style=${`width:28px;height:28px;border-radius:50%;border:3px solid ${farbe === f ? "var(--ink)" : "transparent"};background:${f};cursor:pointer`}></button>`)}</div></div>
+    <div class="feld" style="margin-top:10px"><label for="np-kat">Kategorie (optional)</label><input id="np-kat" class="eingabe" list="np-kategorien" value=${kategorie}
+      placeholder="z. B. Beruf, Privat, Buch" onInput=${(e) => setKategorie(e.target.value)} />
+      <datalist id="np-kategorien">${kategorien.map((k) => html`<option value=${k} />`)}</datalist></div>
+    <div class="feld" style="margin-top:10px"><label>Farbe</label><${FarbWahl} wert=${farbe} setzen=${setFarbe} gross=${true} /></div>
   <//>`;
 }
 
@@ -179,6 +286,9 @@ function Projekt({ id, reiter }) {
   const [d, laden, fehler] = useAbruf("/projekte/" + id, 30000, []);
   const [nameBearb, setNameBearb] = useState(null);
   const [ausarbeiten, setAusarbeiten] = useState(false);
+  const [darst, setDarst] = useState(false);          // Farbe & Kategorie aufgeklappt
+  const [kats, setKats] = useState([]);
+  useEffect(() => { api("/projekte?alle=1").then((x) => setKats(x.kategorien || [])).catch(() => {}); }, [id]);
   const datei = useRef(null);
   useEffect(() => { if (d) bus.sende("talk-kontext", { art: "projekt", id, titel: d.projekt.name }); }, [d && d.projekt.name]);
   useEffect(() => () => bus.sende("talk-kontext", null), []);
@@ -214,17 +324,26 @@ function Projekt({ id, reiter }) {
             onKeyDown=${(e) => { if (e.key === "Enter" && nameBearb.trim()) { aendern({ name: nameBearb.trim() }, "Umbenannt. Der alte Name bleibt Jason bekannt."); setNameBearb(null); } if (escEigen(e)) setNameBearb(null); }} />`
           : html`<h2 class="titel-gross" style="display:flex;align-items:center;gap:10px"><span class="punkt" style=${"width:14px;height:14px;background:" + (p.farbe || "#999")}></span>${p.name}
             <button class="btn klein geist icon" onClick=${() => setNameBearb(p.name)} title="Umbenennen" aria-label="Umbenennen"><${Icon} n="stift" g=${14} /></button></h2>`}
-        <div class="leise klein" style="margin-top:3px">${p.ziel || "Kein Ziel eingetragen."}${(p.fruehere_namen || []).length ? ` · früher: ${p.fruehere_namen.join(", ")}` : ""}</div>
+        <div class="leise klein" style="margin-top:3px">${p.kategorie && html`<span class="proj-kat">${p.kategorie}</span>`}${p.ziel || "Kein Ziel eingetragen."}${(p.fruehere_namen || []).length ? ` · früher: ${p.fruehere_namen.join(", ")}` : ""}</div>
       </div>
       <div class="knopfreihe">
         <button class="btn" onClick=${() => setAusarbeiten(true)}><${Icon} n="stift" g=${15} />Ausarbeiten lassen</button>
         <button class="btn" title="Ein langes Vorhaben zu diesem Projekt in Etappen durchlaufen lassen, mit Zwischenprüfung"
           onClick=${() => langlaufStarten({ projekt_id: id, titel: "", auftrag: p.ziel || "" })}><${Icon} n="langlauf" g=${15} />Als LongRun</button>
+        <button class=${"btn" + (darst ? " an" : "")} aria-expanded=${darst} onClick=${() => setDarst(!darst)} title="Farbe und Kategorie des Projekts">
+          <span class="punkt" style=${"background:" + (p.farbe || "#999")}></span>Farbe & Kategorie</button>
         <select class="eingabe" style="width:auto" value=${p.status} aria-label="Status" onChange=${(e) => aendern({ status: e.target.value }, "Status geändert.")}>
           <option value="aktiv">aktiv</option><option value="pausiert">pausiert</option><option value="abgeschlossen">abgeschlossen</option><option value="archiviert">archiviert</option>
         </select>
       </div>
     </div>
+    ${darst && html`<div class="karte proj-darst">
+      <div class="feld"><label for="pd-kat">Kategorie</label><input id="pd-kat" class="eingabe" list="pd-kategorien" style="max-width:240px" placeholder="z. B. Beruf, Privat, Buch"
+        defaultValue=${p.kategorie || ""} onBlur=${(e) => { if (e.target.value.trim() !== (p.kategorie || "")) aendern({ kategorie: e.target.value.trim() }, "Kategorie gespeichert."); }}
+        onKeyDown=${(e) => { if (e.key === "Enter") e.target.blur(); }} />
+        <datalist id="pd-kategorien">${kats.map((k) => html`<option value=${k} />`)}</datalist></div>
+      <div class="feld"><label>Farbe</label><${FarbWahl} wert=${p.farbe} setzen=${(f) => aendern({ farbe: f }, "Farbe gespeichert.")} /></div>
+    </div>`}
     <div class="tabs" role="tablist">${TABS.map(([k, t, n]) => html`<button role="tab" aria-selected=${tab === k} class=${tab === k ? "an" : ""} onClick=${() => setTab(k)}>${t}${n ? html`<span class="zahl">${n}</span>` : ""}</button>`)}</div>
 
     ${tab === "ueberblick" && html`<div class="raster zwei">

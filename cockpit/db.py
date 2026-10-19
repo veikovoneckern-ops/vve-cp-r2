@@ -142,6 +142,9 @@ NACHRUESTEN = [
     # Praesentations-Stil je Ergebnis (18.10.2026, folien_stil.py): {"id": "vveorg|cockpit|eigen", ...}.
     # Leer heisst: die Vorgabe aus den Einstellungen.
     ("ergebnisse", "stil", "TEXT DEFAULT '{}'"),
+    # Kategorie je Projekt (19.10.2026, Veiko: "fuer Projekte auch Kategorien und Farben festlegen
+    # und nach Kategorien filtern"). Freitext; die Projektansicht schlaegt die benutzten vor.
+    ("projekte", "kategorie", "TEXT DEFAULT ''"),
 ]
 with _lock:
     for _tab, _spalte, _typ in NACHRUESTEN:

@@ -332,7 +332,7 @@ def kontext_text(k: dict[str, Any] | None) -> str:
         auf = db.alle("SELECT id, titel, status FROM aufgaben WHERE projekt_id=? AND archiviert=0 ORDER BY status, erstellt DESC LIMIT 30", (kid,))
         erg = db.alle("SELECT id, titel, form FROM ergebnisse WHERE projekt_id=? ORDER BY erstellt DESC LIMIT 8", (kid,))
         notiz = db.alle("SELECT titel, kurz, text FROM notizen WHERE projekt_id=? ORDER BY erstellt DESC LIMIT 5", (kid,))
-        return (f"VEIKO SCHAUT GERADE AUF DAS PROJEKT {kid}: {p['name']}" + (f" -- Ziel: {p['ziel']}" if p.get("ziel") else "") +
+        return (f"VEIKO SCHAUT GERADE AUF DAS PROJEKT {kid}: {p['name']}" + (f" (Kategorie {p['kategorie']})" if p.get("kategorie") else "") + (f" -- Ziel: {p['ziel']}" if p.get("ziel") else "") +
                 "\nAufgaben:\n" + "\n".join(f"- {a['id']} [{a['status']}] {a['titel']}" for a in auf) +
                 ("\nErgebnisse:\n" + "\n".join(f"- {e['titel']} ({e['form']})" for e in erg) if erg else "") +
                 ("\nJüngste Notizen:\n" + "\n".join(f"- {(n['kurz'] or n['text'] or '')[:200]}" for n in notiz) if notiz else ""))
