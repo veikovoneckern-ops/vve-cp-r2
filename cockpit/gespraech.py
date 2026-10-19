@@ -37,6 +37,9 @@ AKTIONEN = {
     "notiz": ("text",),
     "projekt_neu": ("name",),
     "neo": ("auftrag",),
+    # Einen Begriff in einem Projekt durchgaengig ersetzen (19.10.2026): vorher ging so
+    # etwas an Neo, und Neo aenderte Code statt der Daten.
+    "ersetzen": ("alt", "neu", "projekt_id"),
     # BrainStrom und ExO (verfahren.py) -- Veiko, 01.10.: "wenn ich mit dem Cockpit
     # spreche, muss das auch fuer diese Elemente funktionieren".
     "brainstrom": ("thema",),
@@ -62,6 +65,9 @@ AUFTRAG_AN_TEAM = re.compile(r"\b(lass|lasst|lassen)\b.{0,60}\b(team|neo|jason|c
 # wie bei Recherche und Oeffnen: einmal nachfordern, sonst ehrlich sagen.
 TEAM_BEHAUPTET = re.compile(r"[^.!?\n]*(\b(ich )?(lasse|gebe (das|es|den auftrag|deinen auftrag) (an|weiter))\b[^.!?\n]{0,60}\b(team|neo|jason|clayton|neal|annie|ridley|daniel|demmis)\b"
                             r"|\b(neal|annie|clayton|ridley|neo|jason|das team)\b[^.!?\n]{0,30}\b(macht sich|erstellt|baut|schreibt|arbeitet|kümmert sich|legt los)\b)[^.!?\n]*[.!?]?", re.I)
+
+# "Ich korrigiere die Bezeichnung" ohne Block und ohne Frage (19.10.2026): nichts geschah.
+AENDERUNG_BEHAUPTET = re.compile(r"[^.!?\n]*\bich (korrigiere|ändere|aendere|benenne|ersetze|aktualisiere|lege|trage|markiere|verschiebe|lösche|loesche|beauftrage)\b[^.!?\n]*[.!?]?", re.I)
 
 # Zustimmung oder Auftrag MITTEN in einem laengeren Satz (gemessen am 16.10.:
 # "Okay, du kannst Jensen sagen, er soll das Projekt anlegen und was muss ich
@@ -90,7 +96,9 @@ def zustimmung_im_satz(text: str) -> bool:
 
 def ist_ja(text: str) -> bool:
     t = (text or "").strip()
-    return len(t.split()) <= 10 and bool(_JA.search(t)) and not _NEIN.search(t)
+    # Beginnt der Satz mit Ja, darf er laenger sein (19.10.2026, wie talk.istJa).
+    lang = len(t.split()) <= 18 and bool(re.match(r"(ja|jawohl|genau|okay|ok|gerne|klar|einverstanden)\b", t, re.I))
+    return (len(t.split()) <= 10 and bool(_JA.search(t)) or lang) and not _NEIN.search(t)
 
 SYSTEM = """Du bist das VvE Cockpit: die Stimme von Veikos persönlichem KI-Team. Veiko von Eckern ist Head of Corporate HR Transformation bei Krones. Sein Team: Jason (Head of PMO, ordnet ein), Neo (Cockpit Engineer), Clayton (Strategie), Neal (Texte, Bücher), Daniel (Red Team, prüft), Annie (Gestaltung), Ridley (Video).
 
@@ -125,7 +133,8 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"merken","art":"person|organisation|begriff|hoerfehler|aussprache","begriff":"…","bedeutung":"…"} -- aussprache: wie das Cockpit ein (meist englisches) Wort VORLESEN soll, in deutscher Lautschrift, z. B. begriff "Slides", bedeutung "Slaids".
 - {"aktion":"notiz","text":"…","projekt_id":"p… oder null"}
 - {"aktion":"projekt_neu","name":"…"}
-- {"aktion":"neo","auftrag":"was Neo am Cockpit oder Server tun soll"}
+- {"aktion":"neo","auftrag":"was Neo am Cockpit oder Server tun soll"} -- NUR für Programm und Server des Cockpits, NIE für Inhalte (Projekte, Aufgaben, Ergebnisse, Notizen).
+- {"aktion":"ersetzen","projekt_id":"p…","alt":"genauer bisheriger Begriff, z. B. OODA-Loop","neu":"neuer Begriff"} -- ersetzt einen Begriff in einem Projekt überall (Projektname und Ziel, Aufgaben, Ergebnisse, Cases). Für „benenne … um“, „korrigiere die Bezeichnung … durchgängig“. Braucht Veikos Ja.
 - {"aktion":"brainstrom","thema":"die Idee in ein, zwei Sätzen","projekt_id":"p… oder null"} -- startet BrainStrom (eine Idee Frage für Frage zuspitzen) und öffnet die Ansicht. Läuft sofort.
 - {"aktion":"brainstrom_antwort","text":"Veikos Antwort, ausformuliert"} -- beantwortet die AKTUELLE FRAGE in BrainStrom (siehe KONTEXT). „Die zweite“ oder „Option B“ heißt: der Text dieser Antwortmöglichkeit. Läuft sofort.
 - {"aktion":"brainstrom_genug"} -- genug gefragt, direkt zu den Wegen. Läuft sofort.
@@ -644,6 +653,28 @@ def oeffnen_aufloesen(a: dict[str, Any], text: str = "") -> dict[str, Any] | Non
     return oeffnen_suchen(str(a.get("titel") or ""), art) or (oeffnen_suchen(text, art) if text else None)
 
 
+# Was "ersetzen" anfasst: Felder je Tabelle, immer nur Eintraege des Projekts. Notizen
+# bleiben unangetastet -- sie sind Veikos Wortlaut (die Abschrift), kein Arbeitsstand.
+ERSETZEN_FELDER = {"projekte": ("name", "ziel"), "aufgaben": ("titel", "notiz"),
+                   "ergebnisse": ("titel", "inhalt"), "vorgaenge": ("titel", "einordnung")}
+
+
+def _ersetzen_zeilen(pid: str):
+    for tab, felder in ERSETZEN_FELDER.items():
+        sql = f"SELECT id,{','.join(felder)} FROM {tab} WHERE " + ("id=?" if tab == "projekte" else "projekt_id=?")
+        for z in db.alle(sql, (pid,)):
+            yield tab, felder, z
+
+
+def ersetzen_zaehlen(pid: str, alt: str) -> tuple[int, int]:
+    n = e = 0
+    for _tab, felder, z in _ersetzen_zeilen(pid):
+        k = sum(str(z.get(f) or "").count(alt) for f in felder)
+        n += k
+        e += 1 if k else 0
+    return n, e
+
+
 def beschriften(a: dict[str, Any]) -> str | None:
     art = a["aktion"]
     if art in ("entscheiden", "antworten"):
@@ -695,6 +726,14 @@ def beschriften(a: dict[str, Any]) -> str | None:
         return f"Projekt anlegen: {a['name'][:60]}"
     if art == "neo":
         return f"Neo beauftragen: {a['auftrag'][:90]}"
+    if art == "ersetzen":
+        p = db.holen("projekte", str(a.get("projekt_id") or ""))
+        if not p or not str(a["alt"]).strip() or str(a["alt"]) == str(a["neu"]):
+            return None
+        n, e = ersetzen_zaehlen(p["id"], str(a["alt"]))
+        if not n:
+            return None
+        return f"Im Projekt {p['name'][:40]} „{str(a['alt'])[:40]}“ durch „{str(a['neu'])[:40]}“ ersetzen ({n} Stellen in {e} Einträgen)"
     if art == "brainstrom":
         return f"BrainStrom: {str(a['thema'])[:90]}"
     if art == "brainstrom_antwort":
@@ -793,6 +832,18 @@ async def ausfuehren(a: dict[str, Any]) -> dict[str, Any]:
         else:
             return await verfahren.bs_uebernehmen()
         return {"ok": True}
+    if art == "ersetzen":
+        alt, neu = str(a["alt"]), str(a["neu"])
+        pid = str(a.get("projekt_id") or "")
+        if not db.holen("projekte", pid) or not alt.strip():
+            return {"ok": False, "grund": "Projekt nicht gefunden"}
+        n = 0
+        for tab, felder, z in list(_ersetzen_zeilen(pid)):
+            werte = {f: str(z.get(f) or "").replace(alt, neu) for f in felder if alt in str(z.get(f) or "")}
+            if werte:
+                n += sum(str(z.get(f) or "").count(alt) for f in werte)
+                db.aendern(tab, z["id"], werte, wer="talk")
+        return {"ok": True, "ersetzt": n}
     if art == "neo":
         from . import neo
         gid = db.neue_id("g")
@@ -967,10 +1018,23 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     #   2. Er erteilt ausdruecklich einen Auftrag ans Team oder an Neo. Das erzeugt
     #      nur eine Ausarbeitung (Case in der Inbox), aendert keinen Bestand.
     # Alles andere (Entscheidungen, Projekte, Aufgaben, Merken) bleibt beim Ja-Knopf.
-    vorher = db.eine("SELECT text, daten FROM nachrichten WHERE gespraech_id=? AND rolle='assistent' ORDER BY id DESC LIMIT 1", (gid,))
+    vorher = db.eine("SELECT id, text, daten FROM nachrichten WHERE gespraech_id=? AND rolle='assistent' ORDER BY id DESC LIMIT 1", (gid,))
     hatte_offen = bool(vorher and any(not v.get("erledigt") for v in ((vorher.get("daten") or {}).get("vorschlaege") or [])))
     bestaetigt = bool(vorher and "?" in (vorher.get("text") or "") and not hatte_offen and ist_ja(text))
     auftrag = bool(AUFTRAG_AN_TEAM.search(text))
+    # Ja auf die offenen Vorschlaege der vorigen Antwort (19.10.2026: "Ja, das solltest du
+    # vorhin schon ausführen. Führe das jetzt aus" -- zu lang fuer das kurze Ja im Browser,
+    # ging ans Modell, das "Ich beauftrage Neo" schrieb, und nichts lief). Dann werden
+    # genau DIESE Vorschlaege ausgefuehrt; was das Modell jetzt noch einmal anhaengt, entfaellt.
+    erledigt_in = None
+    vorab = []
+    if hatte_offen and ist_ja(text):
+        vs_alt = (vorher.get("daten") or {}).get("vorschlaege") or []
+        idx = [i for i, v in enumerate(vs_alt) if not v.get("erledigt")]
+        vorab = await vorschlaege_ausfuehren(vorher["id"], idx)
+        erledigt_in = {"nachricht_id": vorher["id"], "indizes": idx}
+        vorschlaege = []
+        sichtbar = AENDERUNG_BEHAUPTET.sub("", TEAM_BEHAUPTET.sub("", sichtbar)).strip()
     if bestaetigt and not [v for v in vorschlaege if v["aktion"] not in SOFORT_VERFAHREN]:
         # Ja gesagt, aber das Modell liefert wieder keinen Block (gemessen am 01.10.:
         # es schrieb "Annie macht sich an die Praesentation" und loeste nichts aus).
@@ -988,7 +1052,7 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
             vorschlaege += [v for v in nach if v["aktion"] not in ("zeigen", "bild", "visualisierung")]
         except llm.ModellFehler:
             pass
-    if not bestaetigt and not [v for v in vorschlaege if v["aktion"] in ("ausarbeiten", "neo")] and (TEAM_BEHAUPTET.search(sichtbar or "") or (auftrag and not zeigen and not oeffnen and not werkzeug)):
+    if not erledigt_in and not bestaetigt and not [v for v in vorschlaege if v["aktion"] in ("ausarbeiten", "neo")] and (TEAM_BEHAUPTET.search(sichtbar or "") or (auftrag and not zeigen and not oeffnen and not werkzeug)):
         try:
             roh = await llm.chat(modell, system, verlauf + [{"role": "assistant", "content": gesamt}, {"role": "user", "content":
                 "Du hast gesagt, das Team (oder Neo) arbeite daran, aber keinen ```aktionen-Block geschickt -- gestartet ist nichts. "
@@ -1004,6 +1068,22 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
         if not [v for v in vorschlaege if v["aktion"] in ("ausarbeiten", "neo")] and TEAM_BEHAUPTET.search(sichtbar or ""):
             sichtbar = TEAM_BEHAUPTET.sub("", sichtbar).strip()
             sichtbar = (sichtbar + "\n\nIch konnte den Auftrag nicht ans Team geben -- gestartet ist nichts. Sag mir bitte noch einmal, wer was machen soll.").strip()
+    if not erledigt_in and not bestaetigt and not vorschlaege and AENDERUNG_BEHAUPTET.search(sichtbar or ""):
+        try:
+            roh = await llm.chat(modell, system, verlauf + [{"role": "assistant", "content": gesamt}, {"role": "user", "content":
+                "Du hast eine Änderung angekündigt, aber keinen ```aktionen-Block geschickt -- geändert ist nichts. "
+                "Antworte jetzt NUR mit dem ```aktionen-Block für genau diese Änderung, ohne weiteren Text."}],
+                temperatur=0.1, denken=False, num_ctx=24576)
+            _, nach = vorschlaege_aus(roh if "```aktionen" in roh else "```aktionen\n" + roh + "\n```")
+            nach = [v for v in nach if v["aktion"] not in ("zeigen", "oeffnen", "werkzeug", "bild", "visualisierung")][:2]
+            _kontext_einsetzen(nach, kontext)
+            _bezug_einsetzen(nach, bez)
+            vorschlaege += nach
+        except llm.ModellFehler:
+            pass
+        if not vorschlaege:
+            sichtbar = AENDERUNG_BEHAUPTET.sub("", sichtbar).strip()
+            sichtbar = (sichtbar + "\n\nGeändert ist noch nichts -- ich konnte das keiner Aktion zuordnen. Sag mir bitte genau, was wo geändert werden soll.").strip()
     if bestaetigt:
         if not vorschlaege:
             sichtbar = re.sub(r"[^.!?\n]*(macht sich|arbeitet an|erscheint in der Inbox)[^.!?\n]*[.!?]?", "", sichtbar).strip()
@@ -1012,7 +1092,7 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     gleich = [v for v in vorschlaege if v["aktion"] not in SOFORT_VERFAHREN
               and (bestaetigt or (auftrag and v["aktion"] in ("ausarbeiten", "neo"))
                    or (v.get("zugestimmt") is True and im_satz))]
-    ausgefuehrt = []
+    ausgefuehrt = list(vorab)
     for v in gleich[:3]:
         try:
             r = await ausfuehren(v)
@@ -1024,6 +1104,7 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     if ausgefuehrt:
         if all(r.get("ok") for r in ausgefuehrt):
             hinweis = ("Neo arbeitet daran." if any(r.get("neo_gespraech") for r in ausgefuehrt)
+                       else f"Ersetzt: {sum(r.get('ersetzt') or 0 for r in ausgefuehrt)} Stellen." if any("ersetzt" in r for r in ausgefuehrt)
                        else "Ist beim Team, das Ergebnis erscheint in der Inbox." if any(r.get("vorgang_id") for r in ausgefuehrt) else "Erledigt.")
         else:
             hinweis = "Nicht alles ging: " + "; ".join(str(r.get("grund")) for r in ausgefuehrt if not r.get("ok"))
@@ -1057,6 +1138,7 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     offen = [v for v in vorschlaege if not v.get("erledigt") and v["aktion"] not in ("zeigen",)]
     if offen and not sichtbar.rstrip().endswith("?"):
         sichtbar = re.sub(r"[^.!?\n]*\b(gebe das (an \w+ )?weiter|leg(e|t) (es|das|ihn) an|kümmert sich|macht sich|lasse \w+)\b[^.!?\n]*[.!?]?", "", sichtbar).strip()
+        sichtbar = AENDERUNG_BEHAUPTET.sub("", sichtbar).strip()
         sichtbar = (sichtbar + "\n\nNoch nicht ausgeführt: " + "; ".join(v["label"] for v in offen) + ". Soll ich das so machen?").strip()
     if llm.fremdschrift(sichtbar):
         sichtbar = llm.FREMDSCHRIFT.sub("", sichtbar)
@@ -1094,7 +1176,7 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     db.ausfuehren("UPDATE gespraeche SET geaendert=? WHERE id=?", (time.time(), gid))
     yield {"typ": "fertig", "text": sichtbar, "vorschlaege": vorschlaege, "nachricht_id": mid, "modell": modell, "medien": medien_jobs, "bezug": bez,
            "zeigen": [z for z in (zeigen_ziel(v) for v in zeigen[:1]) if z],
-           "oeffnen": oeffnen[:1], "werkzeug": werkzeug}
+           "oeffnen": oeffnen[:1], "werkzeug": werkzeug, "erledigt_in": erledigt_in}
 
 
 def _kontext_einsetzen(vorschlaege: list[dict[str, Any]], kontext: dict[str, Any] | None) -> None:

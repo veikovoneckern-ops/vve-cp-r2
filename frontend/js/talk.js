@@ -26,10 +26,17 @@ const ENDE = /^(stopp|stop|ende|beenden|aufhören|aufhoeren|das wars|das war's|d
 // -- irgendwo im Satz, aber nur in kurzen Saetzen: ein langer Satz, der das
 // Wort Gespraech enthaelt, ist eine Frage und kein Abschied.
 const ENDE_SATZ = /\b(dialog|gespräch|gespraech|unterhaltung|freisprechen|talk)\b.{0,20}\b(beenden|beende|beendet|ende|schließen|schliessen|aus|vorbei)\b|\b(beende|beenden|schließ|schliess|schließe)\w*\b.{0,20}\b(dialog|gespräch|gespraech|unterhaltung)\b/i;
-const istEnde = (t) => ENDE.test(t) || (t.split(/\s+/).length <= 10 && ENDE_SATZ.test(t));
+// Whisper hoert "Dialog beenden" auch als "Dialogbein" (19.10.2026) -- in einem ganz
+// kurzen Satz reicht "Dialog" plus "be…" oder "bin".
+const ENDE_HOERFEHLER = /\bdialog\s*(be\w*|bin)\b/i;
+const istEnde = (t) => ENDE.test(t) || (t.split(/\s+/).length <= 10 && ENDE_SATZ.test(t))
+  || (t.split(/\s+/).length <= 4 && ENDE_HOERFEHLER.test(t));
 const reinigen = (t) => String(t || "").trim().replace(/[.!?,]+$/, "").trim();
-// Ein kurzes Ja ohne Nein -- laengere Saetze sind eine neue Frage, kein Ja.
-const istJa = (t) => t.split(/\s+/).length <= 10 && JA_WORT.test(t) && !NEIN_WORT.test(t);
+// Ein kurzes Ja ohne Nein -- laengere Saetze sind eine neue Frage, kein Ja. Beginnt der
+// Satz mit Ja, darf er laenger sein ("Ja, das solltest du vorhin schon ausführen. Führe
+// das jetzt aus" ging am 19.10.2026 als neue Frage ans Modell, und nichts lief).
+const JA_ANFANG = /^(ja|jawohl|genau|okay|ok|gerne|klar|einverstanden)\b/i;
+const istJa = (t) => !NEIN_WORT.test(t) && ((t.split(/\s+/).length <= 10 && JA_WORT.test(t)) || (t.split(/\s+/).length <= 18 && JA_ANFANG.test(t)));
 const istNein = (t) => t.split(/\s+/).length <= 5 && NEIN_WORT.test(t) && !JA_WORT.test(t.replace(/\bnein\b/i, ""));
 
 // Bild oder Visualisierung aus dem Gespraech: Fortschritt, dann Vorschau mit
@@ -170,7 +177,11 @@ export function Talk({ zu, kontext, setKontext, start }) {
     laufRef.current = false;
     setLauf(null);
     if (fertig) {
-      setMsgs((m) => [...m, { id: fertig.nachricht_id, rolle: "ck", text: fertig.text, vorschlaege: fertig.vorschlaege, medien: fertig.medien || [], bezug: fertig.bezug || null }]);
+      // Ein Ja hat die offenen Vorschlaege der vorigen Antwort ausgefuehrt (gespraech.senden, erledigt_in).
+      const ei = fertig.erledigt_in;
+      setMsgs((m) => [...(ei ? m.map((x) => x.id === ei.nachricht_id ? { ...x, vorschlaege: x.vorschlaege.map((v, i) => ei.indizes.includes(i) ? { ...v, erledigt: true } : v) } : x) : m),
+        { id: fertig.nachricht_id, rolle: "ck", text: fertig.text, vorschlaege: fertig.vorschlaege, medien: fertig.medien || [], bezug: fertig.bezug || null }]);
+      if (ei) aktualisieren();
       // "Zeig mir …": aendert nichts, deshalb sofort und ohne Knopf.
       const z = (fertig.zeigen || [])[0];
       // "Oeffne das Ergebnis zu …": genau dieses eine Ding (gespraech.oeffnen_aufloesen).

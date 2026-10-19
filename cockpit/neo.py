@@ -46,6 +46,8 @@ WERKZEUGE = [
      "parameters": {"type": "object", "properties": {"text": {"type": "string"}, "ordner": {"type": "string"}}, "required": ["text"]}},
     {"name": "datei_schreiben", "description": "Schreibt sofort die VOLLSTAENDIGE neue Fassung einer Datei. Erst lesen, dann ersetzen. Gesperrt: Systempfade, /opt/vvec, /srv/www, /var/lib/vvec.",
      "parameters": {"type": "object", "properties": {"pfad": {"type": "string"}, "inhalt": {"type": "string"}, "begruendung": {"type": "string"}}, "required": ["pfad", "inhalt"]}},
+    {"name": "datei_aendern", "description": "Ändert eine Stelle in einer bestehenden Datei: 'alt' (genauer bisheriger Text, kommt GENAU EINMAL vor) wird durch 'neu' ersetzt. Der Weg für kleine Änderungen -- der Rest der Datei bleibt, wie er ist.",
+     "parameters": {"type": "object", "properties": {"pfad": {"type": "string"}, "alt": {"type": "string"}, "neu": {"type": "string"}, "begruendung": {"type": "string"}}, "required": ["pfad", "alt", "neu"]}},
     {"name": "datei_kopieren", "description": "Kopiert eine Datei unveraendert, auch Bilder, PDFs und andere Binaerdateien (datei_schreiben kann nur Text). Typisch: ein angehaengtes Bild in den Ordner einer Vorschau-Seite, damit die Seite es zeigen kann. Zielname ohne Leerzeichen waehlen.",
      "parameters": {"type": "object", "properties": {"von": {"type": "string"}, "nach": {"type": "string"}}, "required": ["von", "nach"]}},
     {"name": "befehl_ausfuehren", "description": "Fuehrt einen Shell-Befehl als vveadmin aus (kein sudo-Passwort). Sofort, ohne Rueckfrage, Zeitlimit 180 s. Verkette mit && statt vieler Einzelaufrufe.",
@@ -203,6 +205,18 @@ async def werkzeug(name: str, e: dict[str, Any], lauf: dict[str, Any]) -> str:
         z = _pfad(e.get("pfad", ""))
         if _gesperrt(z):
             return f"Fehler: '{z}' ist gesperrt. Release 1 aenderst du ueber das Repo vve-cp, nicht in der laufenden Auslieferung."
+        # Nie eine Datei zusammenstreichen (19.10.2026): fuer "ersetze OODA durch CUDA in
+        # einem Kommentar" schrieb Neo stab.py als 8 Zeilen statt 1.258 -- der Stab-Kern waere
+        # beim naechsten Neustart weg gewesen. Wer eine lange Datei auf weniger als die Haelfte
+        # schrumpfen will, wird abgewiesen und auf datei_aendern verwiesen.
+        try:
+            alt_text = z.read_text(encoding="utf-8") if z.is_file() else ""
+        except (OSError, UnicodeDecodeError):
+            alt_text = ""
+        if len(alt_text) > 2000 and len(str(e["inhalt"])) < len(alt_text) * 0.5:
+            return (f"Abgewiesen: {z} hat {len(alt_text)} Zeichen, deine Fassung nur {len(str(e['inhalt']))}. "
+                    "Das würde den Großteil der Datei löschen. Für eine Änderung an einer Stelle nimm datei_aendern (alt/neu); "
+                    "eine vollständige Fassung schickst du nur, wenn du die GANZE Datei gelesen hast und sie wirklich ersetzen willst.")
         try:
             z.parent.mkdir(parents=True, exist_ok=True)
             z.write_text(str(e["inhalt"]), encoding="utf-8")
@@ -210,6 +224,24 @@ async def werkzeug(name: str, e: dict[str, Any], lauf: dict[str, Any]) -> str:
             return f"Fehler beim Schreiben: {f}"
         lauf["dateien"].append({"pfad": str(z), "begruendung": e.get("begruendung") or ""})
         return f"Geschrieben: {z} ({len(str(e['inhalt']))} Zeichen)"
+    if name == "datei_aendern":
+        z = _pfad(e.get("pfad", ""))
+        if _gesperrt(z):
+            return f"Fehler: '{z}' ist gesperrt."
+        alt, neu = str(e.get("alt") or ""), str(e.get("neu") if e.get("neu") is not None else "")
+        try:
+            text = z.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as f:
+            return f"Fehler beim Lesen: {f}"
+        n = text.count(alt) if alt else 0
+        if n != 1:
+            return f"Fehler: 'alt' kommt {n}-mal vor, es muss genau einmal sein. Erst mit datei_lesen nachsehen und mehr Umgebung mitnehmen."
+        try:
+            z.write_text(text.replace(alt, neu, 1), encoding="utf-8")
+        except OSError as f:
+            return f"Fehler beim Schreiben: {f}"
+        lauf["dateien"].append({"pfad": str(z), "begruendung": e.get("begruendung") or "geändert"})
+        return f"Geändert: {z} (1 Stelle)"
     if name == "datei_kopieren":
         von, nach = _pfad(e.get("von", "")), _pfad(e.get("nach", ""))
         if _gesperrt(nach):
@@ -351,7 +383,10 @@ def system_text(anhaenge: list[dict[str, Any]] | None = None) -> str:
             "Meldet vorschau_zeigen „NICHT FERTIG“, fehlt etwas -- beheben und erneut zeigen, erst dann ist es fertig.\n"
             f"- „Mein Logo“ / „das Logo vom Cockpit“: {WURZEL}/frontend/bilder/logo-maske.png (schwarzer Ring auf transparentem Grund, "
             f"198×120) und {WURZEL}/frontend/bilder/favicon.png (der rote Ring). Hängt Veiko eine Datei an, nimm die.\n"
-            "- Etwas am Server oder Cockpit prüfen oder ändern: befehl_ausfuehren, datei_lesen, datei_schreiben.\n"
+            "- Etwas am Server oder Cockpit prüfen oder ändern: befehl_ausfuehren, datei_lesen; eine Stelle ändern mit datei_aendern, "
+            "eine ganze Datei neu nur mit datei_schreiben, wenn du sie vollständig gelesen hast.\n"
+            "- Inhalte des Cockpits (Projekte, Aufgaben, Ergebnisse, Notizen) liegen in der Datenbank, nicht im Code. Soll dort etwas "
+            "umbenannt oder korrigiert werden, ändere KEINEN Code, sondern sag, dass Talk das direkt kann („ersetze im Projekt … durch …“).\n"
             "\n## Ehrlichkeit\n"
             "Etwas ist erst getan, wenn du das Werkzeug dafür aufgerufen hast und es ohne Fehler zurückkam. "
             "Schreib NIE „ich habe … erstellt“, wenn du in diesem Auftrag kein Werkzeug dafür benutzt hast. "
