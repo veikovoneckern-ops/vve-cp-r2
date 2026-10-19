@@ -748,6 +748,53 @@ SUCHPLAN_ANWEISUNG = (
     'zu erwarten sind). Braucht der Auftrag nichts aus dem Netz (z. B. ein rein persönlicher Text), antworte {"suchanfragen": []}.')
 
 
+PRUEFER_QUELLEN_ZEICHEN = 60000   # so viel Quellentext bekommt Daniel hoechstens -- verteilt auf ALLE Quellen
+
+
+def quellen_liste_fuer_pruefer(quellen: list[dict[str, str]]) -> str:
+    """Erst die vollstaendige Liste (Nummer, Titel, Adresse), dann je Quelle ein Auszug.
+    Der Platz wird gleichmaessig verteilt, damit keine Quelle wegfaellt -- sonst haelt
+    der Pruefer einen richtigen Verweis auf Quelle 15 fuer erfunden (19.10.2026)."""
+    if not quellen:
+        return ""
+    je = max(600, min(3000, PRUEFER_QUELLEN_ZEICHEN // len(quellen)))
+    liste = "\n".join(f"[{i + 1}] {q.get('titel')} — {q.get('url')}" for i, q in enumerate(quellen))
+    auszuege = "\n\n".join(f"[{i + 1}] {(q.get('text') or '')[:je]}" for i, q in enumerate(quellen))
+    return (f"ALLE {len(quellen)} QUELLEN (gültig sind genau die Nummern 1 bis {len(quellen)}):\n{liste}\n\n"
+            f"AUSZÜGE (so viel hatte auch der Bearbeiter, je Quelle höchstens 3.000 Zeichen):\n{auszuege}")
+
+
+_VERWEIS = re.compile(r"\[(\d{1,3}(?:\s*[,;–-]\s*\d{1,3})*)\](?!\()")
+
+
+def _verweise_saeubern(text: str, anzahl: int, vid: str | None = None, rid: str | None = None) -> str:
+    """Verweise auf Quellen, die es nicht gibt ([13] bei 9 Quellen, jeder [n] ohne Quellen),
+    fliegen heraus -- mechanisch, nicht erst ueber Daniels Kritik. Bereiche [3-5] und Listen
+    [2, 7] behalten ihre gueltigen Nummern. Markdown-Links [text](url) sind nicht betroffen."""
+    weg: list[int] = []
+
+    def ersetzen(m: re.Match[str]) -> str:
+        teile = re.split(r"\s*([,;–-])\s*", m.group(1))
+        nummern = [int(t) for t in teile[::2]]
+        if len(teile) == 3 and teile[1] in "–-":
+            nummern = list(range(nummern[0], nummern[1] + 1)) if nummern[0] <= nummern[1] <= nummern[0] + 20 else nummern
+        gut = [n for n in nummern if 1 <= n <= anzahl]
+        weg.extend(n for n in nummern if n not in gut)
+        if gut == nummern:
+            return m.group(0)
+        return ("[" + ", ".join(str(n) for n in dict.fromkeys(gut)) + "]") if gut else ""
+
+    neu = _VERWEIS.sub(ersetzen, text or "")
+    if weg:
+        neu = re.sub(r"[ \t]+([.,;:!?])", r"\1", neu)
+        neu = re.sub(r"(?<=\S)[ \t]{2,}(?=\S)", " ", neu)
+        if vid:
+            db.ereignis(vid, rid or "system", "info",
+                        f"Verweise auf nicht vorhandene Quellen entfernt: {', '.join('[' + str(n) + ']' for n in sorted(set(weg)))} "
+                        f"(es gibt {anzahl} Quellen).")
+    return neu
+
+
 async def recherche_planen(modell: str, system: str, frage: str, vorgabe: str | None, rid: str, vid: str) -> list[dict[str, str]]:
     """Die Rolle sucht selbst, statt nur Jasons eine Suchanfrage zu bekommen.
     Jasons Vorgabe bleibt die erste; doppelte Adressen fallen heraus."""
@@ -1080,7 +1127,14 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
         await recherche_planen(modell, _arbeits_system(rid, form, a, mit_team=False), grund, a.get("recherche"), rid, vid)
     quellen_text = "\n\n".join(f"[{i + 1}] {q['titel']} — {q['url']}\n{q['text'][:3000]}"
                                for i, q in enumerate(quellen))
-    frage = grund + (f"\n\nQUELLEN:\n{quellen_text}" if quellen_text else "\n\n(keine Internetquellen)")
+    frage = grund + (f"\n\nQUELLEN:\n{quellen_text}\n\nVerweise im Text mit [Nummer] NUR auf diese {len(quellen)} Quellen "
+                     f"(1 bis {len(quellen)}) und nur für Aussagen, die im Auszug der Quelle stehen. Was in keiner Quelle "
+                     "steht, bekommt keinen Verweis und wird nicht als belegte Tatsache dargestellt."
+                     if quellen_text else "\n\n(keine Internetquellen)")
+    # Daniel sieht ALLE Quellen (19.10.2026): vorher bekam er die ersten 30.000 Zeichen, also
+    # etwa die Haelfte -- er nannte [13], [15], [20] "nicht existierend", und die Ueberarbeitung
+    # strich daraufhin korrekte Belege (am Ende verwies eine Praesentation nur noch auf 1 bis 9).
+    quellen_pruefer = quellen_liste_fuer_pruefer(quellen)
     entwurf = ""
     pruefung: dict[str, Any] = {}
     for runde in range(RUNDEN_MAX):
@@ -1090,7 +1144,9 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
             kritik = (pruefung.get("begruendung", "") + "\n" + "\n".join("- " + m for m in pruefung.get("maengel") or []))
             entwurf, n = await folien_stueckweise(
                 modell, system, entwurf, f"AUFTRAG: {a.get('auftrag')}\n\nKRITIK VON DANIEL AM GANZEN DECK:\n{kritik}\n\n"
-                "Behebe in diesen Folien, was die Kritik betrifft; was gut ist, bleibt.", rid, vid, "überarbeitet")
+                + (f"{quellen_pruefer}\n\nVerweise [n] NUR auf diese Quellen. Bemängelt Daniel einen Verweis, berichtige "
+                   "ihn (richtige Nummer oder ohne Verweis); eine belegte Aussage behält ihren Verweis.\n\n" if quellen else "")
+                + "Behebe in diesen Folien, was die Kritik betrifft; was gut ist, bleibt.", rid, vid, "überarbeitet")
             db.ereignis(vid, rid, "info", f"Überarbeitet in Paketen: {n} übernommen, der Rest blieb unverändert.")
         elif runde and pruefung:
             nachricht += ("\n\nDEIN BISHERIGER ENTWURF:\n" + entwurf[:40000] +
@@ -1123,7 +1179,8 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
         else:
             entwurf = _uebergaben_aus(entwurf, rid)[0]   # beim Nachbessern wird nicht erneut weitergegeben
         laeuft("kritiker", "prüft", vid)
-        pruefung = await pruefen(entwurf, a, v, quellen_text)
+        entwurf = _verweise_saeubern(entwurf, len(quellen), vid, rid)
+        pruefung = await pruefen(entwurf, a, v, quellen_pruefer)
         db.ereignis(vid, "kritiker", "pruefung", pruefung.get("begruendung", ""),
                     {"urteil": pruefung.get("urteil"), "maengel": pruefung.get("maengel") or [], "runde": runde + 1})
         if pruefung.get("urteil") != "nachbessern":
@@ -1163,7 +1220,8 @@ async def pruefen(entwurf: str, a: dict[str, Any], v: dict[str, Any], quellen_te
     # Daniel bekommt DIESELBEN Quellen wie der Bearbeiter. Ohne sie pruefte er
     # aus eigenem Gedaechtnis -- und das kann genauso daneben liegen.
     frage = (f"AUFTRAG: {a.get('auftrag')}\nFORM: {a.get('form')}\n\n{_vorgang_kontext(v)[:40000]}\n\n"
-             + (f"QUELLEN, die der Bearbeiter hatte:\n{quellen_text[:30000]}\n\n" if quellen_text else
+             + (f"QUELLEN, die der Bearbeiter hatte:\n{quellen_text[:66000]}\n\nEin Verweis [n] mit einer Nummer aus "
+                "dieser Liste ist gültig; bemängle ihn nur, wenn die Aussage NICHT im Auszug dieser Quelle steht.\n\n" if quellen_text else
                 "(Der Bearbeiter hatte keine Internetquellen.)\n\n")
              + f"ERGEBNIS:\n{entwurf[:60000]}")
     if a.get("form") == "praesentation":
