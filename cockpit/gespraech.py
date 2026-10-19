@@ -153,7 +153,7 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"notiz","text":"…","projekt_id":"p… oder null"}
 - {"aktion":"projekt_neu","name":"…"}
 - {"aktion":"neo","auftrag":"was Neo am Cockpit oder Server tun soll"} -- NUR für Programm und Server des Cockpits, NIE für Inhalte (Projekte, Aufgaben, Ergebnisse, Notizen).
-- {"aktion":"langlauf","titel":"kurzer Titel","auftrag":"was in Etappen entstehen soll, in mehreren Sätzen, mit allem, was Veiko dazu gesagt hat","art":"buch|dokument|video","projekt_id":"p… oder null","aufgabe_id":"t… oder null","pruefer":"dario|demmis","pruef_alle":3,"budget":5} -- ein LongRun: ein großes Vorhaben (ein ganzes Buch, ein langes Dokument, ein langes Video), das in Etappen entsteht und zwischendurch von Dario (Claude) oder Demmis (Gemini) geprüft wird. Sagt Veiko „Long Run“, „in Etappen“, „durchgängig und tief“ oder geht es um ein ganzes Buch: IMMER langlauf, nie ausarbeiten. Nennt er Demmis/Gemini, ist pruefer demmis, sonst dario. pruef_alle: nach wie vielen Kapiteln/Teilen geprüft wird; 0 = NUR AM ENDE, wenn alles fertig ist -- immer dann, wenn Veiko „danach“, „am Ende“, „wenn es fertig ist“ oder „wenn du fertig bist“ sagt. Vorhandene Ergebnisse und Unterlagen des Projekts nimmt das Cockpit selbst dazu. Die Prüfungen kosten Geld: nenne das Budget (Vorgabe 5 Dollar) und frag immer „Soll ich das so machen?“.
+- {"aktion":"langlauf","titel":"kurzer Titel","auftrag":"was in Etappen entstehen soll, in mehreren Sätzen, mit allem, was Veiko dazu gesagt hat","art":"buch|dokument|praesentation|bilder|webseite|video","rolle":"buch|stratege|designer|video oder null","projekt_id":"p… oder null","aufgabe_id":"t… oder null","pruefer":"dario|demmis","pruef_alle":3,"budget":5} -- ein LongRun: ein großes Vorhaben (ein ganzes Buch, eine große Präsentation, ein ausführliches Konzept, eine Studie, eine Strategie, ein Leitfaden, ein langes Dokument, ein langes Video), das in Etappen entsteht und von Dario (Claude) oder Demmis (Gemini) geprüft wird. Sagt Veiko „Long Run“, „in Etappen“, „durchgängig und tief“, „komplett“, „vollständig“, „ausführlich“, „umfassend“ oder „gründlich“ zu einem Werk, das er HABEN will: IMMER langlauf, nie ausarbeiten. art praesentation für Präsentationen und Foliensätze, bilder für Bildserien und viele Bilder, webseite für Webseiten, buch für Bücher, video für Videos, sonst dokument. Nennt er Demmis/Gemini, ist pruefer demmis, sonst dario. pruef_alle: nach wie vielen Kapiteln/Teilen geprüft wird; 0 = NUR AM ENDE, wenn alles fertig ist -- immer dann, wenn Veiko „danach“, „am Ende“, „wenn es fertig ist“ oder „wenn du fertig bist“ sagt. Vorhandene Ergebnisse und Unterlagen des Projekts nimmt das Cockpit selbst dazu. Die Prüfungen kosten Geld: nenne das Budget (Vorgabe 5 Dollar) und frag immer „Soll ich das so machen?“.
 - {"aktion":"pruefen","ergebnis_id":"r… aus LAGE/KONTEXT","titel":"Titel des Ergebnisses"} -- Daniel (Red Team) prüft ein VORHANDENES Ergebnis, z. B. ein Recherche-Dossier („ungeprüft“). „Lass Daniel das prüfen“ ist IMMER pruefen, NIE ausarbeiten -- eine Ausarbeitung macht etwas Neues, und sie macht nie Daniel.
 - {"aktion":"ersetzen","projekt_id":"p…","alt":"genauer bisheriger Begriff, z. B. OODA-Loop","neu":"neuer Begriff"} -- ersetzt einen Begriff in einem Projekt überall (Projektname und Ziel, Aufgaben, Ergebnisse, Cases). Für „benenne … um“, „korrigiere die Bezeichnung … durchgängig“. Braucht Veikos Ja.
 - {"aktion":"brainstrom","thema":"die Idee in ein, zwei Sätzen","projekt_id":"p… oder null"} -- startet BrainStrom (eine Idee Frage für Frage zuspitzen) und öffnet die Ansicht. Läuft sofort.
@@ -788,7 +788,7 @@ def beschriften(a: dict[str, Any]) -> str | None:
     if art == "langlauf":
         from . import langlauf
         if a.get("art") not in langlauf.ARTEN:
-            a["art"] = "buch" if re.search(r"\bbuch|kapitel", str(a.get("auftrag")), re.I) else "dokument"
+            a["art"] = langlauf.art_aus(str(a.get("auftrag")))
         a["pruefer"] = a.get("pruefer") if a.get("pruefer") in langlauf.PRUEFER else "dario"
         try:
             a["budget"] = max(0.0, min(50.0, float(a.get("budget") or 5)))
@@ -972,7 +972,7 @@ async def ausfuehren(a: dict[str, Any]) -> dict[str, Any]:
                     if m.get("vorgewaehlt")]
         try:
             l = langlauf.anlegen(str(a.get("titel") or ""), str(a["auftrag"]), a.get("art") or "buch", a.get("projekt_id"),
-                                 a.get("pruefer") or "dario", a.get("pruef_alle", 3), float(a.get("budget") or 5), None, a.get("aufgabe_id"), material)
+                                 a.get("pruefer") or "dario", a.get("pruef_alle", 3), float(a.get("budget") or 5), a.get("rolle"), a.get("aufgabe_id"), material)
         except ValueError as f:
             return {"ok": False, "grund": str(f)}
         return {"ok": True, "langlauf_id": l.get("id"), "titel": l.get("titel"), "material": len(material)}
@@ -1139,6 +1139,33 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
                 v["label"] = beschriften(v) or v["label"]
     _bezug_einsetzen(vorschlaege, bez)
     _kontext_einsetzen(vorschlaege, kontext)
+    # Ein grosses Vorhaben wird ein LongRun, keine einzelne Ausarbeitung (19.10.2026, Veiko:
+    # "dass erkannt wird, dass es ein LongRun ist, und dann wirklich richtig intensiv gearbeitet
+    # wird"). Das Modell waehlt trotz Anweisung oft "ausarbeiten" -- dann entsteht ein Buch oder
+    # eine grosse Praesentation in EINER Antwort. Die Regel steht in langlauf.gross, nicht hier;
+    # der LongRun braucht wie immer ein Ja (die Pruefung kostet Geld).
+    from . import langlauf as _ll
+    gr = _ll.gross(text)
+    if gr:
+        umgestellt = False
+        for i, v in enumerate(vorschlaege):
+            if v["aktion"] != "ausarbeiten" or _PRUEF_AUFTRAG.search(str(v.get("auftrag") or "")):
+                continue
+            auftrag_ll = str(v.get("auftrag") or "")
+            if text.strip() and text.strip()[:200] not in auftrag_ll:
+                auftrag_ll = (auftrag_ll + "\n\nVeikos Worte: " + text.strip()).strip()
+            neu = {"aktion": "langlauf", "titel": str(v.get("titel") or "")[:120], "auftrag": auftrag_ll, "art": gr["art"],
+                   "rolle": v.get("rolle"), "projekt_id": v.get("projekt_id"), "aufgabe_id": v.get("aufgabe_id"),
+                   "pruefer": gr["pruefer"], "pruef_alle": gr["pruef_alle"], "budget": 5}
+            neu["label"] = beschriften(neu) or "LongRun starten"
+            vorschlaege[i] = neu
+            umgestellt = True
+        if umgestellt:
+            sichtbar = (re.sub(r"\s*Soll ich das so machen\?\s*$", "", sichtbar).rstrip() + "\n\nDas ist ein großes Vorhaben -- dafür schlage ich einen LongRun vor: "
+                        "das Team plant es in Etappen und arbeitet jede gründlich aus, Daniel prüft jede Etappe"
+                        + (f", und {'Demmis' if gr['pruefer'] == 'demmis' else 'Dario'} prüft am Ende das fertige Werk"
+                           if gr["pruef_alle"] == 0 else "")
+                        + ". Die Prüfung kostet Geld (Budget 5 Dollar). Soll ich das so machen?").strip()
     # Schon Ausgefuehrtes nicht noch einmal vorschlagen (19.10.2026: auf "Nein, warte damit"
     # bot Talk die laengst laufende Zusammenfuehrung erneut an). Gleich = gleiche Aktion und
     # gleiches Etikett in diesem Gespraech.

@@ -5,6 +5,7 @@ import { escEigen, html, enterBestaetigt, useState, useEffect, Icon, Avatar, Lee
   zeitText, useAbruf, navigiere, rolleName, ROLLEN_WAHL, FORM_WAHL } from "./ui.js";
 import { api } from "./api.js";
 import { Entscheidung } from "./entscheidung.js";
+import { langlaufStarten } from "./langlauf.js";
 import { ErgebnisVorschau, URTEIL, StilFelder } from "./ergebnis.js";
 
 const FILTER = [["wartet", "Wartet auf dich"], ["in_arbeit", "In Arbeit"], ["fertig", "Fertig"], ["erledigt", "Erledigt"], ["alle", "Alle"]];
@@ -216,6 +217,22 @@ export function Ausarbeiten({ v, projektId, zu, fertig }) {
   const [stilText, setStilText] = useState("");
   useEffect(() => { api("/praesentation/stile").then((r) => r.vorgabe && setStil(r.vorgabe)).catch(() => {}); }, []);
   const [laeuft, setLaeuft] = useState(false);
+  // Grosses Vorhaben? Dieselbe Frage wie in Talk, Team-Chat und Pipeline (langlauf.gross,
+  // 19.10.2026): vor dem Absenden einmal fragen, ob es ein LongRun werden soll.
+  const [gross, setGross] = useState(null);
+  async function pruefen() {
+    if (gross === false) return los();
+    let g = null;
+    try { g = (await api("/langlaeufe/erkennen", { methode: "POST", daten: { text: auftrag } })).gross; } catch (e) { /* dann normal */ }
+    if (g) { setGross(g); return; }
+    return los();
+  }
+  function alsLangLauf() {
+    zu && zu();
+    langlaufStarten({ projekt_id: projektId || (v && v.projekt_id) || "", titel: "", auftrag, rolle,
+      art: ["praesentation", "video", "webseite"].includes(form) ? form : gross.art, pruefer: gross.pruefer, pruef_alle: gross.pruef_alle,
+      fest: ["auftrag", "rolle", "art", "pruefer", "pruef_alle"] });
+  }
   async function los() {
     const stilDaten = form === "praesentation" ? { stil, stil_text: stil === "eigen" ? stilText : "" } : {};
     setLaeuft(true);
@@ -231,7 +248,13 @@ export function Ausarbeiten({ v, projektId, zu, fertig }) {
   }
   return html`<${Modal} titel="Ausarbeiten lassen" zu=${zu} fuss=${html`
       <button class="btn geist" onClick=${zu}>Abbrechen</button>
-      <button class="btn primaer" disabled=${laeuft || !auftrag.trim() || (form === "praesentation" && stil === "eigen" && !stilText.trim())} onClick=${los}>${laeuft ? "Einen Moment …" : "Auftrag geben"}</button>`}>
+      <button class="btn primaer" disabled=${laeuft || !auftrag.trim() || (form === "praesentation" && stil === "eigen" && !stilText.trim())} onClick=${pruefen}>${laeuft ? "Einen Moment …" : "Auftrag geben"}</button>`}>
+    ${gross && html`<div class="hinweisbox" style="margin-bottom:12px"><b>Das klingt nach einem großen Vorhaben (${gross.art_name}).</b>
+      Als Ausarbeitung entsteht es in EINER Antwort und wird dadurch kürzer, als du es willst. Als LongRun plant das Team es in Etappen
+      und arbeitet jede gründlich aus, Daniel prüft jede Etappe, und ${gross.pruefer === "demmis" ? "Demmis" : "Dario"} prüft ${gross.pruef_alle === 0 ? "am Ende" : "zwischendurch"} (das kostet Geld, Budget im nächsten Schritt).
+      <div class="knopfreihe" style="margin-top:8px">
+        <button class="btn primaer klein" onClick=${alsLangLauf}><${Icon} n="langlauf" g=${14} />Als LongRun starten</button>
+        <button class="btn klein" onClick=${() => { setGross(false); setTimeout(los, 0); }}>Trotzdem als Ausarbeitung</button></div></div>`}
     <div class="raster" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
       <div class="feld"><label for="aa-rolle">Wer</label><select id="aa-rolle" class="eingabe" value=${rolle} onChange=${(e) => setRolle(e.target.value)}>
         ${ROLLEN_WAHL.map(([k, t]) => html`<option value=${k}>${t}</option>`)}</select></div>

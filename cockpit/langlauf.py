@@ -53,8 +53,81 @@ ARTEN = {
     "buch": {"name": "Buch", "rolle": "buch", "etappe": "Kapitel", "mehrzahl": "Kapitel"},
     "dokument": {"name": "Langes Dokument", "rolle": "stratege", "etappe": "Teil", "mehrzahl": "Teile"},
     "video": {"name": "Langes Video", "rolle": "video", "etappe": "Akt", "mehrzahl": "Akte"},
+    # 19.10.2026, Veiko: "nicht nur bei Buchprojekten, sondern bei Praesentationen und allen
+    # moeglichen Ausarbeitungen". Eine Etappe ist ein Abschnitt aus 5 bis 10 Folien im
+    # Folienformat von folien.py; am Ende entsteht EIN Ergebnis der Form praesentation.
+    "praesentation": {"name": "Große Präsentation", "rolle": "stratege", "etappe": "Abschnitt", "mehrzahl": "Abschnitte"},
+    # Veiko, gleich danach: "wirklich alles. Bilder, Videos, wirklich alles."
+    # Bildserie: je Etappe eine Gruppe von Bildern mit Titel, Zweck und einer "Bild:"-Zeile;
+    # das Ergebnis ist ein Dokument, folienbilder.py rechnet jede Zeile in ComfyUI (mit
+    # Sichtpruefung) und setzt die Bilder an ihre Stelle -- dieselbe Maschine wie ueberall.
+    "bilder": {"name": "Bildserie", "rolle": "designer", "etappe": "Bildgruppe", "mehrzahl": "Bildgruppen"},
+    # Webseite: Etappe 1 legt Gestaltung (CSS) und Kopf fest, jede weitere schreibt
+    # Abschnitte im selben Stil; am Ende EINE eigenstaendige HTML-Seite (Form webseite).
+    "webseite": {"name": "Große Webseite", "rolle": "designer", "etappe": "Seitenabschnitt", "mehrzahl": "Seitenabschnitte"},
 }
+BILDER_JE_GRUPPE = "3 bis 6"
+
+
+def _form(art: str) -> str:
+    """Die Ergebnis-Form, in der eine LongRun-Art am Ende steht (und Daniel prueft).
+    Eine Bildserie ist ein Dokument mit "Bild:"-Zeilen -- so rechnet folienbilder.py sie."""
+    return {"video": "video", "praesentation": "praesentation", "webseite": "webseite"}.get(art, "dokument")
+
+
+WEBSEITE_ETAPPE = ("Du schreibst EINEN Teil einer großen Webseite als HTML-Fragment in EINEM ```html-Block. Nur Inhalt für "
+                   "<body> (header, nav, section, footer) -- kein <html>, <head> oder <body>, kein Skript, keine externen "
+                   "Dateien. Gestaltung nur über die Klassen aus dem <style> des ersten Abschnitts. Davor ein Satz, was dieser "
+                   "Teil zeigt.")
 PRUEFER = ("dario", "demmis")
+
+# ---------------------------------------------------------------- Ist das ein LongRun?
+# EINE Stelle fuer die Frage, ob ein Auftrag ein grosses Vorhaben ist (19.10.2026, Veiko:
+# "dass erkannt wird, dass es ein LongRun ist, und dann wirklich richtig intensiv gearbeitet
+# wird -- stell das komplett sicher"). Talk, die Pipeline aus Notizen, der Team-Chat und
+# "Ausarbeiten lassen" fragen alle hier (/api/langlaeufe/erkennen fuer die Oberflaeche).
+# Erkannt wird nur, was Veiko SAGT: ausdruecklich ("LongRun", "in Etappen") oder Umfang +
+# Werk + Tun zusammen ("das komplette Konzept ausarbeiten", "eine ausfuehrliche Praesentation
+# erstellen"). Ein einzelnes Kapitel ist kein LongRun ("kapitel" zaehlt nur als "alle Kapitel").
+# Es entscheidet nie allein: ueberall folgt eine Rueckfrage mit dem Weg zurueck zur
+# gewoehnlichen Ausarbeitung -- und die Pruefung durch Dario/Demmis kostet Geld.
+_GROSS_AUSDRUECKLICH = re.compile(r"\blong[ -]?runs?\b|langl(ä|ae)ufer|\blanglauf|in etappen", re.I)
+_GROSS_UMFANG = re.compile(r"komplett|vollst(ä|ae)ndig|\bganze|\bgesamte|ausf(ü|ue)hrlich|umfassend|gr(ü|ue)ndlich|tiefgehend|"
+                           r"in die tiefe|in der tiefe|intensiv|detailliert|alle kapitel|von a bis z|richtig lang|"
+                           r"\b([2-9]\d|\d{3})\s+(bilder|folien|seiten|kapitel|motive|illustrationen|grafiken|szenen)", re.I)
+_GROSS_WERK = re.compile(r"\bbuch\b|\bbuches\b|\bb(ü|ue)cher|manuskript|alle kapitel|pr(ä|ae)sentation|foliensatz|\bfolien\b|\bdeck\b|"
+                         r"konzept|studie|strategie|\bdokument|bericht|whitepaper|leitfaden|handbuch|dossier|ausarbeitung|"
+                         r"businessplan|gesch(ä|ae)ftsplan|analyse|schulung|seminar|workshop|\bkurs\b|video|\bfilm\b|\bwerk\b|"
+                         r"artikelserie|fassung|bilder\b|bildserie|bildstrecke|illustration|\bfotos\b|\bmotive\b|\bgrafiken\b|"
+                         r"webseite|website|landingpage|homepage|internetseite", re.I)
+_GROSS_TUN = re.compile(r"schreib|ausarbeit|arbeite\w*\s.*\baus\b|erstell|fertig|(ü|ue)berarbeit|neu fass|entwickl|"
+                        r"\bbau\w*\s|\bmach\w*\s|ausformulier|liefer|\bgestalt", re.I)
+_NACHHER = re.compile(r"danach|anschlie(ß|ss)end|am ende|zum schluss|hinterher|zum (ü|ue)ber(prüfen|pruefen)|zum pr(ü|ue)fen|"
+                      r"\bwenn\s[^.!?]{0,90}(fertig|geschrieben|abgeschlossen|durch|vollst(ä|ae)ndig)", re.I)
+
+
+def art_aus(text: str) -> str:
+    """Welche LongRun-Art Veikos Worte meinen."""
+    t = text or ""
+    return ("praesentation" if re.search(r"pr(ä|ae)sentation|foliensatz|\bfolien\b|\bdeck\b|\bslides\b", t, re.I) else
+            "video" if re.search(r"video|\bfilm\b", t, re.I) else
+            "webseite" if re.search(r"webseite|website|landingpage|landing page|homepage|internetseite", t, re.I) else
+            "bilder" if re.search(r"bilder\b|bildserie|bildstrecke|illustration|\bfotos\b|\bmotive\b|\bgrafiken\b", t, re.I) else
+            "buch" if re.search(r"\bbuch|\bb(ü|ue)cher|kapitel|manuskript|roman\b", t, re.I) else "dokument")
+
+
+def gross(text: str) -> dict[str, Any] | None:
+    """Ist das ein grosses Vorhaben fuer einen LongRun? None, wenn nicht; sonst Art,
+    Pruefer und Pruefrhythmus, wie Veiko sie gesagt hat."""
+    t = (text or "")[:4000]
+    ausdruecklich = bool(_GROSS_AUSDRUECKLICH.search(t))
+    if not ausdruecklich and not (_GROSS_UMFANG.search(t) and _GROSS_WERK.search(t) and _GROSS_TUN.search(t)):
+        return None
+    art = art_aus(t)
+    extern = re.search(r"demm?is|gemini|dario|claude", t, re.I)
+    return {"art": art, "pruefer": "demmis" if re.search(r"demm?is|gemini", t, re.I) else "dario",
+            "pruef_alle": 0 if extern and _NACHHER.search(t) else 3, "ausdruecklich": ausdruecklich,
+            "art_name": ARTEN[art]["name"]}
 MAX_ETAPPEN = 40
 SZENEN_JE_AKT = 12           # ein Akt ~ eine Minute Video
 TAKT_SEK = 30
@@ -143,7 +216,7 @@ def anlegen(titel: str, auftrag: str, art: str, projekt_id: str | None, pruefer:
     vid = v["id"] if isinstance(v, dict) else v
     db.ausfuehren("UPDATE vorgaenge SET titel=?, stand='in_arbeit', auftrag=?, einordnung=? WHERE id=?",
                   (f"LongRun: {titel}"[:120],
-                   json.dumps({"auftrag": auftrag, "langlauf": True, "rolle": rolle, "form": "dokument",
+                   json.dumps({"auftrag": auftrag, "langlauf": True, "rolle": rolle, "form": _form(art),
                                # Die Aufgabe auch am Case (19.10.2026): Explorer, Aufgabenfenster, Talk und Usage
                                # suchen sie dort -- in den LongRun-Daten allein fanden sie sie nicht.
                                "aufgabe_id": aufgabe_id}, ensure_ascii=False),
@@ -374,7 +447,7 @@ def steuern(lid: str, aktion: str, d: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------- Bausteine
 def _system(rid: str, art: str) -> str:
     r = stab.rolle(rid)
-    form = stab.FORM_ANWEISUNG["dokument"] if art != "video" else ""
+    form = WEBSEITE_ETAPPE if art == "webseite" else stab.FORM_ANWEISUNG.get(_form(art), "") if art != "video" else ""
     return (f"Du bist {r.get('name')}, {r.get('titel')} in Veiko von Eckerns KI-Team. {r.get('kurz') or ''}\n\n"
             "Du arbeitest an einem LANGEN Vorhaben, Etappe für Etappe. Keine Vorrede, keine Meta-Kommentare. "
             f"{form}\nREGELN: Schreibe Deutsch. Erfinde keine Fakten über reale Personen, Firmen oder Zahlen. "
@@ -401,6 +474,12 @@ async def _planen(l: dict[str, Any]) -> None:
     stab.laeuft(rid, f"plant den Langläufer „{l['titel']}“", vid)
     n = ARTEN[art]["etappe"]
     extra = (f" Jeder {n} ist etwa eine Minute Video (rund {SZENEN_JE_AKT} Szenen zu je 5 Sekunden)." if art == "video" else
+             f" Jeder {n} wird 5 bis 10 Folien lang; der erste beginnt mit der Titelfolie, der letzte endet mit der "
+             "Abschlussfolie. Plane so, dass die Präsentation eine durchgehende Argumentation hat." if art == "praesentation" else
+             f" Jede {n} umfasst {BILDER_JE_GRUPPE} Bilder zu einem gemeinsamen Thema; nenne im Inhalt die geplanten Motive. "
+             "Alle Bilder der Serie im selben Stil." if art == "bilder" else
+             f" Der erste {n} legt Gestaltung, Kopf und Navigation fest und beginnt die Seite, der letzte endet mit dem Fuß "
+             "(Kontakt, Impressum-Hinweis). Jeder Teil hat 1 bis 3 Abschnitte mit echtem, fertigem Text." if art == "webseite" else
              " Jede Etappe wird 1.500 bis 5.000 Wörter lang.")
     mt = material_text(d.get("material"), MATERIAL_PLAN)
     frage = (f"VORHABEN: {d['auftrag']}\n\n{stab._vorgang_kontext(db.holen('vorgaenge', vid) or {'id': vid})[:20000]}\n\n"
@@ -461,6 +540,47 @@ async def _etappe(l: dict[str, Any], e: dict[str, Any]) -> None:
                                        denken=stab.DENKEN_SCHREIBEN, num_ctx=65536, timeout=stab.LANGE_FRIST)
         if not video.drehbuch_aus(text, SZENEN_JE_AKT):
             raise llm.ModellFehler(f"{n} {e['nr']}: kein lesbarer Szenen-Block.")
+    elif art == "praesentation":
+        from . import folien
+        erst, letzt = e["nr"] == 1, e["nr"] == gesamt
+        frage = (grund + f"\n\nSchreibe JETZT NUR {n} {e['nr']} von {gesamt}: „{e['titel']}“ -- {e.get('inhalt') or ''}\n"
+                 + folien.ANWEISUNG + "\n"
+                 + ("Beginne mit der Titelfolie der ganzen Präsentation, danach eine kapitel-Folie für diesen Abschnitt. " if erst
+                    else "Beginne mit einer kapitel-Folie für diesen Abschnitt; KEINE Titelfolie. ")
+                 + ("Ende mit der abschluss-Folie der ganzen Präsentation." if letzt else "KEINE abschluss-Folie -- es geht danach weiter.")
+                 + " 5 bis 10 Folien, jede mit Notizen. Keine Wiederholung früherer Abschnitte.")
+        text = await stab._chat_robust(modell, system, [{"role": "user", "content": frage}], temperatur=0.6,
+                                       denken=stab.DENKEN_SCHREIBEN, num_ctx=65536, timeout=stab.LANGE_FRIST)
+        text = text.strip().strip("-").strip()
+    elif art == "webseite":
+        erst, letzt = e["nr"] == 1, e["nr"] == gesamt
+        stil = d.get("web_stil") or ""
+        frage = (grund + f"\n\nSchreibe JETZT NUR {n} {e['nr']} von {gesamt}: „{e['titel']}“ -- {e.get('inhalt') or ''}\n"
+                 + ("Das ist der ERSTE Teil: beginne mit EINEM <style>-Block, der die Gestaltung der ganzen Seite festlegt "
+                    "(Farben, Schrift, Abstände, Klassen für Abschnitte, Karten, Knöpfe; mobil tauglich mit Media Queries), "
+                    "danach header mit Navigation und die ersten Abschnitte. " if erst else
+                    f"Benutze NUR die Klassen aus diesem Stil, keinen eigenen <style>:\n{stil[:12000]}\n")
+                 + ("Ende mit dem footer der Seite." if letzt else "KEIN footer -- es geht danach weiter.")
+                 + " Echter, fertiger Text, keine Platzhalter wie Lorem ipsum.")
+        roh = await stab._chat_robust(modell, system, [{"role": "user", "content": frage}], temperatur=0.5,
+                                      denken=stab.DENKEN_SCHREIBEN, num_ctx=65536, timeout=stab.LANGE_FRIST)
+        text = _html_aus(roh)
+        if not text:
+            raise llm.ModellFehler(f"{n} {e['nr']}: kein lesbarer HTML-Block.")
+        if erst:
+            m = re.search(r"<style[^>]*>[\s\S]*?</style>", text, re.I)
+            d["web_stil"] = m.group(0) if m else ""
+    elif art == "bilder":
+        frage = (grund + f"\n\nSchreibe JETZT NUR {n} {e['nr']} von {gesamt}: „{e['titel']}“ -- {e.get('inhalt') or ''}\n"
+                 f"Beginne mit der Zeile „## {e['titel']}“. Dann {BILDER_JE_GRUPPE} Bilder, je Bild: eine Zeile „### <Bildtitel>“, "
+                 "ein bis zwei Sätze, wofür das Bild gedacht ist und was es zeigt, und GENAU EINE Zeile "
+                 "„Bild: <ausführliche Beschreibung: Motiv, Bildausschnitt, Stil, Licht, Farben, Stimmung>“. Keine Schrift, "
+                 "keine Logos, keine echten Personen im Bild; derselbe Stil wie die Bilder der früheren Gruppen.")
+        text = await stab._chat_robust(modell, system, [{"role": "user", "content": frage}], temperatur=0.6,
+                                       denken=stab.DENKEN_SCHREIBEN, num_ctx=65536, timeout=stab.LANGE_FRIST)
+        if not re.search(r"(?mi)^\s*bild\s*:", text):
+            raise llm.ModellFehler(f"{n} {e['nr']}: keine Bild-Zeile.")
+        text = _ueberschriften_eine_ebene_tiefer(text, e["titel"])
     else:
         frage = (grund + f"\n\nSchreibe JETZT NUR {n} {e['nr']} von {gesamt}: „{e['titel']}“ -- {e.get('inhalt') or ''}\n"
                  f"Beginne mit der Zeile „## {e['titel']}“. Ausführlich und vollständig; keine Wiederholung früherer Etappen, "
@@ -474,7 +594,8 @@ async def _etappe(l: dict[str, Any], e: dict[str, Any]) -> None:
     # Daniel prueft lokal; "nachbessern" -> genau eine Ueberarbeitung. Eine
     # Rueckfrage haelt den Lauf NICHT an -- sie steht als Mangel an der Etappe.
     stab.laeuft("kritiker", f"Langläufer: prüft {n} {e['nr']}", vid)
-    a = {"auftrag": f"{d['auftrag']} -- {n} {e['nr']}: {e['titel']}: {e.get('inhalt') or ''}", "form": "video" if art == "video" else "dokument"}
+    a = {"auftrag": f"{d['auftrag']} -- {n} {e['nr']}: {e['titel']}: {e.get('inhalt') or ''}",
+         "form": _form(art)}
     p = await stab.pruefen(text, a, v)
     if p.get("urteil") in ("nachbessern", "rueckfrage") and (p.get("maengel") or p.get("frage")):
         stab.laeuft(rid, f"Langläufer: überarbeitet {n} {e['nr']}", vid)
@@ -487,7 +608,7 @@ async def _etappe(l: dict[str, Any], e: dict[str, Any]) -> None:
                                       + (" Behalte den ```json-Szenenblock bei." if art == "video" else "")}],
                                       temperatur=0.5, denken=stab.DENKEN_SCHREIBEN, num_ctx=65536, timeout=stab.LANGE_FRIST)
         if neu.strip() and (art != "video" or video.drehbuch_aus(neu, SZENEN_JE_AKT)):
-            text = neu if art == "video" else _ueberschriften_eine_ebene_tiefer(neu, e["titel"])
+            text = _ueberarbeitet(art, neu, e["titel"], text)
             e["ueberarbeitet"] = "Daniel"
     e["daniel"] = {"urteil": p.get("urteil"), "begruendung": p.get("begruendung"), "maengel": p.get("maengel") or []}
     e["text"] = text
@@ -498,6 +619,29 @@ async def _etappe(l: dict[str, Any], e: dict[str, Any]) -> None:
     _speichern(l)
     db.ereignis(vid, rid, "info", f"{n} {e['nr']} von {gesamt} fertig: {e['titel']} "
                                   f"({len(text.split())} Wörter, Daniel: {stab.urteil_klartext(p)}).")
+
+
+def _ueberarbeitet(art: str, neu: str, titel: str, alt: str) -> str:
+    """Eine ueberarbeitete Etappe in die Form ihrer Art bringen. Liefert die Ueberarbeitung
+    keine lesbare Webseite, bleibt die alte Fassung -- lieber unveraendert als kaputt."""
+    if art == "video":
+        return neu
+    if art == "praesentation":
+        return neu.strip().strip("-").strip()
+    if art == "webseite":
+        return _html_aus(neu) or alt
+    return _ueberschriften_eine_ebene_tiefer(neu, titel)
+
+
+def _html_aus(text: str) -> str:
+    """Das HTML-Fragment aus einer Antwort (```html-Block, sonst der Text, wenn er HTML ist).
+    Skripte fliegen raus -- die Seite wird im Cockpit angezeigt."""
+    m = re.search(r"```html\s*([\s\S]*?)```", text or "", re.I)
+    h = (m.group(1) if m else (text or "")).strip()
+    if "<" not in h:
+        return ""
+    h = re.sub(r"</?(html|head|body)[^>]*>|<!doctype[^>]*>|<meta[^>]*>|<title>[\s\S]*?</title>", "", h, flags=re.I)
+    return re.sub(r"<script[\s\S]*?</script>", "", h, flags=re.I).strip()
 
 
 def _ueberschriften_eine_ebene_tiefer(text: str, titel: str) -> str:
@@ -629,7 +773,7 @@ async def _nachbessern(l: dict[str, Any], e: dict[str, Any], kritik: str) -> Non
                                       "-- die bisherige Fassung bleibt.".replace(",", "."))
         return
     if neu.strip() and (art != "video" or video.drehbuch_aus(neu, SZENEN_JE_AKT)):
-        e["text"] = neu if art == "video" else _ueberschriften_eine_ebene_tiefer(neu, e["titel"])
+        e["text"] = _ueberarbeitet(art, neu, e["titel"], e.get("text", ""))
         e["ueberarbeitet"] = kritik.split(":")[0]
         e["kurz"] = await _kurzfassung(modell, e["text"])
         db.ereignis(vid, rid, "info", f"{n} {e['nr']} nachgebessert ({kritik[:200]}).")
@@ -659,7 +803,8 @@ def _abschliessen(l: dict[str, Any], vorlaeufig: bool = False) -> str | None:
                                 + (f". Letztes Wort von {letzte.get('name')}: {letzte.get('begruendung')}" if letzte.get("begruendung") else "")
                                 + (" VORLÄUFIG -- der Lauf ist noch nicht fertig." if vorlaeufig else "")),
                 "maengel": [m for e in fertig for m in ((e.get("daniel") or {}).get("maengel") or [])][:6]}
-    a = {"titel": ("Zwischenstand: " if vorlaeufig else "") + titel, "form": "video" if art == "video" else "dokument"}
+    a = {"titel": ("Zwischenstand: " if vorlaeufig else "") + titel,
+         "form": _form(art)}
     if art == "video":
         szenen = []
         for e in fertig:
@@ -669,6 +814,17 @@ def _abschliessen(l: dict[str, Any], vorlaeufig: bool = False) -> str | None:
         text = (f"# {titel}\n\n" + "\n".join(f"- **{ARTEN[art]['etappe']} {e['nr']}: {e['titel']}** -- {e.get('kurz') or ''}" for e in fertig)
                 + f"\n\n{len(szenen)} Szenen, etwa {round(len(szenen) * 5 / 60, 1)} Minuten.\n\n```json\n"
                 + json.dumps(drehbuch, ensure_ascii=False, indent=1) + "\n```")
+    elif art == "praesentation":
+        # Folien der Abschnitte aneinander; die Titelfolie steht im ersten Abschnitt.
+        text = "\n\n---\n\n".join(e.get("text", "").strip().strip("-").strip() for e in fertig)
+    elif art == "webseite":
+        # Die Teile zu EINER eigenstaendigen Seite (Form webseite: stab.ansicht_html liest den ```html-Block).
+        seite = ("<!doctype html>\n<html lang=\"de\">\n<head>\n<meta charset=\"utf-8\">\n"
+                 "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
+                 f"<title>{titel.replace('<', '&lt;')}</title>\n</head>\n<body>\n"
+                 + "\n\n".join(e.get("text", "") for e in fertig) + "\n</body>\n</html>")
+        text = (f"Die Webseite „{titel}“ in {len(fertig)} Teilen: "
+                + "; ".join(e["titel"] for e in fertig) + ".\n\n```html\n" + seite + "\n```")
     else:
         text = f"# {titel}\n\n" + "\n\n".join(e.get("text", "") for e in fertig)
     alt = d.get("ergebnis_id") if not vorlaeufig else None
@@ -681,7 +837,7 @@ def _abschliessen(l: dict[str, Any], vorlaeufig: bool = False) -> str | None:
         d["ergebnis_veraltet"] = False
         if art != "video":
             from . import folienbilder
-            if "dokument" in folienbilder.MIT_BILDERN:
+            if a["form"] in folienbilder.MIT_BILDERN:
                 folienbilder.starten(alt)
         db.ereignis(vid, d["rolle"], "info", "Ergebnis mit den überarbeiteten Etappen aktualisiert.")
         _speichern(l, stand="fertig")
@@ -695,7 +851,7 @@ def _abschliessen(l: dict[str, Any], vorlaeufig: bool = False) -> str | None:
                                                  "Es erscheint am Ergebnis, sobald es fertig ist.")
     else:
         from . import folienbilder
-        if "dokument" in folienbilder.MIT_BILDERN:
+        if a["form"] in folienbilder.MIT_BILDERN:
             folienbilder.starten(eid)
     if not vorlaeufig:
         d["ergebnis_id"] = eid

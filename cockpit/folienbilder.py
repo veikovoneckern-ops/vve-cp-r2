@@ -62,7 +62,7 @@ VORLAGE, VORLAGE_ERSATZ = "qwen", "z-image"
 PRUEF_MODELL = "gemma4:e4b"
 VERSUCHE = 3
 LAUFEND: dict[str, asyncio.Task] = {}
-MAX_BILDER = 20
+MAX_BILDER = 60   # LongRuns (Bildserie, grosse Praesentation) brauchen mehr als 20 (19.10.2026)
 
 
 def folien_roh(md: str) -> list[str]:

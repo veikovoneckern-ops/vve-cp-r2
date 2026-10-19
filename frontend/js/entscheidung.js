@@ -5,9 +5,9 @@ import { escEigen, html, useState, Icon, Avatar, toast, fehlerMelden, aktualisie
 import { api } from "./api.js";
 import { Composer } from "./composer.js";
 
-const HAUPT = { projekt_neu: "Anlegen", gedaechtnis: "Merken", ausarbeitung: "Ja, ausarbeiten", zuordnung: "Zuordnen", aufgabe: "Anlegen" };
+const HAUPT = { projekt_neu: "Anlegen", gedaechtnis: "Merken", ausarbeitung: "Ja, ausarbeiten", langlauf: "Ja, als LongRun", zuordnung: "Zuordnen", aufgabe: "Anlegen" };
 const AENDERN = { projekt_neu: "Anderer Name", gedaechtnis: "Anders merken", ausarbeitung: "Ergänzen" };
-const ART_TEXT = { projekt_neu: "Neues Projekt", gedaechtnis: "Memory", rueckfrage: "Frage", ausarbeitung: "Ausarbeitung", zuordnung: "Zuordnung", aufgabe: "Aufgabe" };
+const ART_TEXT = { projekt_neu: "Neues Projekt", gedaechtnis: "Memory", rueckfrage: "Frage", ausarbeitung: "Ausarbeitung", langlauf: "LongRun?", zuordnung: "Zuordnung", aufgabe: "Aufgabe" };
 
 export function Entscheidung({ e, mitVorgang = true, nachher }) {
   const [modus, setModus] = useState(e.art === "rueckfrage" ? "antwort" : null);
@@ -21,6 +21,7 @@ export function Entscheidung({ e, mitVorgang = true, nachher }) {
       await api("/entscheidungen/" + e.id, { methode: "POST", daten: { antwort, text: t } });
       if (antwort === "spaeter") toast("Zurückgestellt.");
       else if (e.art === "rueckfrage") toast("Antwort ist beim Team.");
+      else if (e.art === "langlauf") toast(antwort === "ja" ? "LongRun gestartet. Er plant jetzt die Etappen." : "Wird als normale Ausarbeitung erledigt.");
       else toast(antwort === "ja" ? "Erledigt." : "Abgelehnt.");
       setWeg(true);
       aktualisieren();
@@ -56,7 +57,7 @@ export function Entscheidung({ e, mitVorgang = true, nachher }) {
     : html`<div class="knopfreihe">
         <button class="btn ja" disabled=${laeuft} onClick=${() => antworten("ja")}><${Icon} n="check" g=${15} />${HAUPT[e.art] || "Ja"}</button>
         ${AENDERN[e.art] && html`<button class="btn" disabled=${laeuft} onClick=${() => { if (e.art === "ausarbeitung") setText(""); setModus("aendern"); }}><${Icon} n="stift" g=${14} />${AENDERN[e.art]}</button>`}
-        <button class="btn" disabled=${laeuft} onClick=${() => antworten("nein")}>Nein</button>
+        <button class="btn" disabled=${laeuft} onClick=${() => antworten("nein")}>${e.art === "langlauf" ? "Nein, normal ausarbeiten" : "Nein"}</button>
         <button class="btn geist klein" disabled=${laeuft} onClick=${() => antworten("spaeter")} style="margin-left:auto">Später</button>
       </div>`}
   </div>`;

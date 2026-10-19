@@ -54,17 +54,13 @@ const ohneBloecke = (t) => t.replace(/<<<FASSUNG>>>[\s\S]*/, "\n\n_… schreibt 
   .replace(/<<<(HINWEIS|UEBERARBEITEN|NEUE_ETAPPEN)>>>[\s\S]*/, "\n\n_… gibt die Anweisung an den LongRun …_")
   .replace(/<<<RECHERCHE>>>[\s\S]*/, "\n\n_… startet die Recherche …_");
 function genannteExterne(text) { return EXTERN_NAMEN.filter(([, re]) => re.test(text || "")).map(([id]) => id); }
-// "... und DANACH gibst du es an Demis zum Ueberpruefen" (19.10.2026): der Externe soll
-// pruefen, wenn die Arbeit fertig ist -- nicht sofort und nicht statt des Mitglieds.
-const NACHHER = /(danach|anschlie(ß|ss)end|am ende|zum schluss|hinterher|zum (über|ueber)?pr(ü|ue)fen|\bwenn\s[^.!?]{0,90}(fertig|geschrieben|abgeschlossen|durch|vollst(ä|ae)ndig))/i;
-// Ein Werk dieser Groesse gehoert in einen LongRun (19.10.2026): im Chat schreibt das Mitglied
-// alles in EINE Antwort, ein "komplettes Buch" wird dort zwangslaeufig ein Auszug. Veiko schrieb
-// "ist ein LongRun" in den Chat, und es entstand trotzdem nur eine Chat-Antwort.
-const LONGRUN_WORT = /\blong[ -]?runs?\b|langl(ä|ae)ufer|\blanglauf/i;
-function grosserAuftrag(t) {
-  if (LONGRUN_WORT.test(t)) return true;
-  return /(komplett|vollst(ä|ae)ndig|\bganze|\bgesamte|alle kapitel)/i.test(t) && /(\bbuch|\bwerk\b|manuskript|alle kapitel)/i.test(t)
-    && /(schreib|ausarbeit|erstell|fertig|(ü|ue)berarbeit|neu fass)/i.test(t);
+// Ist das ein grosses Vorhaben (LongRun), und soll ein genannter Externer erst DANACH pruefen?
+// Beides beantwortet der Server (langlauf.gross, dieselbe Regel wie Talk und Pipeline) --
+// hier steht keine eigene Regel (19.10.2026). Im Chat schreibt das Mitglied alles in EINE
+// Antwort; ein komplettes Buch oder eine grosse Praesentation wird dort zwangslaeufig ein Auszug.
+async function erkennen(text) {
+  try { return await api("/langlaeufe/erkennen", { methode: "POST", daten: { text } }); }
+  catch (e) { return { gross: null, nachher: false }; }
 }
 
 // wer: Kennung des Mitglieds; gid: Gespraech oder null; ergebnisId/projektId: Kontext.
@@ -123,17 +119,18 @@ export function TeamChat({ wer, partnerListe, gid, ergebnisId = "", projektId = 
     if (lauf) return false;
     if (ich.extern && !kostenOk) { setWartet({ text, dateien, namen }); return true; }
     const dazu = ich.extern ? [] : genannteExterne(text).filter((x) => partnerListe.some((p) => p.id === x));
-    const nachher = dazu.length > 0 && NACHHER.test(text);
+    const erk = ich.extern ? { gross: null, nachher: false } : await erkennen(text);
+    const nachher = dazu.length > 0 && erk.nachher;
     // In einem LongRun-Gespraech gehen Anweisungen ohnehin an den LongRun.
-    if (!imChat && !ich.extern && !langlaufId && grosserAuftrag(text)) { setWartet({ text, dateien, namen, dazu, nachher, langlauf: true }); return true; }
+    if (!imChat && !langlaufId && erk.gross) { setWartet({ text, dateien, namen, dazu, nachher, langlauf: erk.gross }); return true; }
     if (dazu.length && !dazu.every((x) => externFrei.includes(x))) { setWartet({ text, dateien, namen, dazu, nachher }); return true; }
     return sendenFrei(text, dateien, dazu, nachher);
   }
   function alsLangLauf(w) {
-    const pruefer = w.dazu.includes("demmis") ? "demmis" : "dario";
+    const g = w.langlauf;
     setWartet(null);
-    langlaufStarten({ projekt_id: projektId || "", titel: "", auftrag: w.text, rolle: wer, pruefer,
-      pruef_alle: w.dazu.length && w.nachher ? 0 : 3, ergebnis_id: ergebnisId || "", fest: ["auftrag", "rolle", "pruefer", "pruef_alle"] });
+    langlaufStarten({ projekt_id: projektId || "", titel: "", auftrag: w.text, rolle: wer, art: g.art, pruefer: g.pruefer,
+      pruef_alle: g.pruef_alle, ergebnis_id: ergebnisId || "", fest: ["auftrag", "rolle", "art", "pruefer", "pruef_alle"] });
   }
 
   async function sendenFrei(text, dateien, extern = [], danach = false) {
@@ -199,9 +196,9 @@ export function TeamChat({ wer, partnerListe, gid, ergebnisId = "", projektId = 
           <div class="leise klein" style="margin-top:6px">Du kannst das Fenster schließen. Die Antwort wird fertig gerechnet und erscheint hier.</div></div></div>`}
     </div>
     ${wartet && wartet.langlauf && html`<div class="hinweisbox tc-kosten">
-      <b>Das ist ein großes Vorhaben -- dafür gibt es den LongRun.</b> Hier im Chat schreibt ${ich.name} alles in eine einzige Antwort;
-      ein ganzes Buch wird so zwangsläufig ein Auszug. Als LongRun plant ${ich.name} die Kapitel und schreibt eins nach dem anderen, jedes ausführlich
-      und von Daniel geprüft${wartet.dazu.some((x) => x === "demmis" || x === "dario") ? (wartet.nachher ? `, und ${wartet.dazu.includes("demmis") ? "Demmis" : "Dario"} prüft am Ende das fertige Werk` : `, und ${wartet.dazu.includes("demmis") ? "Demmis" : "Dario"} prüft zwischendurch`) : ""}.
+      <b>Das ist ein großes Vorhaben (${wartet.langlauf.art_name}) -- dafür gibt es den LongRun.</b> Hier im Chat schreibt ${ich.name} alles in eine einzige Antwort;
+      ein großes Werk wird so zwangsläufig ein Auszug. Als LongRun plant ${ich.name} es in Etappen und arbeitet eine nach der anderen aus, jede gründlich
+      und von Daniel geprüft, und ${wartet.langlauf.pruefer === "demmis" ? "Demmis" : "Dario"} prüft ${wartet.langlauf.pruef_alle === 0 ? "am Ende das fertige Werk" : "zwischendurch"}.
       Im nächsten Schritt siehst du alles im Formular und startest selbst -- dort steht auch das Budget für die Prüfung.
       <div class="knopfreihe" style="margin-top:8px">
         <button class="btn primaer klein" onClick=${() => alsLangLauf(wartet)}><${Icon} n="langlauf" g=${14} />Als LongRun starten</button>

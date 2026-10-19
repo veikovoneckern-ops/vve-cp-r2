@@ -1965,6 +1965,16 @@ async def langlauf_bestand(projekt_id: str = "", aufgabe_id: str = ""):
     return {"bestand": langlauf.bestand(projekt_id or None, aufgabe_id or None)}
 
 
+@router.post("/langlaeufe/erkennen")
+async def langlauf_erkennen(request: Request):
+    """Ist dieser Auftrag ein LongRun? Dieselbe Antwort wie fuer Talk und die Pipeline
+    (langlauf.gross) -- die Oberflaeche fuehrt keine eigene Regel (19.10.2026)."""
+    from . import langlauf
+    d = await _koerper(request)
+    t = str(d.get("text") or "")
+    return {"gross": langlauf.gross(t), "nachher": bool(langlauf._NACHHER.search(t))}
+
+
 @router.post("/langlaeufe/vorschlag")
 async def langlauf_vorschlag(request: Request):
     from . import langlauf

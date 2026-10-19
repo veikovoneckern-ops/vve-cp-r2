@@ -299,7 +299,7 @@ Antworte AUSSCHLIESSLICH mit einem JSON-Objekt in genau dieser Form:
  "projekt_id": "eine id aus der Projektliste oder null",
  "projekt_neu": "kurzer Name für ein neues Projekt oder null",
  "aufgaben": [{"titel": "konkrete Handlung für Veiko", "projekt_id": "id aus der Liste oder null"}],
- "ausarbeitung": null oder {"rolle": "stratege|buch|designer|video|cockpit", "form": "text|aufstellung|konzept|webseite|praesentation|video", "auftrag": "was genau erarbeitet werden soll", "recherche": "Suchanfrage oder null"},
+ "ausarbeitung": null oder {"rolle": "stratege|buch|designer|video|cockpit", "form": "text|aufstellung|konzept|webseite|praesentation|video", "auftrag": "was genau erarbeitet werden soll", "recherche": "Suchanfrage oder null", "langlauf": false},
  "rueckfrage": "eine Frage an Veiko oder null",
  "gedaechtnis": [{"art": "person|organisation|begriff", "begriff": "...", "bedeutung": "..."}]
 }
@@ -309,7 +309,7 @@ Regeln:
 - projekt_id nur aus der Liste. Nutze das GEDÄCHTNIS, um Personen und Begriffe zuzuordnen.
 - projekt_neu nur, wenn die Notiz ausdrücklich ein neues Projekt verlangt oder klar ein neues, eigenständiges Vorhaben beschreibt, das in kein bestehendes passt.
 - aufgaben: nur Handlungen, die Veiko SELBST erledigen will ("ich muss", "ich will", "nicht vergessen"). Eine je Anliegen, kurz, im Imperativ. Höchstens 6. Jede Aufgabe bekommt ihr eigenes passendes Projekt (projekt_id), eine Notiz kann mehrere Projekte betreffen. Keine Aufgabe über das Anlegen oder Zuordnen eines Projekts.
-- ausarbeitung: nur für das, worum Veiko den STAB ausdrücklich bittet ("such mir raus", "arbeite aus", "mach mir einen Entwurf", "stell zusammen", "recherchiere"). Was er selbst tun muss, ist eine Aufgabe, keine Ausarbeitung. Sonst null. stratege = Recherchen, Aufstellungen, Strategie, Konzepte; buch = Texte, Artikel, Bücher, Mails; designer = Bilder und Gestaltung; video = Video (dann form video: es entsteht ein echtes Erklärvideo mit Sprecherstimme); cockpit = das Cockpit oder Software. recherche = eine knappe Suchanfrage, wenn Fakten aus dem Internet nötig sind.
+- ausarbeitung: nur für das, worum Veiko den STAB ausdrücklich bittet ("such mir raus", "arbeite aus", "mach mir einen Entwurf", "stell zusammen", "recherchiere"). Was er selbst tun muss, ist eine Aufgabe, keine Ausarbeitung. Sonst null. stratege = Recherchen, Aufstellungen, Strategie, Konzepte; buch = Texte, Artikel, Bücher, Mails; designer = Bilder und Gestaltung; video = Video (dann form video: es entsteht ein echtes Erklärvideo mit Sprecherstimme); cockpit = das Cockpit oder Software. recherche = eine knappe Suchanfrage, wenn Fakten aus dem Internet nötig sind. langlauf = true, wenn Veiko ein GROSSES Werk vollständig haben will (ein ganzes Buch, eine große Präsentation, ein ausführliches Konzept, eine Studie, eine Strategie, einen Leitfaden, ein langes Video) -- das Cockpit fragt ihn dann, ob es als LongRun in Etappen entstehen soll; sonst false.
 
 BEISPIEL
 Notiz: "Ich muss morgen den Quartalsbericht abgeben und Papa anrufen. Such mir raus, welche Hotels in Hamburg Tagungsräume haben."
@@ -432,7 +432,33 @@ def anwenden(v: dict[str, Any], n: dict[str, Any], d: dict[str, Any], modell: st
         auftrag = {"rolle": r, "form": f, "auftrag": _kurz(aus["auftrag"], 600),
                    "recherche": _kurz(aus.get("recherche"), 150) or None}
         verlangt = bool(AUSARBEITUNG_RE.search(notiz_text(n))) or v.get("quelle") == "gespraech"
-        if verlangt and vt["ausarbeiten"] == "selbst":
+        # Ein grosses Vorhaben wird ein LongRun (19.10.2026) -- nie ohne Veiko, weil die
+        # Pruefung durch Dario/Demmis Geld kostet: eine Frage im Briefing. Nein = die
+        # gewoehnliche Ausarbeitung wie bisher. Geprueft wird Jasons Auftrag (er fasst
+        # zusammen, was Veiko will) und Jasons Marke "langlauf"; die ganze Notiz nur auf
+        # das ausdrueckliche Wort -- eine lange Abschrift enthaelt "komplett" und
+        # "Konzept" auch ohne jeden Auftrag.
+        from . import langlauf as _ll
+        nt = notiz_text(n)
+        gr = (_ll.gross(auftrag["auftrag"])
+              or (_ll.gross(nt) if _ll._GROSS_AUSDRUECKLICH.search(nt) else None)
+              or ({"art": _ll.art_aus(auftrag["auftrag"]), "pruefer": "dario", "pruef_alle": 3}
+                  if aus.get("langlauf") is True else None))
+        if gr and verlangt and r != "cockpit":
+            # Pruefer und Rhythmus stehen in Veikos Worten, nicht in Jasons Zusammenfassung.
+            aus_notiz = _ll.gross(nt + " in etappen") or {}
+            pr = aus_notiz.get("pruefer") or gr["pruefer"]
+            pa = aus_notiz.get("pruef_alle", gr["pruef_alle"]) if re.search(r"demm?is|gemini|dario|claude", nt, re.I) else gr["pruef_alle"]
+            art_ll = gr["art"]
+            entscheidung_anlegen(vid, "langlauf",
+                                 f"Das ist ein großes Vorhaben. Soll {rollen_name(r)} das als LongRun ausarbeiten -- "
+                                 f"{_ll.ARTEN[art_ll]['name']} in Etappen, jede gründlich, Daniel prüft jede, "
+                                 f"{'Demmis' if pr == 'demmis' else 'Dario'} prüft {'am Ende' if pa == 0 else 'zwischendurch'} "
+                                 f"(Budget 5 $)? Bei Nein wird es eine normale Ausarbeitung. {auftrag['auftrag']}",
+                                 {"ausarbeitung": auftrag, "art": art_ll, "pruefer": pr, "pruef_alle": pa, "budget": 5,
+                                  "projekt_id": v.get("projekt_id")})
+            teile.append(f"Großes Vorhaben erkannt -- Frage an Veiko: als LongRun? {auftrag['auftrag']}")
+        elif verlangt and vt["ausarbeiten"] == "selbst":
             db.aendern("vorgaenge", vid, {"auftrag": json.dumps(auftrag, ensure_ascii=False)}, wer="pmo", vorgang_id=vid)
             teile.append(f"{rollen_name(r)} arbeitet aus: {auftrag['auftrag']}")
         else:
@@ -531,6 +557,27 @@ def entscheiden(eid: str, antwort: str, text: str = "") -> dict[str, Any]:
                 a = json.loads(v["auftrag"])
                 a["antworten"] = (a.get("antworten") or []) + [{"frage": e["frage"], "antwort": text}]
                 db.ausfuehren("UPDATE vorgaenge SET auftrag=? WHERE id=?", (json.dumps(a, ensure_ascii=False), vid))
+    elif e["art"] == "langlauf":
+        # Grosses Vorhaben aus einer Notiz (19.10.2026): Ja = LongRun mit dem genannten
+        # Budget (das Ja ist die Zustimmung zu den Pruefkosten), Nein = die gewoehnliche
+        # Ausarbeitung, die Jason ohnehin vorgesehen hatte -- es geht nichts verloren.
+        aus = dict(daten.get("ausarbeitung") or {})
+        if antwort == "ja":
+            from . import langlauf
+            v = db.holen("vorgaenge", vid) if vid else None
+            pid = (v or {}).get("projekt_id") or daten.get("projekt_id")
+            material = [{"art": m["art"], "id": m["id"]} for m in langlauf.bestand(pid, None) if m.get("vorgewaehlt")]
+            try:
+                l = langlauf.anlegen("", (aus.get("auftrag") or "") + (f" -- Veiko ergänzt: {text}" if text else ""),
+                                     daten.get("art") or "dokument", pid, daten.get("pruefer") or "dario",
+                                     daten.get("pruef_alle", 3), float(daten.get("budget") or 5), aus.get("rolle"), None, material)
+            except ValueError as f:
+                return {"ok": False, "grund": str(f)}
+            ergebnis["langlauf_id"] = l.get("id")
+            if vid:
+                db.ereignis(vid, "du", "info", f"Als LongRun gestartet: „{l.get('titel')}“ -- der Fortschritt steht unter LongRuns.")
+        elif vid and aus.get("auftrag"):
+            auftrag_setzen(vid, aus)
     elif antwort == "ja":
         if e["art"] == "projekt_neu":
             name = (text or daten.get("name") or "Neues Projekt").strip()[:80]
