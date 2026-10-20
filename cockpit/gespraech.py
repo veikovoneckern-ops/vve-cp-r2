@@ -1288,7 +1288,7 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     # ("Neal arbeitet gerade am Kapitel") ist derselbe Satz ein Bericht, keine Behauptung
     # (19.10.2026: "Ich moechte eine Gesamtlage" endete mit "konnte nicht ans Team geben").
     will_was = auftrag or befehl or ist_ja(text)
-    if not erledigt_in and not bestaetigt and will_was and not [v for v in vorschlaege if v["aktion"] in ("ausarbeiten", "neo", "pruefen")] and (TEAM_BEHAUPTET.search(sichtbar or "") or (auftrag and not zeigen and not oeffnen and not werkzeug)):
+    if not erledigt_in and not bestaetigt and will_was and not [v for v in vorschlaege if v["aktion"] in ("ausarbeiten", "neo", "pruefen", "langlauf")] and (TEAM_BEHAUPTET.search(sichtbar or "") or (auftrag and not zeigen and not oeffnen and not werkzeug)):
         try:
             roh = await llm.chat(modell, system, verlauf + [{"role": "assistant", "content": gesamt}, {"role": "user", "content":
                 "Du hast gesagt, das Team (oder Neo) arbeite daran, aber keinen ```aktionen-Block geschickt -- gestartet ist nichts. "
@@ -1301,7 +1301,7 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
             vorschlaege += nach
         except llm.ModellFehler:
             pass
-        if not [v for v in vorschlaege if v["aktion"] in ("ausarbeiten", "neo")] and TEAM_BEHAUPTET.search(sichtbar or ""):
+        if not [v for v in vorschlaege if v["aktion"] in ("ausarbeiten", "neo", "langlauf")] and TEAM_BEHAUPTET.search(sichtbar or ""):
             sichtbar = TEAM_BEHAUPTET.sub("", sichtbar).strip()
             sichtbar = (sichtbar + "\n\nIch konnte den Auftrag nicht ans Team geben -- gestartet ist nichts. Sag mir bitte noch einmal, wer was machen soll.").strip()
     # Auch eine Frage "Soll ich das so machen?" OHNE Block (19.10.2026: "Ich schlage vor, die
