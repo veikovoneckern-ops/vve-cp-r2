@@ -202,35 +202,58 @@ def anfragen_frei() -> list[dict[str, Any]]:
 VORRANG: contextvars.ContextVar[bool] = contextvars.ContextVar("llm_vorrang", default=False)
 NACHLAUF_S = 45
 _vorrang: dict[str, Any] = {"offen": 0, "zuletzt": 0.0}
+# Vorrang je MODELL (20.10.2026): qwen3.8 hat bei Ollama nur einen Platz, deshalb musste ein
+# Gespraech den Hintergrund abbrechen. Rechnet Talk aber auf einem ANDEREN Modell (gemessen:
+# gemma4:12b neben qwen3.8, beide geladen, keine Unterbrechung), weicht der Hintergrund nicht --
+# nur Anfragen auf demselben Modell. Ohne Modell (Team-Chat) gilt der Vorrang wie bisher fuer alle.
+_vorrang_modell: dict[str, dict[str, Any]] = {}
 _HINTERGRUND: dict[int, asyncio.Task] = {}   # Anfrage-ID -> der Task, der gerade bei Ollama liest
 
 
-def vorrang_anstossen() -> None:
+def vorrang_anstossen(modell: str | None = None) -> None:
     """Hoeren/Sprechen von Talk: haelt den Hintergrund noch NACHLAUF_S zurueck."""
-    _vorrang["zuletzt"] = time.time()
+    if modell:
+        _vorrang_modell.setdefault(modell, {"offen": 0, "zuletzt": 0.0})["zuletzt"] = time.time()
+    else:
+        _vorrang["zuletzt"] = time.time()
 
 
-def vorrang_aktiv() -> bool:
-    return bool(_vorrang["offen"]) or time.time() - _vorrang["zuletzt"] < NACHLAUF_S
+def vorrang_aktiv(modell: str | None = None) -> bool:
+    """Muss eine Hintergrund-Anfrage (auf `modell`) gerade warten?"""
+    if _vorrang["offen"] or time.time() - _vorrang["zuletzt"] < NACHLAUF_S:
+        return True
+    m = _vorrang_modell.get(modell or "")
+    return bool(m and (m["offen"] or time.time() - m["zuletzt"] < NACHLAUF_S))
 
 
 class vorrang:
-    """with llm.vorrang(): ... -- ein Gespraech laeuft; der Hintergrund weicht."""
+    """with llm.vorrang(modell): ... -- ein Gespraech laeuft; der Hintergrund weicht.
+    Mit modell nur der Hintergrund auf DIESEM Modell, ohne modell aller."""
+
+    def __init__(self, modell: str | None = None):
+        self.modell = modell or None
+
+    def _zaehler(self) -> dict[str, Any]:
+        return _vorrang_modell.setdefault(self.modell, {"offen": 0, "zuletzt": 0.0}) if self.modell else _vorrang
 
     def __enter__(self):
         self._token = VORRANG.set(True)
-        _vorrang["offen"] += 1
-        _vorrang["zuletzt"] = time.time()
+        z = self._zaehler()
+        z["offen"] += 1
+        z["zuletzt"] = time.time()
         for aid, t in list(_HINTERGRUND.items()):
             e = ANFRAGEN.get(aid)
+            if self.modell and (e is None or e.get("modell") != self.modell):
+                continue
             if e is not None:
                 e["verdraengt"] = True
             t.cancel()
         return self
 
     def __exit__(self, *_):
-        _vorrang["offen"] = max(0, _vorrang["offen"] - 1)
-        _vorrang["zuletzt"] = time.time()
+        z = self._zaehler()
+        z["offen"] = max(0, z["offen"] - 1)
+        z["zuletzt"] = time.time()
         VORRANG.reset(self._token)
         return False
 
@@ -239,7 +262,7 @@ async def _warten_auf_vorrang(e: dict[str, Any]) -> None:
     if VORRANG.get():
         return
     try:
-        while vorrang_aktiv():
+        while vorrang_aktiv(e.get("modell")):
             e["wartet_vorrang"] = True
             await asyncio.sleep(1)
     except asyncio.CancelledError:
@@ -281,6 +304,12 @@ async def installierte_modelle(frisch: bool = False) -> list[str]:
         return _modelle_cache["liste"]
     _modelle_cache.update(zeit=time.time(), liste=namen)
     return namen
+
+
+async def talk_modell() -> str | None:
+    """Das Modell, auf dem Talk und Board WIRKLICH rechnen (Vorgabe, sonst Ersatz) -- eine Stelle
+    fuer Gespraech, Board und den Vorrang (20.10.2026)."""
+    return await modell_waehlen(vorgabe("talk"), "qwen3.6:27b", "qwen3:30b-a3b", "llama3.3:70b")
 
 
 async def modell_waehlen(*wuensche: str | None) -> str | None:

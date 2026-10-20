@@ -955,7 +955,9 @@ def _im_hintergrund(erzeuger, art: str, wer: str = "") -> StreamingResponse:
     async def pumpe():
         gid = None
         # Veiko wartet auf diese Antwort: Langlaeufer und Pipeline weichen (llm.vorrang).
-        vorrang = llm.vorrang()
+        # Talk und Board rechnen auf dem Talk-Modell: nur Hintergrund auf DEMSELBEN Modell weicht
+        # (20.10.2026); der Team-Chat nutzt das Modell des Mitglieds und nimmt Vorrang fuer alle.
+        vorrang = llm.vorrang(await llm.talk_modell() if art in ("talk", "board") else None)
         vorrang.__enter__()
         try:
             async for e in erzeuger:
@@ -1257,7 +1259,7 @@ async def hoeren(datei: UploadFile = File(...)):
     try:
         # Veiko hat gerade gesprochen: der Hintergrund gibt die Karte schon fuer
         # Whisper frei, nicht erst fuer die Antwort danach (llm.vorrang).
-        with llm.vorrang():
+        with llm.vorrang(await llm.talk_modell()):
             return await stimme.hoeren(roh, stab.whisper_vorlage())
     except RuntimeError as e:
         raise HTTPException(503, str(e))
@@ -1266,7 +1268,7 @@ async def hoeren(datei: UploadFile = File(...)):
 @router.post("/stimme/sprechen")
 async def sprechen(request: Request):
     d = await _koerper(request)
-    llm.vorrang_anstossen()   # waehrend Talk vorliest, bleibt der Hintergrund still
+    llm.vorrang_anstossen(await llm.talk_modell())   # waehrend Talk vorliest, bleibt der Hintergrund (auf dem Talk-Modell) still
     try:
         return Response(await stimme.sprechen(str(d.get("text") or "")), media_type="audio/mpeg")
     except (RuntimeError, httpx.HTTPError) as e:
@@ -1284,7 +1286,7 @@ async def talk_aufwaermen(request: Request):
     Hintergrund kurz zurueck, damit der erste Satz nicht hinter einem Team-Schritt ansteht."""
     d = await _koerper(request)
     if d.get("frisch"):
-        llm.vorrang_anstossen()
+        llm.vorrang_anstossen(await llm.talk_modell())
     t0 = time.time()
     modell, whisper, piper = await asyncio.gather(gespraech.aufwaermen(), stimme.vorwaermen(), stimme.sprechen("Ja."),
                                                   return_exceptions=True)

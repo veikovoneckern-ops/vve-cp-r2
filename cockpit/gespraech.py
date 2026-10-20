@@ -205,7 +205,7 @@ def system_kern() -> str:
 
 async def aufwaermen() -> dict[str, Any]:
     """Talk wurde geoeffnet: das Talk-Modell laden und den festen Anfang vorrechnen."""
-    modell = await llm.modell_waehlen(llm.vorgabe("talk"), "qwen3.6:27b", "qwen3:30b-a3b", "llama3.3:70b")
+    modell = await llm.talk_modell()
     if not modell:
         return {"ok": False, "grund": "kein Talk-Modell installiert"}
     return {"ok": True, **await llm.aufwaermen(modell, system_kern())}
@@ -1081,7 +1081,7 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     denken, zusatz = llm.tempo(schnell)
     from . import dossier
     system += "\n\n" + zusatz + "\n\n" + dossier.ANWEISUNG
-    modell = await llm.modell_waehlen(llm.vorgabe("talk"), "qwen3.6:27b", "qwen3:30b-a3b", "llama3.3:70b")
+    modell = await llm.talk_modell()
     if not modell:
         yield {"typ": "fehler", "text": "Kein lokales Modell für das Gespräch installiert."}
         return

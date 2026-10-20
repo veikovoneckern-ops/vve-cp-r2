@@ -129,7 +129,7 @@ async def senden(gid: str | None, text: str, mit: list[str] | None, projekt_id: 
     pk = kontext_text({"art": "projekt", "id": projekt_id}) if projekt_id else ""
     if z.get("aufgabe_id"):
         pk = (pk + "\n\n" if pk else "") + aufgabe_text(z["aufgabe_id"])
-    modell = await llm.modell_waehlen(llm.vorgabe("talk"), "qwen3.6:27b", "qwen3:30b-a3b", "llama3.3:70b")
+    modell = await llm.talk_modell()
     if not modell:
         yield {"typ": "fehler", "text": "Kein lokales Modell installiert."}
         return
