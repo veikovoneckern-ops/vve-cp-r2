@@ -7,6 +7,7 @@ import { api } from "./api.js";
 import { Entscheidung } from "./entscheidung.js";
 import { langlaufStarten } from "./langlauf.js";
 import { ErgebnisVorschau, URTEIL, StilFelder } from "./ergebnis.js";
+import { Textfeld } from "./composer.js";
 
 // "Vorgemerkt" (21.10.2026): Notizen, an denen das Team noch nicht arbeiten soll, haengen
 // oben in "Wartet auf dich", bis Veiko entscheidet -- vorher standen sie unter "Fertig", und er
@@ -144,8 +145,8 @@ function Akte({ id, nachher }) {
       <p class="klein" style="margin:0 0 8px">Das Team arbeitet hier nicht weiter, bis du freigibst. ${d.aufgaben.length
         ? `Die ${d.aufgaben.length === 1 ? "Aufgabe" : d.aufgaben.length + " Aufgaben"} für dich stehen rechts und in deiner Aufgabenliste. ` : ""}
         Mit der Freigabe kannst du sagen, was das Team tun soll -- Jason plant dann wie bei einer neuen Notiz.</p>
-      <textarea class="eingabe" rows="3" value=${anweisung} onInput=${(e) => setAnweisung(e.target.value)} aria-label="Anweisung zur Freigabe"
-        placeholder="Optional: was das Team jetzt tun soll, z. B. „Clayton soll ein Konzept fürs Gedächtnis entwerfen, mit drei Varianten“"></textarea>
+      <${Textfeld} class="eingabe" rows="3" value=${anweisung} onInput=${(e) => setAnweisung(e.target.value)} aria-label="Anweisung zur Freigabe"
+        placeholder="Optional: was das Team jetzt tun soll, z. B. „Clayton soll ein Konzept fürs Gedächtnis entwerfen, mit drei Varianten“" />
       <div class="knopfreihe" style="margin-top:8px"><button class="btn primaer" onClick=${() => aktion("freigeben", { anweisung })}>
         <${Icon} n="play" g=${14} />Freigeben</button></div>
     </section>`}
@@ -282,7 +283,7 @@ export function Ausarbeiten({ v, projektId, zu, fertig }) {
     </div>
     ${form === "praesentation" && html`<div style="margin-top:10px"><${StilFelder} stil=${stil} setStil=${setStil} text=${stilText} setText=${setStilText} id="aa-stil" /></div>`}
     <div class="feld" style="margin-top:10px"><label for="aa-auftrag">Auftrag</label>
-      <textarea id="aa-auftrag" class="eingabe" rows="4" value=${auftrag} onInput=${(e) => setAuftrag(e.target.value)} onKeyDown=${enterBestaetigt}></textarea></div>
+      <${Textfeld} id="aa-auftrag" class="eingabe" rows="4" value=${auftrag} onInput=${(e) => setAuftrag(e.target.value)} onKeyDown=${enterBestaetigt} /></div>
     <div class="feld" style="margin-top:10px"><label for="aa-rech">Im Internet recherchieren (optional: Suchbegriffe)</label>
       <input id="aa-rech" class="eingabe" value=${recherche} placeholder="z. B. Anbieter Seebestattung Sassnitz" onKeyDown=${enterBestaetigt} onInput=${(e) => setRecherche(e.target.value)} /></div>
     <p class="leise klein" style="margin-top:10px">Läuft lokal auf deinem Server. Gesucht wird über deine eigene Suchmaschine. Daniel prüft das Ergebnis vor der Vorlage, bei Mängeln wird einmal nachgebessert.</p>

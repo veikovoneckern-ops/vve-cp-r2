@@ -187,6 +187,20 @@ p{margin:0 0 8px}
 .feld label{font-size:12px;font-weight:650;color:var(--ink-3)}
 .eingabe,select.eingabe,textarea.eingabe{border:1px solid var(--line);background:var(--surface);border-radius:7px;padding:7px 10px;min-height:36px;width:100%}
 textarea.eingabe{resize:vertical;line-height:1.45}
+/* Datumsfelder auf dem iPad (21.10.2026): Safari gibt input[type=date] eine feste Mindestbreite
+   und eine eigene Hoehe -- im Aufgabenfenster ragte "Fällig" rechts aus dem Fenster und stand
+   tiefer als "Beginn". Ohne Eigenformat schrumpft das Feld wie jedes andere. */
+input.eingabe[type="date"],input.eingabe[type="time"],input.eingabe[type="datetime-local"]{-webkit-appearance:none;appearance:none;min-width:0;display:block;height:36px;line-height:20px}
+input.eingabe[type="date"]::-webkit-date-and-time-value{text-align:left;min-height:20px}
+/* Textfeld mit Diktat (composer.Textfeld): Mikrofon unten rechts im Feld. */
+.textfeld-diktat{position:relative;min-width:0}
+.textfeld-diktat>textarea{padding-right:44px;display:block}
+.textfeld-diktat>textarea.diktat{background:var(--violett-soft);color:var(--ink)}
+.textfeld-mikro{position:absolute;right:6px;bottom:8px;width:32px;height:32px;border-radius:8px;border:0;background:var(--surface-2,transparent);color:var(--ink-3);cursor:pointer;display:grid;place-items:center}
+.textfeld-mikro:hover{background:var(--hover);color:var(--ink)}
+.textfeld-mikro.aufnahme{background:var(--signal);color:#fff;animation:puls 1.4s ease-in-out infinite}
+.textfeld-mikro.denkt{color:var(--violett)}
+@media (pointer:coarse){.textfeld-mikro{width:38px;height:38px}}
 .eingabe:focus{border-color:var(--steel);outline:none;box-shadow:0 0 0 3px var(--steel-soft)}
 .segment{display:inline-flex;background:transparent;border:1px solid var(--line);border-radius:9px;padding:3px;gap:2px;flex-wrap:wrap}
 .segment button{background:none;border:0;padding:6px 12px;border-radius:7px;cursor:pointer;font-weight:600;color:var(--ink-3);min-height:32px;white-space:nowrap}
@@ -1607,7 +1621,8 @@ html.zieht iframe{pointer-events:none}
 .af .feld>span{font-size:12.5px;font-weight:650;color:var(--ink-2)}
 .af-titel{font-size:15px;font-weight:650}
 .af-notiz{min-height:180px;resize:vertical;line-height:1.5}
-.af-zwei{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.af-zwei{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;align-items:start}
+.af-zwei>*{min-width:0}
 .af-anhaenge{border:1.5px dashed var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:6px}
 .af-anhaenge.zieht{border-color:var(--steel);background:var(--steel-soft)}
 .af-anh-kopf{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
@@ -1734,6 +1749,9 @@ html.zieht iframe{pointer-events:none}
 .ws2-artwahl button.an{border-color:var(--fuell);background:var(--knopf-grund)}
 .ws2-zwei{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .modal .feld+.feld,.modal .ws2-zwei+.feld,.modal .feld+.ws2-zwei{margin-top:10px}
+/* ... aber nicht zwischen Feldern NEBENEINANDER (21.10.2026): im Aufgabenfenster stand "Fällig"
+   10 Punkt tiefer als "Beginn", im Fenster "Ausarbeiten lassen" ebenso. Der Abstand gilt nur untereinander. */
+.modal :is(.af-zwei,.ws2-zwei,.raster)>.feld+.feld{margin-top:0}
 
 /* Editor */
 .wse{display:flex;flex-direction:column;height:100%;min-height:0}

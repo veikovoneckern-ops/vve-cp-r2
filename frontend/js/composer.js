@@ -5,6 +5,67 @@ import { html, useState, useRef, useEffect, Icon, toast } from "./ui.js";
 import { hochladen } from "./api.js";
 import { diktieren, mikrofonGrund, mikroAnfordern, mikroFreigeben } from "./stimme.js";
 
+// TEXTFELD MIT DIKTAT (21.10.2026, Veiko am iPad: "im Eingabefeld fehlt die Diktierfunktion").
+// Fuer jedes freie Textfeld, das nichts sendet (Informationen einer Aufgabe, Anweisungen,
+// Auftraege, Ziele, Texte der Website): derselbe Mikrofon-Knopf und dasselbe Diktat wie im
+// Composer, der Text kommt ans Ende des Felds. Waehrend des Diktats zeigt das Feld den
+// mitgelesenen Text selbst; am Ende geht er ueber onInput (und onBlur, wo ein Feld erst beim
+// Verlassen speichert) an den Besitzer -- dieselbe Form wie eine Eingabe von Hand.
+// Ein Klick oder eine Taste ins Feld beendet das Diktat, wie im Composer.
+export function Textfeld({ value = "", onInput, onBlur, class: klasse = "eingabe", ...rest }) {
+  const [aufnahme, setAufnahme] = useState(null);   // { ctl, basis }
+  const [anzeige, setAnzeige] = useState("");
+  const [erkenne, setErkenne] = useState(false);
+  const ref = useRef(null);
+  const aufnahmeRef = useRef(null);
+  const mikroId = useRef("diktat:" + Math.random().toString(36).slice(2));
+  useEffect(() => () => { if (aufnahmeRef.current) aufnahmeRef.current.ctl.abbrechen(); mikroFreigeben(mikroId.current); }, []);
+
+  function weitergeben(t) {
+    const e = { target: { value: t }, currentTarget: { value: t } };
+    if (onInput) onInput(e);
+    if (onBlur) onBlur(e);
+  }
+  async function ende(grund) {
+    const a = aufnahmeRef.current;
+    if (!a) return;
+    aufnahmeRef.current = null;
+    setErkenne(true);
+    let fertig = "";
+    try { fertig = await a.ctl.stopp(); } catch (e) { toast(e.message, { fehler: true }); }
+    setAufnahme(null); setErkenne(false); setAnzeige("");
+    mikroFreigeben(mikroId.current);
+    if (fertig) weitergeben(a.basis + fertig);
+    else if (!grund) toast("Nichts verstanden. War das Mikrofon stumm?");
+    if (grund) toast(grund);
+    setTimeout(() => ref.current && ref.current.focus(), 0);
+  }
+  async function mikro() {
+    if (aufnahmeRef.current) return ende();
+    const g = mikrofonGrund();
+    if (g) { toast(g, { fehler: true }); return; }
+    const alt = String(value || "");
+    const basis = alt && !/\s$/.test(alt) ? alt + " " : alt;
+    mikroAnfordern(mikroId.current, () => ende("Diktat beendet -- der Text steht im Feld."));
+    try {
+      const ctl = await diktieren({ beiText: (fest, vor) => setAnzeige(basis + fest + (vor ? (fest ? " " : "") + vor + " …" : "")) });
+      const a = { ctl, basis };
+      aufnahmeRef.current = a;
+      setAnzeige(basis);
+      setAufnahme(a);
+    } catch (e) { mikroFreigeben(mikroId.current); toast(e.message, { fehler: true }); }
+  }
+  return html`<div class="textfeld-diktat">
+    <textarea ref=${ref} ...${rest} class=${klasse + (aufnahme ? " diktat" : "")} value=${aufnahme ? anzeige : value}
+      readOnly=${!!aufnahme || rest.readOnly} onInput=${onInput} onBlur=${aufnahme ? undefined : onBlur}
+      onPointerDown=${(e) => { if (aufnahmeRef.current) ende("Diktat beendet -- du kannst den Text jetzt ändern."); if (rest.onPointerDown) rest.onPointerDown(e); }}
+      onKeyDown=${(e) => { if (aufnahmeRef.current && !["Shift", "Control", "Alt", "Meta", "CapsLock", "Tab"].includes(e.key)) { e.preventDefault(); ende("Diktat beendet -- du kannst den Text jetzt ändern."); return; } if (rest.onKeyDown) rest.onKeyDown(e); }}></textarea>
+    <button type="button" class=${"sym textfeld-mikro" + (aufnahme ? " aufnahme" : erkenne ? " denkt" : "")} onClick=${mikro} disabled=${erkenne}
+      title=${aufnahme ? "Diktat beenden" : "Diktieren (der Text erscheint beim Sprechen)"} aria-label=${aufnahme ? "Diktat beenden" : "Diktieren"} aria-pressed=${!!aufnahme}>
+      <${Icon} n=${aufnahme ? "stopp" : "mic"} g=${17} /></button>
+  </div>`;
+}
+
 function groesse(b) { return b > 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1024)) + " KB"; }
 
 export function Composer({ platzhalter = "Schreib oder sprich …", beimSenden, laeuft = false, beimStoppen,

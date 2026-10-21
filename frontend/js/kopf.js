@@ -129,12 +129,17 @@ export function ampel(k, gesundheit) {
 export function CockpitLeiste({ lage }) {
   const g = lage && lage.gesundheit;
   const offen = lage ? lage.entscheidungen.length : 0;
+  // Vorgemerktes zaehlt mit (21.10.2026): am iPad stand hier "leer", waehrend die Gedaechtnis-
+  // Notiz in der Inbox hing und das Symbol links rot war -- zwei Anzeigen, zwei Aussagen.
+  const vm = lage ? (lage.vorgemerkt || []).length : 0;
   const alt = g && g.sync && Date.now() / 1000 - g.sync > 1800;
+  const inboxTitel = [offen ? `${offen} ${offen === 1 ? "Entscheidung wartet" : "Entscheidungen warten"} auf dich` : "",
+    vm ? `${vm} vorgemerkt, wartet auf deine Freigabe` : ""].filter(Boolean).join(" · ") || "Nichts wartet auf dich";
   return html`<div class="kopf-leiste" role="group" aria-label="Stand des Cockpits">
     <div class=${alt ? "kritisch" : ""} title="Letzter erfolgreicher Abruf der Plaud-Notizen"><b>${g && g.sync ? zeitText(g.sync).replace("vor ", "") : "—"}</b><span>Letzter Abruf</span></div>
     <div title="Wann zuletzt eine neue Notiz hereinkam"><b>${g && g.letzte_datei ? zeitText(g.letzte_datei).replace("vor ", "") : "—"}</b><span>Letzte Notiz</span></div>
-    <a href="#/inbox" class=${offen ? "kritisch" : ""} title=${offen ? `${offen} Entscheidungen warten auf dich` : "Nichts wartet auf dich"}>
-      <b>${offen ? offen + " offen" : "leer"} <${Icon} n="rechts" g=${11} w=${2.4} /></b><span>Inbox</span></a>
+    <a href="#/inbox" class=${offen || vm ? "kritisch" : ""} title=${inboxTitel}>
+      <b>${offen ? offen + " offen" : vm ? vm + " vorgemerkt" : "leer"} <${Icon} n="rechts" g=${11} w=${2.4} /></b><span>Inbox</span></a>
   </div>`;
 }
 

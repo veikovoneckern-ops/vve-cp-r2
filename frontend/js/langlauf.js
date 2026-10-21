@@ -9,6 +9,7 @@
 import { html, useState, useEffect, useRef, Icon, toast, fehlerMelden, zeitText, Md, Modal, bus, useAbruf } from "./ui.js";
 import { api } from "./api.js";
 import { TeamChat, gespraechsPartner } from "./teamchat.js";
+import { Textfeld } from "./composer.js";
 
 const usd = (n) => "$ " + (n || 0).toFixed(2).replace(".", ",");
 const STAND = {
@@ -106,8 +107,8 @@ function Neu({ zu, fertig, d, vorlage }) {
           ${Object.entries(d.arten).map(([k, a]) => html`<option value=${k}>${a.name}</option>`)}</select></label>
       <label>Titel<input class="eingabe" value=${f.titel} onInput=${s("titel")} placeholder="z. B. Führen in der Transformation" /></label>
       <label class="breit">Das Vorhaben -- so genau wie möglich (Inhalt, Zielgruppe, Ton, Länge)
-        <textarea class="eingabe" rows="6" value=${f.auftrag} onInput=${s("auftrag")}
-          placeholder=${f.art === "video" ? "z. B. Ein Erklärvideo von etwa 8 Minuten über … für …, ruhiger Ton, …" : "z. B. Ein Sachbuch mit rund 12 Kapiteln über … für …, Ton …, je Kapitel ein Praxisbeispiel …"}></textarea></label>
+        <${Textfeld} class="eingabe" rows="6" value=${f.auftrag} onInput=${s("auftrag")}
+          placeholder=${f.art === "video" ? "z. B. Ein Erklärvideo von etwa 8 Minuten über … für …, ruhiger Ton, …" : "z. B. Ein Sachbuch mit rund 12 Kapiteln über … für …, Ton …, je Kapitel ein Praxisbeispiel …"} /></label>
       <label>Wer arbeitet
         <select class="eingabe" value=${f.rolle || vorgabeRolle} onChange=${s("rolle")}>
           ${d.rollen.map((r) => html`<option value=${r.id}>${r.name}</option>`)}</select></label>

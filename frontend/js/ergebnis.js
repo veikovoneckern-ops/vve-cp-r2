@@ -3,6 +3,7 @@
 // Eigenes Modul, damit es den Video-Teil und die Vorschau nur einmal gibt.
 import { html, useState, useEffect, useRef, Icon, Avatar, Md, toast, fehlerMelden, zeitText, bus, kopieren, useEsc } from "./ui.js";
 import { api } from "./api.js";
+import { Textfeld } from "./composer.js";
 
 // Downloads je Form -- dieselben Endpunkte wie im Ergebnisfenster.
 export function Downloads({ e }) {
@@ -27,8 +28,8 @@ export function StilFelder({ stil, setStil, text, setText, id = "stil" }) {
       <select id=${id} class="eingabe" value=${stil} onChange=${(e) => setStil(e.target.value)}>
         ${STIL_WAHL.map(([k, t]) => html`<option value=${k}>${t}</option>`)}</select></div>
     ${stil === "eigen" && html`<div class="feld" style="margin-top:8px"><label for=${id + "-text"}>Deine Vorgaben</label>
-      <textarea id=${id + "-text"} class="eingabe" rows="3" value=${text} onInput=${(e) => setText(e.target.value)}
-        placeholder="z. B. hell und freundlich, Grün als Akzentfarbe, Schrift Arial, im Footer „Kanzlei Muster · Vertraulich“, ohne Logo"></textarea>
+      <${Textfeld} id=${id + "-text"} class="eingabe" rows="3" value=${text} onInput=${(e) => setText(e.target.value)}
+        placeholder="z. B. hell und freundlich, Grün als Akzentfarbe, Schrift Arial, im Footer „Kanzlei Muster · Vertraulich“, ohne Logo" />
       <p class="leise klein">Das Layout der VVEORG-Vorlage bleibt; Farben, Schriften und Footer richten sich nach deinen Worten.</p></div>`}`;
 }
 export function StilWahl({ e, geaendert }) {

@@ -12,6 +12,7 @@
 import { html, useState, useEffect, useRef, Icon, Modal, toast, fehlerMelden, zeitText, bus, aktualisieren, navigiere, useFensterKontext } from "./ui.js";
 import { api, hochladen } from "./api.js";
 import { langlaufStarten } from "./langlauf.js";
+import { Textfeld } from "./composer.js";
 
 const PRIO = [[1, "hoch"], [2, "normal"], [3, "niedrig"]];
 const groesse = (b) => (b >= 1e6 ? (b / 1e6).toFixed(1).replace(".", ",") + " MB" : Math.max(1, Math.round(b / 1e3)) + " KB");
@@ -110,9 +111,9 @@ export function AufgabeFenster({ id, zu }) {
         <label class="feld"><span>Titel</span>
           <input class="eingabe af-titel" value=${f.titel} onInput=${s("titel")} onKeyDown=${(e) => { if (e.key === "Enter") speichern(); }} /></label>
         <label class="feld"><span>Informationen <span class="leise klein">-- was gehört dazu, worauf kommt es an, was ist schon geklärt? Das Team liest das mit, wenn es an der Aufgabe arbeitet.</span></span>
-          <textarea class="eingabe af-notiz" rows="9" value=${f.notiz} onInput=${s("notiz")}
+          <${Textfeld} class="eingabe af-notiz" rows="9" value=${f.notiz} onInput=${s("notiz")}
             onKeyDown=${(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) speichern(); }}
-            placeholder="z. B. Hintergrund, Ansprechpartner, Zahlen, Entscheidungen, was am Ende vorliegen soll …"></textarea></label>
+            placeholder="z. B. Hintergrund, Ansprechpartner, Zahlen, Entscheidungen, was am Ende vorliegen soll …" /></label>
 
         <div class=${"af-anhaenge" + (ziehen ? " zieht" : "")}
           onDragOver=${(e) => { e.preventDefault(); setZiehen(true); }} onDragLeave=${() => setZiehen(false)}

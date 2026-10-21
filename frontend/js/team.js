@@ -8,6 +8,7 @@ import { escEigen, html, enterBestaetigt, useState, useEffect, useRef, Icon, Ava
 import { api } from "./api.js";
 import { TeamGespraeche } from "./teamchat.js";
 import { ModelleAbschnitte } from "./modelle.js";
+import { Textfeld } from "./composer.js";
 
 // #/team/chat/<wer>[/<gespraech>] ist das Gespraech mit einem Mitglied; #/team/<abschnitt>
 // oeffnet einen Abschnitt (besetzung, installiert, optimierung, neu, extern).
@@ -102,7 +103,7 @@ function MitgliedDetail({ id, zu, nachher }) {
       <button class="btn primaer" disabled=${auftrag === (m.auftrag || "")} onClick=${speichern}>Auftrag speichern</button>`}>
     <div class="raster zwei">
       <div class="feld"><label for="md-auftrag">Auftrag (so arbeitet ${m.name})</label>
-        <textarea id="md-auftrag" class="eingabe" rows="16" value=${auftrag} onInput=${(e) => setAuftrag(e.target.value)} onKeyDown=${enterBestaetigt} style="font-size:13px"></textarea></div>
+        <${Textfeld} id="md-auftrag" class="eingabe" rows="16" value=${auftrag} onInput=${(e) => setAuftrag(e.target.value)} onKeyDown=${enterBestaetigt} style="font-size:13px" /></div>
       <div><h4 style="margin-bottom:8px">Zuletzt</h4>
         ${m.zuletzt.length ? m.zuletzt.map((z) => html`<div class="zeile"><div class="haupt-text"><a href=${"#/inbox/" + z.vorgang_id} onClick=${zu}>${z.titel || "Case"}</a>
           <div class="leise klein">${z.text.slice(0, 120)}</div></div><span class="neben">${zeitText(z.zeit)}</span></div>`) : html`<${Leer}>Noch nichts in der neuen Fassung.</${Leer}>`}

@@ -14,6 +14,7 @@ import { html, useState, useEffect, useRef, Icon, Modal, toast, fehlerMelden, bu
 import { api } from "./api.js";
 import { Editor, MedienWahl } from "./webspace-editor.js";
 import { BASIS, absaetze, vergleichen } from "./webspace-teile.js";
+import { Textfeld } from "./composer.js";
 
 export function WebSpace({ pfad: pfadAusAdresse }) {
   const [stand, setStand] = useState(null);
@@ -667,10 +668,10 @@ function NeueSeite({ vorgabe, stand, zu, fertig }) {
       <button class="ws2-blogbild" onClick=${() => setBildWahl(true)} title="Bild für die Übersicht wählen">
         ${bild ? html`<img src=${BASIS + bild} alt="" />` : html`<span>＋ Titelbild<br /><span class="leise klein">optional</span></span>`}</button>
       <div class="feld"><label>Kurzer Auszug für die Übersicht (optional)</label>
-        <textarea class="eingabe" rows="3" value=${auszug} onInput=${(e) => setAuszug(e.target.value)} placeholder="Ein, zwei Sätze, die unter dem Titel in der Liste stehen."></textarea></div></div>`}
+        <${Textfeld} class="eingabe" rows="3" value=${auszug} onInput=${(e) => setAuszug(e.target.value)} placeholder="Ein, zwei Sätze, die unter dem Titel in der Liste stehen." /></div></div>`}
     <div class="feld"><label>✦ Ersten Entwurf von der KI schreiben lassen (optional)</label>
-      <textarea class="eingabe" rows="4" value=${entwurf} onInput=${(e) => setEntwurf(e.target.value)}
-        placeholder="Worum soll es gehen? Stichpunkte reichen. Leer lassen = leere Seite zum selbst Schreiben."></textarea></div>
+      <${Textfeld} class="eingabe" rows="4" value=${entwurf} onInput=${(e) => setEntwurf(e.target.value)}
+        placeholder="Worum soll es gehen? Stichpunkte reichen. Leer lassen = leere Seite zum selbst Schreiben." /></div>
     ${laeuft && html`<p class="leise">${laeuft}</p>`}
     ${bildWahl && html`<${MedienWahl} zu=${() => setBildWahl(false)} waehlen=${(p) => { setBild(p); setBildWahl(false); }} />`}
   <//>`;

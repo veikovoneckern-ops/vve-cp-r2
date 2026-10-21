@@ -7,7 +7,7 @@ import { api, hochladen } from "./api.js";
 import { Zeitplan, Struktur } from "./projektansichten.js";
 import { Ausarbeiten } from "./inbox.js";
 import { TeamChat, gespraechsPartner } from "./teamchat.js";
-import { Composer } from "./composer.js";
+import { Composer, Textfeld } from "./composer.js";
 import { VideoBlock, FolienbilderBlock, Downloads, Pruefung, GrossAnsicht, ErgebnisZeile, einarbeitenText, StilWahl } from "./ergebnis.js";
 import { langlaufStarten } from "./langlauf.js";
 import { gespraechOeffnen } from "./zuordnung.js";
@@ -402,8 +402,8 @@ function Projekt({ id, reiter }) {
         </section>`}
         <${UnterlagenKarte} projektId=${id} name=${p.name} nachher=${laden} />
         <section class="karte"><div class="karte-kopf"><h3>Ziel</h3></div>
-          <textarea class="eingabe" rows="2" onKeyDown=${enterBestaetigt} placeholder="Ein Satz: Was soll mit diesem Projekt erreicht werden? Hilft dem Team beim Einordnen." value=${p.ziel || ""}
-            onBlur=${(e) => { if (e.target.value !== (p.ziel || "")) aendern({ ziel: e.target.value }, "Ziel gespeichert."); }}></textarea></section>
+          <${Textfeld} class="eingabe" rows="2" onKeyDown=${enterBestaetigt} placeholder="Ein Satz: Was soll mit diesem Projekt erreicht werden? Hilft dem Team beim Einordnen." value=${p.ziel || ""}
+            onBlur=${(e) => { if (e.target.value !== (p.ziel || "")) aendern({ ziel: e.target.value }, "Ziel gespeichert."); }} /></section>
         <section class="karte"><div class="karte-kopf"><h3>Neueste Ergebnisse</h3></div>
           ${d.ergebnisse.length ? d.ergebnisse.slice(0, 4).map((r) => html`<${ErgebnisZeileProjekt} key=${r.id} r=${r} />`) : html`<${Leer}>Noch keine. „Ausarbeiten lassen“ gibt einer Rolle einen Auftrag.</${Leer}>`}</section>
         <section class="karte"><div class="karte-kopf"><h3>Jüngste Cases</h3></div>

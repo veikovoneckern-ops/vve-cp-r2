@@ -20,6 +20,7 @@
 import { html, useState, useEffect, useRef, Icon, Modal, toast, fehlerMelden, zeitText } from "./ui.js";
 import { api } from "./api.js";
 import { BASIS, blogSetzen, zuEditor, ausEditor, abschnittArt, kurzText, VORLAGEN, youtubeId, saeubern } from "./webspace-teile.js";
+import { Textfeld } from "./composer.js";
 
 const EDITOR_CSS = `
   main[contenteditable="true"]{outline:none}
@@ -917,7 +918,7 @@ function SeitenEinstellungen({ kopf, setKopf, seite, pfad, stand, medien, geaend
       <div class="feld"><label>Titel <span class="leise">(${(kopf.titel || "").length} Zeichen, ideal bis 60)</span></label>
         <input class="eingabe" value=${kopf.titel || ""} onInput=${(e) => setze("titel", e.target.value)} /></div>
       <div class="feld"><label>Beschreibung <span class=${b.length > 160 ? "rot" : "leise"}>(${b.length} Zeichen, ideal 120–155)</span></label>
-        <textarea class="eingabe" rows="3" value=${b} onInput=${(e) => setze("beschreibung", e.target.value)} placeholder="Ein bis zwei Sätze: Worum geht es auf dieser Seite?"></textarea></div>
+        <${Textfeld} class="eingabe" rows="3" value=${b} onInput=${(e) => setze("beschreibung", e.target.value)} placeholder="Ein bis zwei Sätze: Worum geht es auf dieser Seite?" /></div>
       <div class="wsp-google" title="So ungefähr erscheint die Seite bei Google">
         <div class="g-adr">veikovoneckern.org${seite.adresse === "/" ? "" : " › " + seite.adresse.replace(/^\/|\/$/g, "").split("/").join(" › ")}</div>
         <div class="g-titel">${(kopf.titel || "Ohne Titel") + (seite.adresse === "/" ? "" : " | Veiko von Eckern")}</div>
@@ -929,7 +930,7 @@ function SeitenEinstellungen({ kopf, setKopf, seite, pfad, stand, medien, geaend
         <div class="wsp-bild">${blog.bild ? html`<img src=${BASIS + blog.bild} alt="" />` : html`<span class="leise">kein Bild</span>`}
           <button class="btn klein" onClick=${() => medien((p) => setze("blog", { ...blog, bild: p }))}>${blog.bild ? "Austauschen" : "Bild wählen"}</button></div></div>
       <div class="feld"><label>Auszug in der Übersicht</label>
-        <textarea class="eingabe" rows="3" value=${blog.auszug || ""} onInput=${(e) => setze("blog", { ...blog, auszug: e.target.value })}></textarea></div>
+        <${Textfeld} class="eingabe" rows="3" value=${blog.auszug || ""} onInput=${(e) => setze("blog", { ...blog, auszug: e.target.value })} /></div>
       <div class="feld"><label>Position in der Übersicht <span class="leise">(kleinere Zahl = weiter oben)</span></label>
         <input class="eingabe" type="number" style="max-width:120px" value=${blog.reihe ?? ""} onInput=${(e) => setze("blog", { ...blog, reihe: Number(e.target.value) })} /></div>
     <//>`}
@@ -963,9 +964,9 @@ function KiFeld({ block, auftrag }) {
         <span class="leise klein">„${laeuft.was.slice(0, 80)}“ · meist 20–60 Sekunden, du kannst währenddessen weiterlesen.</span></div>`
       : html`<div class="wsk-schnell">${KI_SCHNELL.map(([n, t]) => html`<button class="btn klein" onClick=${() => los(t, art)}>${n}</button>`)}</div>
       <div class="feld"><label>Eigener Auftrag</label>
-        <textarea class="eingabe" rows="4" value=${text} onInput=${(e) => setText(e.target.value)}
+        <${Textfeld} class="eingabe" rows="4" value=${text} onInput=${(e) => setText(e.target.value)}
           placeholder=${block ? "z. B. „Mach aus dem Text drei Stichpunkte“ oder „Ergänze einen Satz zu …“" : "z. B. „Füge nach der Einleitung einen Abschnitt zu … hinzu“"}
-          onKeyDown=${(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); los(text.trim(), art); } }}></textarea></div>
+          onKeyDown=${(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); los(text.trim(), art); } }} /></div>
       <button class="btn primaer" disabled=${!text.trim()} onClick=${() => los(text.trim(), art)}>Ausführen</button>
       <div class="wsp-gruppe"><div class="wsp-titel">Neuen Abschnitt schreiben lassen</div>
         <p class="leise klein">Schreib oben, worum es gehen soll, und klick hier. Er erscheint ${block ? "unter dem gewählten Abschnitt" : "am Ende der Seite"}.</p>
