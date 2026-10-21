@@ -1,6 +1,7 @@
 // Aufnehmen, erkennen (eigener Whisper), vorlesen (eigener Piper).
 // Kein Rueckfall auf die Spracherkennung des Browsers: die schickt den Ton an
 // Google, und das darf nicht als Nebenwirkung eines Fehlers passieren.
+import { toast } from "./ui.js";
 
 function typWaehlen() {
   if (typeof MediaRecorder === "undefined") return null;
@@ -222,6 +223,29 @@ export function mikroFreigeben(wer) {
 }
 export function mikroHalter() { return halter ? halter.wer : null; }
 
+// EIN Abspieler fuer alles Vorlesen, beim ersten Tippen freigeschaltet (21.10.2026, Veiko am
+// iPad: "bei Talk funktioniert die Ausgabe nicht, ich höre nichts"). Auf dem iPad laeuft jeder
+// Browser mit Safaris Technik, und Safari spielt Ton nur ab, wenn er an einem Tippen haengt.
+// Talk holt die Stimme aber erst NACH der Antwort vom Server -- ein dann neu angelegtes Audio
+// wurde still abgelehnt (play() scheiterte, und der Fehler wurde verschluckt). Ein Element, das
+// einmal waehrend eines Tippens gespielt hat, darf danach jederzeit spielen.
+const STILLE = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
+let spieler = null, freigeschaltet = false, blockiertGemeldet = false;
+function abspieler() {
+  if (!spieler) { spieler = new Audio(); spieler.preload = "auto"; spieler.setAttribute("playsinline", ""); }
+  return spieler;
+}
+function freischalten() {
+  if (freigeschaltet || laufend) return;
+  const a = abspieler();
+  a.src = STILLE;
+  const p = a.play();
+  if (p && p.then) p.then(() => { freigeschaltet = true; a.pause(); }).catch(() => {});
+}
+if (typeof window !== "undefined") {
+  for (const ev of ["pointerdown", "touchend", "keydown"]) window.addEventListener(ev, freischalten, { capture: true, passive: true });
+}
+
 let laufend = null;
 export function vorleseStopp() {
   if (laufend) { laufend.pause(); laufend.dispatchEvent(new Event("ended")); laufend = null; }
@@ -240,12 +264,20 @@ export async function vorlesen(text, { vonTalk = false } = {}) {
       headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: sauber.slice(0, 2500) }) });
     if (!r.ok) throw new Error("Sprachausgabe nicht erreichbar");
     const url = URL.createObjectURL(await r.blob());
-    const a = new Audio(url);
+    const a = abspieler();
+    a.src = url;
     laufend = a;
     await new Promise((ok) => {
       a.addEventListener("ended", ok, { once: true });
       a.addEventListener("error", ok, { once: true });
-      a.play().catch(ok);
+      a.play().catch((e) => {
+        // Nicht mehr still: wer nichts hoert, soll wissen warum und was hilft (einmal je Seite).
+        if (e && e.name === "NotAllowedError" && !blockiertGemeldet) {
+          blockiertGemeldet = true;
+          toast("Der Browser hat den Ton blockiert. Tippe einmal irgendwo ins Cockpit -- danach liest es vor.", { fehler: true, dauer: 8000 });
+        }
+        ok();
+      });
     });
     URL.revokeObjectURL(url);
     if (laufend === a) laufend = null;

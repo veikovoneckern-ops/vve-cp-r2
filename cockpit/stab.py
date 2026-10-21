@@ -148,6 +148,46 @@ def whisper_vorlage() -> str:
     return ", ".join(dict.fromkeys(n for n in namen if n))[:900]
 
 
+def aufgabenliste_text(grenze: int = 60) -> str:
+    """Offene Aufgaben fuer Jason -- damit er Inhalt an eine bestehende Aufgabe haengen kann."""
+    zeilen = [f"- {a['id']} | {a['titel'][:90]} | {a.get('pname') or 'ohne Projekt'}"
+              for a in db.alle("SELECT a.id, a.titel, p.name AS pname FROM aufgaben a LEFT JOIN projekte p ON p.id=a.projekt_id "
+                               "WHERE a.status!='erledigt' AND a.archiviert=0 ORDER BY a.geaendert DESC LIMIT ?", (grenze,))]
+    return "\n".join(zeilen) or "(keine)"
+
+
+def herkunft_zeile(n: dict[str, Any]) -> str:
+    art = {"plaud": "Plaud-Notiz", "mail": "E-Mail", "gespraech": "Talk", "eingabe": "Capture"}.get(n.get("quelle") or "", "Notiz")
+    return f"Aus: {art} „{(n.get('titel') or '').strip()[:80]}“ vom {n.get('datum') or 'unbekannt'}"
+
+
+def eigener_text(n: dict[str, Any]) -> str:
+    """Bei einer weitergeleiteten Mail nur Veikos eigene Zeilen -- vor dem zitierten Teil."""
+    t = notiz_text(n, 20000)
+    if n.get("quelle") != "mail":
+        return t
+    m = re.search(r"^\s*(_{8,}|-{3,}\s*Original|Von:\s|From:\s|Am .{5,60} schrieb)", t, re.M)
+    return t[:m.start()] if m else t
+
+
+def info_an_aufgabe(aid: str, n: dict[str, Any], vid: str | None = None) -> None:
+    """Haengt den Inhalt einer Notiz an die Informationen einer Aufgabe -- zuruecknehmbar ueber das Protokoll."""
+    a = db.holen("aufgaben", aid)
+    if not a:
+        return
+    text = (n.get("text") or n.get("kurz") or "").strip()
+    if n.get("quelle") == "mail":
+        # Vertraulichkeits- und Virenscan-Absaetze der Firmen-Mail gehoeren nicht in die Aufgabe.
+        text = "\n\n".join(a for a in re.split(r"\n\s*\n", text)
+                           if not re.search(r"confidential|vertraulich|scanned for viruses|auf Viren|intended for the named|"
+                                            r"disclaimer|Pflichtangaben|Sitz der Gesellschaft|Registergericht", a, re.I)
+                           and not re.fullmatch(r"[\s_\-*=]*", a)).strip()
+    block = f"{herkunft_zeile(n)}:\n{text[:20000]}"
+    neu = ((a.get("notiz") or "").rstrip() + "\n\n" + block).strip()
+    db.aendern("aufgaben", aid, {"notiz": neu, "notiz_id": a.get("notiz_id") or n.get("id"), "geaendert": time.time()},
+               wer="pmo", vorgang_id=vid, aktion="Informationen ergänzt")
+
+
 def projektliste_text() -> str:
     zeilen = []
     for p in db.alle("SELECT * FROM projekte WHERE status!='archiviert' ORDER BY sortierung, name"):
@@ -349,7 +389,8 @@ Antworte AUSSCHLIESSLICH mit einem JSON-Objekt in genau dieser Form:
  "art": "aufgabe | idee | information | privat",
  "projekt_id": "eine id aus der Projektliste oder null",
  "projekt_neu": "kurzer Name für ein neues Projekt oder null",
- "aufgaben": [{"titel": "konkrete Handlung für Veiko", "projekt_id": "id aus der Liste oder null"}],
+ "aufgaben": [{"titel": "konkrete Handlung für Veiko", "projekt_id": "id aus der Liste oder null", "info": "was aus der Notiz zu dieser Aufgabe gehört: Hintergrund, Namen, Anforderungen -- zwei bis fünf Sätze"}],
+ "zu_aufgabe": "id einer BESTEHENDEN Aufgabe aus OFFENE AUFGABEN oder null",
  "ausarbeitung": null oder {"rolle": "stratege|buch|designer|video|cockpit", "form": "text|aufstellung|konzept|webseite|praesentation|video", "auftrag": "was genau erarbeitet werden soll", "recherche": "Suchanfrage oder null", "langlauf": false},
  "rueckfrage": "eine Frage an Veiko oder null",
  "gedaechtnis": [{"art": "person|organisation|begriff", "begriff": "...", "bedeutung": "..."}],
@@ -360,6 +401,7 @@ Regeln:
 - Erfinde nichts. Was nicht in der Notiz steht, kommt nicht vor. Keine Zahlen, Daten oder Namen dazudichten.
 - projekt_id nur aus der Liste. Nutze das GEDÄCHTNIS, um Personen und Begriffe zuzuordnen.
 - projekt_neu nur, wenn die Notiz ausdrücklich ein neues Projekt verlangt oder klar ein neues, eigenständiges Vorhaben beschreibt, das in kein bestehendes passt.
+- zu_aufgabe: Gehört der Inhalt der Notiz zu einer Aufgabe, die es SCHON gibt ("das ist die Beschreibung der Aufgabe …", "Infos zur Aufgabe …", eine weitergeleitete Mail zu einem laufenden Thema), nenne ihre id aus OFFENE AUFGABEN. Das Cockpit hängt den Inhalt dann an diese Aufgabe; lege dafür KEINE neue Aufgabe an. Ist das alles, was Veiko will, ist ausarbeitung null.
 - aufgaben: nur Handlungen, die Veiko SELBST erledigen will ("ich muss", "ich will", "nicht vergessen"). Eine je Anliegen, kurz, im Imperativ. Höchstens 6. Jede Aufgabe bekommt ihr eigenes passendes Projekt (projekt_id), eine Notiz kann mehrere Projekte betreffen. Keine Aufgabe über das Anlegen oder Zuordnen eines Projekts.
 - ausarbeitung: nur für das, worum Veiko den STAB ausdrücklich bittet ("such mir raus", "arbeite aus", "mach mir einen Entwurf", "stell zusammen", "recherchiere"). Was er selbst tun muss, ist eine Aufgabe, keine Ausarbeitung. Sonst null. stratege = Recherchen, Aufstellungen, Strategie, Konzepte; buch = Texte, Artikel, Bücher, Mails; designer = Bilder und Gestaltung; video = Video (dann form video: es entsteht ein echtes Erklärvideo mit Sprecherstimme); cockpit = das Cockpit oder Software. recherche = eine knappe Suchanfrage, wenn Fakten aus dem Internet nötig sind. langlauf = true, wenn Veiko ein GROSSES Werk vollständig haben will (ein ganzes Buch, eine große Präsentation, ein ausführliches Konzept, eine Studie, eine Strategie, einen Leitfaden, ein langes Video) -- das Cockpit fragt ihn dann, ob es als LongRun in Etappen entstehen soll; sonst false.
 
@@ -388,6 +430,7 @@ async def einordnen(v: dict[str, Any]) -> None:
     laeuft("pmo", "ordnet ein", v["id"])
     frage = (f"GEDÄCHTNIS (was über Veiko bekannt ist):\n{gedaechtnis_text()}\n\n"
              f"PROJEKTE:\n{projektliste_text()}\n\n"
+             f"OFFENE AUFGABEN (id | Titel | Projekt):\n{aufgabenliste_text()}\n\n"
              f"NOTIZ vom {n.get('datum') or 'unbekannt'} ({n.get('quelle')}):\n{notiz_text(n)}")
     if v.get("auftrag"):
         frage += f"\n\nVORGABE AUS DEM GESPRÄCH: {v['auftrag']}"
@@ -451,6 +494,18 @@ def anwenden(v: dict[str, Any], n: dict[str, Any], d: dict[str, Any], modell: st
             entscheidung_anlegen(vid, "projekt_neu", f"Neues Projekt „{neues_projekt}“ anlegen?",
                                  {"name": neues_projekt})
 
+    # Inhalt an eine BESTEHENDE Aufgabe (21.10.2026): "Der Inhalt ist die Beschreibung der bereits
+    # existierenden Aufgabe" -- Jason kannte keine Aufgaben, legte eine neue an und liess Clayton ein
+    # Konzept schreiben; die Mail stand nirgends in der Aufgabe.
+    ziel = db.holen("aufgaben", str(d.get("zu_aufgabe") or "")) if d.get("zu_aufgabe") else None
+    if ziel and ziel.get("status") != "erledigt":
+        info_an_aufgabe(ziel["id"], n, vid)
+        teile.append(f"Inhalt an deine Aufgabe „{ziel['titel']}“ gehängt (Informationen).")
+        d = {**d, "aufgaben": []}
+        # Eine Ausarbeitung nur, wenn Veiko SELBST darum bittet -- nicht, weil der weitergeleitete
+        # Text einer anderen Person "bitte erarbeite" sagt.
+        if isinstance(d.get("ausarbeitung"), dict) and not AUSARBEITUNG_RE.search(eigener_text(n)):
+            d["ausarbeitung"] = None
     angelegt = []
     vorhandene = {a["titel"].lower() for a in db.alle("SELECT titel FROM aufgaben WHERE vorgang_id=?", (vid,))}
     for a in (d.get("aufgaben") or [])[:6]:
@@ -464,7 +519,11 @@ def anwenden(v: dict[str, Any], n: dict[str, Any], d: dict[str, Any], modell: st
         # (gemessen: "Skript OTH" und "Frau Schwarz anrufen" in EINER Notiz).
         a_pid = (projekt_finden(a.get("projekt_id")) if isinstance(a, dict) and a.get("projekt_id") else None) or pid
         if vt["aufgaben"] == "selbst":
+            # Informationen gleich mit (21.10.2026, Veiko: "dazu sind Infos reingekommen, und diese sind
+            # nicht in der Aufgabe hinterlegt worden"): was Jason zur Aufgabe aus der Notiz zieht, und woher.
+            info = _kurz(a.get("info"), 1200) if isinstance(a, dict) else ""
             db.anlegen("aufgaben", {"id": db.neue_id("t"), "titel": t, "projekt_id": a_pid, "status": "offen",
+                                    "notiz": "\n\n".join(x for x in (info or zus, herkunft_zeile(n)) if x),
                                     "prio": 2, "quelle": "stab", "vorgang_id": vid, "notiz_id": n["id"],
                                     "erstellt": time.time(), "geaendert": time.time()},
                        wer="pmo", vorgang_id=vid)

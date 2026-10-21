@@ -1631,7 +1631,9 @@ html.zieht iframe{pointer-events:none}
 .af-datei .btn{margin-left:auto}
 .af-block{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line-2);padding-top:10px;margin-bottom:10px}
 .af-block .btn{justify-content:flex-start}
-.af-link{display:flex;gap:6px;align-items:center;flex-wrap:wrap;background:none;border:0;padding:3px 0;font:inherit;font-size:12.5px;color:var(--ink-2);text-align:left;cursor:pointer;text-decoration:none}
+/* nowrap: mit wrap rutschte bei langem Text das Symbol in eine eigene Zeile darueber (iPad, 21.10.2026); der Text bricht selbst um. */
+.af-link>svg{flex:none;margin-top:2px}
+.af-link{display:flex;gap:6px;align-items:flex-start;flex-wrap:nowrap;background:none;border:0;padding:3px 0;font:inherit;font-size:12.5px;color:var(--ink-2);text-align:left;cursor:pointer;text-decoration:none}
 .af-link:hover{color:var(--violett)}
 .aufgabe-notiz{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .zp-tt{cursor:pointer}
