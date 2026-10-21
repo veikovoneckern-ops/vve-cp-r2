@@ -57,6 +57,9 @@ AKTIONEN = {
     "brainstrom_genug": (),
     "brainstrom_uebernehmen": (),
     "exo": (),
+    # Vorgemerktes im Gespraech klaeren (21.10.2026, Veiko: "im direkten Dialog weiter entscheiden,
+    # was mit dieser Art von Notizen, Eingaengen, Ideen passiert").
+    "vorgemerkt": ("vorgang_id", "was"),
 }
 # Laufen sofort, ohne Knopf: sie aendern nur den Stand des Verfahrens, nicht den
 # Bestand (Projekte, Aufgaben). Uebernehmen in Projekte bleibt ein Vorschlag mit Ja.
@@ -98,6 +101,8 @@ ZUSTIMMUNG_IM_SATZ = re.compile(
 # ("ja", "bitte" irgendwo im Satz).
 BEFEHL = re.compile(r"^\s*((okay|ok|gut|ja|dann|und|also|bitte)[,.]?\s+)*(leg|trag|markier|hak|verschieb|änder|aender|setz|notier|merk|"
                     r"ersetz|korrigier|benenn|erstell|mach|prüf|pruef|lass|schreib)\w*\b", re.I)
+# "Gib das frei", "leg das ab", "verwirf das" zu Vorgemerktem ist die Zustimmung (21.10.2026).
+VORGEMERKT_BEFEHL = re.compile(r"\b(freigeb\w*|freigab\w*|gib\b.{0,50}\bfrei|leg\w*\b.{0,40}\bab\b|ablegen|verwirf|verwerfen|weg\s+damit|kann\s+weg)", re.I)
 BEFEHL_AKTIONEN = ("aufgabe_neu", "aufgabe_erledigt", "aufgabe_aendern", "notiz", "merken", "ersetzen", "pruefen", "projekt_neu")
 # "Lass Daniel … pruefen" -- immer eine echte Pruefung, auch wenn das Modell meint, es sei schon geschehen.
 DANIEL_PRUEFEN = re.compile(r"\bdaniel\b.{0,60}\b(prüf|pruef|überprüf|anseh|anschau|begutacht)\w*|\b(prüf|pruef)\w*\b.{0,40}\bdaniel\b", re.I)
@@ -126,7 +131,7 @@ So antwortest du:
 - Erfinde nichts. Du kennst nur, was unten in LAGE und KONTEXT steht. Wenn etwas fehlt, sag es.
 - Nenne, wer gearbeitet hat, aber nur, wenn es in LAGE oder KONTEXT steht. Schreib niemandem eine Arbeit zu, die dort nicht vorkommt.
 - Nenne im Text NIE interne Kennungen (e…, t…, p…, v…). Die gehören nur in den aktionen-Block. Im Text sagst du den Titel.
-- Auf "Was liegt an?" antwortest du knapp: höchstens fünf Punkte, in DIESER Reihenfolge -- wie das Briefing, das Veiko daneben sieht: 1. OFFENE ENTSCHEIDUNGEN (stehen dort „keine“, sag genau das), 2. NEU ENTSTANDEN (zuletzt bearbeitete zuerst, mit Daniels Urteil in einfachen Worten), 3. WAS GERADE LÄUFT (steht dort „nichts“, sag genau das), 4. OFFENE AUFGABEN (die ersten drei, in der Reihenfolge der Liste). Nur, was in LAGE steht. Einen eigenen, noch nicht ausgeführten Vorschlag aus diesem Gespräch nennst du getrennt am Ende („Aus unserem Gespräch noch offen: …“) -- er ist keine Entscheidung des Teams. Keine vollständigen Listen.
+- Auf "Was liegt an?" antwortest du knapp: höchstens sechs Punkte, in DIESER Reihenfolge -- wie das Briefing, das Veiko daneben sieht: 1. OFFENE ENTSCHEIDUNGEN (stehen dort „keine“, sag genau das), 2. NEU ENTSTANDEN (zuletzt bearbeitete zuerst, mit Daniels Urteil in einfachen Worten), 3. WAS GERADE LÄUFT (steht dort „nichts“, sag genau das), 4. OFFENE AUFGABEN (die ersten drei, in der Reihenfolge der Liste), 5. VORGEMERKT, falls dort etwas steht: nenne es und frag, was damit passieren soll (freigeben mit Anweisung, ablegen oder verwerfen). Nur, was in LAGE steht. Einen eigenen, noch nicht ausgeführten Vorschlag aus diesem Gespräch nennst du getrennt am Ende („Aus unserem Gespräch noch offen: …“) -- er ist keine Entscheidung des Teams. Keine vollständigen Listen.
 - Kein Fachjargon ohne Erklärung.
 - Wortwahl wie im Cockpit: „Team“ (nicht „Stab“), „Case“ (nicht „Akte“), „Memory“ (nicht „Gedächtnis“), „Advisory Board“ (nicht „Beirat“), „LongRun“ (nicht „Langläufer“), „Stack“ (nicht „Maschine“), „Usage“ für den Verbrauch, „Explorer“ für alle erzeugten Inhalte, „Settings“ (nicht „Einstellungen“), „Recommendations“ für alle Empfehlungen.
 {STIMME}
@@ -152,6 +157,7 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"merken","art":"person|organisation|begriff|hoerfehler|aussprache","begriff":"…","bedeutung":"…"} -- aussprache: wie das Cockpit ein (meist englisches) Wort VORLESEN soll, in deutscher Lautschrift, z. B. begriff "Slides", bedeutung "Slaids".
 - {"aktion":"notiz","text":"…","projekt_id":"p… oder null"}
 - {"aktion":"projekt_neu","name":"…"}
+- {"aktion":"vorgemerkt","vorgang_id":"v… aus VORGEMERKT","was":"freigeben|erledigt|verwerfen","anweisung":"bei freigeben: was das Team jetzt tun soll, in Veikos Worten, oder leer"} -- entscheidet über einen vorgemerkten Case (eine Notiz, an der das Team noch nicht arbeiten sollte): freigeben = Jason plant jetzt mit der Anweisung, was das Team tut (nennt Veiko jemanden, z. B. „Clayton soll …“, steht das in der Anweisung); erledigt = ablegen, nichts mehr tun; verwerfen = weg samt der Aufgaben dazu. Braucht Veikos Ja.
 - {"aktion":"neo","auftrag":"was Neo am Cockpit oder Server tun soll"} -- NUR für Programm und Server des Cockpits, NIE für Inhalte (Projekte, Aufgaben, Ergebnisse, Notizen).
 - {"aktion":"langlauf","titel":"kurzer Titel","auftrag":"was in Etappen entstehen soll, in mehreren Sätzen, mit allem, was Veiko dazu gesagt hat","art":"buch|dokument|praesentation|bilder|webseite|video","rolle":"buch|stratege|designer|video oder null","projekt_id":"p… oder null","aufgabe_id":"t… oder null","pruefer":"dario|demmis","pruef_alle":3,"budget":5} -- ein LongRun: ein großes Vorhaben (ein ganzes Buch, eine große Präsentation, ein ausführliches Konzept, eine Studie, eine Strategie, ein Leitfaden, ein langes Dokument, ein langes Video), das in Etappen entsteht und von Dario (Claude) oder Demmis (Gemini) geprüft wird. Sagt Veiko „Long Run“, „in Etappen“, „durchgängig und tief“, „komplett“, „vollständig“, „ausführlich“, „umfassend“ oder „gründlich“ zu einem Werk, das er HABEN will: IMMER langlauf, nie ausarbeiten. art praesentation für Präsentationen und Foliensätze, bilder für Bildserien und viele Bilder, webseite für Webseiten, buch für Bücher, video für Videos, sonst dokument. Nennt er Demmis/Gemini, ist pruefer demmis, sonst dario. pruef_alle: nach wie vielen Kapiteln/Teilen geprüft wird; 0 = NUR AM ENDE, wenn alles fertig ist -- immer dann, wenn Veiko „danach“, „am Ende“, „wenn es fertig ist“ oder „wenn du fertig bist“ sagt. Vorhandene Ergebnisse und Unterlagen des Projekts nimmt das Cockpit selbst dazu. Die Prüfungen kosten Geld: nenne das Budget (Vorgabe 5 Dollar) und frag immer „Soll ich das so machen?“.
 - {"aktion":"pruefen","ergebnis_id":"r… aus LAGE/KONTEXT","titel":"Titel des Ergebnisses"} -- Daniel (Red Team) prüft ein VORHANDENES Ergebnis, z. B. ein Recherche-Dossier („ungeprüft“). „Lass Daniel das prüfen“ ist IMMER pruefen, NIE ausarbeiten -- eine Ausarbeitung macht etwas Neues, und sie macht nie Daniel.
@@ -857,6 +863,13 @@ def beschriften(a: dict[str, Any]) -> str | None:
         return f"Als Notiz ans Team: {a['text'][:90]}"
     if art == "projekt_neu":
         return f"Projekt anlegen: {a['name'][:60]}"
+    if art == "vorgemerkt":
+        v = db.holen("vorgaenge", str(a.get("vorgang_id") or ""))
+        if not v or v["stand"] != "vorgemerkt" or a.get("was") not in ("freigeben", "erledigt", "verwerfen"):
+            return None
+        return {"freigeben": f"Freigeben: „{v['titel'][:70]}“" + (f" -- {str(a.get('anweisung'))[:90]}" if a.get("anweisung") else ""),
+                "erledigt": f"Ablegen, nichts mehr tun: „{v['titel'][:70]}“",
+                "verwerfen": f"Verwerfen samt Aufgaben: „{v['titel'][:70]}“"}[a["was"]]
     if art == "neo":
         return f"Neo beauftragen: {a['auftrag'][:90]}"
     if art == "ersetzen":
@@ -921,7 +934,10 @@ async def ausfuehren(a: dict[str, Any]) -> dict[str, Any]:
         return {"ok": True}
     if art == "ausarbeiten":
         vid = a.get("vorgang_id") if db.holen("vorgaenge", a.get("vorgang_id") or "") else None
-        grundlage = db.holen("ergebnisse", str(a.get("ergebnis_id") or "")) if a.get("ergebnis_id") else None
+        if vid and (db.holen("vorgaenge", vid) or {}).get("stand") == "vorgemerkt":
+            # Ein Auftrag an einen vorgemerkten Case ist seine Freigabe -- so steht es auch im Verlauf.
+            db.ereignis(vid, "du", "freigabe", "Freigegeben im Gespräch.\n\n" + str(a.get("auftrag") or ""))
+        grundlage =db.holen("ergebnisse", str(a.get("ergebnis_id") or "")) if a.get("ergebnis_id") else None
         if not vid:
             # Mit Ergebnis als Grundlage traegt die Notiz des Vorgangs dessen Inhalt -- dieselbe
             # Form wie teamchat.ausarbeitung_starten, damit die Rolle nicht bei null anfaengt.
@@ -948,6 +964,12 @@ async def ausfuehren(a: dict[str, Any]) -> dict[str, Any]:
         v = stab.aus_text(a["text"], quelle="gespraech", projekt_id=stab.projekt_finden(a.get("projekt_id")))
         stab.wecken()
         return {"ok": True, "vorgang_id": v["id"]}
+    if art == "vorgemerkt":
+        if a["was"] == "freigeben":
+            stab.freigeben(a["vorgang_id"], str(a.get("anweisung") or ""))
+        else:
+            stab.vorgang_schliessen(a["vorgang_id"], a["was"], "Im Gespräch entschieden.")
+        return {"ok": True, "vorgang_id": a["vorgang_id"]}
     if art == "projekt_neu":
         pid = db.neue_id("p")
         db.anlegen("projekte", {"id": pid, "name": a["name"][:80], "farbe": "#6D4AE0", "status": "aktiv",
@@ -1334,10 +1356,35 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
         if not vorschlaege:
             sichtbar = re.sub(r"[^.!?\n]*(macht sich|arbeitet an|erscheint in der Inbox)[^.!?\n]*[.!?]?", "", sichtbar).strip()
             sichtbar = (sichtbar + "\n\nIch konnte deinem Ja keinen Auftrag zuordnen, gestartet ist noch nichts. Sag mir bitte noch einmal, was das Team tun soll.").strip()
+    # Vorgemerktes freigeben (21.10.2026): gemessen schlug das Modell "freigeben" UND eine eigene
+    # Ausarbeitung an Clayton vor -- die Ausarbeitung lief sofort (Auftrag ans Team) und entstand
+    # ohne Bezug zur Notiz, das Konzept waere doppelt gekommen. Die Freigabe ist der Weg: eine
+    # Ausarbeitung daneben faellt weg, ihr Auftrag geht in die Anweisung.
+    # Und schlaegt das Modell NUR eine Ausarbeitung vor (zweite Messung am 21.10.), die erkennbar
+    # zu einem vorgemerkten Case gehoert ("das Gedaechtnis-Thema"), haengt sie an genau diesen Case:
+    # der Auftrag gibt ihn frei (auftrag_setzen), und es entsteht kein zweiter Case daneben.
+    vm_cases = db.alle("SELECT id, titel FROM vorgaenge WHERE stand='vorgemerkt'")
+    if vm_cases:
+        worte = {w.lower() for w in re.findall(r"\w{5,}", text)}
+        for v in vorschlaege:
+            if v["aktion"] != "ausarbeiten" or v.get("vorgang_id"):
+                continue
+            passt = [c for c in vm_cases if worte & {w.lower() for w in re.findall(r"\w{5,}", c["titel"] or "")}]
+            if len(passt) == 1:
+                v["vorgang_id"] = passt[0]["id"]
+    fg = [v for v in vorschlaege if v["aktion"] == "vorgemerkt" and v.get("was") == "freigeben"]
+    if fg:
+        for v in [v for v in vorschlaege if v["aktion"] == "ausarbeiten" and (not v.get("vorgang_id") or v.get("vorgang_id") == fg[0].get("vorgang_id"))]:
+            if not fg[0].get("anweisung"):
+                fg[0]["anweisung"] = f"{stab.rollen_name(v.get('rolle') or 'stratege')}: {v.get('auftrag')}"
+            vorschlaege.remove(v)
+        sichtbar = re.sub(r"\n*Gestartet: [^\n]*", "", sichtbar)
+    vm_befehl = bool(VORGEMERKT_BEFEHL.search(text)) and not _ABLEHNUNG.search(text)
     im_satz = zustimmung_im_satz(text)
     gleich =[v for v in vorschlaege if v["aktion"] not in SOFORT_VERFAHREN
               and (bestaetigt or (auftrag and v["aktion"] in ("ausarbeiten", "neo", "pruefen"))
                    or (befehl and v["aktion"] in BEFEHL_AKTIONEN)
+                   or (vm_befehl and v["aktion"] == "vorgemerkt")
                    or (v.get("zugestimmt") is True and im_satz))]
     ausgefuehrt = list(vorab)
     for v in gleich[:3]:

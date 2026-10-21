@@ -8,16 +8,17 @@ import { Entscheidung } from "./entscheidung.js";
 import { langlaufStarten } from "./langlauf.js";
 import { ErgebnisVorschau, URTEIL, StilFelder } from "./ergebnis.js";
 
-// "Vorgemerkt" (21.10.2026): Notizen, an denen das Team noch nicht arbeiten soll -- vorher
-// standen sie unter "Fertig", und Veiko fand sie nicht.
-const FILTER = [["wartet", "Wartet auf dich"], ["vorgemerkt", "Vorgemerkt"], ["in_arbeit", "In Arbeit"], ["fertig", "Fertig"], ["erledigt", "Erledigt"], ["alle", "Alle"]];
+// "Vorgemerkt" (21.10.2026): Notizen, an denen das Team noch nicht arbeiten soll, haengen
+// oben in "Wartet auf dich", bis Veiko entscheidet -- vorher standen sie unter "Fertig", und er
+// fand sie nicht. Kein eigener Reiter (Veiko: "einfach zunaechst in der Inbox haengen bleiben").
+const FILTER = [["wartet", "Wartet auf dich"], ["in_arbeit", "In Arbeit"], ["fertig", "Fertig"], ["erledigt", "Erledigt"], ["alle", "Alle"]];
 const ART_TEXT = { notiz: "Notiz", einordnung: "hat eingeordnet", aufgabe: "Aufgabe", rueckfrage: "fragt nach", vorschlag: "schlägt vor",
   antwort: "hat geantwortet", ergebnis: "hat geliefert", pruefung: "hat geprüft", entscheidung: "hat entschieden", fehler: "Fehler",
   info: "", auftrag: "hat beauftragt", freigabe: "hat freigegeben" };
 const QUELLE = { plaud: "Plaud", mail: "E-Mail", unterlage: "Unterlagen", eingabe: "Capture", gespraech: "Talk", alt: "altes Cockpit" };
 
 export function Inbox({ id }) {
-  const [filter, setFilter] = useState(() => { try { return sessionStorage.getItem("inbox_filter") || "wartet"; } catch (e) { return "wartet"; } });
+  const [filter, setFilter] = useState(() => { try { const f = sessionStorage.getItem("inbox_filter"); return FILTER.some(([k]) => k === f) ? f : "wartet"; } catch (e) { return "wartet"; } });
   const [q, setQ] = useState("");
   const [daten, laden] = useAbruf(`/vorgaenge?filter=${filter}&q=${encodeURIComponent(q)}`, 15000, []);
   useEffect(() => { try { sessionStorage.setItem("inbox_filter", filter); } catch (e) { /* egal */ } }, [filter]);
@@ -39,9 +40,9 @@ export function Inbox({ id }) {
       </div>
       <div class="liste">
         ${!liste ? html`<div class="lade">Lade …</div>`
-          : !liste.length ? html`<${Leer} titel=${filter === "wartet" ? "Nichts wartet auf dich." : filter === "vorgemerkt" ? "Nichts vorgemerkt." : "Hier ist nichts."}>
+          : !liste.length ? html`<${Leer} titel=${filter === "wartet" ? "Nichts wartet auf dich." : "Hier ist nichts."}>
               ${filter === "wartet" ? "Neue Notizen ordnet Jason von selbst ein. Mit Capture gibst du ihm etwas direkt."
-                : filter === "vorgemerkt" ? "Sagst du in einer Notiz „noch nicht bearbeiten“ oder „erstmal nur vormerken“, landet sie hier und wartet auf deine Freigabe." : ""}</${Leer}>`
+                : ""}</${Leer}>`
           : liste.map((v) => html`<button key=${v.id} class=${"vg-eintrag" + (v.id === id ? " an" : "")} onClick=${() => navigiere("/inbox/" + v.id)}>
               <b>${v.titel}</b>
               <div class="unter">

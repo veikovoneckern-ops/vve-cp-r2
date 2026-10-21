@@ -273,7 +273,7 @@ async def lage():
 
 
 # ================================================================ Inbox
-STAND_GRUPPE = {"wartet": ("wartet",), "vorgemerkt": ("vorgemerkt",), "in_arbeit": ("neu", "eingeordnet", "in_arbeit"),
+STAND_GRUPPE = {"wartet": ("vorgemerkt", "wartet"), "in_arbeit": ("neu", "eingeordnet", "in_arbeit"),
                 "fertig": ("fertig",), "erledigt": ("erledigt", "verworfen")}
 
 
@@ -293,7 +293,8 @@ async def vorgaenge(filter: str = "wartet", projekt: str = "", q: str = "", gren
     if q:
         sql += " AND (v.titel LIKE ? OR v.einordnung LIKE ?)"
         args += [f"%{q}%", f"%{q}%"]
-    sql += " ORDER BY v.geaendert DESC LIMIT ?"
+    # Vorgemerktes zuerst: es haengt in der Inbox, bis Veiko entscheidet (21.10.2026).
+    sql += " ORDER BY (v.stand='vorgemerkt') DESC, v.geaendert DESC LIMIT ?"
     args.append(min(grenze, 500))
     zaehler = {k: db.wert(f"SELECT COUNT(*) FROM vorgaenge WHERE stand IN ({','.join('?' for _ in s)})", s)
                for k, s in STAND_GRUPPE.items()}
@@ -339,9 +340,8 @@ async def vorgang_aktion(vid: str, request: Request):
     if not v:
         raise HTTPException(404, "Vorgang nicht gefunden")
     a = d.get("aktion")
-    if a == "erledigt":
-        db.aendern("vorgaenge", vid, {"stand": "erledigt", "geaendert": time.time()})
-        db.ereignis(vid, "du", "entscheidung", "Als erledigt abgelegt." + (f" {d['kommentar']}" if d.get("kommentar") else ""))
+    if a in ("erledigt", "verwerfen"):
+        stab.vorgang_schliessen(vid, a, str(d.get("kommentar") or ""))
     elif a == "freigeben":
         # Vorgemerkt -> Jason ordnet mit Veikos Anweisung neu ein (stab.freigeben, 21.10.2026).
         try:
@@ -354,17 +354,6 @@ async def vorgang_aktion(vid: str, request: Request):
             raise HTTPException(409, "Das Team arbeitet gerade daran -- erst nach dem Ergebnis vormerken.")
         db.aendern("vorgaenge", vid, {"stand": "vorgemerkt", "geaendert": time.time()})
         db.ereignis(vid, "du", "entscheidung", "Vorgemerkt: das Team arbeitet nicht daran, bis du freigibst.")
-    elif a == "verwerfen":
-        db.ausfuehren("UPDATE entscheidungen SET stand='nein', erledigt=? WHERE vorgang_id=? AND stand='offen'", (time.time(), vid))
-        db.aendern("vorgaenge", vid, {"stand": "verworfen", "geaendert": time.time()})
-        # Was der Stab fuer diese Akte angelegt hat und noch offen ist, geht mit
-        # ins Archiv -- sonst bleiben Aufgaben zu etwas stehen, das Veiko verworfen hat.
-        weg = 0
-        for t in db.alle("SELECT id FROM aufgaben WHERE vorgang_id=? AND quelle='stab' AND status!='erledigt' AND archiviert=0", (vid,)):
-            db.aendern("aufgaben", t["id"], {"archiviert": 1, "geaendert": time.time()}, wer="du", vorgang_id=vid, aktion="archiviert")
-            weg += 1
-        db.ereignis(vid, "du", "entscheidung", "Verworfen." + (f" {d['kommentar']}" if d.get("kommentar") else "") +
-                    (f" {weg} Aufgaben des Teams archiviert." if weg else ""))
     elif a == "wieder_oeffnen":
         if v["stand"] == "verworfen":
             for t in db.alle("SELECT id FROM aufgaben WHERE vorgang_id=? AND quelle='stab' AND archiviert=1", (vid,)):

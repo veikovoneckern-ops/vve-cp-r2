@@ -581,6 +581,24 @@ def freigabe(vid: str) -> str | None:
     return None if r is None else (r.get("text") or "").partition("\n\n")[2]
 
 
+def vorgang_schliessen(vid: str, art: str, kommentar: str = "", wer: str = "du") -> None:
+    """Ablegen ("erledigt") oder verwerfen -- ein Weg fuer den Knopf in der Inbox und fuer Talk.
+    Beim Verwerfen gehen offene Fragen und die offenen Aufgaben des Teams mit ins Archiv; sonst
+    blieben Aufgaben zu etwas stehen, das Veiko verworfen hat."""
+    zusatz = f" {kommentar}" if kommentar else ""
+    if art == "erledigt":
+        db.aendern("vorgaenge", vid, {"stand": "erledigt", "geaendert": time.time()})
+        db.ereignis(vid, wer, "entscheidung", "Als erledigt abgelegt." + zusatz)
+        return
+    db.ausfuehren("UPDATE entscheidungen SET stand='nein', erledigt=? WHERE vorgang_id=? AND stand='offen'", (time.time(), vid))
+    db.aendern("vorgaenge", vid, {"stand": "verworfen", "geaendert": time.time()})
+    weg = 0
+    for t in db.alle("SELECT id FROM aufgaben WHERE vorgang_id=? AND quelle='stab' AND status!='erledigt' AND archiviert=0", (vid,)):
+        db.aendern("aufgaben", t["id"], {"archiviert": 1, "geaendert": time.time()}, wer=wer, vorgang_id=vid, aktion="archiviert")
+        weg += 1
+    db.ereignis(vid, wer, "entscheidung", "Verworfen." + zusatz + (f" {weg} Aufgaben des Teams archiviert." if weg else ""))
+
+
 def freigeben(vid: str, anweisung: str = "") -> dict[str, Any]:
     """Ein vorgemerkter Case geht an Jason zurueck: er ordnet mit Veikos Anweisung neu ein
     und plant, was das Team tun soll -- wie bei einer neuen Notiz."""

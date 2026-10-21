@@ -181,11 +181,20 @@ function Anmelden({ fertig, einrichten }) {
 // stehen deshalb die ersten vier (in Veikos Reihenfolge aus der linken Leiste)
 // plus "Mehr"; dahinter alle. Ab 560 Punkt passen alle zehn nebeneinander.
 const UNTEN_SICHTBAR = 4;
-function UntenNav({ liste, aktiv, offen }) {
+// Inbox-Zaehler: offene Entscheidungen plus Vorgemerktes. Haengt etwas Vorgemerktes in der
+// Inbox, wird auch das Symbol rot (Veiko, 21.10.2026: "dann soll das Icon links rot sein") --
+// die Marke .vorgemerkt traegt das, das CSS faerbt das Symbol daneben (app.css).
+function inboxZahl(offen, vorgemerkt) {
+  const n = (offen || 0) + (vorgemerkt || 0);
+  if (!n) return null;
+  const titel = [offen ? `${offen} ${offen === 1 ? "Entscheidung" : "Entscheidungen"}` : "", vorgemerkt ? `${vorgemerkt} vorgemerkt` : ""].filter(Boolean).join(", ");
+  return html`<span class=${"zahl" + (vorgemerkt ? " vorgemerkt" : "")} title=${titel}>${n}</span>`;
+}
+function UntenNav({ liste, aktiv, offen, vorgemerkt }) {
   const [mehr, setMehr] = useState(false);
   useEffect(() => { setMehr(false); }, [aktiv]);
   useEsc(() => setMehr(false), mehr);
-  const zahl = (b) => (b.id === "inbox" && offen ? html`<span class="zahl">${offen}</span>` : null);
+  const zahl = (b) => (b.id === "inbox" ? inboxZahl(offen, vorgemerkt) : null);
   const verborgenAktiv = liste.slice(UNTEN_SICHTBAR).some((b) => b.id === aktiv);
   return html`<nav class="unten-nav" aria-label="Bereiche">
     ${liste.map((b, i) => html`<a href=${"#/" + b.id} class=${(aktiv === b.id ? "an " : "") + (b.neo ? "neo-nav " : "") + (i >= UNTEN_SICHTBAR ? "unten-ueber" : "")}>
@@ -274,9 +283,10 @@ function App() {
 
   const bereich = BEREICHE.find((b) => b.id === r.bereich);
   const offen = lage ? lage.entscheidungen.length : 0;
+  const vorgemerkt = lage ? (lage.vorgemerkt || []).length : 0;
   const neoLaeuft = lage && lage.neo_laeuft && lage.neo_laeuft.length > 0;
   const akt = lage ? lage.aktionen || 0 : 0;
-  const zahl = (b) => b.id === "aktionen" && akt ? html`<span class="zahl ruhig">${akt}</span>` : b.id === "inbox" && offen ? html`<span class="zahl">${offen}</span>` : b.neo && neoLaeuft ? html`<span class="zahl ruhig">arbeitet</span>` : null;
+  const zahl = (b) => b.id === "aktionen" && akt ? html`<span class="zahl ruhig">${akt}</span>` : b.id === "inbox" && (offen || vorgemerkt) ? inboxZahl(offen, vorgemerkt) : b.neo && neoLaeuft ? html`<span class="zahl ruhig">arbeitet</span>` : null;
   const voll = r.bereich === "inbox" || r.bereich === "neo" || r.bereich === "board" || r.bereich === "webspace";
   // Im Projekt steht oben der Projektname (wie im alten Cockpit "BVE / Projekt-Detail").
   const imProjekt = r.bereich === "projects" && r.id && !r.id.startsWith("_") && kontext && kontext.art === "projekt";
@@ -337,7 +347,7 @@ function App() {
       </main>
     </div>
     ${talk && html`<${Talk} zu=${() => setTalk(false)} kontext=${fensterKontext || kontext} setKontext=${(k) => { setFensterKontext(null); setKontext(k); }} start=${talkStart} />`}
-    ${!FENSTER && html`<${UntenNav} liste=${leiste} aktiv=${r.bereich} offen=${offen} />`}
+    ${!FENSTER && html`<${UntenNav} liste=${leiste} aktiv=${r.bereich} offen=${offen} vorgemerkt=${vorgemerkt} />`}
     ${!talk && !FENSTER && html`<button class="talk-fab" onClick=${() => setTalk(true)} aria-label="Talk öffnen"><${Icon} n="talk" g=${24} /></button>`}
     ${anzeige && anzeige.art === "ergebnis" && html`<${ErgebnisAnsicht} key=${anzeige.n} id=${anzeige.id} vorlage=${anzeige.vorlage} zu=${() => setAnzeige(null)} />`}
     ${anzeige && anzeige.art === "notiz" && html`<${NotizAnsicht} id=${anzeige.id} zu=${() => setAnzeige(null)} />`}
