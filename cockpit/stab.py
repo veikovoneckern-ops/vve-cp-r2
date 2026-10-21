@@ -687,9 +687,17 @@ def _vorgang_kontext(v: dict[str, Any]) -> str:
     return "\n\n".join(teile)
 
 
+# Maengel und Hinweise getrennt (Veiko, 21.10.2026): "Es macht keinen Sinn, dass Daniel
+# immer wieder Einwaende hat." Gezaehlt in dieser Fassung: Daniel 12-mal "nachbessern"
+# gegen 5-mal "tragfaehig", die Externen 17 von 17. Ein Pruefer, der um Kritik gebeten
+# wird, findet immer etwas -- deshalb entscheidet nur noch ein FEHLER ueber
+# "nachbessern"; alles, was man auch besser machen koennte, sind Hinweise und laesst
+# das Ergebnis durch.
 PRUEF_SYSTEM = """Du bist Daniel, Red Team Lead in Veikos Stab. Du prüfst ein Arbeitsergebnis, bevor es Veiko sieht.
-Antworte AUSSCHLIESSLICH mit JSON: {"urteil": "tragfaehig|nachbessern|rueckfrage", "begruendung": "zwei Sätze", "maengel": ["..."], "frage": "nur bei rueckfrage: die Frage an Veiko"}
-Mängel sind: erfundene Fakten, Zahlen oder Namen ohne Quelle; Platzhalter wie [Name]; fremde Schriftzeichen; Auftrag verfehlt; unvollständig abgebrochen.
+Antworte AUSSCHLIESSLICH mit JSON: {"urteil": "tragfaehig|nachbessern|rueckfrage", "begruendung": "zwei Sätze", "maengel": ["..."], "hinweise": ["..."], "frage": "nur bei rueckfrage: die Frage an Veiko"}
+Mängel sind NUR Fehler: erfundene Fakten, Zahlen oder Namen ohne Quelle; Platzhalter wie [Name]; fremde Schriftzeichen; Auftrag verfehlt; unvollständig abgebrochen; Widersprüche im Text; wörtlich wiederholte Absätze.
+Alles andere -- Stil, Tiefe, Aufbau, „könnte ausführlicher sein“, Ergänzungswünsche -- sind HINWEISE. Hinweise machen ein Ergebnis NICHT untauglich: gibt es nur Hinweise, lautet das Urteil tragfaehig.
+nachbessern nur, wenn mindestens ein Mangel im Sinne oben in "maengel" steht. Höchstens fünf Mängel, die wichtigsten zuerst.
 Kein Mangel: Angaben, die es nirgends gibt und die das Ergebnis offen als fehlend markiert.
 Prüfe Fakten NUR gegen die mitgelieferten QUELLEN und die Notiz. Behaupte nichts aus eigenem Wissen: was in den Quellen steht, ist belegt; was dort nicht steht und trotzdem als Tatsache dasteht, ist ein Mangel.
 Die Quellenliste mit Adressen hängt das Cockpit selbst an das Ergebnis an; fehlende Adressen im Text sind kein Mangel.
@@ -1180,7 +1188,12 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
             entwurf = _uebergaben_aus(entwurf, rid)[0]   # beim Nachbessern wird nicht erneut weitergegeben
         laeuft("kritiker", "prüft", vid)
         entwurf = _verweise_saeubern(entwurf, len(quellen), vid, rid)
-        pruefung = await pruefen(entwurf, a, v, quellen_pruefer)
+        # Ab der zweiten Runde eine NACHPRUEFUNG: nur ob die Punkte von eben behoben sind.
+        # Vorher pruefte Daniel jede Fassung von vorn und fand jedes Mal neue Punkte.
+        vorher = pruefung if runde else None
+        pruefung = await pruefen(entwurf, a, v, quellen_pruefer, vorher=vorher)
+        if vorher and pruefung.get("urteil") == "tragfaehig":
+            pruefung["urteil"] = "eingearbeitet"
         db.ereignis(vid, "kritiker", "pruefung", pruefung.get("begruendung", ""),
                     {"urteil": pruefung.get("urteil"), "maengel": pruefung.get("maengel") or [], "runde": runde + 1})
         if pruefung.get("urteil") != "nachbessern":
@@ -1213,17 +1226,49 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
     stand_berechnen(vid)
 
 
-async def pruefen(entwurf: str, a: dict[str, Any], v: dict[str, Any], quellen_text: str = "") -> dict[str, Any]:
+PRUEF_SICHT = 60000      # so viel vom Ergebnis liest Daniel
+
+
+def pruef_ausschnitt(text: str, sicht: int = PRUEF_SICHT) -> tuple[str, str]:
+    """Was Daniel von einem langen Werk sieht, und der Satz, der ihm das sagt.
+    Gemessen am 20.10.2026: ein Buch mit 593.000 Zeichen wurde nach den ersten
+    60.000 abgeschnitten -- Daniel meldete "bricht mitten im Satz ab, nur Prolog
+    und Kapitel 1", obwohl alle 28 Kapitel da waren. Jetzt sieht er Anfang UND
+    Ende und weiss, dass dazwischen etwas fehlt."""
+    if len(text) <= sicht:
+        return text, ""
+    kopf, fuss = int(sicht * 0.75), int(sicht * 0.25)
+    aus = len(text) - kopf - fuss
+    zahl = lambda n: f"{n:,}".replace(",", ".")   # noqa: E731 -- deutsche Tausenderpunkte
+    return (text[:kopf] + f"\n\n[… {zahl(aus)} Zeichen in der Mitte ausgelassen …]\n\n" + text[-fuss:],
+            f"Das Werk ist {zahl(len(text))} Zeichen lang; du siehst Anfang und Ende, die Mitte ist ausgelassen. "
+            "Vollständigkeit beurteilst du NUR am Ende; der Auslassungsvermerk ist kein Mangel, und über die Mitte "
+            "urteilst du nicht.")
+
+
+async def pruefen(entwurf: str, a: dict[str, Any], v: dict[str, Any], quellen_text: str = "",
+                  vorher: dict[str, Any] | None = None) -> dict[str, Any]:
     modell = await modell_fuer("kritiker", llm.vorgabe("arbeit"))
     if not modell:
         return {"urteil": "ungeprueft", "begruendung": "Kein Modell für die Prüfung installiert."}
+    ausschnitt, lang_hinweis = pruef_ausschnitt(entwurf)
     # Daniel bekommt DIESELBEN Quellen wie der Bearbeiter. Ohne sie pruefte er
     # aus eigenem Gedaechtnis -- und das kann genauso daneben liegen.
     frage = (f"AUFTRAG: {a.get('auftrag')}\nFORM: {a.get('form')}\n\n{_vorgang_kontext(v)[:40000]}\n\n"
              + (f"QUELLEN, die der Bearbeiter hatte:\n{quellen_text[:66000]}\n\nEin Verweis [n] mit einer Nummer aus "
                 "dieser Liste ist gültig; bemängle ihn nur, wenn die Aussage NICHT im Auszug dieser Quelle steht.\n\n" if quellen_text else
                 "(Der Bearbeiter hatte keine Internetquellen.)\n\n")
-             + f"ERGEBNIS:\n{entwurf[:60000]}")
+             + (f"{lang_hinweis}\n\n" if lang_hinweis else "")
+             + f"ERGEBNIS:\n{ausschnitt}")
+    if vorher and (vorher.get("maengel") or vorher.get("begruendung")):
+        # Nachpruefung (21.10.2026): beim zweiten Mal zaehlt nur, ob die eigenen Punkte
+        # erledigt sind. Wer jede Fassung von vorn liest, findet jedes Mal neue --
+        # gleiches Modell, anderer Blickwinkel, und die Schleife endet nie.
+        frage += ("\n\nDAS IST EINE NACHPRÜFUNG. Bei der letzten Prüfung hast du diese Mängel genannt:\n"
+                  + "\n".join("- " + m for m in vorher.get("maengel") or [vorher.get("begruendung", "")])
+                  + "\nPrüfe NUR, ob sie behoben sind. Sind sie behoben, lautet das Urteil tragfaehig -- auch wenn dir "
+                    "jetzt anderes auffällt; das gehört in die Hinweise. Einen NEUEN Mangel nennst du nur, wenn er schwer "
+                    "ist: abgebrochen, erfunden, fremde Schrift, Platzhalter, Auftrag verfehlt.")
     if a.get("form") == "praesentation":
         # Folienregeln (folien.py, 17.10.2026): die Gestaltung macht das Cockpit,
         # die Qualitaet einer Folie entscheidet sich an diesen Punkten.
@@ -1250,6 +1295,10 @@ async def pruefen(entwurf: str, a: dict[str, Any], v: dict[str, Any], quellen_te
         d = llm.json_aus(antwort)
         if isinstance(d, dict) and d.get("urteil") in ("tragfaehig", "nachbessern", "rueckfrage"):
             d["maengel"] = [str(m)[:200] for m in (d.get("maengel") or [])][:6]
+            d["hinweise"] = [str(m)[:200] for m in (d.get("hinweise") or [])][:5]
+            if d["urteil"] == "nachbessern" and not d["maengel"]:
+                # "nachbessern" ohne einen einzigen Mangel ist ein Hinweis, kein Einwand.
+                d["urteil"] = "tragfaehig"
             d["begruendung"] = _kurz(d.get("begruendung"), 500)
             d["modell"] = modell
             return d
@@ -1493,6 +1542,8 @@ def urteil_klartext(pruefung: Any) -> str:
             pruefung = {}
     u = (pruefung or {}).get("urteil")
     return {"tragfaehig": "geprüft, kann so verwendet werden",
+            "eingearbeitet": "geprüft, Einwände eingearbeitet",
+            "abgeschlossen": f"abschließend geprüft von {(pruefung or {}).get('von') or 'extern'}",
             "nachbessern": "Daniel hat Einwände -- sie lassen sich im Ergebnisfenster einarbeiten",
             "rueckfrage": "Daniel hat eine Rückfrage an dich",
             "recherche": "Recherche-Dossier aus Quellen, nicht von Daniel geprüft"}.get(u, "noch nicht geprüft")

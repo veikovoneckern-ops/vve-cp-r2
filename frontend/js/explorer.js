@@ -160,7 +160,7 @@ export function Explorer() {
                 <td><span class="ex-name"><${Icon} n=${ICON[e.typ] || "clip"} g=${15} /><span><b>${e.titel}</b>
                   ${treffer[e.id] && html`<span class="leise klein ex-treffer">${treffer[e.id]}</span>`}
                   <span class="leise klein ex-nur-schmal">${e.typ_name}${e.projekt_name ? " · " + e.projekt_name : ""} · ${zeitText(e.zeit)}</span></span></span></td>
-                <td class="ex-sp-art"><span class="leise">${e.typ_name}</span>${e.urteil && URTEIL[e.urteil] ? html` <span class=${"pill " + URTEIL[e.urteil].farbe} title=${URTEIL[e.urteil].wort}>${e.urteil === "tragfaehig" ? "✓" : "!"}</span>` : ""}</td>
+                <td class="ex-sp-art"><span class="leise">${e.typ_name}</span>${e.urteil && URTEIL[e.urteil] ? html` <span class=${"pill " + URTEIL[e.urteil].farbe} title=${URTEIL[e.urteil].wort}>${URTEIL[e.urteil].farbe === "gruen" ? "✓" : "!"}</span>` : ""}</td>
                 <td class="ex-sp-projekt klein">${e.projekt_name || html`<span class="leise">–</span>`}${e.aufgabe_titel ? html`<div class="leise">${e.aufgabe_titel}</div>` : ""}</td>
                 <td class="ex-sp-wer klein">${e.wer || "–"}</td>
                 <td class="klein">${zeitText(e.zeit)}</td>

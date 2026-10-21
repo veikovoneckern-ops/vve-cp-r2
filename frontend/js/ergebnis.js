@@ -71,6 +71,10 @@ export function StilWahl({ e, geaendert }) {
 // Ergebnisfenster einarbeiten laesst (die Bitte steht vorbereitet im Chat).
 export const URTEIL = {
   tragfaehig: { wort: "Geprüft: in Ordnung", farbe: "gruen", tun: "Daniel hat nichts Wesentliches gefunden. Du kannst das Ergebnis so verwenden." },
+  // Erledigt heisst erledigt (21.10.2026): nach dem Einarbeiten pruefte Daniel bisher
+  // von vorn und fand neue Punkte -- die Schleife endete nie.
+  eingearbeitet: { wort: "Geprüft, Einwände eingearbeitet", farbe: "gruen", tun: "Die Einwände sind eingearbeitet und nachgeprüft. Du kannst das Ergebnis so verwenden." },
+  abgeschlossen: { wort: "Abschließend geprüft", farbe: "gruen", tun: "Ein externes Modell hat das Ergebnis zuletzt geprüft oder selbst überarbeitet. Damit ist es fertig -- Daniel prüft es nicht noch einmal." },
   nachbessern: { wort: "Daniel hat Einwände", farbe: "gelb", tun: "Brauchbar, aber Daniel sieht Schwächen. Lies seine Punkte und lass sie einarbeiten, wenn du zustimmst." },
   rueckfrage: { wort: "Rückfrage an dich", farbe: "gelb", tun: "Daniel braucht eine Angabe von dir, bevor es weitergeht." },
   // Recherche-Dossier (dossier.py, 19.10.2026): aus Quellen verdichtet, nicht von Daniel geprueft.
@@ -102,13 +106,15 @@ export function Pruefung({ p, eid, einarbeiten }) {
   if (!p || !p.urteil) return "";
   const u = URTEIL[p.urteil] || { wort: p.urteil, farbe: "", tun: "" };
   const los = einarbeiten || (eid ? () => bus.sende("ergebnis-zeigen", { id: eid, vorlage: einarbeitenText(p) }) : null);
+  const wer = p.urteil === "abgeschlossen" && p.von ? p.von : "Daniel";
   return html`<div class="pruef-zeile" ref=${ref}>
     <button class=${"pill " + u.farbe} onClick=${() => setAuf(!auf)} aria-expanded=${auf}
-      title="Daniel (Red Team) prüft jedes Ergebnis. Klicken für seine Begründung und was du tun kannst.">${u.wort}${auf ? " ▴" : " ▾"}</button>
+      title="Daniel (Red Team) prüft jedes Ergebnis; zum Schluss kann ein externes Modell abschließend prüfen. Klicken für Begründung und was du tun kannst.">${u.wort}${p.urteil === "abgeschlossen" && p.von ? ` (${p.von})` : ""}${auf ? " ▴" : " ▾"}</button>
     ${auf && html`<div class="pruef-text klein">
       <div><b>Was das heißt:</b> ${u.tun}</div>
-      ${p.begruendung && html`<div style="margin-top:6px"><b>Daniels Begründung:</b> ${p.begruendung}</div>`}
-      ${(p.maengel || []).length > 0 && html`<div style="margin-top:6px"><b>Seine Punkte:</b><ul>${p.maengel.map((m) => html`<li>${m}</li>`)}</ul></div>`}
+      ${p.begruendung && html`<div style="margin-top:6px"><b>${wer === "Daniel" ? "Daniels" : wer + "s"} Begründung:</b> ${p.begruendung}</div>`}
+      ${(p.maengel || []).length > 0 && html`<div style="margin-top:6px"><b>Einwände (Fehler):</b><ul>${p.maengel.map((m) => html`<li>${m}</li>`)}</ul></div>`}
+      ${(p.hinweise || []).length > 0 && html`<div style="margin-top:6px"><b>Hinweise (kein Muss):</b><ul>${p.hinweise.map((m) => html`<li>${m}</li>`)}</ul></div>`}
       ${p.urteil === "nachbessern" && los && html`<button class="btn klein primaer" style="margin-top:8px" onClick=${(x) => { x.stopPropagation(); setAuf(false); los(); }}>
         <${Icon} n="chat" g=${13} />Einwände einarbeiten lassen</button>`}</div>`}
   </div>`;

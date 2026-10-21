@@ -639,7 +639,12 @@ async def _etappe(l: dict[str, Any], e: dict[str, Any]) -> None:
         if neu.strip() and (art != "video" or video.drehbuch_aus(neu, SZENEN_JE_AKT)):
             text = _ueberarbeitet(art, neu, e["titel"], text)
             e["ueberarbeitet"] = "Daniel"
-    e["daniel"] = {"urteil": p.get("urteil"), "begruendung": p.get("begruendung"), "maengel": p.get("maengel") or []}
+    # Ueberarbeitet heisst erledigt (21.10.2026): vorher stand an der Etappe weiter
+    # "Daniel hat Einwände" -- das Urteil VOR der Ueberarbeitung -- und am fertigen
+    # Werk zaehlten seine laengst eingearbeiteten Punkte als offene Maengel.
+    erledigt = e.get("ueberarbeitet") == "Daniel" and p.get("urteil") == "nachbessern"
+    e["daniel"] = {"urteil": "eingearbeitet" if erledigt else p.get("urteil"), "begruendung": p.get("begruendung"),
+                   "maengel": [] if erledigt else p.get("maengel") or [], "eingearbeitet": (p.get("maengel") or []) if erledigt else []}
     e["text"] = text
     e["kurz"] = await _kurzfassung(modell, text)
     d["modell"] = modell
@@ -647,7 +652,7 @@ async def _etappe(l: dict[str, Any], e: dict[str, Any]) -> None:
     e["zeit"] = time.time()
     _speichern(l)
     db.ereignis(vid, rid, "info", f"{n} {e['nr']} von {gesamt} fertig: {e['titel']} "
-                                  f"({len(text.split())} Wörter, Daniel: {stab.urteil_klartext(p)}).")
+                                  f"({len(text.split())} Wörter, Daniel: {stab.urteil_klartext(e['daniel'])}).")
 
 
 def _folien_ziel(d: dict[str, Any]) -> int:
@@ -721,9 +726,10 @@ def _usd(anbieter: str, ein: int, aus: int) -> float:
 PRUEF_EXTERN = """Du bist {name} und prüfst als unabhängige Zwischeninstanz ein langes Vorhaben, das ein lokales KI-Team für Veiko von Eckern Etappe für Etappe schreibt. Veiko greift nicht ein; deine Hinweise steuern die folgenden Etappen.
 Antworte AUSSCHLIESSLICH mit JSON:
 {{"urteil": "weiter|nachbessern|anhalten", "begruendung": "zwei bis vier Sätze für Veiko", "hinweise": ["konkrete Anweisung für alle folgenden Etappen", "..."], "nachbessern": [{{"nr": 3, "was": "was genau an dieser Etappe zu ändern ist"}}], "frage": "nur bei anhalten: die eine Frage an Veiko"}}
-- weiter: trägt; Hinweise optional.
-- nachbessern: einzelne der GELIEFERTEN Etappen haben Mängel (Widersprüche, Faktenfehler, Ton, Wiederholungen, Plan verfehlt) -- nenne sie in "nachbessern".
+- weiter: der Normalfall. Die Etappen tragen; was man besser machen könnte (Ton, Tiefe, Stil, Vorgriffe vermeiden), gehört in "hinweise" und wirkt auf die folgenden Etappen.
+- nachbessern: NUR wenn eine gelieferte Etappe einen FEHLER hat, den ein Leser bemerkt: falsche Fakten, Widerspruch zu einer anderen Stelle, wörtlich wiederholte Absätze, abgebrochener Text, Plan verfehlt. Nenne genau diese Etappen und den Fehler in "nachbessern"; Stilwünsche gehören nicht dorthin.
 - anhalten: NUR wenn die Richtung grundlegend falsch ist oder etwas fehlt, das nur Veiko entscheiden kann. Das hält die Arbeit an.
+Deine Punkte werden eingearbeitet, und danach prüft niemand mehr nach -- dein Wort ist das letzte. Sei deshalb genau, nicht vollständig.
 Höchstens fünf Hinweise, je ein Satz, umsetzbar. Deutsch."""
 
 
@@ -841,13 +847,33 @@ def _abschliessen(l: dict[str, Any], vorlaeufig: bool = False) -> str | None:
     titel = d.get("werk_titel") or l["titel"]
     v = db.holen("vorgaenge", vid) or {"id": vid, "projekt_id": l.get("projekt_id")}
     letzte = (d.get("pruefungen") or [{}])[-1]
-    pruefung = {"urteil": "tragfaehig" if letzte.get("urteil") in ("weiter", None) else "nachbessern",
+    offen = [m for e in fertig for m in ((e.get("daniel") or {}).get("maengel") or [])
+             if (e.get("daniel") or {}).get("urteil") == "nachbessern"]
+    # Das letzte Wort hat der Externe (Veiko, 21.10.2026: "finale Prüfungen über meine
+    # Externen, und dann soll das aber auch mal gut sein"). Hat er die letzten Etappen
+    # gelesen und sind seine Punkte eingearbeitet, ist das Werk abgeschlossen -- vorher
+    # stand dort sein Urteil VOR dem Einarbeiten ("nachbessern"), 17 von 17 Mal.
+    letzte_nr = max((e["nr"] for e in fertig), default=0)
+    extern_am_ende = bool(letzte.get("name")) and (letzte.get("bis") or 0) >= letzte_nr and letzte.get("urteil") != "anhalten"
+    if extern_am_ende and not vorlaeufig:
+        urteil = "abgeschlossen"
+    elif letzte.get("urteil") in ("nachbessern", "anhalten") or offen:
+        urteil = "nachbessern"
+    else:
+        urteil = "tragfaehig"
+    pruefung = {"urteil": urteil, "von": letzte.get("name") if extern_am_ende else None,
                 "begruendung": (f"{len(fertig)} Etappen, jede von Daniel geprüft"
                                 + (f", {len(d.get('pruefungen') or [])} Zwischenprüfungen durch "
                                    f"{letzte.get('name')} ($ {d.get('kosten', 0):.2f})" if d.get("pruefungen") else ", ohne externe Prüfung")
-                                + (f". Letztes Wort von {letzte.get('name')}: {letzte.get('begruendung')}" if letzte.get("begruendung") else "")
+                                + (f". {letzte.get('name')} hat Fehler in {ARTEN[art]['etappe']} "
+                                   f"{', '.join(str(n) for n in letzte['nachbessern'])} gefunden; sie sind eingearbeitet"
+                                   if extern_am_ende and letzte.get("nachbessern") else "")
+                                + (f". Letztes Wort von {letzte.get('name')}"
+                                   + (" (vor dem Einarbeiten)" if letzte.get("nachbessern") else "") + f": {letzte.get('begruendung')}"
+                                   if letzte.get("begruendung") else "")
                                 + (" VORLÄUFIG -- der Lauf ist noch nicht fertig." if vorlaeufig else "")),
-                "maengel": [m for e in fertig for m in ((e.get("daniel") or {}).get("maengel") or [])][:6]}
+                "maengel": [] if urteil == "abgeschlossen" else offen[:6],
+                "hinweise": (letzte.get("hinweise") or [])[:5]}
     a = {"titel": ("Zwischenstand: " if vorlaeufig else "") + titel,
          "form": _form(art)}
     if art == "video":

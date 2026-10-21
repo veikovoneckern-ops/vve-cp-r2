@@ -566,6 +566,55 @@ async def _uebergabe_nachfordern(wer: str, modell: str, system: str, verlauf: li
     return uebergaben_trennen(roh, wer)[1]
 
 
+def _letzter_externer(gid: str) -> dict[str, Any] | None:
+    """Die juengste Stellungnahme eines Externen in diesem Gespraech (seit Veikos
+    vorletzter Nachricht) -- daran erkennt das Cockpit, dass gerade Hinweise von
+    Dario, Elon oder Demmis eingearbeitet werden."""
+    for r in db.alle("SELECT rolle, text FROM nachrichten WHERE gespraech_id=? ORDER BY id DESC LIMIT 6", (gid,)):
+        if r["rolle"] in EXTERNE:
+            return {"wer": r["rolle"], "name": EXTERNE[r["rolle"]]["name"], "text": r["text"] or ""}
+    return None
+
+
+async def _fassung_beurteilen(gid: str, wer: str, modell: str | None, fassung: str, e: dict[str, Any],
+                              text: str) -> dict[str, Any]:
+    """Wer hat bei einer neuen Fassung das letzte Wort? (Veiko, 21.10.2026: "Es macht
+    keinen Sinn, dass Daniel immer wieder Einwaende hat, selbst wenn ich es ueber ein
+    Top-Modell wie Gemini habe testen lassen.")
+
+    - Schreibt ein Externer die Fassung selbst, ist sie abgeschlossen. Daniel rechnet
+      mit demselben lokalen Modell wie der Bearbeiter; ihn ueber das staerkere Modell
+      urteilen zu lassen, das Veiko eigens dafuer bezahlt, kehrt die Rangfolge um.
+    - Arbeitet ein Mitglied die Punkte eines Externen oder Daniels ein, prueft Daniel
+      NUR nach, ob sie erledigt sind -- keine Pruefung von vorn, die neue Punkte findet.
+    - Sonst die normale Pruefung."""
+    if ist_extern(wer):
+        return {"urteil": "abgeschlossen", "von": wer_name(wer), "modell": modell,
+                "begruendung": f"{wer_name(wer)} hat diese Fassung selbst geschrieben ({modell}). Daniel prüft sie nicht "
+                               "noch einmal: bei einer externen Fassung hat der Externe das letzte Wort.",
+                "maengel": []}
+    v = db.holen("vorgaenge", e.get("vorgang_id") or "") or {"id": e.get("vorgang_id") or ""}
+    bisher = e.get("pruefung") if isinstance(e.get("pruefung"), dict) else {}
+    ext = _letzter_externer(gid)
+    if ext:
+        vorher = {"maengel": [f"Hinweise von {ext['name']}: {stab._kurz(ext['text'], 1500)}"]}
+    elif bisher.get("urteil") == "nachbessern" and bisher.get("maengel"):
+        vorher = bisher
+    else:
+        vorher = None
+    stab.laeuft("kritiker", "prüft eine Überarbeitung nach" if vorher else "prüft eine Überarbeitung", v.get("id"))
+    try:
+        p = await stab.pruefen(fassung, {"auftrag": f"{e.get('titel')} -- Veikos Anweisung: {text}", "form": e.get("form")},
+                               v, vorher=vorher)
+    finally:
+        stab.laeuft(None)
+    if vorher and p.get("urteil") == "tragfaehig":
+        p["urteil"] = "eingearbeitet"
+        if ext:
+            p["begruendung"] = f"Die Hinweise von {ext['name']} sind eingearbeitet. " + (p.get("begruendung") or "")
+    return p
+
+
 async def _antwort(gid: str, wer: str, system: str, verlauf: list[dict[str, str]], kontext: dict[str, Any],
                    text: str, quellen: list[dict[str, str]], denken: bool) -> AsyncIterator[dict[str, Any]]:
     """Eine Antwort eines Mitglieds oder Externen: rechnen, Fassung uebernehmen,
@@ -698,15 +747,9 @@ async def _antwort(gid: str, wer: str, system: str, verlauf: list[dict[str, str]
             # Neue oder geaenderte Bildzeilen gleich rechnen; unveraenderte Bilder bleiben.
             folienbilder.starten(eid)
         yield {"typ": "fassung", "zeichen": len(fassung), "protokoll_id": pid}
-        # Daniel prueft auch die ueberarbeitete Fassung -- dieselbe Regel wie beim ersten Entwurf.
-        yield {"typ": "status", "text": "Daniel prüft die neue Fassung …"}
-        v = db.holen("vorgaenge", e.get("vorgang_id") or "") or {"id": e.get("vorgang_id") or ""}
-        stab.laeuft("kritiker", "prüft eine Überarbeitung", v.get("id"))
-        try:
-            pruefung = await stab.pruefen(fassung, {"auftrag": f"{e.get('titel')} -- Veikos Anweisung: {text}",
-                                                    "form": e.get("form")}, v)
-        finally:
-            stab.laeuft(None)
+        pruefung = await _fassung_beurteilen(gid, wer, modell, fassung, e, text)
+        if pruefung.get("urteil") != "abgeschlossen":
+            yield {"typ": "status", "text": "Daniel hat die neue Fassung nachgeprüft."}
         db.aendern("ergebnisse", eid, {"pruefung": pruefung}, wer="kritiker", vorgang_id=e.get("vorgang_id"), aktion="geprüft")
         daten["pruefung"] = pruefung.get("urteil")
         yield {"typ": "pruefung", "pruefung": pruefung}

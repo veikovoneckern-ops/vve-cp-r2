@@ -20,7 +20,7 @@ import httpx
 from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
-from . import anmeldung, db, gespraech, importer, llm, neo, stab, stimme, teamchat
+from . import anmeldung, db, gespraech, importer, llm, nachtladen, neo, stab, stimme, teamchat
 from .konfig import (ALT_BACKEND, ALT_TOKEN, ALT_COCKPIT_URL, ALT_STATE, SEARX, STATUS_URL, UPLOADS,
                      VORSCHAU_DIR)
 
@@ -729,6 +729,11 @@ async def ergebnis(rid: str):
     e["kurztitel"] = kurztitel(e)
     from . import aktionen
     e["nebenbei"] = aktionen.fuer(None, rid)   # was gerade an diesem Ergebnis arbeitet (17.10.2026)
+    # Ein Langlaeufer-Ergebnis hat seine externe Endpruefung schon im Lauf, und eine
+    # Gesamtfassung in einer Antwort wird dort nicht uebernommen (teamchat) -- das
+    # Fenster bietet "Abschließend prüfen" deshalb nur ausserhalb von Langlaeufern an.
+    from . import langlauf
+    e["langlauf_id"] = langlauf.zum_ergebnis(rid)
     try:
         e["auftrag"] = (json.loads(v.get("auftrag") or "{}") or {}).get("auftrag")
     except ValueError:
@@ -1077,7 +1082,8 @@ async def einstellungen():
             "stab_ab": db.einstellung("stab_ab"), "letzter_abgleich": db.einstellung("letzter_abgleich"),
             "alt_cockpit": ALT_COCKPIT_URL, "leiste": db.einstellung("leiste", []),
             "talk_stimme": stimme.gewaehlte_stimme(), "stimmen": stimme.STIMMEN,
-            "praesentation_stil": folien_stil.vorgabe(), "praesentation_stile": folien_stil.liste()}
+            "praesentation_stil": folien_stil.vorgabe(), "praesentation_stile": folien_stil.liste(),
+            "modelle_nachts_laden": nachtladen.an(), "nachtladen": nachtladen.stand()}
 
 
 @router.post("/einstellungen")
@@ -1103,6 +1109,8 @@ async def einstellungen_setzen(request: Request):
         db.einstellung_setzen("talk_stimme", d["talk_stimme"])
     if d.get("praesentation_stil") in ("vveorg", "cockpit"):
         db.einstellung_setzen("praesentation_stil", d["praesentation_stil"])
+    if "modelle_nachts_laden" in d:
+        db.einstellung_setzen(nachtladen.SCHALTER, bool(d["modelle_nachts_laden"]))
     return await einstellungen()
 
 

@@ -27,7 +27,7 @@ import { api } from "./api.js";
 const tok = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1).replace(".", ",") + " Mio." : n >= 1e3 ? Math.round(n / 1e3) + " Tsd." : String(n || 0));
 const zahl = (x) => (x == null ? "—" : String(Math.round(x * 10) / 10).replace(".", ","));
 const gbText = (g) => (g == null ? "?" : String(g).replace(".", ",")) + " GB";
-const URTEIL_KURZ = { tragfaehig: "in Ordnung", nachbessern: "mit Einwänden", rueckfrage: "mit Rückfrage", ungeprueft: "ungeprüft" };
+const URTEIL_KURZ = { tragfaehig: "in Ordnung", eingearbeitet: "eingearbeitet", abgeschlossen: "abschließend geprüft", nachbessern: "mit Einwänden", rueckfrage: "mit Rückfrage", ungeprueft: "ungeprüft" };
 
 async function tun(pfad, daten, text, nachher) {
   try { const r = await api(pfad, { methode: "POST", daten: daten || {} }); if (text) toast(text); nachher && nachher(); return r; }

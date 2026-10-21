@@ -188,7 +188,7 @@ function Etappe({ e, name }) {
         <div class="leise klein">${fertig ? (e.kurz || "") : (e.inhalt || "")}</div></div>
       <span class="ll-marken">
         ${fertig ? html`<span class="pill">${(e.text || "").split(/\s+/).length} Wörter</span>` : html`<span class="pill">offen</span>`}
-        ${e.daniel && html`<span class="pill" title=${e.daniel.begruendung || ""}>Daniel: ${e.daniel.urteil === "tragfaehig" ? "trägt" : e.ueberarbeitet ? "überarbeitet" : e.daniel.urteil}</span>`}
+        ${e.daniel && html`<span class="pill" title=${e.daniel.begruendung || ""}>Daniel: ${e.daniel.urteil === "tragfaehig" ? "trägt" : e.daniel.urteil === "eingearbeitet" || e.ueberarbeitet ? "eingearbeitet" : e.daniel.urteil}</span>`}
         ${ex && html`<span class=${"pill " + ex[0]}>${ex[1]}</span>`}
         ${fertig && html`<${Icon} n=${auf ? "runter" : "rechts"} g=${14} />`}</span>
     </div>

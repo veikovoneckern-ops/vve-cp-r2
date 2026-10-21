@@ -26,7 +26,8 @@ Grenzen, die Absicht sind:
 - **Umgestellt wird nie ohne Veikos Klick.** Autonomie heisst hier: selbst suchen,
   selbst messen, selbst vorschlagen -- nicht: selbst entscheiden.
 - **Gemessen wird nur, was installiert ist.** Ein Download dauert auf der Leitung
-  des Servers Stunden; den stoesst Veiko an, gemessen wird in der Nacht danach.
+  des Servers Stunden; den stoesst Veiko an -- oder, wenn er es eingeschaltet hat,
+  nachtladen.py ab 23 Uhr --, gemessen wird in der Nacht danach bzw. ab 02 Uhr.
 - **Nachts (02--05 Uhr deutscher Zeit), hoechstens vier Vergleiche**, jeder unter
   derselben Sperre wie die Pipeline -- tagsueber gehoeren die Karten dem Team.
 - **Ein Vergleich ist eine Stichprobe, kein Beweis.** Deshalb stehen Zahl der
@@ -377,7 +378,10 @@ async def schleife() -> None:
         try:
             jetzt = datetime.datetime.now(BERLIN)
             heute = jetzt.strftime("%Y-%m-%d")
-            if 2 <= jetzt.hour < 5 and stand().get("nacht") != heute and stab.stab_aktiv():
+            # Laufen nachts noch Downloads (nachtladen.py), wartet die Revision auf sie --
+            # sonst maesse sie heute ohne die Modelle, fuer die sie geladen werden.
+            from . import nachtladen
+            if 2 <= jetzt.hour < 5 and stand().get("nacht") != heute and stab.stab_aktiv() and not nachtladen.laeuft():
                 _stand_setzen(nacht=heute)
                 starten(von_hand=False)
         except Exception:  # noqa: BLE001

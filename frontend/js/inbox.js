@@ -192,7 +192,7 @@ function Ereignis({ e, notizText, notizAuf, setNotizAuf }) {
     <${Avatar} wer=${e.wer} name=${e.wer_name} />
     <div class="blase">
       <div class="kopfzeile"><b>${e.wer_name}</b><span>${ART_TEXT[e.art] ?? e.art}</span>
-        ${dt.urteil && html`<span class=${"pill " + (dt.urteil === "tragfaehig" ? "gruen" : dt.urteil === "nachbessern" ? "gelb" : "")}>${(URTEIL[dt.urteil] || { wort: dt.urteil }).wort}</span>`}
+        ${dt.urteil && html`<span class=${"pill " + ((URTEIL[dt.urteil] || {}).farbe || "")}>${(URTEIL[dt.urteil] || { wort: dt.urteil }).wort}</span>`}
         <span style="margin-left:auto">${zeitText(e.zeit)}</span></div>
       ${e.art === "notiz" ? html`
         <div class=${"zitat" + (lang ? " einklappbar" + (notizAuf ? " auf" : "") : "")}>${notizText || e.text}</div>

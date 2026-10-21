@@ -209,6 +209,27 @@ function StimmeZeile({ d, setzen }) {
     </div></div>`;
 }
 
+// Nachts neue Modelle laden (nachtladen.py, 21.10.2026). Die Revision misst sie in
+// derselben Nacht; Vorschlaege stehen morgens in der Team-Uebersicht. Umgestellt und
+// geloescht wird nichts ohne Klick.
+function NachtladenZeile({ d, setzen }) {
+  const s = d.nachtladen || {};
+  const an = !!d.modelle_nachts_laden;
+  const zuletzt = s.laeuft ? `läuft gerade: ${s.schritt || "…"}`
+    : s.fehler ? `letzte Nacht gescheitert: ${s.fehler}`
+    : s.ende ? `zuletzt ${new Date(s.ende * 1000).toLocaleString("de-DE")}: ${s.ergebnis || ""}` : "";
+  return html`<div class="zeile"><div class="haupt-text"><b>Nachts neue Modelle laden und testen</b>
+      <div class="leise klein">${an
+        ? "an: zwischen 23 und 5 Uhr lädt das Cockpit bis zu zwei vielversprechende neue Modelle (höchstens 50 GB), "
+          + "misst sie danach gegen die heutige Besetzung und schlägt dir morgens vor, was besser wäre. Umgestellt und gelöscht wird nichts ohne dich."
+        : "aus. Neue Modelle stehen nur als Vorschlag zum Laden in der Team-Übersicht."}</div>
+      ${zuletzt && html`<div class="leise klein" style="margin-top:4px">${zuletzt}</div>`}
+      ${(s.ausgelassen || []).length > 0 && !s.laeuft && html`<details class="klein" style="margin-top:4px"><summary class="leise">Was nicht geladen wurde, und warum</summary>
+        <ul>${s.ausgelassen.map((a) => html`<li>${a}</li>`)}</ul></details>`}</div>
+    <div class="segment"><button class=${an ? "an" : ""} onClick=${() => setzen({ modelle_nachts_laden: true })}>an</button>
+      <button class=${!an ? "an" : ""} onClick=${() => setzen({ modelle_nachts_laden: false })}>aus</button></div></div>`;
+}
+
 export function Vertrauen() {
   const [d, laden] = useAbruf("/einstellungen", 0, []);
   if (!d) return html`<div class="lade">Lade …</div>`;
@@ -232,6 +253,7 @@ export function Vertrauen() {
         <div class="leise klein">${d.stab_aktiv ? `an, für Notizen seit ${new Date(d.stab_ab * 1000).toLocaleString("de-DE")}` : "aus. Notizen kommen trotzdem herein, nur ohne Einordnung."}</div></div>
         <div class="segment"><button class=${d.stab_aktiv ? "an" : ""} onClick=${() => setzen({ stab_aktiv: true })}>an</button>
           <button class=${!d.stab_aktiv ? "an" : ""} onClick=${() => setzen({ stab_aktiv: false })}>aus</button></div></div>
+      <${NachtladenZeile} d=${d} setzen=${setzen} />
       <${StimmeZeile} d=${d} setzen=${setzen} />
       <${PostfachZeile} p=${d.postfach} nachher=${laden} />
       ${(() => {

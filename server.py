@@ -19,7 +19,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from cockpit import anmeldung, dossier, folienbilder, importer, langlauf, medien, revision, stab, usage, webspace
+from cockpit import anmeldung, dossier, folienbilder, importer, langlauf, medien, nachtladen, revision, stab, usage, webspace
 from cockpit.api import router
 from cockpit.konfig import FRONTEND, HOST, PORT
 
@@ -41,6 +41,8 @@ async def lebenszeit(app: FastAPI):
     lang = asyncio.create_task(langlauf.schleife())
     # Modell-Revision (17.10.2026): nachts einmal messen, ob es bessere Modelle gibt.
     rev = asyncio.create_task(revision.schleife())
+    # Nachts neue Modelle laden, wenn Veiko es eingeschaltet hat (nachtladen.py, 21.10.2026).
+    laden = asyncio.create_task(nachtladen.schleife())
     # ComfyUI gibt nach Leerlauf seinen Grafikspeicher frei (medien.py, 17.10.2026).
     frei = asyncio.create_task(medien.aufraeum_schleife())
     # Fehlende Bilder in Ergebnissen von selbst nachrechnen (folienbilder.py, 18.10.2026).
@@ -57,6 +59,7 @@ async def lebenszeit(app: FastAPI):
     aufgabe.cancel()
     lang.cancel()
     rev.cancel()
+    laden.cancel()
 
 
 app = FastAPI(title="VvE Cockpit", lifespan=lebenszeit, docs_url=None, redoc_url=None)

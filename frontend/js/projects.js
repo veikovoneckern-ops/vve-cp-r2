@@ -469,6 +469,32 @@ function ErgebnisZeileProjekt({ r }) {
 // Das Ergebnisfenster. Rechts "Weiterarbeiten": dasselbe Gespraech wie unter
 // Team (teamchat.js), mit dem Ergebnis im Kontext -- Anweisungen geben,
 // Unterlagen anhaengen, diktieren. Eine neue Fassung ersetzt links den Text.
+// Abschliessend pruefen (Veiko, 21.10.2026: "finale Pruefungen ueber meine Externen,
+// und dann soll das aber auch mal gut sein"). Kein eigener Weg: der Externe bekommt
+// die Bitte im Chat rechts, die Kosten gibst du dort wie immer frei, und schreibt er
+// die fertige Fassung selbst, ist das Ergebnis abgeschlossen -- Daniel prueft danach
+// nicht mehr (teamchat._fassung_beurteilen).
+// Ein Externer antwortet mit hoechstens 16.000 Token (teamchat._cloud_chat) -- eine
+// laengere Fassung kaeme abgeschnitten an. Laengeres pruefen Externe im LongRun.
+const ABSCHLUSS_MAX = 40000;
+function abschlussText(name, p) {
+  const m = (p && p.maengel) || [];
+  return `${name}, prüfe dieses Ergebnis abschließend. Behebe selbst, was falsch ist: Fakten, Widersprüche, Lücken, Wiederholungen, `
+    + "abgebrochene Stellen. Was gut ist, bleibt. Liefere die vollständige fertige Fassung -- danach ist es fertig."
+    + (m.length ? "\nDaniels offene Einwände:\n" + m.map((x) => "- " + x).join("\n") : "");
+}
+function AbschlussWahl({ partner, los }) {
+  const [auf, setAuf] = useState(false);
+  const ext = (partner || []).filter((x) => x.extern && x.schluessel !== false);
+  if (!ext.length) return "";
+  return html`<span class="abschluss-wahl" style="position:relative">
+    <button class="btn klein" onClick=${() => setAuf(!auf)} aria-expanded=${auf}
+      title="Ein externes Modell prüft zum Schluss und schreibt die fertige Fassung selbst. Kostet Geld; du gibst es im Chat rechts frei.">
+      <${Icon} n="check" g=${13} />Abschließend prüfen${auf ? " ▴" : " ▾"}</button>
+    ${auf && html`<span class="segment" style="margin-left:6px">${ext.map((x) => html`<button key=${x.id} onClick=${() => { setAuf(false); los(x); }}>${x.name}</button>`)}</span>`}
+  </span>`;
+}
+
 export function ErgebnisAnsicht({ id, zu, vorlage = "" }) {
   const [e, setE] = useState(null);
   const [ansicht, setAnsicht] = useState(false);
@@ -531,6 +557,10 @@ export function ErgebnisAnsicht({ id, zu, vorlage = "" }) {
             <span><b>${e.fassung_von && e.fassung_von.nr > 1 ? `Aktuelle Fassung (${e.fassung_von.nr})` : "Erste Fassung"}</b>
               <span class="leise klein"> · von ${(e.fassung_von || {}).name || e.wer_name} · ${zeitText((e.fassung_von || {}).zeit || e.erstellt)} · ${(e.inhalt || "").length.toLocaleString("de-DE")} Zeichen</span></span>
             <${Pruefung} p=${p} einarbeiten=${() => { setChatAuf(true); setChatVorlage((v) => ({ text: einarbeitenText(p), n: ((v && v.n) || 0) + 1 })); }} />
+            ${!e.langlauf_id && p.urteil !== "abgeschlossen" && (e.inhalt || "").length <= ABSCHLUSS_MAX && html`<${AbschlussWahl} partner=${partner} los=${(x) => {
+              setWer(x.id); setChatAuf(true);
+              setChatVorlage((v) => ({ n: ((v && v.n) || 0) + 1, text: abschlussText(x.name, p) }));
+            }} />`}
             ${e.ansicht ? html`<div class="segment" style="margin-left:auto"><button class=${ansicht ? "an" : ""} onClick=${() => setAnsicht(true)}>Ansicht</button>
               <button class=${!ansicht ? "an" : ""} onClick=${() => setAnsicht(false)}>Text</button></div>` : ""}
             ${!(e.form === "video" || e.video) && html`<button class="btn klein" style=${e.ansicht ? "" : "margin-left:auto"} onClick=${() => setGross(true)} title="Über das ganze Fenster ansehen">
