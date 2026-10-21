@@ -55,6 +55,18 @@ def stab_aktiv() -> bool:
     return bool(db.einstellung("stab_aktiv", True))
 
 
+# Vormerken (Veiko, 21.10.2026): "Das ist nur jetzt eine Notiz und ein To-Do. Das soll
+# noch nicht automatisch vom Team bearbeitet werden. Das muss auf meine Freigabe warten
+# und noch weitere Instruktionen." Jason erkannte das richtig -- der Case stand danach aber
+# als "fertig" in der Inbox, und Veiko fand ihn nicht. Jason meldet es ("vormerken"), und
+# diese Woerter pruefen es zusaetzlich im Code: eine Sperre, die nur am Modell haengt, haelt nicht.
+VORMERKEN_RE = re.compile(
+    r"noch\s+nicht\s+(\w+\s+){0,4}(bearbeit|anfang|starten|umsetz|loslegen|angehen)|"
+    r"nicht\s+(sofort|gleich|jetzt\s+schon)\s+(\w+\s+){0,3}(bearbeit|umsetz|anfang)|"
+    r"(nur|erst\s?mal|vorerst)\s+(\w+\s+){0,3}(vorhalten|vormerken|notieren|festhalten|parken)|"
+    r"auf\s+meine\s+freigabe|wartet?\s+auf\s+(meine|eine)\s+freigabe|ohne\s+meine\s+freigabe",
+    re.IGNORECASE)
+
 # Woerter, an denen man einen ausdruecklichen Auftrag erkennt. Feste Regel im
 # Code, weil das Modell sich nicht verlaesslich daran haelt (gemessen am
 # 30.09.: llama3.3 erfand trotz Verbot ein "Konzept fuer Projekt EVE").
@@ -257,6 +269,45 @@ def unterlagen_an_team(projekt_id: str, datei_ids: list[str], hinweis: str = "")
                            titel=f"Unterlagen: {namen}"[:120], projekt_id=projekt_id, auftrag=auftrag)
 
 
+# Plaud nennt die Datei "2026-10-21    1m52s" und schreibt den eigentlichen Titel in die
+# erste Zeile der Abschrift ("Transcript: 10-21 Notiz: Cockpit-Gedächtnis und …").
+# Unter dem Dateinamen fand Veiko seine Notiz nicht wieder (21.10.2026).
+_PLAUD_DATEINAME = re.compile(r"^\s*\d{4}-\d{2}-\d{2}(\s+\d{1,2}:\d{2}(:\d{2})?)?\s*(\d+h)?\s*(\d+m)?\s*(\d+s)?\s*$")
+_PLAUD_KOPF = re.compile(r"^\s*Transcript:\s*(?:\d{1,2}-\d{1,2}\s+)?(?:Notiz:\s*)?(.{3,120}?)\s*$", re.IGNORECASE)
+
+
+def plaud_titel(d: dict[str, Any]) -> str:
+    name = str(d.get("name") or "").strip()
+    if name and not _PLAUD_DATEINAME.match(name):
+        return name
+    zeilen = str(d.get("transcript") or "").strip().splitlines()
+    m = _PLAUD_KOPF.match(zeilen[0]) if zeilen else None
+    if m and not m.group(1).startswith("[") and not _PLAUD_DATEINAME.match(m.group(1)):
+        return m.group(1)
+    # Aeltere Notizen haben keinen Plaud-Titel: der erste gesprochene Satz ist besser zu
+    # finden als "2026-08-05 14s".
+    rumpf = " ".join(re.sub(r"^\s*\[[^\]]*\]\s*(Speaker\s*\d+:\s*)?", "", z) for z in zeilen
+                     if z.strip() and not z.lstrip().lower().startswith("transcript:"))
+    # Satzende nur nach einem Wort aus mindestens zwei Kleinbuchstaben: "Projekt O. …" oder
+    # "Thema C. …" sind Abkuerzungen, kein Satzende.
+    satz = re.split(r"(?<=[a-zäöüß]{2}[.!?])\s", rumpf.strip(), maxsplit=1)[0].strip()
+    if len(satz) >= 8 and not re.match(r"no\s+\S+\s+transcript", satz, re.I):
+        return satz if len(satz) <= 80 else satz[:77].rsplit(" ", 1)[0] + " …"
+    return name or "Plaud-Notiz"
+
+
+def plaud_titel_nachziehen() -> int:
+    """Beim Start: Plaud-Notizen, die noch den Dateinamen als Titel tragen, bekommen den echten."""
+    n = 0
+    for r in db.alle("SELECT id, titel, text FROM notizen WHERE quelle='plaud'"):
+        if _PLAUD_DATEINAME.match(r["titel"] or ""):
+            t = plaud_titel({"name": r["titel"], "transcript": r["text"]})
+            if t != r["titel"]:
+                db.ausfuehren("UPDATE notizen SET titel=? WHERE id=?", (t, r["id"]))
+                n += 1
+    return n
+
+
 def plaud_scannen() -> int:
     """Neue Plaud-Notizen aus der Ablage des alten Servers holen (nur lesen)."""
     if not PLAUD_DIR.is_dir():
@@ -278,7 +329,7 @@ def plaud_scannen() -> int:
             nid = db.neue_id("pl")
         angekommen = float(d.get("fetched") or f.stat().st_mtime)
         db.einfuegen("notizen", {
-            "id": nid, "titel": d.get("name") or "Plaud-Notiz", "datum": str(d.get("created_at") or "")[:10],
+            "id": nid, "titel": plaud_titel(d), "datum": str(d.get("created_at") or "")[:10],
             "text": d.get("transcript") or "", "kurz": d.get("summary") or "", "quelle": "plaud",
             "projekt_id": None, "plaud_id": pid, "erstellt": float(d.get("created_ts") or angekommen),
         })
@@ -301,7 +352,8 @@ Antworte AUSSCHLIESSLICH mit einem JSON-Objekt in genau dieser Form:
  "aufgaben": [{"titel": "konkrete Handlung für Veiko", "projekt_id": "id aus der Liste oder null"}],
  "ausarbeitung": null oder {"rolle": "stratege|buch|designer|video|cockpit", "form": "text|aufstellung|konzept|webseite|praesentation|video", "auftrag": "was genau erarbeitet werden soll", "recherche": "Suchanfrage oder null", "langlauf": false},
  "rueckfrage": "eine Frage an Veiko oder null",
- "gedaechtnis": [{"art": "person|organisation|begriff", "begriff": "...", "bedeutung": "..."}]
+ "gedaechtnis": [{"art": "person|organisation|begriff", "begriff": "...", "bedeutung": "..."}],
+ "vormerken": false
 }
 
 Regeln:
@@ -319,6 +371,7 @@ Antwort: {"titel": "Quartalsbericht, Papa, Tagungshotels", "zusammenfassung": "B
  "rueckfrage": null, "gedaechtnis": []}
 (Im Beispiel gibt es keine passenden Projekte; bei dir nimmst du die ids aus der Liste.)
 - rueckfrage nur, wenn ohne Antwort nichts Sinnvolles möglich ist.
+- vormerken = true, wenn Veiko sagt, dass das Team noch NICHT daran arbeiten soll ("nur eine Notiz", "noch nicht bearbeiten", "auf meine Freigabe warten", "erstmal nur vorhalten"). Dann: ausarbeitung null, rueckfrage null; Aufgaben für Veiko und das Projekt wie sonst.
 - gedaechtnis: nur eindeutige Zuordnungen, die die Notiz belegt (z. B. wer mit einem Spitznamen gemeint ist). Sonst [].
 - Schreibe Deutsch."""
 
@@ -338,6 +391,14 @@ async def einordnen(v: dict[str, Any]) -> None:
              f"NOTIZ vom {n.get('datum') or 'unbekannt'} ({n.get('quelle')}):\n{notiz_text(n)}")
     if v.get("auftrag"):
         frage += f"\n\nVORGABE AUS DEM GESPRÄCH: {v['auftrag']}"
+    fg = freigabe(v["id"])
+    if fg is not None:
+        # Nach "Freigeben": die Sperre aus der Notiz gilt nicht mehr, Veikos Anweisung schon.
+        schon = [a["titel"] for a in db.alle("SELECT titel FROM aufgaben WHERE vorgang_id=?", (v["id"],))]
+        frage += ("\n\nVEIKO HAT DIESE VORGEMERKTE NOTIZ JETZT FREIGEGEBEN. Was in der Notiz über „noch nicht bearbeiten“ "
+                  "steht, gilt nicht mehr; vormerken = false."
+                  + (f"\nSEINE ANWEISUNG DAZU: {fg}" if fg else "\n(Ohne weitere Anweisung.)")
+                  + (f"\nSchon als Aufgaben für Veiko angelegt (nicht noch einmal anlegen): {'; '.join(schon)}" if schon else ""))
     d = None
     for versuch in range(2):
         antwort = await llm.chat(modell, EINORDNEN_SYSTEM, [{"role": "user", "content": frage}],
@@ -358,6 +419,12 @@ def _kurz(s: Any, n: int = 200) -> str:
 def anwenden(v: dict[str, Any], n: dict[str, Any], d: dict[str, Any], modell: str) -> None:
     vt = vertrauen()
     vid = v["id"]
+    fg = freigabe(vid)
+    vormerken = fg is None and (d.get("vormerken") is True or bool(VORMERKEN_RE.search(notiz_text(n))))
+    if vormerken:
+        # Nichts, was das Team von selbst anfangen koennte, und keine Frage, die Veiko jetzt
+        # beantworten muesste: er hat ausdruecklich gesagt, dass er noch Anweisungen gibt.
+        d = {**d, "ausarbeitung": None, "rueckfrage": None}
     titel = _kurz(d.get("titel"), 90) or v["titel"]
     zus = _kurz(d.get("zusammenfassung"), 300)
     pid = projekt_finden(d.get("projekt_id")) or projekt_finden(d.get("projekt_neu"))
@@ -388,7 +455,10 @@ def anwenden(v: dict[str, Any], n: dict[str, Any], d: dict[str, Any], modell: st
     vorhandene = {a["titel"].lower() for a in db.alle("SELECT titel FROM aufgaben WHERE vorgang_id=?", (vid,))}
     for a in (d.get("aufgaben") or [])[:6]:
         t = _kurz(a.get("titel") if isinstance(a, dict) else a, 140)
-        if not t or t.lower() in vorhandene or re.search(r"projekt\s+(an)?leg|zuordn", t, re.I):
+        # "… auf Freigabe warten" ist keine Handlung (gemessen am 21.10.: Jason legte genau
+        # das als Aufgabe an) -- das Warten steht schon im Stand "vorgemerkt".
+        if (not t or t.lower() in vorhandene or re.search(r"projekt\s+(an)?leg|zuordn", t, re.I)
+                or re.search(r"freigabe\s+(ab)?warten|auf\s+(meine\s+|die\s+|eine\s+)?freigabe|^\s*warten\b", t, re.I)):
             continue
         # Eigenes Projekt je Aufgabe: eine Notiz betrifft oft mehrere Vorhaben
         # (gemessen: "Skript OTH" und "Frau Schwarz anrufen" in EINER Notiz).
@@ -428,10 +498,18 @@ def anwenden(v: dict[str, Any], n: dict[str, Any], d: dict[str, Any], modell: st
     # ordnet ein und leitet Aufgaben ab, ersetzt aber nicht, was Veiko verlangt hat.
     if isinstance(aus, dict) and aus.get("auftrag") and not auftrag_offen(v):
         r = aus.get("rolle") if aus.get("rolle") in ROLLEN_FUER_ARBEIT else "stratege"
+        if fg:
+            # Nennt Veiko in der Freigabe eine Rolle beim Namen, gilt sein Wort -- gemessen am
+            # 21.10.: "Clayton soll ein Konzept entwerfen", Jason gab es Neo.
+            genannt = [rid for rid in ROLLEN_FUER_ARBEIT if rid != "pmo"
+                       and re.search(rf"\b{re.escape(rollen_name(rid))}\b", fg, re.I)]
+            if len(genannt) == 1:
+                r = genannt[0]
         f = aus.get("form") if aus.get("form") in FORMEN else "text"
         auftrag = {"rolle": r, "form": f, "auftrag": _kurz(aus["auftrag"], 600),
                    "recherche": _kurz(aus.get("recherche"), 150) or None}
-        verlangt = bool(AUSARBEITUNG_RE.search(notiz_text(n))) or v.get("quelle") == "gespraech"
+        verlangt = (bool(AUSARBEITUNG_RE.search(notiz_text(n))) or v.get("quelle") == "gespraech"
+                    or bool(fg and AUSARBEITUNG_RE.search(fg)))
         # Ein grosses Vorhaben wird ein LongRun (19.10.2026) -- nie ohne Veiko, weil die
         # Pruefung durch Dario/Demmis Geld kostet: eine Frage im Briefing. Nein = die
         # gewoehnliche Ausarbeitung wie bisher. Geprueft wird Jasons Auftrag (er fasst
@@ -465,9 +543,57 @@ def anwenden(v: dict[str, Any], n: dict[str, Any], d: dict[str, Any], modell: st
             entscheidung_anlegen(vid, "ausarbeitung",
                                  f"Soll {rollen_name(r)} das ausarbeiten? {auftrag['auftrag']}", auftrag)
 
+    if vormerken:
+        teile.append("**Vorgemerkt:** das Team arbeitet nicht daran, bis du freigibst (mit weiteren Anweisungen, wenn du willst).")
     db.ereignis(vid, "pmo", "einordnung", "\n".join(f"- {t}" if i else t for i, t in enumerate(teile)) or "Eingeordnet.",
-                {"modell": modell, "art": d.get("art")})
+                {"modell": modell, "art": d.get("art"), "vormerken": vormerken})
+    if vormerken:
+        db.ausfuehren("UPDATE vorgaenge SET stand='vorgemerkt', geaendert=? WHERE id=?", (time.time(), vid))
+        return
     stand_berechnen(vid)
+
+
+def vorgemerkt_nachziehen() -> int:
+    """Einmalig beim Start (21.10.2026): Cases der letzten zwei Wochen, deren Notiz ausdruecklich
+    "noch nicht bearbeiten" sagt und an denen nichts entstanden ist, werden vorgemerkt --
+    vor allem Veikos Notiz zum Cockpit-Gedaechtnis, die als "fertig" verschwunden war."""
+    if db.einstellung("vorgemerkt_nachgezogen"):
+        return 0
+    n = 0
+    for v in db.alle("SELECT * FROM vorgaenge WHERE stand='fertig' AND erstellt>?", (time.time() - 14 * 86400,)):
+        notiz = db.holen("notizen", v.get("notiz_id") or "")
+        if (not notiz or auftrag_offen(v) or freigabe(v["id"]) is not None
+                or db.wert("SELECT 1 FROM ergebnisse WHERE vorgang_id=?", (v["id"],))
+                or not VORMERKEN_RE.search(notiz_text(notiz))):
+            continue
+        db.ausfuehren("UPDATE vorgaenge SET stand='vorgemerkt' WHERE id=?", (v["id"],))
+        db.ereignis(v["id"], "system", "info", "Vorgemerkt: die Notiz sagt, dass das Team noch nicht daran arbeiten soll. "
+                                               "Es wartet auf deine Freigabe.")
+        n += 1
+    db.einstellung_setzen("vorgemerkt_nachgezogen", time.time())
+    return n
+
+
+def freigabe(vid: str) -> str | None:
+    """Veikos Freigabe eines vorgemerkten Case: None = nie freigegeben, sonst seine
+    Anweisung ("" ohne). Steht als Ereignis am Case -- so ist sie auch im Verlauf sichtbar."""
+    r = db.eine("SELECT text FROM ereignisse WHERE vorgang_id=? AND art='freigabe' ORDER BY id DESC LIMIT 1", (vid,))
+    return None if r is None else (r.get("text") or "").partition("\n\n")[2]
+
+
+def freigeben(vid: str, anweisung: str = "") -> dict[str, Any]:
+    """Ein vorgemerkter Case geht an Jason zurueck: er ordnet mit Veikos Anweisung neu ein
+    und plant, was das Team tun soll -- wie bei einer neuen Notiz."""
+    v = db.holen("vorgaenge", vid)
+    if not v:
+        raise ValueError("Diesen Case gibt es nicht.")
+    if v["stand"] != "vorgemerkt":
+        raise ValueError("Dieser Case ist nicht vorgemerkt.")
+    anweisung = (anweisung or "").strip()[:4000]
+    db.ereignis(vid, "du", "freigabe", "Freigegeben." + (f"\n\n{anweisung}" if anweisung else ""))
+    db.ausfuehren("UPDATE vorgaenge SET stand='neu', versuche=0, geaendert=? WHERE id=?", (time.time(), vid))
+    wecken()
+    return db.holen("vorgaenge", vid) or {}
 
 
 def entscheidung_anlegen(vid: str | None, art: str, frage: str, daten: dict[str, Any],
@@ -483,7 +609,9 @@ def entscheidung_anlegen(vid: str | None, art: str, frage: str, daten: dict[str,
 
 def stand_berechnen(vid: str) -> str:
     v = db.holen("vorgaenge", vid)
-    if not v or v["stand"] in ("erledigt", "verworfen"):
+    # Vorgemerkt bleibt vorgemerkt, bis Veiko freigibt (freigeben) oder selbst einen
+    # Auftrag gibt (auftrag_setzen setzt den Stand vorher auf in_arbeit).
+    if not v or v["stand"] in ("erledigt", "verworfen", "vorgemerkt"):
         return v["stand"] if v else ""
     offen = db.wert("SELECT COUNT(*) FROM entscheidungen WHERE vorgang_id=? AND stand='offen'", (vid,))
     hat_auftrag = auftrag_offen(v) is not None

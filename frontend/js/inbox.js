@@ -8,10 +8,12 @@ import { Entscheidung } from "./entscheidung.js";
 import { langlaufStarten } from "./langlauf.js";
 import { ErgebnisVorschau, URTEIL, StilFelder } from "./ergebnis.js";
 
-const FILTER = [["wartet", "Wartet auf dich"], ["in_arbeit", "In Arbeit"], ["fertig", "Fertig"], ["erledigt", "Erledigt"], ["alle", "Alle"]];
+// "Vorgemerkt" (21.10.2026): Notizen, an denen das Team noch nicht arbeiten soll -- vorher
+// standen sie unter "Fertig", und Veiko fand sie nicht.
+const FILTER = [["wartet", "Wartet auf dich"], ["vorgemerkt", "Vorgemerkt"], ["in_arbeit", "In Arbeit"], ["fertig", "Fertig"], ["erledigt", "Erledigt"], ["alle", "Alle"]];
 const ART_TEXT = { notiz: "Notiz", einordnung: "hat eingeordnet", aufgabe: "Aufgabe", rueckfrage: "fragt nach", vorschlag: "schlägt vor",
   antwort: "hat geantwortet", ergebnis: "hat geliefert", pruefung: "hat geprüft", entscheidung: "hat entschieden", fehler: "Fehler",
-  info: "", auftrag: "hat beauftragt" };
+  info: "", auftrag: "hat beauftragt", freigabe: "hat freigegeben" };
 const QUELLE = { plaud: "Plaud", mail: "E-Mail", unterlage: "Unterlagen", eingabe: "Capture", gespraech: "Talk", alt: "altes Cockpit" };
 
 export function Inbox({ id }) {
@@ -37,8 +39,9 @@ export function Inbox({ id }) {
       </div>
       <div class="liste">
         ${!liste ? html`<div class="lade">Lade …</div>`
-          : !liste.length ? html`<${Leer} titel=${filter === "wartet" ? "Nichts wartet auf dich." : "Hier ist nichts."}>
-              ${filter === "wartet" ? "Neue Notizen ordnet Jason von selbst ein. Mit Capture gibst du ihm etwas direkt." : ""}</${Leer}>`
+          : !liste.length ? html`<${Leer} titel=${filter === "wartet" ? "Nichts wartet auf dich." : filter === "vorgemerkt" ? "Nichts vorgemerkt." : "Hier ist nichts."}>
+              ${filter === "wartet" ? "Neue Notizen ordnet Jason von selbst ein. Mit Capture gibst du ihm etwas direkt."
+                : filter === "vorgemerkt" ? "Sagst du in einer Notiz „noch nicht bearbeiten“ oder „erstmal nur vormerken“, landet sie hier und wartet auf deine Freigabe." : ""}</${Leer}>`
           : liste.map((v) => html`<button key=${v.id} class=${"vg-eintrag" + (v.id === id ? " an" : "")} onClick=${() => navigiere("/inbox/" + v.id)}>
               <b>${v.titel}</b>
               <div class="unter">
@@ -64,6 +67,7 @@ function Akte({ id, nachher }) {
   const [projekte, setProjekte] = useState([]);
   const [notizAuf, setNotizAuf] = useState(false);
   const [ergWahl, setErgWahl] = useState(null);     // welches Ergebnis die Vorschau zeigt; null = das neueste
+  const [anweisung, setAnweisung] = useState("");   // fuer "Freigeben" eines vorgemerkten Case
   useEffect(() => { api("/projekte").then((x) => setProjekte(x.projekte)).catch(() => {}); }, []);
   useEffect(() => {
     if (!d) return;
@@ -79,7 +83,9 @@ function Akte({ id, nachher }) {
   async function aktion(a, extra = {}) {
     try {
       await api(`/vorgaenge/${id}/aktion`, { methode: "POST", daten: { aktion: a, ...extra } });
-      const t = { erledigt: "Abgelegt.", verwerfen: "Verworfen.", wieder_oeffnen: "Wieder geöffnet.", neu_einordnen: "Jason ordnet neu ein.", projekt: "Projekt geändert.", nochmal: "Wird noch einmal versucht." }[a];
+      const t = { erledigt: "Abgelegt.", verwerfen: "Verworfen.", wieder_oeffnen: "Wieder geöffnet.", neu_einordnen: "Jason ordnet neu ein.", projekt: "Projekt geändert.", nochmal: "Wird noch einmal versucht.",
+        freigeben: "Freigegeben. Jason plant jetzt, was das Team tut.", vormerken: "Vorgemerkt. Das Team wartet auf deine Freigabe." }[a];
+      if (a === "freigeben") setAnweisung("");
       toast(t || "Erledigt.", a === "erledigt" || a === "verwerfen" ? { aktion: { text: "Rückgängig", fn: () => aktion("wieder_oeffnen") } } : {});
       setVerwerfen(null); laden(); nachher && nachher(); aktualisieren();
     } catch (e) { fehlerMelden(e); }
@@ -132,6 +138,16 @@ function Akte({ id, nachher }) {
       <span style="flex:1">Das Team ist hier dreimal gescheitert. Den Grund siehst du unten im Verlauf.</span>
       <button class="btn klein" onClick=${() => aktion("nochmal")}>Noch einmal versuchen</button></div>`}
 
+    ${v.stand === "vorgemerkt" && html`<section class="karte vorgemerkt-karte" style="margin-bottom:12px">
+      <div class="karte-kopf"><h3>Vorgemerkt</h3><span class="pill blau">wartet auf deine Freigabe</span></div>
+      <p class="klein" style="margin:0 0 8px">Das Team arbeitet hier nicht weiter, bis du freigibst. ${d.aufgaben.length
+        ? `Die ${d.aufgaben.length === 1 ? "Aufgabe" : d.aufgaben.length + " Aufgaben"} für dich stehen rechts und in deiner Aufgabenliste. ` : ""}
+        Mit der Freigabe kannst du sagen, was das Team tun soll -- Jason plant dann wie bei einer neuen Notiz.</p>
+      <textarea class="eingabe" rows="3" value=${anweisung} onInput=${(e) => setAnweisung(e.target.value)} aria-label="Anweisung zur Freigabe"
+        placeholder="Optional: was das Team jetzt tun soll, z. B. „Clayton soll ein Konzept fürs Gedächtnis entwerfen, mit drei Varianten“"></textarea>
+      <div class="knopfreihe" style="margin-top:8px"><button class="btn primaer" onClick=${() => aktion("freigeben", { anweisung })}>
+        <${Icon} n="play" g=${14} />Freigeben</button></div>
+    </section>`}
     ${offen.length > 0 && html`<section class="karte" style="margin-bottom:12px">
       <div class="karte-kopf"><h3>Wartet auf dich</h3><span class="pill gelb">${offen.length}</span></div>
       ${offen.map((e) => html`<${Entscheidung} key=${e.id} e=${e} mitVorgang=${false} nachher=${() => { laden(); nachher && nachher(); }} />`)}
@@ -177,6 +193,8 @@ function Akte({ id, nachher }) {
             ${d.notiz && html`<button class="btn klein" onClick=${() => aktion("neu_einordnen")} title="Jason ordnet die Notiz noch einmal ein, mit dem aktuellen Memory">
               <${Icon} n="neu_laden" g=${14} />Neu einordnen</button>`}
             ${v.projekt_id && html`<a class="btn klein" href=${"#/projects/" + v.projekt_id}><${Icon} n="projects" g=${14} />Zum Projekt</a>`}
+            ${!abgeschlossen && v.stand !== "vorgemerkt" && v.stand !== "in_arbeit" && html`<button class="btn klein" onClick=${() => aktion("vormerken")}
+              title="Das Team arbeitet hier nicht weiter, bis du freigibst"><${Icon} n="archiv" g=${14} />Vormerken</button>`}
           </div>
         </section>
       </aside>

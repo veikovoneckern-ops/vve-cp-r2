@@ -36,6 +36,9 @@ async def lebenszeit(app: FastAPI):
         stab.zuordnung_nachziehen()
         # Urteile fertiger Langlaeufer nach der Regel vom 21.10.2026 (Externe haben das letzte Wort).
         langlauf.urteile_nachziehen()
+        # Plaud-Titel statt Dateiname, und "noch nicht bearbeiten"-Notizen vormerken (21.10.2026).
+        stab.plaud_titel_nachziehen()
+        stab.vorgemerkt_nachziehen()
     except Exception as e:  # noqa: BLE001 -- eine Nachpflege darf den Start nie verhindern
         print(f"Zuordnung nachziehen gescheitert: {e}", flush=True)
     aufgabe = asyncio.create_task(stab.schleife())

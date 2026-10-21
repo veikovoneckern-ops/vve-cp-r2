@@ -246,6 +246,13 @@ async def lage():
                 "cases": db.wert("SELECT COUNT(*) FROM vorgaenge WHERE erstellt>? AND quelle!='alt'", (gesehen,)),
                 "erledigt": sum(1 for x in erledigt if x["zeit"] > gesehen)},
         "aufgaben": aufgaben, "gesundheit": stab.gesundheit(), "neo_laeuft": neo_lauf,
+        # Vorgemerkt (21.10.2026): eigener Block, damit eine geparkte Notiz nicht zwischen
+        # den Aufgaben verschwindet. Die Aufgaben dazu stehen mit Titel dabei.
+        "vorgemerkt": [{**v, "projekt_name": (db.holen("projekte", v.get("projekt_id") or "") or {}).get("name"),
+                        "aufgaben": [a["titel"] for a in db.alle("SELECT titel FROM aufgaben WHERE vorgang_id=? AND status!='erledigt' "
+                                                                  "AND archiviert=0", (v["id"],))]}
+                       for v in db.alle("SELECT id, titel, einordnung, projekt_id, erstellt FROM vorgaenge "
+                                        "WHERE stand='vorgemerkt' ORDER BY erstellt DESC LIMIT 12")],
         # Modell-Revision: belegte Vorschlaege zum Umstellen (17.10.2026) -- das Briefing
         # sagt es, damit Veiko nicht erst die Seite Stab & Modelle oeffnen muss.
         "optimierung": await _optimierung_zahl(),
@@ -266,7 +273,7 @@ async def lage():
 
 
 # ================================================================ Inbox
-STAND_GRUPPE = {"wartet": ("wartet",), "in_arbeit": ("neu", "eingeordnet", "in_arbeit"),
+STAND_GRUPPE = {"wartet": ("wartet",), "vorgemerkt": ("vorgemerkt",), "in_arbeit": ("neu", "eingeordnet", "in_arbeit"),
                 "fertig": ("fertig",), "erledigt": ("erledigt", "verworfen")}
 
 
@@ -335,6 +342,18 @@ async def vorgang_aktion(vid: str, request: Request):
     if a == "erledigt":
         db.aendern("vorgaenge", vid, {"stand": "erledigt", "geaendert": time.time()})
         db.ereignis(vid, "du", "entscheidung", "Als erledigt abgelegt." + (f" {d['kommentar']}" if d.get("kommentar") else ""))
+    elif a == "freigeben":
+        # Vorgemerkt -> Jason ordnet mit Veikos Anweisung neu ein (stab.freigeben, 21.10.2026).
+        try:
+            stab.freigeben(vid, str(d.get("anweisung") or ""))
+        except ValueError as e:
+            raise HTTPException(409, str(e))
+    elif a == "vormerken":
+        # Von Hand parken: dasselbe wie eine Notiz mit "noch nicht bearbeiten".
+        if stab.auftrag_offen(v) and v["stand"] == "in_arbeit":
+            raise HTTPException(409, "Das Team arbeitet gerade daran -- erst nach dem Ergebnis vormerken.")
+        db.aendern("vorgaenge", vid, {"stand": "vorgemerkt", "geaendert": time.time()})
+        db.ereignis(vid, "du", "entscheidung", "Vorgemerkt: das Team arbeitet nicht daran, bis du freigibst.")
     elif a == "verwerfen":
         db.ausfuehren("UPDATE entscheidungen SET stand='nein', erledigt=? WHERE vorgang_id=? AND stand='offen'", (time.time(), vid))
         db.aendern("vorgaenge", vid, {"stand": "verworfen", "geaendert": time.time()})

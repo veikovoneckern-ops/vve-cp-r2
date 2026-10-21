@@ -304,7 +304,7 @@ export function Leer({ titel, children }) {
 
 export function StandPill({ stand }) {
   const k = { neu: ["gelb", "neu"], eingeordnet: ["lila", "läuft"], wartet: ["gelb", "wartet auf dich"],
-    in_arbeit: ["lila", "in Arbeit"], fertig: ["gruen", "fertig"], erledigt: ["", "erledigt"], verworfen: ["", "verworfen"] }[stand] || ["", stand];
+    in_arbeit: ["lila", "in Arbeit"], vorgemerkt: ["blau", "vorgemerkt"], fertig: ["gruen", "fertig"], erledigt: ["", "erledigt"], verworfen: ["", "verworfen"] }[stand] || ["", stand];
   return html`<span class=${"pill " + k[0]}>${k[1]}</span>`;
 }
 

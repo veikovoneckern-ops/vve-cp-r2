@@ -235,6 +235,11 @@ def lage_text() -> str:
             if v["stand"] != "wartet" or stab.auftrag_offen(v)][:6]
     teile.append("WAS GERADE LÄUFT:\n" + ("\n".join(f"- {v['id']}: {v['titel']}" for v in lauf) if lauf
                                          else "nichts -- das Team arbeitet gerade an keinem Case"))
+    # Vorgemerkt (21.10.2026): geparkte Notizen, die auf Veikos Freigabe warten -- wie im Briefing.
+    vm = db.alle("SELECT id, titel FROM vorgaenge WHERE stand='vorgemerkt' ORDER BY erstellt DESC LIMIT 8")
+    if vm:
+        teile.append("VORGEMERKT (Veiko hat gesagt: noch nicht bearbeiten; wartet auf seine Freigabe in der Inbox -- "
+                     "nichts davon von selbst anfangen):\n" + "\n".join(f"- {v['id']}: {v['titel']}" for v in vm))
     erl = db.alle("SELECT id, titel, einordnung, geaendert FROM vorgaenge WHERE stand='fertig' AND quelle!='alt' "
                   "ORDER BY geaendert DESC LIMIT 6")
     if erl:

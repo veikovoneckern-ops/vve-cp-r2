@@ -81,6 +81,15 @@ export function Briefing({ lage }) {
           ${ents.map((e) => html`<${Entscheidung} key=${e.id} e=${e} />`)}
         </section>`}
         ${ents.length === 0 && html`<div class="leise klein briefing-ruhe"><${Icon} n="check" g=${13} /> Nichts wartet auf deine Entscheidung.</div>`}
+        ${(lage.vorgemerkt || []).length > 0 && html`<section class="karte briefing-voll">
+          <div class="karte-kopf"><h3>Vorgemerkt</h3><span class="pill blau">${lage.vorgemerkt.length}</span><span class="leise klein">wartet auf deine Freigabe -- das Team arbeitet nicht daran</span>
+            <a class="rechts klein" href="#/inbox" onClick=${() => { try { sessionStorage.setItem("inbox_filter", "vorgemerkt"); } catch (x) { /* egal */ } }}>alle</a></div>
+          ${lage.vorgemerkt.map((v) => html`<div class="zeile" key=${v.id}>
+            <div class="haupt-text"><a class="aufgabe-titel" href=${"#/inbox/" + v.id}>${v.titel}</a>
+              <div class="leise klein">${v.projekt_name || "ohne Projekt"} · ${zeitText(v.erstellt)}${v.aufgaben.length ? " · Aufgaben: " + v.aufgaben.join("; ") : ""}</div></div>
+            <a class="btn klein" href=${"#/inbox/" + v.id}>Ansehen und freigeben</a>
+          </div>`)}
+        </section>`}
     <div class="raster zwei briefing-raster">
         <section class="karte">
           <div class="karte-kopf"><h3>Neu entstanden</h3><span class="leise klein">Ergebnisse deines Teams, letzte sieben Tage</span></div>
