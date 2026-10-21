@@ -34,6 +34,8 @@ async def lebenszeit(app: FastAPI):
         print(f"Abgleich mit dem alten Cockpit gescheitert: {e}", flush=True)
     try:
         stab.zuordnung_nachziehen()
+        # Urteile fertiger Langlaeufer nach der Regel vom 21.10.2026 (Externe haben das letzte Wort).
+        langlauf.urteile_nachziehen()
     except Exception as e:  # noqa: BLE001 -- eine Nachpflege darf den Start nie verhindern
         print(f"Zuordnung nachziehen gescheitert: {e}", flush=True)
     aufgabe = asyncio.create_task(stab.schleife())

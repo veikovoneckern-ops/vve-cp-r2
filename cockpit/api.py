@@ -2016,6 +2016,26 @@ async def langlauf_einzeln(lid: str):
     return l
 
 
+@router.get("/langlaeufe/{lid}/abschluss")
+async def langlauf_abschluss_schaetzen(lid: str, wer: str):
+    """Was eine abschliessende externe Pruefung kostet -- fuer die Rueckfrage vor dem Klick."""
+    from . import langlauf
+    try:
+        return langlauf.abschluss_schaetzen(lid, wer)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@router.post("/langlaeufe/{lid}/abschluss")
+async def langlauf_abschluss(lid: str, request: Request):
+    from . import langlauf
+    d = await _koerper(request)
+    try:
+        return langlauf.abschluss_starten(lid, str(d.get("wer") or ""))
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+
+
 @router.post("/langlaeufe/{lid}/{aktion}")
 async def langlauf_steuern(lid: str, aktion: str, request: Request):
     from . import langlauf

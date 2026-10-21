@@ -846,6 +846,14 @@ def _abschliessen(l: dict[str, Any], vorlaeufig: bool = False) -> str | None:
     fertig = werk or fertig
     titel = d.get("werk_titel") or l["titel"]
     v = db.holen("vorgaenge", vid) or {"id": vid, "projekt_id": l.get("projekt_id")}
+    pruefung = _abschluss_pruefung(l, fertig, vorlaeufig)
+    a = {"titel": ("Zwischenstand: " if vorlaeufig else "") + titel,
+         "form": _form(art)}
+    return _abschliessen_rest(l, fertig, titel, v, pruefung, a, vorlaeufig)
+
+
+def _abschluss_pruefung(l: dict[str, Any], fertig: list[dict[str, Any]], vorlaeufig: bool = False) -> dict[str, Any]:
+    d, art = l["daten"], l["art"]
     letzte = (d.get("pruefungen") or [{}])[-1]
     offen = [m for e in fertig for m in ((e.get("daniel") or {}).get("maengel") or [])
              if (e.get("daniel") or {}).get("urteil") == "nachbessern"]
@@ -863,8 +871,9 @@ def _abschliessen(l: dict[str, Any], vorlaeufig: bool = False) -> str | None:
         urteil = "tragfaehig"
     pruefung = {"urteil": urteil, "von": letzte.get("name") if extern_am_ende else None,
                 "begruendung": (f"{len(fertig)} Etappen, jede von Daniel geprüft"
-                                + (f", {len(d.get('pruefungen') or [])} Zwischenprüfungen durch "
-                                   f"{letzte.get('name')} ($ {d.get('kosten', 0):.2f})" if d.get("pruefungen") else ", ohne externe Prüfung")
+                                + (f", {len(d.get('pruefungen') or [])} externe Prüfungen durch "
+                                   + " und ".join(dict.fromkeys(p.get("name") or "?" for p in d["pruefungen"]))
+                                   + f" (zusammen $ {d.get('kosten', 0):.2f})" if d.get("pruefungen") else ", ohne externe Prüfung")
                                 + (f". {letzte.get('name')} hat Fehler in {ARTEN[art]['etappe']} "
                                    f"{', '.join(str(n) for n in letzte['nachbessern'])} gefunden; sie sind eingearbeitet"
                                    if extern_am_ende and letzte.get("nachbessern") else "")
@@ -874,8 +883,12 @@ def _abschliessen(l: dict[str, Any], vorlaeufig: bool = False) -> str | None:
                                 + (" VORLÄUFIG -- der Lauf ist noch nicht fertig." if vorlaeufig else "")),
                 "maengel": [] if urteil == "abgeschlossen" else offen[:6],
                 "hinweise": (letzte.get("hinweise") or [])[:5]}
-    a = {"titel": ("Zwischenstand: " if vorlaeufig else "") + titel,
-         "form": _form(art)}
+    return pruefung
+
+
+def _abschliessen_rest(l: dict[str, Any], fertig: list[dict[str, Any]], titel: str, v: dict[str, Any],
+                       pruefung: dict[str, Any], a: dict[str, Any], vorlaeufig: bool) -> str | None:
+    d, art, vid = l["daten"], l["art"], l["vorgang_id"]
     if art == "video":
         szenen = []
         for e in fertig:
@@ -932,6 +945,119 @@ def _abschliessen(l: dict[str, Any], vorlaeufig: bool = False) -> str | None:
         stab._auftrag_erledigt(vid)
         stab.stand_berechnen(vid)
     return eid
+
+
+# ---------------------------------------------------------------- Abschliessend pruefen
+# Veiko, 21.10.2026, am Ergebnis "Prüfung Buch KI & Menschen" (131.000 Zeichen):
+# "aber hier ist ja kein Abschließend prüfen". Ein Externer kann ein solches Werk
+# nicht in einer Chat-Antwort neu schreiben (16.000 Token) -- also liest er es in
+# Teilen wie bei den Zwischenpruefungen, nennt Fehler je Etappe, das Team arbeitet
+# sie lokal ein, und das Werk ist abgeschlossen. Derselbe Weg wie im Lauf
+# (_extern_pruefen), nur am Ende und auf Veikos Klick: der Klick ist die Kostenfreigabe.
+ABSCHLUSS_TEIL_ZEICHEN = 150000
+_abschluss_tasks: dict[str, asyncio.Task] = {}
+
+
+def urteile_nachziehen() -> int:
+    """Beim Start: Ergebnisse fertiger Langlaeufer bekommen das Urteil nach der Regel
+    vom 21.10.2026. Vorher stand dort das Urteil des Externen VOR dem Einarbeiten --
+    "Daniel hat Einwände" an Werken, deren Punkte laengst eingearbeitet waren.
+    Nur das Urteil wird ersetzt, der Inhalt bleibt."""
+    n = 0
+    for l in db.alle("SELECT * FROM langlaeufe WHERE stand='fertig'"):
+        try:
+            l = holen(l["id"]) or {}
+            d = l.get("daten") or {}
+            eid = d.get("ergebnis_id")
+            e = db.holen("ergebnisse", eid) if eid else None
+            fertig = [x for x in d.get("etappen") or [] if x.get("stand") == "fertig"]
+            fertig = [x for x in fertig if x.get("werk", True)] or fertig
+            if not e or not fertig or (e.get("pruefung") or {}).get("urteil") not in ("nachbessern", "tragfaehig"):
+                continue
+            p = _abschluss_pruefung(l, fertig)
+            if p["urteil"] != (e.get("pruefung") or {}).get("urteil"):
+                db.ausfuehren("UPDATE ergebnisse SET pruefung=? WHERE id=?", (json.dumps(p, ensure_ascii=False), eid))
+                n += 1
+        except Exception:  # noqa: BLE001 -- eine Nachpflege darf den Start nie verhindern
+            traceback.print_exc()
+    return n
+
+
+def _abschluss_teile(l: dict[str, Any]) -> list[list[dict[str, Any]]]:
+    fertig = [e for e in l["daten"].get("etappen") or [] if e.get("stand") == "fertig"]
+    fertig = [e for e in fertig if e.get("werk", True)] or fertig
+    teile: list[list[dict[str, Any]]] = [[]]
+    summe = 0
+    for e in fertig:
+        laenge = min(len(e.get("text") or ""), 60000)
+        if teile[-1] and summe + laenge > ABSCHLUSS_TEIL_ZEICHEN:
+            teile.append([])
+            summe = 0
+        teile[-1].append(e)
+        summe += laenge
+    return [t for t in teile if t]
+
+
+def abschluss_schaetzen(lid: str, wer: str) -> dict[str, Any]:
+    from . import teamchat
+    l = holen(lid)
+    if not l or wer not in teamchat.EXTERNE:
+        raise ValueError("Unbekannter Langläufer oder Externer.")
+    teile = _abschluss_teile(l)
+    zeichen = sum(min(len(e.get("text") or ""), 60000) for t in teile for e in t) + 6000 * len(teile)
+    usd = _usd(teamchat.EXTERNE[wer]["anbieter"], int(zeichen / 3.5), AUS_TOKEN_SCHAETZUNG * len(teile))
+    return {"teile": len(teile), "zeichen": zeichen, "usd": round(usd, 2), "name": teamchat.EXTERNE[wer]["name"],
+            "laeuft": bool(_abschluss_tasks.get(lid) and not _abschluss_tasks[lid].done())}
+
+
+async def _abschluss_lauf(lid: str, wer: str, usd: float) -> None:
+    from . import teamchat
+    async with stab._lock:
+        l = holen(lid)
+        if not l:
+            return
+        d = l["daten"]
+        vorher = d.get("pruefer")
+        d["pruefer"] = wer
+        d["abschluss"] = {"wer": wer, "laeuft": True, "start": time.time()}
+        d.pop("extern_aus", None)
+        # Der Klick ist die Zustimmung zu genau dieser Pruefung: das Budget waechst um die
+        # Schaetzung (mit Luft), sonst bliebe sie an einem laengst verbrauchten Budget haengen.
+        budget = max(l.get("budget") or 0, (d.get("kosten") or 0) + usd * 1.5 + 0.2)
+        _speichern(l, budget=round(budget, 2))
+        name = teamchat.EXTERNE[wer]["name"]
+        db.ereignis(l["vorgang_id"], "du", "info", f"Abschließend prüfen lassen von {name} (geschätzt $ {usd:.2f}).")
+        try:
+            with llm.taetig(f"{name} prüft „{l['titel'][:60]}“ abschließend"):
+                teile = _abschluss_teile(l)
+                for i, teil in enumerate(teile):
+                    await _extern_pruefen(l, teil, schluss=i == len(teile) - 1)
+                    if l.get("stand") == "wartet" or d.get("extern_aus"):
+                        break
+            if d.get("extern_aus"):
+                # Ohne Pruefung kein neues Urteil -- sonst stuende "abgeschlossen" da, ohne dass jemand gelesen hat.
+                db.ereignis(l["vorgang_id"], "system", "fehler", f"Die abschließende Prüfung durch {name} kam nicht zustande: {d['extern_aus']}")
+            elif l.get("stand") != "wartet":
+                _abschliessen(l)
+        except Exception as f:  # noqa: BLE001 -- ein Abbruch soll am Case stehen, nicht still verschwinden
+            traceback.print_exc()
+            db.ereignis(l["vorgang_id"], "system", "fehler", f"Die abschließende Prüfung durch {name} ist abgebrochen: {str(f)[:300]}")
+        finally:
+            d["pruefer"] = vorher or wer
+            d["abschluss"] = {"wer": wer, "laeuft": False, "ende": time.time()}
+            _speichern(l)
+            stab.laeuft(None)
+
+
+def abschluss_starten(lid: str, wer: str) -> dict[str, Any]:
+    from .konfig import ALT_TOKEN
+    if not ALT_TOKEN:
+        raise ValueError("Für die Externen fehlt der Zugang zum alten Backend (VVEC_ALT_TOKEN).")
+    s = abschluss_schaetzen(lid, wer)
+    if s["laeuft"]:
+        raise ValueError("Die abschließende Prüfung läuft schon.")
+    _abschluss_tasks[lid] = asyncio.create_task(_abschluss_lauf(lid, wer, s["usd"]))
+    return {**s, "laeuft": True}
 
 
 # ---------------------------------------------------------------- Schritt und Schleife
