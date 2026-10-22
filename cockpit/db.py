@@ -123,6 +123,16 @@ CREATE TABLE IF NOT EXISTS daily (
   tage TEXT DEFAULT '[0,1,2,3,4]', netz INTEGER DEFAULT 1, aktiv INTEGER DEFAULT 1, letzter_tag TEXT,
   letzter_lauf REAL, sortierung INTEGER DEFAULT 0, erstellt REAL, geaendert REAL
 );
+-- Mail (22.10.2026, mail.py): Entwuerfe und Gesendetes; daten traegt Anhaenge und Bezug.
+CREATE TABLE IF NOT EXISTS mails (
+  id TEXT PRIMARY KEY, stand TEXT DEFAULT 'entwurf', an TEXT DEFAULT '', cc TEXT DEFAULT '', bcc TEXT DEFAULT '',
+  betreff TEXT DEFAULT '', html TEXT DEFAULT '', daten TEXT DEFAULT '{}', fehler TEXT,
+  erstellt REAL, geaendert REAL, gesendet REAL
+);
+CREATE TABLE IF NOT EXISTS kontakte (
+  id TEXT PRIMARY KEY, name TEXT, email TEXT, notiz TEXT DEFAULT '', anzahl INTEGER DEFAULT 0,
+  zuletzt REAL, erstellt REAL
+);
 """
 
 with _lock:

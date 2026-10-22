@@ -4,6 +4,7 @@
 import { html, useState, useEffect, useRef, Icon, Avatar, Md, toast, fehlerMelden, zeitText, bus, kopieren, useEsc } from "./ui.js";
 import { api } from "./api.js";
 import { Textfeld } from "./composer.js";
+import { mailZu } from "./mail.js";
 
 // Downloads je Form -- dieselben Endpunkte wie im Ergebnisfenster.
 export function Downloads({ e }) {
@@ -15,6 +16,7 @@ export function Downloads({ e }) {
     <a class="btn klein" href=${basis + "/datei?format=docx"} download><${Icon} n="download" g=${13} />Word</a>
     <a class="btn klein geist" href=${basis + "/datei?format=md"} download>Markdown</a>
     <button class="btn klein geist" onClick=${async () => { if (await kopieren(e.inhalt || "")) toast("Kopiert."); }}><${Icon} n="kopie" g=${13} />Kopieren</button>
+    <button class="btn klein" title="Als Mail verschicken -- das Ergebnis geht als Word mit" onClick=${() => mailZu({ art: "ergebnis", id: e.id })}><${Icon} n="mail" g=${13} />Per Mail</button>
   </div>`;
 }
 

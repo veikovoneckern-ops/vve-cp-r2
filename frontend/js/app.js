@@ -22,6 +22,7 @@ import { Empfehlungen } from "./empfehlungen.js";
 import { DateiFenster } from "./datei.js";
 import { Langlaeufer } from "./langlauf.js";
 import { Daily } from "./daily.js";
+import { Mail } from "./mail.js";
 import { BrainStrom, ExO } from "./verfahren.js";
 import { Aktionen } from "./aktionen.js";
 import { AufgabeFenster } from "./aufgabe.js";
@@ -43,6 +44,8 @@ const BEREICHE = [
   { id: "aktionen", titel: "Current Actions", kurz: "Actions", icon: "aktionen", unter: "Alles, was gerade läuft" },
   // Alle erzeugten Inhalte wie in einem Datei-Explorer (Veiko, 19.10.2026).
   { id: "explorer", titel: "Explorer", icon: "explorer", unter: "Alles, was entstanden ist -- suchen, filtern, öffnen" },
+  // Postausgang mit Entwuerfen, Adressbuch und Formulierungshilfe (22.10.2026, mail.js).
+  { id: "mail", titel: "Mail", icon: "mail", unter: "Entwürfe, Gesendet, Adressbuch -- verschickt über info@veikovoneckern.org" },
   { id: "neo", titel: "Neo", icon: "neo", unter: "Cockpit Engineer", neo: true },
   // Team = Mitglieder + das fruehere "Stab & Modelle", in aufklappbaren Abschnitten (19.10.2026).
   { id: "team", titel: "Team", icon: "team", unter: "Mitglieder, Besetzung, Modelle, Optimierung" },
@@ -340,6 +343,7 @@ function App() {
         ${r.bereich === "briefing" && html`<${Briefing} lage=${lage} />`}
         ${r.bereich === "inbox" && html`<${Inbox} id=${r.id} />`}
         ${r.bereich === "daily" && html`<${Daily} id=${r.id} />`}
+        ${r.bereich === "mail" && html`<${Mail} id=${r.id} />`}
         ${r.bereich === "projects" && html`<${Projects} id=${r.id} rest=${r.rest} />`}
         ${r.bereich === "team" && html`<${Team} id=${r.id} rest=${r.rest} />`}
         ${r.bereich === "system" && html`<${System} gesundheit=${lage && lage.gesundheit} abschnitt=${r.id} />`}

@@ -10,6 +10,7 @@
 // geschrieben wird ueber dieselben Wege wie anderswo (PATCH /aufgaben, Upload
 // /dateien mit aufgabe_id, langlaufStarten) -- kein zweiter Weg.
 import { html, useState, useEffect, useRef, Icon, Modal, toast, fehlerMelden, zeitText, bus, aktualisieren, navigiere, useFensterKontext } from "./ui.js";
+import { mailZu } from "./mail.js";
 import { api, hochladen } from "./api.js";
 import { langlaufStarten } from "./langlauf.js";
 import { Textfeld } from "./composer.js";
@@ -103,6 +104,7 @@ export function AufgabeFenster({ id, zu }) {
     kopf=${html`<span class=${"pill " + (erledigt ? "gruen" : "")}>${erledigt ? "erledigt" : "offen"}</span>`}
     fuss=${html`
       <button class="btn geist" onClick=${archivieren} title="Archivieren -- zurückholen geht über Rückgängig"><${Icon} n="archiv" g=${14} />Archivieren</button>
+      <button class="btn geist" onClick=${() => mailZu({ art: "aufgabe", id })} title="Die Aufgabe per Mail verschicken"><${Icon} n="mail" g=${14} />Per Mail</button>
       <span class="luecke"></span>
       <button class="btn" onClick=${() => status(erledigt ? "offen" : "erledigt")}><${Icon} n=${erledigt ? "undo" : "check"} g=${14} />${erledigt ? "Wieder öffnen" : "Erledigt"}</button>
       <button class="btn primaer" disabled=${!geaendert || speichert} onClick=${() => speichern()}>${speichert ? "speichert …" : geaendert ? "Speichern" : "Gespeichert"}</button>`}>

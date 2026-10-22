@@ -10,6 +10,7 @@ import { TeamChat, gespraechsPartner } from "./teamchat.js";
 import { Composer, Textfeld } from "./composer.js";
 import { VideoBlock, FolienbilderBlock, Downloads, Pruefung, GrossAnsicht, ErgebnisZeile, einarbeitenText, StilWahl } from "./ergebnis.js";
 import { langlaufStarten } from "./langlauf.js";
+import { mailZu } from "./mail.js";
 import { gespraechOeffnen } from "./zuordnung.js";
 
 const GESPRAECH_ART = { talk: "Talk", team: "Team-Chat", neo: "Neo", board: "Board" };
@@ -638,6 +639,7 @@ export function NotizAnsicht({ id, zu }) {
   return html`<${Modal} titel=${n.titel || "Notiz"} zu=${zu} fuss=${html`
       ${n.vorgaenge && n.vorgaenge.length ? html`<a class="btn" href=${"#/inbox/" + n.vorgaenge[0].id} onClick=${zu} title="Die ursprüngliche Notiz, was Jason daraus gemacht hat, alle Ergebnisse dazu">Herkunft</a>`
         : html`<button class="btn" onClick=${anStab}><${Icon} n="team" g=${15} />Vom Team bearbeiten lassen</button>`}
+      <button class="btn" onClick=${() => mailZu({ art: "notiz", id })}><${Icon} n="mail" g=${15} />Per Mail</button>
       <button class="btn primaer" onClick=${zu}>Schließen</button>`}>
     <div class="knopfreihe" style="margin-bottom:10px">
       <span class="leise klein">${n.quelle === "plaud" ? "Plaud" : n.quelle === "mail" ? "E-Mail" : n.quelle === "unterlage" ? "Unterlagen" : "Notiz"} ·${n.datum || zeitText(n.erstellt)}</span>

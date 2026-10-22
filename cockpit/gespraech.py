@@ -63,6 +63,8 @@ AKTIONEN = {
     "exo": (),
     # Daily Tasks (22.10.2026): anlegen, aendern, jetzt ausfuehren, pausieren, fortsetzen, loeschen.
     "daily": ("was",),
+    # E-Mails (22.10.2026, mail.py): Entwurf anlegen und formulieren, aendern, abschicken.
+    "mail": ("was",),
     # Vorgemerktes im Gespraech klaeren (21.10.2026, Veiko: "im direkten Dialog weiter entscheiden,
     # was mit dieser Art von Notizen, Eingaengen, Ideen passiert").
     "vorgemerkt": ("vorgang_id", "was"),
@@ -109,7 +111,11 @@ BEFEHL = re.compile(r"^\s*((okay|ok|gut|ja|dann|und|also|bitte)[,.]?\s+)*(leg|tr
                     r"ersetz|korrigier|benenn|erstell|mach|prüf|pruef|lass|schreib)\w*\b", re.I)
 # "Gib das frei", "leg das ab", "verwirf das" zu Vorgemerktem ist die Zustimmung (21.10.2026).
 VORGEMERKT_BEFEHL = re.compile(r"\b(freigeb\w*|freigab\w*|gib\b.{0,50}\bfrei|leg\w*\b.{0,40}\bab\b|ablegen|verwirf|verwerfen|weg\s+damit|kann\s+weg)", re.I)
-BEFEHL_AKTIONEN = ("aufgabe_neu", "aufgabe_erledigt", "aufgabe_aendern", "notiz", "merken", "ersetzen", "pruefen", "projekt_neu", "daily")
+BEFEHL_AKTIONEN = ("aufgabe_neu", "aufgabe_erledigt", "aufgabe_aendern", "notiz", "merken", "ersetzen", "pruefen", "projekt_neu", "daily", "mail")
+# "Schick das an Hanna", "formulier das freundlicher" -- legt an oder aendert einen ENTWURF; abgeschickt
+# wird davon nie etwas (22.10.2026). Senden braucht ein Ja auf den gezeigten Entwurf.
+MAIL_ABSICHT = re.compile(r"\b(schick|send|verschick|mail|maile|weiterleit)\w*\b.{0,120}\ban\s+\w|\b(e-?mail|mail)\b.{0,60}\b(an|schreib|formulier|kürzer|kuerzer|freundlicher|förmlicher|englisch|abschick|schick)", re.I)
+MAIL_BEFEHL = re.compile(r"\b(schick|send|verschick|mail|maile|formulier|schreib|antwort|füg|fueg|häng|haeng|setz)\w*", re.I)
 # "Fuehr den Daily Task jetzt aus", "pausier ihn", "setz ihn fort" -- Befehle zu Daily Tasks (22.10.2026).
 DAILY_BEFEHL = re.compile(r"\b(führ\w*|fuehr\w*|start\w*|lass\w*)\b.{0,50}\b(aus|laufen|jetzt|sofort|nochmal|noch einmal)\b|"
                           r"\bpausier\w*|\bfortsetz\w*|\bsetz\w*\b.{0,30}\bfort\b|\bwieder (an|aktiv)\b|\bänder\w*|\baender\w*|\bstell\w*\b.{0,30}\bum\b", re.I)
@@ -172,6 +178,7 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"notiz","text":"…","projekt_id":"p… oder null"}
 - {"aktion":"projekt_neu","name":"…"}
 - {"aktion":"daily","was":"anlegen|aendern|ausfuehren|pausieren|fortsetzen|loeschen","daily_id":"d… aus DAILY TASKS oder KONTEXT, bei anlegen null","titel":"kurzer Titel","auftrag":"was das Team JEDEN TAG untersuchen soll, in Veikos Worten, ausführlich","uhrzeit":"HH:MM oder null","tage":"werktags|täglich|mo,mi,fr oder null","rolle":"stratege|buch|designer|video|cockpit oder null","projekt_id":"p… oder null"} -- ein Daily Task: ein täglicher Auftrag ans Team, aus dem jeden Tag ein Briefing entsteht (Seite Daily Tasks). „Lass das Team jeden Morgen … beobachten“, „ich will täglich ein Briefing zu …“ = anlegen (Vorgabe werktags 06:30, Clayton). „Führ ihn jetzt aus“ = ausfuehren. Bei aendern nur die Felder, die sich ändern. Fragen ZUM Briefing beantwortest du selbst aus dem KONTEXT; „untersuche das tiefer“ ist ausarbeiten mit ergebnis_id des Briefings.
+- {"aktion":"mail","was":"entwurf|aendern|senden","mail_id":"m… aus KONTEXT oder MAIL-ENTWÜRFE, bei entwurf null","an":"Name aus dem ADRESSBUCH oder E-Mail-Adresse","bezug_art":"ergebnis|aufgabe|notiz|datei|projekt oder null","bezug_id":"Kennung aus LAGE/KONTEXT oder null","titel":"Titel des Dings, falls die Kennung fehlt","anweisung":"was in der Mail stehen soll, in Veikos Worten (Ton, du/Sie, Bitte, Frist)","stil":"kuerzer|freundlicher|foermlicher|klarer|englisch|korrektur oder null"} -- eine E-Mail. „Schick das Ergebnis an Hanna“ = entwurf: das Cockpit legt den Entwurf an, formuliert ihn, hängt das Ding an und zeigt ihn; abgeschickt wird erst auf Veikos Ja. „Mach sie kürzer“, „füg Lisa in Kopie hinzu“ (dann an = alle Empfänger) = aendern. senden NUR, wenn Veiko den Entwurf abschicken will. Formuliere den Mailtext NIE selbst in deiner Antwort -- das macht das Cockpit.
 - {"aktion":"vorgemerkt","vorgang_id":"v… aus VORGEMERKT","was":"freigeben|erledigt|verwerfen","anweisung":"bei freigeben: was das Team jetzt tun soll, in Veikos Worten, oder leer"} -- entscheidet über einen vorgemerkten Case (eine Notiz, an der das Team noch nicht arbeiten sollte): freigeben = Jason plant jetzt mit der Anweisung, was das Team tut (nennt Veiko jemanden, z. B. „Clayton soll …“, steht das in der Anweisung); erledigt = ablegen, nichts mehr tun; verwerfen = weg samt der Aufgaben dazu. Braucht Veikos Ja.
 - {"aktion":"neo","auftrag":"was Neo am Cockpit oder Server tun soll"} -- NUR für Programm und Server des Cockpits, NIE für Inhalte (Projekte, Aufgaben, Ergebnisse, Notizen).
 - {"aktion":"langlauf","titel":"kurzer Titel","auftrag":"was in Etappen entstehen soll, in mehreren Sätzen, mit allem, was Veiko dazu gesagt hat","art":"buch|dokument|praesentation|bilder|webseite|video","rolle":"buch|stratege|designer|video oder null","projekt_id":"p… oder null","aufgabe_id":"t… oder null","pruefer":"dario|demmis","pruef_alle":3,"budget":5} -- ein LongRun: ein großes Vorhaben (ein ganzes Buch, eine große Präsentation, ein ausführliches Konzept, eine Studie, eine Strategie, ein Leitfaden, ein langes Dokument, ein langes Video), das in Etappen entsteht und von Dario (Claude) oder Demmis (Gemini) geprüft wird. Sagt Veiko „Long Run“, „in Etappen“, „durchgängig und tief“, „komplett“, „vollständig“, „ausführlich“, „umfassend“ oder „gründlich“ zu einem Werk, das er HABEN will: IMMER langlauf, nie ausarbeiten. art praesentation für Präsentationen und Foliensätze, bilder für Bildserien und viele Bilder, webseite für Webseiten, buch für Bücher, video für Videos, sonst dokument. Nennt er Demmis/Gemini, ist pruefer demmis, sonst dario. pruef_alle: nach wie vielen Kapiteln/Teilen geprüft wird; 0 = NUR AM ENDE, wenn alles fertig ist -- immer dann, wenn Veiko „danach“, „am Ende“, „wenn es fertig ist“ oder „wenn du fertig bist“ sagt. Vorhandene Ergebnisse und Unterlagen des Projekts nimmt das Cockpit selbst dazu. Die Prüfungen kosten Geld: nenne das Budget (Vorgabe 5 Dollar) und frag immer „Soll ich das so machen?“.
@@ -347,6 +354,13 @@ def lage_text() -> str:
         dt = daily.heute_text()
     except Exception:  # noqa: BLE001 -- die Lage darf nie an den Daily Tasks scheitern
         dt = ""
+    try:
+        from . import mail
+        mt = mail.talk_text()
+    except Exception:  # noqa: BLE001 -- die Lage darf nie an der Mail scheitern
+        mt = ""
+    if mt:
+        teile.append(mt)
     if dt:
         teile.append("DAILY TASKS HEUTE (tägliche Briefings des Teams; Kennung d…, Briefing als Ergebnis e…):\n" + dt)
     erl = db.alle("SELECT id, titel, einordnung, geaendert FROM vorgaenge WHERE stand='fertig' AND quelle!='alt' "
@@ -412,6 +426,15 @@ def kontext_text(k: dict[str, Any] | None) -> str:
         # Daily Tasks (22.10.2026): der Task mit seinem neusten Briefing, oder die Liste.
         from . import daily
         return daily.kontext_text(None if kid == "alle" else kid)
+    if art == "mail":
+        from . import mail
+        m = mail.holen(kid) if kid != "alle" else None
+        if not m:
+            return "VEIKO IST AUF DER MAIL-SEITE (Entwürfe, Gesendet, Adressbuch).\n" + mail.talk_text()
+        return (f"VEIKO SCHAUT AUF {'DIE GESENDETE MAIL' if m['stand'] == 'gesendet' else 'DEN MAIL-ENTWURF'} {m['id']} -- „sie“, „die Mail“ meint diese.\n"
+                f"An: {m['an'] or '-'}" + (f" · Cc: {m['cc']}" if m.get("cc") else "") + f"\nBetreff: {m['betreff'] or '-'}\n"
+                + (f"Anhänge: {', '.join(a['name'] for a in m['daten']['anhaenge'])}\n" if m["daten"]["anhaenge"] else "")
+                + f"Text:\n{mail._html_zu_text(m.get('html') or '')[:6000] or '(noch leer)'}\n\n" + mail.talk_text())
     if art == "webspace":
         from . import webspace
         return webspace.kontext_text(k.get("pfad"))
@@ -631,6 +654,7 @@ SEITEN = [
     ("aktionen", r"current actions|aktionen|was (gerade )?läuft", "Current Actions"),
     ("webspace", r"web ?space|meine (website|webseite|homepage)|veikovoneckern", "den WebSpace"),
     ("daily", r"daily( ?tasks?)?|tägliche[nrs]? (aufgaben|aufträge|auftraege|briefings?)|tagesbriefings?", "die Daily Tasks"),
+    ("mail", r"(e-?)?mails?( ?seite)?|postausgang|(mail-?)?entwürfe|adressbuch", "die Mail-Seite"),
     ("briefing", r"briefing|startseite", "das Briefing"),
     ("inbox", r"inbox|eingang|posteingang", "die Inbox"),
     ("projects", r"projekte|projects|projektliste|projektübersicht", "die Projekte"),
@@ -1063,6 +1087,35 @@ def beschriften(a: dict[str, Any]) -> str | None:
                 "pausieren": f"Daily Task „{d['titel'][:60]}“ pausieren",
                 "fortsetzen": f"Daily Task „{d['titel'][:60]}“ wieder einschalten",
                 "loeschen": f"Daily Task „{d['titel'][:60]}“ löschen"}[was]
+    if art == "mail":
+        from . import mail
+        was = a.get("was")
+        if was not in ("entwurf", "aendern", "senden"):
+            return None
+        if was != "entwurf":
+            m = mail.holen(str(a.get("mail_id") or ""))
+            if not m:
+                # Ohne Kennung ist der juengste Entwurf gemeint -- der, ueber den gerade gesprochen wird.
+                mid = db.wert("SELECT id FROM mails WHERE stand IN ('entwurf','fehler') ORDER BY geaendert DESC LIMIT 1")
+                m = mail.holen(mid) if mid else None
+            if not m or m["stand"] == "gesendet":
+                return None
+            a["mail_id"] = m["id"]
+            if was == "senden":
+                an = mail.adressen(m["an"])
+                if not an or mail.pruefen(an):
+                    return None
+                n = len(m["daten"]["anhaenge"])
+                return f"Mail abschicken an {', '.join(an)}: „{(m['betreff'] or '(ohne Betreff)')[:70]}“" + (f" mit {n} Anhang" + ("en" if n > 1 else "") if n else "")
+            return f"Mail-Entwurf „{(m['betreff'] or '')[:60]}“ ändern"
+        if a.get("bezug_art") in mail.BEZUG and not db.holen({"ergebnis": "ergebnisse", "aufgabe": "aufgaben", "notiz": "notizen",
+                                                            "datei": "dateien", "projekt": "projekte"}[a["bezug_art"]], str(a.get("bezug_id") or "")):
+            o = oeffnen_suchen(str(a.get("titel") or ""), a["bezug_art"]) if a.get("titel") else None
+            a["bezug_id"] = o["id"] if o else None
+        an = mail.adressen(a.get("an"))
+        b = mail.bezug_lesen({"art": a.get("bezug_art"), "id": a.get("bezug_id")}) if a.get("bezug_id") else None
+        return (f"Mail-Entwurf an {', '.join(an) or 'noch niemanden'}" + (f" zu „{b['titel'][:60]}“" if b else "")
+                + (" (Adresse nicht im Adressbuch)" if an and mail.pruefen(an) else ""))
     if art == "neo":
         return f"Neo beauftragen: {a['auftrag'][:90]}"
     if art == "ersetzen":
@@ -1218,6 +1271,37 @@ async def ausfuehren(a: dict[str, Any]) -> dict[str, Any]:
         except ValueError as f:
             return {"ok": False, "grund": str(f)}
         return {"ok": True, "langlauf_id": l.get("id"), "titel": l.get("titel"), "material": len(material)}
+    if art == "mail":
+        from . import mail
+        try:
+            if a["was"] == "senden":
+                r = await mail.senden(a["mail_id"])
+                return {"ok": True, "mail_id": a["mail_id"], "mail_gesendet": True, "an": r["an"], "betreff": r.get("betreff")}
+            if a["was"] == "entwurf":
+                m = mail.anlegen({"an": a.get("an"), "bezug": {"art": a.get("bezug_art"), "id": a.get("bezug_id")} if a.get("bezug_id") else None}, wer="talk")
+                stil, geaendert = "entwurf", False
+            else:
+                m, geaendert = mail.holen(a["mail_id"]), True
+                werte: dict[str, Any] = {}
+                if a.get("an"):
+                    werte["an"] = ", ".join(mail.adressen(a["an"]))
+                if a.get("bezug_art") in ("ergebnis", "datei") and a.get("bezug_id"):
+                    neu = mail.anhang_pruefen({"art": a["bezug_art"], "id": a["bezug_id"]})
+                    if neu and neu not in m["daten"]["anhaenge"]:
+                        werte["anhaenge"] = m["daten"]["anhaenge"] + [neu]
+                if werte:
+                    m = mail.aendern(m["id"], werte)
+                stil = a.get("stil") if a.get("stil") in mail.AUFTRAEGE else ("entwurf" if a.get("anweisung") else None)
+            text = ""
+            if stil:
+                v = await mail.formulieren(m["id"], stil, str(a.get("anweisung") or ""))
+                m = mail.aendern(m["id"], {"html": v["html"], "betreff": v["betreff"] or m.get("betreff") or ""})
+                text = v["text"]
+            an = mail.adressen(m["an"])
+            return {"ok": True, "mail_id": m["id"], "an": ", ".join(an), "betreff": m.get("betreff"), "text": text,
+                    "geaendert": geaendert, "adresse_fehlt": not an or bool(mail.pruefen(an))}
+        except (ValueError, llm.ModellFehler) as f:
+            return {"ok": False, "grund": str(f)}
     if art == "extern_pruefen":
         from . import langlauf
         try:
@@ -1561,6 +1645,24 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
             a.pop("zugestimmt", None)
             vorschlaege = [v for v in vorschlaege if v is not alt and v["aktion"] != "pruefen"] + [a]
             sichtbar = AENDERUNG_BEHAUPTET.sub("", TEAM_BEHAUPTET.sub("", sichtbar or "")).strip()
+    # Mail (22.10.2026): gemessen schrieb das Modell "Ich erstelle den Entwurf fuer Hanna" und schickte
+    # keinen Block. Will Veiko eine Mail, wird der Block gezielt nachgefordert.
+    am_entwurf = (kontext or {}).get("art") == "mail" and (kontext or {}).get("id") not in (None, "alle") and bool(
+        MAIL_BEFEHL.search(text) or re.search(r"kürzer|kuerzer|freundlicher|förmlicher|foermlicher|englisch|klarer|korrigier|abschick", text, re.I))
+    if not erledigt_in and (MAIL_ABSICHT.search(text) or am_entwurf) and not [v for v in vorschlaege if v["aktion"] == "mail"]:
+        try:
+            roh = await llm.chat(modell, system, verlauf + [{"role": "assistant", "content": gesamt}, {"role": "user", "content":
+                "Veiko will eine E-Mail. Antworte NUR mit dem ```aktionen-Block, ohne weiteren Text, z. B. "
+                "```aktionen\n[{\"aktion\":\"mail\",\"was\":\"entwurf\",\"an\":\"Name oder Adresse\",\"bezug_art\":\"ergebnis\",\"bezug_id\":\"r… aus LAGE\","
+                "\"titel\":\"Titel des Dings\",\"anweisung\":\"was drinstehen soll, in Veikos Worten\"}]\n``` -- "
+                "bei einem offenen Entwurf (KONTEXT) stattdessen was aendern oder senden mit dessen mail_id."}],
+                temperatur=0.1, denken=False, num_ctx=24576)
+            _, nach = vorschlaege_aus(roh if "```aktionen" in roh else "```aktionen\n" + roh + "\n```")
+            nach = [v for v in nach if v["aktion"] == "mail"][:1]
+            _kontext_einsetzen(nach, kontext)
+            vorschlaege += nach
+        except llm.ModellFehler:
+            pass
     if not erledigt_in and not extern_gemeint and DANIEL_PRUEFEN.search(text) and not [v for v in vorschlaege if v["aktion"] == "pruefen"]:
         a: dict[str, Any] = {"aktion": "pruefen", "titel": text}
         if (kontext or {}).get("art") == "ergebnis":
@@ -1657,13 +1759,31 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
         sichtbar = re.sub(r"\n*Gestartet: [^\n]*", "", sichtbar)
     vm_befehl = bool(VORGEMERKT_BEFEHL.search(text)) and not _ABLEHNUNG.search(text)
     daily_befehl = bool(DAILY_BEFEHL.search(text)) and not _ABLEHNUNG.search(text)
+    mail_befehl = bool(MAIL_BEFEHL.search(text)) and not _ABLEHNUNG.search(text)
+    # Ein vom Modell vorgeschlagenes Abschicken gilt nur, wenn Veiko abschicken WILL. Bittet er um eine
+    # Aenderung, wird daraus die Aenderung -- danach haengt das Cockpit das Abschicken selbst an.
+    will_senden = bool(re.search(r"\b(abschick\w*|absend\w*|raus\b|verschick\w*|schick\w*\b.{0,30}\bab\b|send\w*)", text, re.I))
+    for v in vorschlaege:
+        if v["aktion"] == "mail" and v.get("was") == "senden" and not will_senden and not v.get("erledigt"):
+            if MAIL_BEFEHL.search(text) or re.search(r"kürzer|kuerzer|freundlicher|förmlicher|foermlicher|englisch|klarer|neu", text, re.I):
+                v.update(was="aendern", anweisung=text)
+                v["label"] = beschriften(v) or v["label"]
+    if any(v["aktion"] == "mail" for v in vorschlaege):
+        # Den Mailtext schreibt das Cockpit, nie das Modell in seine Antwort (siehe SYSTEM).
+        sichtbar = re.sub(r"\n*(Entwurf (angelegt|geändert): )[\s\S]*$", "", sichtbar or "")
+        sichtbar = re.sub(r"\n*(Hallo|Hi|Liebe|Lieber|Sehr geehrte\w*|Guten Tag)\b[^\n]*,\s*\n[\s\S]*?(Grüße|Gruß|Grüßen)\s*\n[^\n]*", "", sichtbar).strip()
     im_satz = zustimmung_im_satz(text)
+    # Abschicken (22.10.2026) nur als Ja auf die Frage "Soll ich sie so abschicken?" -- also erst,
+    # nachdem Veiko den Entwurf gesehen oder gehoert hat. Jeder andere Weg bleibt ein Vorschlag.
+    abschicken_ok = bestaetigt and "abschicken" in str((vorher or {}).get("text") or "")
     gleich =[v for v in vorschlaege if v["aktion"] not in SOFORT_VERFAHREN
+              and not (v["aktion"] == "mail" and v.get("was") == "senden" and not abschicken_ok)
               and (bestaetigt or (auftrag and v["aktion"] in ("ausarbeiten", "neo", "pruefen"))
                    or (befehl and v["aktion"] in BEFEHL_AKTIONEN)
                    or (vm_befehl and v["aktion"] == "vorgemerkt")
                    # Loeschen nie ohne Ja -- "aendern"/"pausieren" sind umkehrbar, ein geloeschter Task nur ueber den Verlauf.
                    or (daily_befehl and v["aktion"] == "daily" and v.get("was") != "loeschen")
+                   or (mail_befehl and v["aktion"] == "mail")
                    or (v.get("zugestimmt") is True and im_satz))]
     ausgefuehrt = list(vorab)
     for v in gleich[:3]:
@@ -1692,6 +1812,12 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
                 zeilen.append(f"Gestartet: {was}. Er steht jetzt unter LongRuns"
                               + (f", mit {r['material']} vorhandenen Ergebnissen und Unterlagen als Grundlage" if r.get("material") else "")
                               + " -- zuerst plant das Team die Etappen.")
+            elif r.get("mail_gesendet"):
+                zeilen.append(f"Gesendet: an {', '.join(r.get('an') or [])} -- „{r.get('betreff') or ''}“. Sie steht unter Mail → Gesendet.")
+            elif r.get("mail_id"):
+                zeilen.append(f"Entwurf {'geändert' if r.get('geaendert') else 'angelegt'}: an {r.get('an') or 'noch niemanden'} -- Betreff „{r.get('betreff') or ''}“"
+                              + (f"\n\n{r['text']}" if r.get("text") else "")
+                              + ("\n\nDie Adresse fehlt noch -- sag sie mir oder trag sie im Entwurf ein." if r.get("adresse_fehlt") else "\n\nSoll ich sie so abschicken?"))
             elif r.get("lief_schon"):
                 zeilen.append(f"Läuft schon: {was}. Sein Urteil steht in wenigen Minuten am Ergebnis.")
             elif r.get("geprueft_wird"):
@@ -1718,6 +1844,17 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
         # Reste nach dem Streichen ("Oktober 2026." -- ein Datum hatte den Satz am Punkt geteilt).
         sichtbar = "\n\n".join(p.strip() for p in re.split(r"\n\s*\n", sichtbar) if len(p.strip()) >= 30)
         sichtbar = (sichtbar + "\n\n" + hinweis).strip()
+        # Ein frischer Mail-Entwurf bekommt das Abschicken gleich als offenen Vorschlag: ein "Ja"
+        # schickt ihn ab -- aber erst NACHDEM Veiko den Text gesehen oder gehoert hat (22.10.2026).
+        entwurf = next((r for r in ausgefuehrt if r.get("ok") and r.get("mail_id") and not r.get("mail_gesendet") and not r.get("adresse_fehlt")), None)
+        if entwurf and not any(v["aktion"] == "mail" and v.get("was") == "senden" and not v.get("erledigt") for v in vorschlaege):
+            nachher = {"aktion": "mail", "was": "senden", "mail_id": entwurf["mail_id"]}
+            nachher["label"] = beschriften(nachher)
+            if nachher["label"]:
+                vorschlaege.append(nachher)
+        mail_offen = next((r["mail_id"] for r in ausgefuehrt if r.get("ok") and r.get("mail_id")), None)
+        if mail_offen and not oeffnen:
+            oeffnen = [{"art": "mail", "id": mail_offen, "titel": ""}]
     sofort = [v for v in vorschlaege if v["aktion"] in SOFORT_VERFAHREN][:1]
     vorschlaege = [v for v in vorschlaege if v["aktion"] not in SOFORT_VERFAHREN]
     if sofort:
@@ -1775,6 +1912,10 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
             sichtbar = (sichtbar + "\n\nIch konnte die Recherche nicht starten -- gestartet ist nichts. Sag mir bitte noch einmal das Thema.").strip()
     if recherche:
         sichtbar = (sichtbar + "\n\n" + recherche[0]).strip()
+    # Eine Mail gilt erst als gesendet, wenn das Cockpit sie gesendet hat (22.10.2026: gemessen
+    # stand "Ich habe die E-Mail angepasst und abgeschickt" ueber einem neuen, ungesendeten Entwurf).
+    if any(v["aktion"] == "mail" for v in vorschlaege) and not any(r.get("mail_gesendet") for r in ausgefuehrt):
+        sichtbar = re.sub(r"[^.!?\n]*\b(abgeschickt|versendet|verschickt|gesendet|rausgeschickt)\b[^.!?\n]*[.!?]?", "", sichtbar or "", flags=re.I).strip()
     # "Aus unserem Gespräch noch offen:" ohne etwas dahinter (gemessen am 22.10.2026) faellt weg.
     sichtbar = re.sub(r"\n*[^\n]*noch offen:\s*$", "", sichtbar or "").strip()
     sichtbar += stab.netz_fuss(quellen)
@@ -1803,6 +1944,26 @@ def _kontext_einsetzen(vorschlaege: list[dict[str, Any]], kontext: dict[str, Any
             if v["aktion"] == "ausarbeiten" and not v.get("projekt_id"):
                 v["projekt_id"] = kontext["id"]
                 v["label"] = beschriften(v) or v["label"]
+    # Mail (22.10.2026): "schick das an Hanna" im Ergebnisfenster meint dieses Ergebnis, und auf der
+    # Mail-Seite meint "mach sie kuerzer" den offenen Entwurf.
+    for v in vorschlaege:
+        if v["aktion"] != "mail" or not kontext or not kontext.get("id"):
+            continue
+        # Auf einem offenen Entwurf ist "formulier sie neu" eine Aenderung DIESES Entwurfs -- gemessen
+        # legte das Modell sonst einen zweiten an.
+        offen_m = db.holen("mails", kontext["id"]) if kontext.get("art") == "mail" else None
+        if v.get("was") == "entwurf" and offen_m and offen_m.get("stand") != "gesendet":
+            v.update(was="aendern", mail_id=offen_m["id"])
+            if not v.get("stil") and not v.get("anweisung"):
+                v["anweisung"] = "neu formulieren"
+            v["label"] = beschriften(v) or v["label"]
+            continue
+        if v.get("was") == "entwurf" and kontext.get("art") in ("ergebnis", "aufgabe", "notiz", "datei", "projekt") and not v.get("bezug_id"):
+            v.update(bezug_art=kontext["art"], bezug_id=kontext["id"])
+            v["label"] = beschriften(v) or v["label"]
+        elif v.get("was") in ("aendern", "senden") and kontext.get("art") == "mail" and db.holen("mails", kontext["id"]):
+            v["mail_id"] = kontext["id"]
+            v["label"] = beschriften(v) or v["label"]
     if not kontext or kontext.get("art") != "ergebnis":
         return
     e = db.holen("ergebnisse", kontext.get("id") or "")
@@ -1835,6 +1996,9 @@ def _fuers_modell(text: str, daten: dict[str, Any]) -> str:
     in stand_text() in der Anweisung -- ein Vermerk im Verlauf wurde am 19.10.2026 woertlich
     abgeschrieben ("[Vermerk des Cockpits: AUSGEFÜHRT: …]" stand in Veikos Antwort)."""
     t = _COCKPIT_ZEILE.sub("", text or "")
+    # Die Entwurfsanzeige des Cockpits samt Mailtext (22.10.2026): gemessen ahmte das Modell sie nach
+    # und schrieb einen Text hin, der nie im Entwurf stand -- und ein Ja haette den ALTEN verschickt.
+    t = re.sub(r"\n*(Entwurf (angelegt|geändert): |Gesendet: an )[\s\S]*$", "", t)
     return _COCKPIT_ANHANG.sub("", VERMERK_RE.sub("", t)).strip() or "(siehe WAS IN DIESEM GESPRÄCH SCHON PASSIERT IST)"
 
 

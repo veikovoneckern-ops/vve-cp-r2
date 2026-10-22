@@ -223,6 +223,74 @@ export function mikroFreigeben(wer) {
 }
 export function mikroHalter() { return halter ? halter.wer : null; }
 
+// Ins Wort fallen (22.10.2026, Veiko: "bei Talk soll die Sprachausgabe auch unterbrochen werden
+// koennen durch andere Aussagen oder Fragen oder Anweisungen"). Laeuft WAEHREND Talk spricht:
+// das Mikrofon hoert mit (Echo-Unterdrueckung des Browsers an), und erst wenn der Pegel deutlich
+// ueber dem liegt, was von Talks eigener Stimme durchkommt, und das eine Viertelsekunde lang,
+// gilt es als Einsatz. Die Schwelle folgt dem gleitenden Mittel des Pegels -- ein fester Wert
+// war entweder taub (laute Lautsprecher) oder fiel auf Talks eigene Stimme herein.
+// Beim Einsatz beginnt eine FRISCHE Aufnahme ab genau diesem Moment: die bis dahin mitgelaufene
+// enthielte Talks Stimme, und Whisper schriebe sie mit ab.
+export async function lauschen({ beiEinsatz, pegel } = {}) {
+  if (mikrofonGrund()) return null;
+  let strom;
+  try {
+    strom = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  } catch (e) { return null; }
+  const typ = typWaehlen();
+  let ctx, rahmen, rec = null, fertig, aus = false;
+  const teile = [];
+  const ende = new Promise((ok) => { fertig = ok; });
+  const schluss = (blob) => {
+    if (aus) return;
+    aus = true;
+    if (rahmen) clearInterval(rahmen);
+    strom.getTracks().forEach((t) => t.stop());
+    if (ctx) ctx.close().catch(() => {});
+    fertig(blob);
+  };
+  let mittel = 0.02, ueber = 0, stilleSeit = 0, einsatz = 0;
+  const start = performance.now();
+  try {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
+    const ana = ctx.createAnalyser(); ana.fftSize = 1024;
+    ctx.createMediaStreamSource(strom).connect(ana);
+    const buf = new Uint8Array(ana.fftSize);
+    rahmen = setInterval(() => {
+      ana.getByteTimeDomainData(buf);
+      let s = 0; for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; s += v * v; }
+      const rms = Math.sqrt(s / buf.length);
+      const t = performance.now();
+      if (!rec) {
+        // Die ersten 400 ms nur messen: so laut kommt Talk selbst im Mikrofon an.
+        const schwelle = Math.max(0.06, mittel * 2.6);
+        if (t - start > 400 && rms > schwelle) ueber++; else ueber = 0;
+        mittel = mittel * 0.95 + Math.min(rms, schwelle) * 0.05;
+        if (ueber >= 4) {
+          rec = new MediaRecorder(strom, typ ? { mimeType: typ } : {});
+          rec.ondataavailable = (e) => { if (e.data && e.data.size) teile.push(e.data); };
+          rec.onstop = () => schluss(teile.length ? new Blob(teile, { type: rec.mimeType || typ || "audio/webm" }) : null);
+          rec.start(250);
+          einsatz = t;
+          if (beiEinsatz) beiEinsatz();
+        }
+        return;
+      }
+      if (pegel) pegel(Math.min(1, rms * 6));
+      if (rms > 0.035) stilleSeit = 0; else if (!stilleSeit) stilleSeit = t;
+      if (rec.state === "recording" && ((stilleSeit && t - stilleSeit > 1500) || t - einsatz > 60000)) rec.stop();
+    }, 60);
+  } catch (e) { schluss(null); }
+  return {
+    ende,
+    eingesetzt: () => !!rec,
+    // Talk ist fertig mit Sprechen: ohne Einsatz ist nichts aufzuheben.
+    loslassen() { if (!rec) schluss(null); },
+    abbrechen() { teile.length = 0; if (rec && rec.state === "recording") rec.stop(); else schluss(null); },
+  };
+}
+
 // EIN Abspieler fuer alles Vorlesen, beim ersten Tippen freigeschaltet (21.10.2026, Veiko am
 // iPad: "bei Talk funktioniert die Ausgabe nicht, ich höre nichts"). Auf dem iPad laeuft jeder
 // Browser mit Safaris Technik, und Safari spielt Ton nur ab, wenn er an einem Tippen haengt.
@@ -246,8 +314,9 @@ if (typeof window !== "undefined") {
   for (const ev of ["pointerdown", "touchend", "keydown"]) window.addEventListener(ev, freischalten, { capture: true, passive: true });
 }
 
-let laufend = null;
+let laufend = null, vorleseNr = 0;
 export function vorleseStopp() {
+  vorleseNr++;   // auch ein noch ladendes Vorlesen spielt danach nicht mehr ab
   if (laufend) { laufend.pause(); laufend.dispatchEvent(new Event("ended")); laufend = null; }
 }
 
@@ -256,6 +325,7 @@ export function vorleseStopp() {
 // sonst hoerte ein freisprechendes Talk die Stimme mit und nahm sie fuer Veikos Satz.
 export async function vorlesen(text, { vonTalk = false } = {}) {
   vorleseStopp();
+  const nr = vorleseNr;
   if (!vonTalk) mikroAnfordern("vorlesen", () => vorleseStopp());
   try {
     const sauber = String(text || "").replace(/```[\s\S]*?```/g, " ").replace(/[#*_`>|]/g, " ").replace(/\s+/g, " ").trim();
@@ -263,7 +333,9 @@ export async function vorlesen(text, { vonTalk = false } = {}) {
     const r = await fetch("/api/stimme/sprechen", { method: "POST", credentials: "same-origin",
       headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: sauber.slice(0, 2500) }) });
     if (!r.ok) throw new Error("Sprachausgabe nicht erreichbar");
-    const url = URL.createObjectURL(await r.blob());
+    const daten = await r.blob();
+    if (nr !== vorleseNr) return;
+    const url = URL.createObjectURL(daten);
     const a = abspieler();
     a.src = url;
     laufend = a;

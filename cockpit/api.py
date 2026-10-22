@@ -360,6 +360,105 @@ async def daily_loeschen(did: str):
     return {"ok": True}
 
 
+# ================================================================ Mail (22.10.2026, mail.py)
+@router.get("/mail")
+async def mail_uebersicht():
+    from . import mail
+    return {**mail.liste(), "kontakte": mail.kontakte(grenze=300), "postausgang": await asyncio.to_thread(mail.absender),
+            "formate": mail.FORMATE, "vorschlaege": list(mail.AUFTRAEGE)}
+
+
+@router.get("/mail/anhaenge")
+async def mail_anhang_suche(q: str = ""):
+    """Was sich anhaengen laesst: Ergebnisse (als Dokument) und Unterlagen (als Original)."""
+    like = f"%{q.strip()}%"
+    erg = db.alle("SELECT id, titel, form, erstellt FROM ergebnisse WHERE titel LIKE ? ORDER BY erstellt DESC LIMIT 12", (like,))
+    dat = db.alle("SELECT id, name, groesse, erstellt FROM dateien WHERE name LIKE ? ORDER BY erstellt DESC LIMIT 12", (like,))
+    return {"treffer": [{"art": "ergebnis", "id": e["id"], "titel": e["titel"], "unter": e.get("form"), "zeit": e["erstellt"]} for e in erg]
+            + [{"art": "datei", "id": d["id"], "titel": d["name"], "unter": f"{round((d.get('groesse') or 0) / 1024)} KB", "zeit": d["erstellt"]} for d in dat]}
+
+
+@router.get("/mail/kontakte")
+async def mail_kontakte(q: str = ""):
+    from . import mail
+    return {"kontakte": mail.kontakte(q, 12)}
+
+
+@router.post("/mail/kontakte")
+async def mail_kontakt_speichern(request: Request):
+    from . import mail
+    d = await _koerper(request)
+    try:
+        return mail.kontakt_speichern(str(d.get("email") or ""), str(d.get("name") or ""), d.get("notiz"))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.delete("/mail/kontakte/{kid}")
+async def mail_kontakt_loeschen(kid: str):
+    db.loeschen("kontakte", kid)
+    return {"ok": True}
+
+
+@router.post("/mail")
+async def mail_neu(request: Request):
+    from . import mail
+    return mail.anlegen(await _koerper(request))
+
+
+@router.get("/mail/{mid}")
+async def mail_einzeln(mid: str):
+    from . import mail
+    m = mail.holen(mid)
+    if not m:
+        raise HTTPException(404, "Mail nicht gefunden")
+    return m
+
+
+@router.post("/mail/{mid}")
+async def mail_speichern(mid: str, request: Request):
+    from . import mail
+    try:
+        return mail.aendern(mid, await _koerper(request))
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+
+
+@router.delete("/mail/{mid}")
+async def mail_weg(mid: str):
+    from . import mail
+    mail.loeschen(mid)
+    return {"ok": True}
+
+
+@router.post("/mail/{mid}/formulieren")
+async def mail_formulieren(mid: str, request: Request):
+    from . import mail
+    d = await _koerper(request)
+    try:
+        return await mail.formulieren(mid, str(d.get("art") or "entwurf"), str(d.get("anweisung") or ""))
+    except (ValueError, llm.ModellFehler) as e:
+        raise HTTPException(409, str(e))
+
+
+@router.post("/mail/{mid}/senden")
+async def mail_abschicken(mid: str):
+    from . import mail
+    try:
+        return await mail.senden(mid)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+
+
+@router.post("/mail/{mid}/wiederverwenden")
+async def mail_wiederverwenden(mid: str):
+    from . import mail
+    try:
+        return mail.wiederverwenden(mid)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
 @router.get("/vorgaenge/{vid}")
 async def vorgang(vid: str):
     v = db.holen("vorgaenge", vid)

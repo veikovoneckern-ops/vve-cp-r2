@@ -16,7 +16,7 @@ import { escFensterZu, useEsc, html, useState, useEffect, useRef, Icon, Md, toas
 import { api, strom } from "./api.js";
 import { Composer } from "./composer.js";
 import { boardFrageMerken } from "./board.js";
-import { aufnehmen, erkennen, vorlesen, vorleseStopp, mikrofonGrund, mikroAnfordern, mikroFreigeben } from "./stimme.js";
+import { aufnehmen, lauschen, erkennen, vorlesen, vorleseStopp, mikrofonGrund, mikroAnfordern, mikroFreigeben } from "./stimme.js";
 
 const NEIN_WORT = /\b(nein|nee|nö|nicht|lieber nicht|ablehnen|falsch|stopp)\b/i;
 const JA_WORT = /\b(ja|jawohl|jep|genau|klar|gerne|ok|okay|einverstanden|passt|richtig|bitte|mach(e)? (das|es)|tu (das|es)|(kannst|sollst|darfst) du (so )?(machen|tun)|so machen|so tun|anlegen|merken|ausführen)\b/i;
@@ -74,7 +74,8 @@ function blaettern(richtung) {
 
 function ansehenKnopf(r) {
   if (!r || !r.ok) return null;
-  const ziel = r.daily_id ? () => navigiere("/daily/" + r.daily_id)
+  const ziel = r.mail_id ? () => navigiere("/mail/" + r.mail_id)
+    : r.daily_id ? () => navigiere("/daily/" + r.daily_id)
     : r.langlauf_id ? () => navigiere("/langlauf/" + r.langlauf_id)
     : r.vorgang_id ? () => navigiere("/inbox/" + r.vorgang_id)
     : r.neo_gespraech ? () => navigiere("/neo/" + r.neo_gespraech)
@@ -156,6 +157,9 @@ export function Talk({ zu, kontext, setKontext, start }) {
   const talkFeld = useRef(null);
   const abbruch = useRef(null);
   const freiAn = useRef(false);
+  const vorgriff = useRef(null);
+  const letzterSatz = useRef(null);   // was eine per Ja ausgefuehrte Aktion sagt ("Gesendet an …")      // was Veiko Talk ins Wort gesagt hat (sprechen -> zuhoeren)
+  const lauschRef = useRef(null);     // das Mithoeren, waehrend Talk spricht
   const pausiertRef = useRef(null);   // Grund, warum Talk gerade nicht zuhoert (Vorfahrt am Mikrofon)
   const runde = useRef(0);             // jede Freisprech-Schleife hat ihre Nummer: eine alte, die noch auf eine Antwort wartet, laeuft nach dem Weiter nicht zweimal mit
   const aufn = useRef(null);
@@ -184,7 +188,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
     // Veiko sagt selbst, was mit der Aufgabe passieren soll.
     else if (start.vorlage) setTimeout(() => talkFeld.current && talkFeld.current.setzen(start.vorlage), 60);
   }, [start]);
-  useEffect(() => () => { freiAn.current = false; pausiertRef.current = null; if (aufn.current) aufn.current.abbrechen(); vorleseStopp(); mikroFreigeben("talk"); bus.sende("dialog-zustand", null); }, []);
+  useEffect(() => () => { freiAn.current = false; pausiertRef.current = null; if (aufn.current) aufn.current.abbrechen(); if (lauschRef.current) lauschRef.current.abbrechen(); vorleseStopp(); mikroFreigeben("talk"); bus.sende("dialog-zustand", null); }, []);
   // Der Sprechen-Knopf im Kopf zeigt, was gerade passiert, und kann beenden.
   useEffect(() => { bus.sende("dialog-zustand", frei ? frei.zustand : null); }, [frei && frei.zustand]);
   useEffect(() => bus.an("dialog-ende", () => { ausKopf.current = false; freiBeenden(); zu(); }), []);
@@ -262,7 +266,8 @@ export function Talk({ zu, kontext, setKontext, start }) {
         else if (o.art === "aufgabe") bus.sende("aufgabe-zeigen", o.id);
         else if (o.art === "notiz") bus.sende("notiz-zeigen", o.id);
         else if (o.art === "datei") bus.sende("datei-zeigen", o.id);
-        else navigiere({ langlauf: "/langlauf/", vorgang: "/inbox/", projekt: "/projects/", daily: "/daily/" }[o.art] + o.id);
+        else navigiere({ langlauf: "/langlauf/", vorgang: "/inbox/", projekt: "/projects/", daily: "/daily/", mail: "/mail/" }[o.art] + o.id);
+        if (o.art === "mail") setTimeout(() => bus.sende("mail-neu-laden", o.id), 300);
       } else if (z && z.projekt_id) navigiere("/projects/" + z.projekt_id + (z.ziel && z.ziel !== "ueberblick" ? "/" + z.ziel : ""));
       else if (z && z.ziel) {
         // Ein Bereich des Cockpits; eine mitgegebene Frage ans Board stellt das Board selbst.
@@ -286,6 +291,11 @@ export function Talk({ zu, kontext, setKontext, start }) {
       const ll = r.ergebnisse.find((x) => x.ok && x.langlauf_id);
       if (fehl.length) toast("Nicht alles ging: " + fehl.map((f) => f.grund).join("; "), { fehler: true });
       else if (ll) { toast(ll.extern ? "Die abschließende Prüfung läuft." : "LongRun gestartet."); navigiere("/langlauf/" + ll.langlauf_id); }
+      else if (r.ergebnisse.some((x) => x.ok && x.mail_id)) {
+        const ml = r.ergebnisse.find((x) => x.mail_id);
+        letzterSatz.current = ml.mail_gesendet ? "Gesendet an " + (ml.an || []).join(", ") + "." : "Der Entwurf ist geändert.";
+        toast(letzterSatz.current); navigiere("/mail/" + ml.mail_id); setTimeout(() => bus.sende("mail-neu-laden", ml.mail_id), 300);
+      }
       else if (r.ergebnisse.some((x) => x.ok && x.daily_id)) { toast("Daily Task erledigt."); navigiere("/daily/" + r.ergebnisse.find((x) => x.daily_id).daily_id); }
       else {
         const neo = r.ergebnisse.find((x) => x.neo_gespraech);
@@ -309,13 +319,16 @@ export function Talk({ zu, kontext, setKontext, start }) {
   // Getippt oder gesprochen: ein Ja auf offene Vorschlaege fuehrt sie aus,
   // ein Nein verwirft sie -- statt die KI dasselbe noch einmal fragen zu lassen.
   async function eingabe(text, anhaenge, stimme) {
+    // Getippt, waehrend Talk noch vorliest: die neue Eingabe hat Vorrang (22.10.2026).
+    if (!stimme) vorleseStopp();
     const t = reinigen(text);
     const offen = offeneVorschlaege();
     if (offen && t && !(anhaenge || []).length) {
       if (istJa(t)) {
         setMsgs((m) => [...m, { id: "d" + Date.now(), rolle: "du", text }]);
         const ok = await ausfuehren(offen.mid, offen.idx);
-        const antwort = ok ? "Erledigt." : "Das ging leider nicht ganz. Details stehen in der Meldung.";
+        const antwort = ok ? (letzterSatz.current || "Erledigt.") : "Das ging leider nicht ganz. Details stehen in der Meldung.";
+        letzterSatz.current = null;
         setMsgs((m) => [...m, { id: "s" + Date.now(), rolle: "ck", text: antwort, vorschlaege: [] }]);
         return { text: antwort, vorschlaege: [] };
       }
@@ -330,6 +343,9 @@ export function Talk({ zu, kontext, setKontext, start }) {
 
   // ------------------------------------------------------------ Freisprechen
   async function zuhoeren() {
+    // Was Veiko Talk ins Wort gesagt hat (sprechen), ist die naechste Eingabe -- an jeder Stelle,
+    // an der Talk danach zuhoeren wuerde (Gespraech, Entscheidungen durchgehen, BrainStrom).
+    if (vorgriff.current) { const t = vorgriff.current; vorgriff.current = null; return t; }
     setFrei((f) => f && { ...f, zustand: "hoert", pegel: 0 });
     const ctl = await aufnehmen({ stilleStopp: true, maxSek: 60, pegel: (p) => setFrei((f) => f && { ...f, pegel: p }) });
     aufn.current = ctl;
@@ -343,7 +359,29 @@ export function Talk({ zu, kontext, setKontext, start }) {
   async function sprechen(text) {
     if (!freiAn.current || !text) return;
     setFrei((f) => f && { ...f, zustand: "spricht", text: "" });
+    // Ins Wort fallen (22.10.2026): waehrend Talk spricht, hoert das Mikrofon mit. Spricht Veiko,
+    // verstummt Talk sofort, und sein Satz wird die naechste Eingabe (vorgriff -> zuhoeren).
+    let lausch = null;
+    try {
+      lausch = await lauschen({ beiEinsatz: () => { vorleseStopp(); setFrei((f) => f && { ...f, zustand: "hoert", pegel: 0, text: "" }); },
+                                pegel: (p) => setFrei((f) => f && { ...f, pegel: p }) });
+    } catch (e) { lausch = null; }
+    lauschRef.current = lausch;
     try { await vorlesen(text, { vonTalk: true }); } catch (e) { /* ohne Ton weiter */ }
+    if (!lausch) return;
+    if (!lausch.eingesetzt()) { lausch.loslassen(); lauschRef.current = null; return; }
+    const blob = await lausch.ende;
+    lauschRef.current = null;
+    if (!freiAn.current || !blob) return;
+    setFrei((f) => f && { ...f, zustand: "erkennt" });
+    try {
+      const t = reinigen((await erkennen(blob)).text);
+      // Was nur Talks eigene Worte wiederholt, war Echo und kein Einwurf.
+      const w = (s) => (String(s).toLowerCase().match(/[a-zäöüß]{3,}/g) || []);
+      const eigen = new Set(w(text));
+      const seine = w(t);
+      if (t && !/^(stopp?|halt|ruhe|sei still|still|warte|moment|okay|ok|danke)\W*$/i.test(t) && !(seine.length && seine.filter((x) => eigen.has(x)).length / seine.length > 0.8)) vorgriff.current = t;
+    } catch (e) { /* nichts verstanden -- dann hoert Talk einfach wieder zu */ }
   }
 
   // Vorfahrt am Mikrofon (stimme.mikroAnfordern, 19.10.2026): Talk meldet sich an; drueckt
@@ -356,6 +394,8 @@ export function Talk({ zu, kontext, setKontext, start }) {
       : "Gerade wird etwas vorgelesen. Antippen, wenn Talk wieder zuhören soll.";
     freiAn.current = false;
     if (aufn.current) aufn.current.abbrechen();
+    if (lauschRef.current) lauschRef.current.abbrechen();
+    vorgriff.current = null;
     vorleseStopp();
     setFrei((f) => f && { ...f, zustand: "pausiert", pegel: 0, text: pausiertRef.current });
   }
@@ -414,6 +454,8 @@ export function Talk({ zu, kontext, setKontext, start }) {
   function freiStopp() {
     freiAn.current = false;
     if (aufn.current) aufn.current.abbrechen();
+    if (lauschRef.current) lauschRef.current.abbrechen();
+    vorgriff.current = null;
     vorleseStopp();
     if (pausiertRef.current) return;
     setFrei(null);
