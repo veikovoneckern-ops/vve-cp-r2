@@ -152,7 +152,7 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"oeffnen","art":"ergebnis|langlauf|aufgabe|vorgang|projekt|notiz|gespraech|datei","id":"r…|l…|t…|v…|p…|n…|d… aus LAGE/KONTEXT","titel":"der Titel, wie Veiko ihn nennt"} -- öffnet GENAU DIESES eine Ding sofort, ohne Rückfrage (ändert nichts): „öffne das Ergebnis zu X“ = art ergebnis, „zeig mir den Langläufer X“ = art langlauf. Das Ergebnis eines Langläufers steht in LANGLÄUFER als „Ergebnis r…“. Kennst du die id nicht sicher, lass sie weg und gib nur den titel -- das Cockpit sucht dann selbst.
 - {"aktion":"zeigen","ziel":"board|briefing|inbox|projects|team|neo|system|watchdog|website_stand|brainstrom|exo|langlauf|aktionen|modelle|einstellungen|memory|versionen|usage|explorer|empfehlungen|uebersicht_modelle|installiert|optimierung|neue_modelle|alle_aufgaben|alle_notizen|neuer_langlaeufer"} -- öffnet einen Bereich oder Abschnitt des Cockpits sofort (system = Stack: Server, Updates, WatchDog, ganz unten website_stand = Stand der Website; langlauf = LongRuns; usage = Verbrauch an Token, Kosten und Strom nach Projekt, Aufgabe, Modell; explorer = alle erzeugten Inhalte zum Suchen und Filtern; memory = was das Team über Veiko weiß, unter Settings; versionen = Versionsverlauf des Cockpits (was sich wann geändert hat), unter Settings; empfehlungen = Recommendations, alle Empfehlungen zu Server, Software, Modellen und Website; optimierung = Modell-Revision, neue_modelle = Neu bei Ollama).
 - {"aktion":"zeigen","ziel":"chat","wer":"Name des Teammitglieds"} -- öffnet den Chat mit diesem Mitglied (Neo: ziel neo).
-- {"aktion":"werkzeug","was":"erfassen|suche|hell|dunkel|zurueck|fenster_zu"} -- Capture öffnen, Suche öffnen, helle oder dunkle Darstellung, eine Seite zurück, oberstes Fenster schließen. Sofort, ohne Rückfrage. Will Veiko „mit dem Advisory Board sprechen“: ziel board. Stellt er dabei schon eine Frage ans Board, gib sie als "frage" mit -- das Board antwortet dann selbst, du antwortest nicht an seiner Stelle.
+- {"aktion":"werkzeug","was":"erfassen|suche|hell|dunkel|zurueck|fenster_zu|ueberblick|runter|hoch|anfang|ende"} -- Capture öffnen, Suche öffnen, helle oder dunkle Darstellung, eine Seite zurück, oberstes Fenster schließen; ueberblick = Fenster mit den neuesten Ergebnissen und Vorschaubildern („gib mir einen Überblick“, „zeig mir den aktuellen Stand“); runter/hoch/anfang/ende = im offenen Fenster bzw. auf der Seite blättern. Sofort, ohne Rückfrage. Will Veiko „mit dem Advisory Board sprechen“: ziel board. Stellt er dabei schon eine Frage ans Board, gib sie als "frage" mit -- das Board antwortet dann selbst, du antwortest nicht an seiner Stelle.
 - {"aktion":"ausarbeiten","rolle":"stratege|buch|designer|video","form":"text|aufstellung|konzept|dokument|webseite|praesentation|video","auftrag":"…","recherche":"Suchanfrage oder null","vorgang_id":"v… oder null","projekt_id":"p… oder null","aufgabe_id":"t… oder null (die Aufgabe, zu der das gehört)","stil":"vveorg|cockpit|eigen oder null","stil_text":"…"} -- stil nur bei einer Präsentation und nur, wenn Veiko das Aussehen nennt: „im VVEORG-Look“/„in meiner Vorlage“ = vveorg, „im Cockpit-Design“ = cockpit, eigene Gestaltungswünsche (Farben, Schrift, Footer) = eigen mit stil_text in seinen Worten. Sonst weglassen (dann gilt die Vorgabe, die VVEORG-Vorlage).
 - {"aktion":"merken","art":"person|organisation|begriff|hoerfehler|aussprache","begriff":"…","bedeutung":"…"} -- aussprache: wie das Cockpit ein (meist englisches) Wort VORLESEN soll, in deutscher Lautschrift, z. B. begriff "Slides", bedeutung "Slaids".
 - {"aktion":"notiz","text":"…","projekt_id":"p… oder null"}
@@ -186,7 +186,13 @@ Wünscht Veiko ein Dokument, eine Präsentation, eine Recherche oder einen Entwu
 
 Arbeitsweisen auf Zuruf: Will Veiko eine Idee zuspitzen, „brainstormen“ oder „BrainStrom“: aktion brainstrom. Will er eine „ExO-Bewertung“ oder „ExO-Analyse“: aktion exo. Ist nur ein kurzes Ideensammeln im Gespräch gemeint, antworte selbst mit nummerierten Ideen und den drei stärksten."""
 
-STIMME_ZUSATZ = ("- Die Antwort wird VORGELESEN: höchstens vier kurze Sätze, keine Tabellen, keine Aufzählungszeichen, keine Markdown-Zeichen.\n"
+STIMME_ZUSATZ = ("- Die Antwort wird VORGELESEN: höchstens vier kurze Sätze (eine erbetene Zusammenfassung bis zu acht), keine Tabellen, keine Aufzählungszeichen, keine Markdown-Zeichen.\n"
+                 "- Sprich wie ein Mensch, der jemandem gegenübersitzt (22.10.2026, Veiko: „fühlt sich sehr technisch an“): ganze Sätze, "
+                 "kurze Übergänge („Außerdem …“, „Und noch etwas: …“), keine Überschriften wie „Offene Entscheidungen:“. "
+                 "Keine Dateinamen, Kennungen, Modellnamen oder Adressen -- sag „drei Bilder“, „die Präsentation zu ExO“. "
+                 "Zahlen rund und hörbar („rund 600.000 Zeichen“, „etwa 70 Cent“).\n"
+                 "- Bittet Veiko um eine Zusammenfassung, IST sie die Antwort: das Wichtigste zuerst, ganze Sätze, danach nichts mehr -- "
+                 "kein Angebot, keine Rückfrage.\n"
                  "- Daten im Text so, wie man sie sagt („Freitag, 9. Oktober“), nie als 2026-10-09. Im aktionen-Block bleibt JJJJ-MM-TT.\n"
                  "- Veiko antwortet gesprochen. Ein „ja“, „mach das“, „das kannst du so tun“ auf deinen Vorschlag führt das Cockpit selbst aus; "
                  "wiederhole dann nicht denselben Vorschlag.")
@@ -302,6 +308,9 @@ def kontext_text(k: dict[str, Any] | None) -> str:
     if art in ("brainstrom", "exo"):
         from . import verfahren
         return verfahren.kontext_text(art)
+    if art == "ueberblick":
+        from . import ueberblick
+        return ueberblick.kontext_text(k)
     if art == "webspace":
         from . import webspace
         return webspace.kontext_text(k.get("pfad"))
@@ -350,7 +359,13 @@ def kontext_text(k: dict[str, Any] | None) -> str:
     if art == "ergebnis":
         e = db.holen("ergebnisse", kid)
         if e:
-            return f"VEIKO LIEST GERADE DAS ERGEBNIS „{e['titel']}“ (id {e['id']}{', Projekt ' + e['projekt_id'] if e.get('projekt_id') else ''}) von {stab.rollen_name(e['rolle'])}. „Daraus“, „dazu“, „davon“ meint dieses Ergebnis:\n{(e['inhalt'] or '')[:8000]}"
+            # 20.000 statt 8.000 Zeichen (22.10.2026): "gib mir dazu eine kurze Zusammenfassung" soll
+            # mehr als die erste Seite kennen; bei laengeren Werken steht dabei, dass es gekuerzt ist.
+            inhalt = e["inhalt"] or ""
+            return (f"VEIKO LIEST GERADE DAS ERGEBNIS „{e['titel']}“ (id {e['id']}{', Projekt ' + e['projekt_id'] if e.get('projekt_id') else ''}) "
+                    f"von {stab.rollen_name(e['rolle'])}. „Daraus“, „dazu“, „davon“, „das“ meint dieses Ergebnis."
+                    + (f" (Du siehst die ersten 20.000 von {len(inhalt):,} Zeichen.)".replace(",", ".") if len(inhalt) > 20000 else "")
+                    + f"\n{inhalt[:20000]}")
     if art == "notiz":
         n = db.holen("notizen", kid)
         if n:
@@ -474,7 +489,18 @@ BEREICH_PFAD = {"watchdog": "system/watchdog", "stack": "system", "website_stand
                 "optimierung": "team/optimierung", "neue_modelle": "team/neu", "verbrauch": "usage", "memory": "einstellungen/memory", "versionen": "einstellungen/versionen",
                 "alle_aufgaben": "projects/_aufgaben", "alle_notizen": "projects/_notizen", "neuer_langlaeufer": "langlauf/neu"}
 WERKZEUGE = {"erfassen": "Capture", "suche": "Suche", "hell": "Helle Darstellung", "dunkel": "Dunkle Darstellung",
-             "zurueck": "Eine Seite zurück", "fenster_zu": "Fenster schließen"}
+             "zurueck": "Eine Seite zurück", "fenster_zu": "Fenster schließen",
+             # 22.10.2026: Ueberblick-Fenster und Blaettern per Sprache
+             "ueberblick": "Überblick", "runter": "Weiter nach unten", "hoch": "Nach oben", "anfang": "Ganz nach oben", "ende": "Ganz nach unten"}
+# "Gib mir einen aktuellen Ueberblick", "zeig mir den aktuellen Stand", "was gibt es Neues" -- das Fenster
+# mit den neuesten Ergebnissen. "Ueberblick von BVE" bleibt der Projekt-Reiter, "Stand meiner Website" die Website.
+_UEBERBLICK = re.compile(r"\b(aktuell\w*\s+(überblick|ueberblick|stand|lage)|(überblick|ueberblick|stand)\s+der\s+dinge|"
+                         r"gesamtüberblick|gesamtueberblick|was\s+gibt\s*(es|'s)?\s+neues|was\s+ist\s+neu|neueste[nr]?\s+ergebnisse|"
+                         r"letzte[nr]?\s+ergebnisse|wo\s+stehen\s+wir|(einen|den)\s+(überblick|ueberblick)\b(?!\s+(von|über|ueber|zu)\b))", re.I)
+# Blaettern: "scroll runter", "weiter nach unten", "ganz nach oben", "zurück nach oben"
+_BLAETTERN = re.compile(r"^((bitte|kannst du|mal|noch|jetzt|und)\s+)*(scroll\w*|blätter\w*|blaetter\w*|geh\w*|fahr\w*|spring\w*)?\s*"
+                        r"(mal\s+|bitte\s+|noch\s+|weiter\s+|etwas\s+|ein\s+stück\s+|ein\s+bisschen\s+|ganz\s+|wieder\s+|zurück\s+)*"
+                        r"(nach\s+)?(unten|runter|oben|hoch|rauf|anfang|ende)(\s+bitte)?$", re.I)
 
 # ---------------------------------------------------------------- Bedienen per Sprache
 # Veiko, 18.10.2026: "Talk soll in der Lage sein, alles zu oeffnen, ich moechte
@@ -547,10 +573,32 @@ def oeffnen_satz(o: dict[str, Any]) -> str:
 def bedienung_erkennen(text: str, kontext: dict | None = None, gid: str | None = None) -> dict[str, Any] | None:
     """Ein reiner Bedienbefehl -> {satz, zeigen|oeffnen|werkzeug}; sonst None (dann antwortet das Modell)."""
     t = re.sub(r"[.!]+$", "", (text or "").strip()).strip()
-    if not t or len(t.split()) > 14 or _UND_MEHR.search(t) or ist_ja(t):
+    # Blaettern (22.10.2026): kein Satz dazu -- "Ich scrolle nach unten" vorzulesen dauerte laenger als
+    # das Scrollen. VOR der Ja-Pruefung: "ganz nach unten bitte" ist kein Ja auf eine Frage.
+    b = _BLAETTERN.search(t) if t else None
+    if not b and (not t or len(t.split()) > 14 or _UND_MEHR.search(t) or ist_ja(t)):
         return None
     if _SCHLIESS.search(t):
         return {"satz": "Ich schließe das Fenster.", "werkzeug": "fenster_zu"}
+    if b:
+        w = b.group(0).lower()
+        ganz = bool(re.search(r"\bganz\b|anfang|ende", w))
+        runter = bool(re.search(r"unten|runter|ende", w))
+        return {"satz": "", "werkzeug": ("ende" if runter else "anfang") if ganz else ("runter" if runter else "hoch")}
+    # Ueberblick-Fenster (22.10.2026) -- mit gesprochener Kurzfassung, ohne Modell.
+    if _UEBERBLICK.search(t) and not re.search(r"website|webseite|homepage", t, re.I) and not oeffnen_suchen(re.sub(_UEBERBLICK, " ", t), "projekt"):
+        from . import ueberblick
+        eintraege = ueberblick.liste()
+        return {"satz": ueberblick.satz(eintraege, ueberblick.lage()), "werkzeug": "ueberblick"}
+    # Im Ueberblick: "oeffne das zweite", "zeig mir Nummer drei", "das letzte"
+    from . import ueberblick as _ub
+    ub_id = _ub.aus_kontext(kontext, t)
+    if ub_id and re.search(r"\b(öffne|oeffne|zeig\w*|mach\w*|auf|nimm|geh\w*)\b", t, re.I):
+        e = db.holen("ergebnisse", ub_id)
+        if e:
+            from .api import kurztitel
+            o = {"art": "ergebnis", "id": ub_id, "titel": kurztitel(e)}
+            return {"satz": oeffnen_satz(o), "oeffnen": o}
     if _ZURUECK.search(t):
         return {"satz": "Ich gehe eine Seite zurück.", "werkzeug": "zurueck"}
     if _THEMA.search(t) and "?" not in t:
@@ -1083,6 +1131,15 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
         yield {"typ": "fertig", "text": bed["satz"], "vorschlaege": [], "nachricht_id": mid, "modell": "bedienung", "medien": [],
                "zeigen": [z for z in zeig if z], "oeffnen": oeff, "werkzeug": bed.get("werkzeug")}
         return
+    # "Fass das zweite zusammen" im Ueberblick (22.10.2026): das gemeinte Ergebnis wird der Bezug
+    # fuer das Modell und geht zugleich auf -- Veiko sieht, worueber Talk gerade spricht.
+    ueb_oeffnen = None
+    from . import ueberblick
+    ueb_id = ueberblick.aus_kontext(kontext, text)
+    if ueb_id and db.holen("ergebnisse", ueb_id):
+        from .api import kurztitel
+        kontext = {"art": "ergebnis", "id": ueb_id}
+        ueb_oeffnen = {"art": "ergebnis", "id": ueb_id, "titel": kurztitel(db.holen("ergebnisse", ueb_id) or {})}
     verlauf = []
     for m in reversed(db.alle("SELECT rolle, text, daten FROM nachrichten WHERE gespraech_id=? ORDER BY id DESC LIMIT 12", (gid,))):
         verlauf.append({"role": "user" if m["rolle"] == "du" else "assistant",
@@ -1335,7 +1392,14 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     # Aufgabe … als erledigt zu markieren. Soll ich das so machen?" -- es gab keinen Knopf, und
     # ein Ja haette nichts ausfuehren koennen).
     frage_ohne_block = bool(re.search(r"Soll ich das so machen\?\s*$", sichtbar or ""))
-    if not erledigt_in and not bestaetigt and not vorschlaege and (AENDERUNG_BEHAUPTET.search(sichtbar or "") or frage_ohne_block):
+    # Eine erbetene Zusammenfassung oder Erklaerung aendert nichts (22.10.2026: "Fass das zweite
+    # zusammen" bekam "Geaendert ist noch nichts" angehaengt, weil die Antwort "ich lege dir ... vor" sagte).
+    nur_lesen = bool(re.search(r"\b(fass\w*|zusammenfass\w*|zusammenfassung|erklär\w*|erklaer\w*|worum geht|was steht|lies|vorlesen)\b", text, re.I))
+    if nur_lesen and not vorschlaege:
+        # Ein angehaengtes "Ich schlage vor, ... Soll ich das so machen?" ohne Aktion faellt weg --
+        # gemessen am 22.10.: nach einer fertigen Zusammenfassung bot das Modell eine an.
+        sichtbar = re.sub(r"\n+[^\n]*\b(ich schlage vor|schlage ich vor|soll ich (das|dir))\b[^\n]*\s*$", "", sichtbar or "", flags=re.I).strip()
+    if not erledigt_in and not bestaetigt and not vorschlaege and not nur_lesen and (AENDERUNG_BEHAUPTET.search(sichtbar or "") or frage_ohne_block):
         try:
             roh = await llm.chat(modell, system, verlauf + [{"role": "assistant", "content": gesamt}, {"role": "user", "content":
                 "Du hast eine Aktion angekündigt oder vorgeschlagen, aber keinen ```aktionen-Block geschickt -- es gibt nichts zum Ausführen. "
@@ -1502,6 +1566,8 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     neu_ll = next((r for r in ausgefuehrt if r.get("ok") and r.get("langlauf_id")), None)
     if neu_ll and not oeffnen:
         oeffnen = [{"art": "langlauf", "id": neu_ll["langlauf_id"], "titel": neu_ll.get("titel") or ""}]
+    if ueb_oeffnen and not oeffnen:
+        oeffnen = [ueb_oeffnen]
     mid = db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",
                         (gid, "assistent", sichtbar, json.dumps({"vorschlaege": vorschlaege, "modell": modell, "medien": medien_jobs,
                                                                  "bezug": bez}, ensure_ascii=False), time.time()))

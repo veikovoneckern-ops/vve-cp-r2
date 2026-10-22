@@ -16,10 +16,13 @@ Zwei Lehren aus dem alten dialog.py sind eingebaut:
 from __future__ import annotations
 
 import asyncio
+import io
 import os
+import struct
 import tempfile
 import threading
 import time
+import wave
 from typing import Any
 
 import httpx
@@ -286,12 +289,53 @@ def gewaehlte_stimme() -> str:
     return s if s in STIMMEN else PIPER_STIMME
 
 
-async def sprechen(text: str, stimme: str | None = None) -> bytes:
-    text = aussprache((text or "").strip()[:4000])
-    async with httpx.AsyncClient(timeout=60) as c:
-        r = await c.post(f"{PIPER}/v1/audio/speech",
-                         json={"model": "tts-1", "input": text, "voice": stimme if stimme in STIMMEN else gewaehlte_stimme(),
-                               "response_format": "mp3"})
+# Sprechen mit Atempausen (22.10.2026, Veiko: "fuehlt sich sehr technisch an, ohne Pausen").
+# Die Antwort geht nicht mehr als EIN Block an Piper, sondern Abschnitt fuer Abschnitt
+# (sprechtext.abschnitte: Absaetze, Listenpunkte, Ueberschriften), parallel gerechnet und mit
+# echter Stille dazwischen zu EINER WAV-Datei zusammengesetzt. Etwas langsamer als Pipers
+# Vorgabe -- 0,95 klang in der Hoerprobe ruhiger, ohne zu schleppen.
+TEMPO = 0.95
+_PIPER_GLEICHZEITIG = asyncio.Semaphore(3)
+
+
+def _pcm(roh: bytes) -> tuple[bytes, int, int, int]:
+    """PCM-Daten und Format aus Pipers WAV. Der Kopf traegt eine Fantasie-Laenge (Piper
+    streamt), deshalb wird der data-Block gesucht statt der Laenge zu glauben."""
+    if roh[:4] != b"RIFF":
+        raise RuntimeError("Piper hat keine WAV-Datei geliefert")
+    kanaele, rate = struct.unpack("<HI", roh[22:28])
+    breite = struct.unpack("<H", roh[34:36])[0] // 8
+    i = roh.find(b"data", 12)
+    if i < 0:
+        raise RuntimeError("WAV ohne Daten")
+    return roh[i + 8:], kanaele, rate, breite
+
+
+async def _piper(c: httpx.AsyncClient, text: str, stimme: str) -> bytes:
+    async with _PIPER_GLEICHZEITIG:
+        r = await c.post(f"{PIPER}/v1/audio/speech", json={"model": "tts-1", "input": text, "voice": stimme,
+                                                             "response_format": "wav", "speed": TEMPO})
     if r.status_code >= 400:
         raise RuntimeError(f"Piper antwortet {r.status_code}")
     return r.content
+
+
+async def sprechen(text: str, stimme: str | None = None) -> bytes:
+    """Liefert eine WAV-Datei (audio/wav)."""
+    from . import sprechtext
+    stimme = stimme if stimme in STIMMEN else gewaehlte_stimme()
+    teile = [(aussprache(s), pause) for s, pause in sprechtext.abschnitte(text)] or [("Ja.", 0.0)]
+    async with httpx.AsyncClient(timeout=60) as c:
+        roh = await asyncio.gather(*(_piper(c, s, stimme) for s, _ in teile))
+    pcm = [_pcm(r) for r in roh]
+    _, kanaele, rate, breite = pcm[0]
+    puffer = io.BytesIO()
+    with wave.open(puffer, "wb") as w:
+        w.setnchannels(kanaele)
+        w.setsampwidth(breite)
+        w.setframerate(rate)
+        for (daten, *_), (_, pause) in zip(pcm, teile):
+            w.writeframes(daten)
+            if pause:
+                w.writeframes(b"\x00" * int(rate * pause) * kanaele * breite)
+    return puffer.getvalue()

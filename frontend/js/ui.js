@@ -143,10 +143,27 @@ const escStapel = [];
 // offen ist, schaut Talk darauf; beim Schliessen gilt wieder der Bezug der Seite
 // darunter. Vorher bezog sich "lass Neal daraus eine Praesentation machen" auf die
 // Seite hinter dem Fenster, und Talk wusste nicht, welches Ergebnis gemeint war.
+// Ein STAPEL statt eines einzelnen Bezugs (22.10.2026): aus dem Ueberblick geht ein Ergebnis
+// auf; schliesst es, schaut Talk wieder auf den Ueberblick -- vorher meldete das Schliessen
+// "kein Fenster", und "oeffne das dritte" wusste nicht mehr, was gemeint war.
+const FENSTER_STAPEL = [];
+function fensterMelden() {
+  const oben = [...FENSTER_STAPEL].reverse().find((e) => e.k);
+  bus.sende("talk-fenster", oben ? oben.k : null);
+}
 export function useFensterKontext(k) {
+  const eintrag = useRef({ k: null });
   const schluessel = k ? k.art + ":" + k.id + ":" + (k.titel || "") : "";
-  useEffect(() => { bus.sende("talk-fenster", k || null); }, [schluessel]);
-  useEffect(() => () => bus.sende("talk-fenster", null), []);
+  useEffect(() => {
+    eintrag.current.k = k || null;
+    if (!FENSTER_STAPEL.includes(eintrag.current)) FENSTER_STAPEL.push(eintrag.current);
+    fensterMelden();
+  }, [schluessel]);
+  useEffect(() => () => {
+    const i = FENSTER_STAPEL.indexOf(eintrag.current);
+    if (i >= 0) FENSTER_STAPEL.splice(i, 1);
+    fensterMelden();
+  }, []);
 }
 
 export function useEsc(zu, an = true, marke = "") {

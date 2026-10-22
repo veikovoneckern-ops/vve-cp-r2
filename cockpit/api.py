@@ -855,9 +855,47 @@ async def ergebnis_stil(rid: str, request: Request):
     return {"ok": True, "stil": folien_stil.normal(stil)}
 
 
+@router.get("/ueberblick")
+async def ueberblick_daten():
+    """Das Ueberblick-Fenster (ueberblick.py, 22.10.2026): die neuesten Ergebnisse in DER
+    Reihenfolge, in der Talk sie nummeriert, dazu die Lage in Kurzform."""
+    from . import ueberblick
+    eintraege = ueberblick.liste()
+    l = ueberblick.lage()
+    return {"ergebnisse": eintraege, **l, "satz": ueberblick.satz(eintraege, l)}
+
+
+@router.get("/ergebnisse/{rid}/vorschaubild")
+async def ergebnis_vorschaubild(rid: str):
+    """Das erste gerechnete Bild eines Ergebnisses, verkleinert -- fuer die Kacheln im Ueberblick."""
+    from . import ueberblick
+    e = db.holen("ergebnisse", rid) if re.fullmatch(r"r[0-9a-f]{10}", rid) else None
+    p = ueberblick.erstes_bild(e) if e else None
+    if not p:
+        raise HTTPException(404, "Kein Bild")
+    from io import BytesIO
+    from PIL import Image
+    b = Image.open(p).convert("RGB")
+    b.thumbnail((640, 640))
+    out = BytesIO()
+    b.save(out, "JPEG", quality=80)
+    return Response(out.getvalue(), media_type="image/jpeg", headers={"Cache-Control": "private, max-age=600"})
+
+
 @router.get("/ergebnisse/{rid}/ansicht")
-async def ergebnis_ansicht(rid: str):
+async def ergebnis_ansicht(rid: str, kurz: int = 0):
     e = db.holen("ergebnisse", rid)
+    if e and kurz:
+        # Kachel im Ueberblick: nur die erste Seite bzw. Folie -- ein ganzes Buch (593.000 Zeichen)
+        # in zwoelf verkleinerten Rahmen haette das iPad minutenlang beschaeftigt.
+        text = e.get("inhalt") or ""
+        if e.get("form") == "praesentation":
+            from . import folien
+            teile = folien.teilen(text)
+            text = teile[0] if teile else text[:3000]
+        elif e.get("form") != "webseite":
+            text = text[:5000]
+        e = {**e, "inhalt": text}
     h = stab.ansicht_html(e) if e else None
     if not h:
         raise HTTPException(404, "Keine Ansicht zu diesem Ergebnis")
@@ -869,7 +907,14 @@ async def ergebnis_ansicht(rid: str):
 
 
 ESC_WEITERGEBEN = ("<script>document.addEventListener('keydown',function(e){if(e.key==='Escape')"
-                   "parent.postMessage({vvecEsc:1},'*')});</script>")
+                   "parent.postMessage({vvecEsc:1},'*')});"
+                   # "Scroll runter" per Sprache (22.10.2026): der Rahmen ist abgeschottet (sandbox ohne
+                   # same-origin), das Cockpit kommt nicht hinein -- es schickt eine Nachricht, die Seite scrollt selbst.
+                   "window.addEventListener('message',function(e){var r=e.data&&e.data.vvecScroll;if(!r)return;"
+                   "var s=document.scrollingElement||document.documentElement,h=window.innerHeight*0.8,v=s.scrollTop;"
+                   "var z=r==='runter'?v+h:r==='hoch'?v-h:r==='anfang'?0:s.scrollHeight;"
+                   "s.scrollTo({top:z,behavior:'smooth'});setTimeout(function(){if(s.scrollTop===v)s.scrollTop=z;},700);"
+                   "});</script>")
 
 
 # ================================================================ Gedaechtnis, Team, Einstellungen
@@ -1131,7 +1176,7 @@ async def stimme_probe(stimme_id: str = ""):
         roh = await stimme.sprechen(stimme.PROBE_SATZ, stimme_id)
     except (RuntimeError, httpx.HTTPError) as e:
         raise HTTPException(503, f"Piper antwortet nicht: {e}")
-    return Response(roh, media_type="audio/mpeg")
+    return Response(roh, media_type="audio/wav")
 
 
 # ================================================================ Dateien, Stimme
@@ -1286,7 +1331,7 @@ async def sprechen(request: Request):
     d = await _koerper(request)
     llm.vorrang_anstossen(await llm.talk_modell())   # waehrend Talk vorliest, bleibt der Hintergrund (auf dem Talk-Modell) still
     try:
-        return Response(await stimme.sprechen(str(d.get("text") or "")), media_type="audio/mpeg")
+        return Response(await stimme.sprechen(str(d.get("text") or "")), media_type="audio/wav")
     except (RuntimeError, httpx.HTTPError) as e:
         raise HTTPException(503, f"Sprachausgabe nicht erreichbar: {e}")
 

@@ -43,6 +43,35 @@ const istNein = (t) => t.split(/\s+/).length <= 5 && NEIN_WORT.test(t) && !JA_WO
 // Was eine ausgefuehrte Aktion angelegt hat, ist einen Klick entfernt (19.10.2026, Veiko:
 // "wenn ich ueber Talk Aktionen definiert habe, sollen sie so schnell wie moeglich im Cockpit
 // sichtbar sein").
+// Blaettern per Sprache (22.10.2026, Veiko: "scroll mal weiter nach unten"). Gemeint ist das
+// oberste offene Fenster, sonst die Seite -- nie Talk selbst. In einer Ergebnisansicht (ein
+// abgeschotteter Rahmen, das Cockpit kommt nicht hinein) bekommt der Rahmen eine Nachricht
+// und scrollt selbst (api.ESC_WEITERGEBEN).
+function blaettern(richtung) {
+  const sichtbar = (el) => el && el.offsetParent !== null && el.getBoundingClientRect().height > 40;
+  const modale = [...document.querySelectorAll(".modal")].filter(sichtbar);
+  const bereich = modale[modale.length - 1] || document.querySelector("main") || document.body;
+  const rahmen = [...bereich.querySelectorAll("iframe")].filter((f) => sichtbar(f) && !f.closest(".ub-bild"))
+    .sort((a, b) => b.getBoundingClientRect().height - a.getBoundingClientRect().height)[0];
+  if (rahmen && rahmen.getBoundingClientRect().height > bereich.getBoundingClientRect().height * 0.5) {
+    try { rahmen.contentWindow.postMessage({ vvecScroll: richtung }, "*"); return; } catch (e) { /* weiter mit dem Fenster */ }
+  }
+  // Der groesste scrollbare Bereich im Fenster bzw. auf der Seite.
+  const kandidaten = [bereich, ...bereich.querySelectorAll("*")].filter((el) => {
+    if (el.closest && el.closest(".talk")) return false;
+    const s = getComputedStyle(el);
+    return /(auto|scroll)/.test(s.overflowY) && el.scrollHeight > el.clientHeight + 20 && sichtbar(el);
+  }).sort((a, b) => b.clientHeight - a.clientHeight);
+  const ziel = kandidaten[0] || document.scrollingElement;
+  const h = Math.round((ziel === document.scrollingElement ? innerHeight : ziel.clientHeight) * 0.8);
+  const vorher = ziel.scrollTop;
+  const wohin = richtung === "runter" ? vorher + h : richtung === "hoch" ? vorher - h : richtung === "anfang" ? 0 : ziel.scrollHeight;
+  ziel.scrollTo({ top: wohin, behavior: "smooth" });
+  // Weiches Scrollen laeuft nicht ueberall (gemessen: ohne Bildwiederholung bewegte sich nichts) --
+  // steht es nach einem Moment noch, springt die Seite direkt.
+  setTimeout(() => { if (ziel.scrollTop === vorher) ziel.scrollTop = wohin; }, 700);
+}
+
 function ansehenKnopf(r) {
   if (!r || !r.ok) return null;
   const ziel = r.langlauf_id ? () => navigiere("/langlauf/" + r.langlauf_id)
@@ -205,8 +234,9 @@ export function Talk({ zu, kontext, setKontext, start }) {
     if (fertig) {
       // Ein Ja hat die offenen Vorschlaege der vorigen Antwort ausgefuehrt (gespraech.senden, erledigt_in).
       const ei = fertig.erledigt_in;
+      // Blaettern ("scroll runter") hat keinen Satz -- dann auch keine leere Sprechblase.
       setMsgs((m) => [...(ei ? m.map((x) => x.id === ei.nachricht_id ? { ...x, vorschlaege: x.vorschlaege.map((v, i) => ei.indizes.includes(i) ? { ...v, erledigt: true } : v) } : x) : m),
-        { id: fertig.nachricht_id, rolle: "ck", text: fertig.text, vorschlaege: fertig.vorschlaege, medien: fertig.medien || [], bezug: fertig.bezug || null }]);
+        ...(fertig.text ? [{ id: fertig.nachricht_id, rolle: "ck", text: fertig.text, vorschlaege: fertig.vorschlaege, medien: fertig.medien || [], bezug: fertig.bezug || null }] : [])]);
       if (ei) aktualisieren();
       // "Zeig mir …": aendert nichts, deshalb sofort und ohne Knopf.
       const z = (fertig.zeigen || [])[0];
@@ -219,10 +249,12 @@ export function Talk({ zu, kontext, setKontext, start }) {
       else if (w === "hell" || w === "dunkel") bus.sende("thema-setzen", w === "dunkel" ? "dark" : "light");
       else if (w === "zurueck") history.back();
       else if (w === "fenster_zu" && !escFensterZu("talk")) toast("Es ist kein Fenster offen.");
+      else if (w === "ueberblick") bus.sende("ueberblick-zeigen");
+      else if (["runter", "hoch", "anfang", "ende"].includes(w)) blaettern(w);
       // Auf dem Telefon liegt Talk ueber der ganzen Seite: nach dem Oeffnen zur Seite
       // gehen -- ausser beim Freisprechen, das liefe sonst mitten im Satz aus.
       const wegTreten = () => { if (!freiAn.current && matchMedia("(max-width:820px)").matches) setTimeout(zu, 400); };
-      if ((o && !(o.art === "gespraech" && o.g_art === "talk")) || z || w === "erfassen" || w === "suche") wegTreten();
+      if ((o && !(o.art === "gespraech" && o.g_art === "talk")) || z || w === "erfassen" || w === "suche" || w === "ueberblick") wegTreten();
       if (o) {
         if (o.art === "gespraech") gespraechOeffnen({ art: o.g_art, id: o.id, wer: o.wer }, bus);
         else if (o.art === "ergebnis") bus.sende("ergebnis-zeigen", o.id);

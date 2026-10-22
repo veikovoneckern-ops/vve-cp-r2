@@ -7,6 +7,7 @@ import { Composer } from "./composer.js";
 import { Briefing } from "./briefing.js";
 import { Inbox } from "./inbox.js";
 import { Projects, ErgebnisAnsicht, NotizAnsicht } from "./projects.js";
+import { UeberblickFenster } from "./ueberblick.js";
 import { Team } from "./team.js";
 import { System } from "./system.js";
 import { Neo } from "./neo.js";
@@ -223,6 +224,10 @@ function App() {
   const [erfassen, setErfassen] = useState(false);
   const [lage, setLage] = useState(null);
   const [anzeige, setAnzeige] = useState(null);
+  // Ueberblick (22.10.2026): eigener Platz, damit ein Ergebnis DARUEBER aufgeht und nach dem
+  // Schliessen wieder der Ueberblick dasteht ("oeffne das zweite", zu, "oeffne das dritte").
+  const [ueberblick, setUeberblick] = useState(0);
+  useEffect(() => bus.an("ueberblick-zeigen", () => setUeberblick(Date.now())), []);
   const [aufgabe, setAufgabe] = useState(null);
   // Neue Fassung auf dem Server (19.10.2026): ein offener Tab zeigte nach einem Update
   // weiter die alte Oberflaeche. Die erste gesehene Fassung gilt; weicht /lage ab, Hinweis.
@@ -349,6 +354,7 @@ function App() {
     ${talk && html`<${Talk} zu=${() => setTalk(false)} kontext=${fensterKontext || kontext} setKontext=${(k) => { setFensterKontext(null); setKontext(k); }} start=${talkStart} />`}
     ${!FENSTER && html`<${UntenNav} liste=${leiste} aktiv=${r.bereich} offen=${offen} vorgemerkt=${vorgemerkt} />`}
     ${!talk && !FENSTER && html`<button class="talk-fab" onClick=${() => setTalk(true)} aria-label="Talk öffnen"><${Icon} n="talk" g=${24} /></button>`}
+    ${ueberblick > 0 && html`<${UeberblickFenster} key=${ueberblick} zu=${() => setUeberblick(0)} />`}
     ${anzeige && anzeige.art === "ergebnis" && html`<${ErgebnisAnsicht} key=${anzeige.n} id=${anzeige.id} vorlage=${anzeige.vorlage} zu=${() => setAnzeige(null)} />`}
     ${anzeige && anzeige.art === "notiz" && html`<${NotizAnsicht} id=${anzeige.id} zu=${() => setAnzeige(null)} />`}
     ${erfassen && html`<${Erfassen} zu=${() => setErfassen(false)} />`}

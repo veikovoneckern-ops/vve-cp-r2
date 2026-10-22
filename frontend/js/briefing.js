@@ -70,6 +70,7 @@ export function Briefing({ lage }) {
       <span style="flex:1"></span>
       <div class="knopfreihe">
         <button class="btn" onClick=${() => bus.sende("erfassen")}><${Icon} n="plus" g=${15} />Capture</button>
+        <button class="btn" onClick=${() => bus.sende("ueberblick-zeigen")} title="Die neuesten Ergebnisse mit Vorschaubildern -- per Sprache: „gib mir einen Überblick“"><${Icon} n="auge" g=${15} />Überblick</button>
         <button class="btn primaer" onClick=${() => bus.sende("talk-oeffnen", { text: "Was liegt an?" })}><${Icon} n="talk" g=${15} />Was liegt an?</button>
       </div>
     </div>
