@@ -2171,7 +2171,7 @@ html.zieht iframe{pointer-events:none}
    ".karte+.karte" -- sonst sass jeder zweite Kasten einer Reihe 12 Punkt tiefer als der
    erste (19.10.2026 gemessen: Team, Usage, Recommendations, Settings). Wer ein neues
    Raster mit .karte baut, nimmt es hier auf. */
-:where(.raster,.raster-gleich,.team-raster,.us-kacheln,.emp-kacheln,.emp-raster,.ex-kacheln,.vb-karten,.briefing-raster,.empf-raster)>.karte+.karte{margin-top:0}
+:where(.raster,.raster-gleich,.team-raster,.us-kacheln,.emp-kacheln,.emp-raster,.ex-kacheln,.vb-karten,.briefing-raster,.empf-raster,.ml-editor,.dt-raster)>.karte+.karte{margin-top:0}
 /* Steht ein Auswahlfeld in einer Reihe mit einem Umschalter (.segment, 40 Punkt), ist es
    genauso hoch -- vorher 36 gegen 40, die Kanten der Filterzeilen sassen versetzt. */
 :where(:has(> .segment))>:is(select.eingabe,input.eingabe){min-height:40px}

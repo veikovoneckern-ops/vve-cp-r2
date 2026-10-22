@@ -361,6 +361,13 @@ def lage_text() -> str:
         mt = ""
     if mt:
         teile.append(mt)
+    if not dt:
+        try:
+            n_dt = db.wert("SELECT count(*) FROM daily") or 0
+        except Exception:  # noqa: BLE001
+            n_dt = 0
+        teile.append("DAILY TASKS: " + (f"{n_dt} angelegt, heute noch kein Briefing." if n_dt else
+                                        "keine angelegt. Auf Fragen danach sag genau das -- schlag keinen Daily Task ohne Thema vor."))
     if dt:
         teile.append("DAILY TASKS HEUTE (tägliche Briefings des Teams; Kennung d…, Briefing als Ergebnis e…):\n" + dt)
     erl = db.alle("SELECT id, titel, einordnung, geaendert FROM vorgaenge WHERE stand='fertig' AND quelle!='alt' "
@@ -607,7 +614,9 @@ BEREICHE = {"board": "Advisory Board", "briefing": "Briefing", "inbox": "Inbox",
             # Reiter und Listen (18.10.2026): erreichbar wie die Bereiche.
             "uebersicht_modelle": "Team: Besetzung und Empfehlungen", "installiert": "Installierte Modelle", "optimierung": "Optimierung",
             "neue_modelle": "Neu bei Ollama", "verbrauch": "Usage", "alle_aufgaben": "Alle Aufgaben",
-            "alle_notizen": "Alle Notizen", "neuer_langlaeufer": "Neuer LongRun"}
+            "alle_notizen": "Alle Notizen", "neuer_langlaeufer": "Neuer LongRun",
+            # Fehlten bis 22.10.2026 -- ein "zeigen daily" des Modells fiel deshalb still heraus.
+            "daily": "Daily Tasks", "mail": "Mail"}
 # Wohin ein Ziel im Browser fuehrt (Adresse hinter #/). Fehlt es hier, ist das Ziel selbst die Adresse.
 BEREICH_PFAD = {"watchdog": "system/watchdog", "stack": "system", "website_stand": "system/website", "modelle": "team/besetzung",
                 "uebersicht_modelle": "team/besetzung", "installiert": "team/installiert",
@@ -677,6 +686,7 @@ _SCHLIESS = re.compile(r"^(bitte\s+)?(schließ|schliess)\w*\s+(das|dieses|den|di
 # "Oeffne X und fass es zusammen", "geh die Aufgaben durch" ist mehr als Bedienen -- das bekommt das Modell.
 _UND_MEHR = re.compile(r"\bund\s+(dann\s+|danach\s+|sag\s+mir\s+)?(fass|sag|erklär|erklaer|schreib|mach|erstell|lies|les|prüf|pruef|gib|schick|trag|leg|frag|such|vergleich|bewert)\w*"
                        r"|\bdurch\b|\bwarum\b|\bwie\b|\bwelche\w*\b", re.I)
+_VERB_IRGENDWO = re.compile(r"\b(öffne\w*|oeffne\w*|zeig\w*|anschau\w*|anzuschauen|anseh\w*|aufmach\w*|wechsel\w*|meine die seite)\b", re.I)
 _CHAT_WORT = re.compile(r"\b(chat|chatten|sprechen|reden|gespräch|gespraech|schreiben)\b", re.I)
 _REITER = (("zeitplan", r"zeitplan|gantt|termine"), ("struktur", r"struktur"), ("aufgaben", r"aufgaben"),
            ("notizen", r"notizen"), ("ergebnisse", r"ergebnisse"), ("verlauf", r"verlauf"),
@@ -703,7 +713,10 @@ def bedienung_erkennen(text: str, kontext: dict | None = None, gid: str | None =
     # Blaettern (22.10.2026): kein Satz dazu -- "Ich scrolle nach unten" vorzulesen dauerte laenger als
     # das Scrollen. VOR der Ja-Pruefung: "ganz nach unten bitte" ist kein Ja auf eine Frage.
     b = _BLAETTERN.search(t) if t else None
-    if not b and (not t or len(t.split()) > 14 or _UND_MEHR.search(t) or ist_ja(t)):
+    # "Okay, oeffne die Daily Task" und "Ja, aber ich will die Daily Task sehen" sind kein Ja auf eine
+    # Frage, sondern Bedienung (22.10.2026: beide liefen deshalb am Bedienen vorbei ins Leere).
+    oeffnen_wort = bool(_VERB_IRGENDWO.search(t)) if t else False
+    if not b and (not t or len(t.split()) > 18 or _UND_MEHR.search(t) or (ist_ja(t) and not oeffnen_wort)):
         return None
     if _SCHLIESS.search(t):
         return {"satz": "Ich schließe das Fenster.", "werkzeug": "fenster_zu"}
@@ -737,7 +750,8 @@ def bedienung_erkennen(text: str, kontext: dict | None = None, gid: str | None =
         if m["name"].lower() == "neo":
             return {"satz": "Ich öffne dir Neo.", "zeigen": {"ziel": "neo"}}
         return {"satz": f"Ich öffne dir den Chat mit {m['name']}.", "zeigen": {"ziel": f"team/chat/{m['id']}"}}
-    verb = bool(_VERB.search(t))
+    # Das Bedienwort darf auch mitten im Satz stehen ("ich wollte mir die Daily Task anschauen").
+    verb = bool(_VERB.search(t)) or oeffnen_wort
     # Ohne Bedienwort nur ganz kurze Zurufe ("Verbrauch", "die Inbox") -- und nie in
     # BrainStrom/ExO, wo ein kurzes Wort meist eine Antwort auf die Frage ist.
     if not verb and (len(t.split()) > 3 or (kontext or {}).get("art") in ("brainstrom", "exo") or "?" in t):
@@ -783,7 +797,7 @@ def bedienung_erkennen(text: str, kontext: dict | None = None, gid: str | None =
         # in dem es vorkommt -- dann nur bei einem Titel, der genau so heisst.
         if o and (re.search(art_muster, t, re.I) or len(rest_woerter) >= 2 or _woerter(o["titel"]) == rest_woerter):
             return {"satz": oeffnen_satz(o), "oeffnen": o}
-    if seite and verb:
+    if seite and (verb or oeffnen_wort):
         return {"satz": f"Ich öffne dir {seite[2]}.", "zeigen": {"ziel": seite[0]}}
     return None
 
@@ -814,7 +828,9 @@ _FUELL = {"öffne", "öffnen", "oeffne", "oeffnen", "zeig", "zeige", "zeigen", "
           # Bedienwoerter (18.10.2026) -- sonst blieben sie als "Titelwoerter" uebrig
           "gespräch", "gespraech", "chat", "unterhaltung", "über", "ueber", "geh", "gehe", "wechsel", "wechsle", "bring",
           "mich", "anzeigen", "aufmachen", "aufrufen", "jetzt", "dann", "okay", "dir", "ein", "eine", "einen", "bitte", "gerne",
-          "moechte", "spring", "navigiere", "hin", "dort", "dahin", "rein", "hinein", "neue", "neuen"}
+          "moechte", "spring", "navigiere", "hin", "dort", "dahin", "rein", "hinein", "neue", "neuen",
+          # Gesprochene Fuellwoerter (22.10.2026): "das THEMA Video-Podcast", "ich meine die SEITE Daily Task"
+          "thema", "seite", "meine", "meinte", "nochmal", "eigentlich", "wollte", "anschauen", "schauen", "sehen", "aber", "ja"}
 
 
 def _stamm(w: str) -> str:
@@ -843,7 +859,9 @@ def oeffnen_suchen(text: str, art: str | None = None, ohne: str | None = None) -
         # in der Liste vor "Aufgabe" stand. Bei gleicher Stelle gilt die Reihenfolge der Liste.
         treffer = [(m.start(), i, a) for i, (a, mu) in enumerate(_ART_WORT) for m in [re.search(mu, text or "", re.I)] if m]
         if treffer:
-            art = min(treffer)[2]
+            # Findet die erkannte Art nichts, ueberall suchen (22.10.2026: "das Thema Video-Podcast"
+            # -- "Video" klang nach einem Video-Ergebnis, gemeint war das Projekt VIDEO PODCAST).
+            return oeffnen_suchen(text, min(treffer)[2], ohne) or oeffnen_suchen(text, "_alle", ohne)
     arten = [art] if art in OEFFNEN_TABELLE else ["ergebnis", "langlauf", "projekt", "aufgabe", "vorgang", "datei", "daily"]
     bestes, punkte = None, 0.0
     for a in arten:
@@ -1068,7 +1086,8 @@ def beschriften(a: dict[str, Any]) -> str | None:
         from . import daily
         was = a.get("was")
         if was == "anlegen":
-            if not str(a.get("titel") or "").strip() or not str(a.get("auftrag") or "").strip():
+            if not str(a.get("titel") or "").strip() or not str(a.get("auftrag") or "").strip() \
+                    or re.fullmatch(r"(?i)\s*daily[\s-]*tasks?\s*", str(a.get("titel"))):
                 return None
             plan = daily.zeitplan_text({"uhrzeit": daily._uhrzeit(a.get("uhrzeit")), "tage": json.dumps(daily.tage_aus_text(a.get("tage")))})
             return f"Daily Task anlegen: „{str(a['titel'])[:60]}“ ({plan}, {stab.rollen_name(a.get('rolle') if a.get('rolle') in daily.ROLLEN else 'stratege')})"
@@ -1103,11 +1122,11 @@ def beschriften(a: dict[str, Any]) -> str | None:
             a["mail_id"] = m["id"]
             if was == "senden":
                 an = mail.adressen(m["an"])
-                if not an or mail.pruefen(an):
+                if not an or mail.pruefen(an) or (not mail._html_zu_text(m.get("html") or "").strip() and not m["daten"]["anhaenge"]):
                     return None
                 n = len(m["daten"]["anhaenge"])
                 return f"Mail abschicken an {', '.join(an)}: „{(m['betreff'] or '(ohne Betreff)')[:70]}“" + (f" mit {n} Anhang" + ("en" if n > 1 else "") if n else "")
-            return f"Mail-Entwurf „{(m['betreff'] or '')[:60]}“ ändern"
+            return f"Mail-Entwurf „{m['betreff'][:60]}“ ändern" if m.get("betreff") else f"Mail-Entwurf an {m.get('an') or 'noch niemanden'} ändern"
         if a.get("bezug_art") in mail.BEZUG and not db.holen({"ergebnis": "ergebnisse", "aufgabe": "aufgaben", "notiz": "notizen",
                                                             "datei": "dateien", "projekt": "projekte"}[a["bezug_art"]], str(a.get("bezug_id") or "")):
             o = oeffnen_suchen(str(a.get("titel") or ""), a["bezug_art"]) if a.get("titel") else None
@@ -1279,7 +1298,10 @@ async def ausfuehren(a: dict[str, Any]) -> dict[str, Any]:
                 return {"ok": True, "mail_id": a["mail_id"], "mail_gesendet": True, "an": r["an"], "betreff": r.get("betreff")}
             if a["was"] == "entwurf":
                 m = mail.anlegen({"an": a.get("an"), "bezug": {"art": a.get("bezug_art"), "id": a.get("bezug_id")} if a.get("bezug_id") else None}, wer="talk")
-                stil, geaendert = "entwurf", False
+                # Ohne Inhalt und ohne Bezug wird nicht formuliert (22.10.2026: das Modell schrieb sonst
+                # "ich habe deine Anweisung erhalten ..." in die Mail). Der Entwurf steht, Talk fragt nach dem Text.
+                stil = "entwurf" if (str(a.get("anweisung") or "").strip() or a.get("bezug_id")) else None
+                geaendert = False
             else:
                 m, geaendert = mail.holen(a["mail_id"]), True
                 werte: dict[str, Any] = {}
@@ -1299,7 +1321,8 @@ async def ausfuehren(a: dict[str, Any]) -> dict[str, Any]:
                 text = v["text"]
             an = mail.adressen(m["an"])
             return {"ok": True, "mail_id": m["id"], "an": ", ".join(an), "betreff": m.get("betreff"), "text": text,
-                    "geaendert": geaendert, "adresse_fehlt": not an or bool(mail.pruefen(an))}
+                    "geaendert": geaendert, "adresse_fehlt": not an or bool(mail.pruefen(an)),
+                    "leer": not mail._html_zu_text(m.get("html") or "").strip()}
         except (ValueError, llm.ModellFehler) as f:
             return {"ok": False, "grund": str(f)}
     if art == "extern_pruefen":
@@ -1550,6 +1573,14 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
             treffer = oeffnen_suchen(text)
             if treffer:
                 oeffnen = [treffer]
+        if not zeigen and not oeffnen:
+            # Ein Bereich mitten im Satz ("du kannst das Projekt schliessen und zeig mir die Daily Task",
+            # 22.10.2026: fuenfmal "nichts gefunden", obwohl die Seite gemeint und benannt war).
+            seite = next(((k, s) for k, mu, s in SEITEN if re.search(r"\b(" + mu + r")", text, re.I)), None)
+            if seite:
+                zeigen = [{"aktion": "zeigen", "ziel": seite[0]}]
+                sichtbar = re.sub(r"[^.!?\n]*\b(nichts gefunden|nicht gefunden|finde ich nicht|öffne dir|oeffne dir)\b[^.!?\n]*[.!?]?", "", sichtbar or "", flags=re.I).strip()
+                sichtbar = (f"Ich öffne dir {seite[1]}.\n\n" + sichtbar).strip()
         if not zeigen and not oeffnen and sagt_oeffnen:
             sichtbar = re.sub(r"[^.!?\n]*\b(öffne|oeffne|zeige) (dir|ich)\b[^.!?\n]*[.!?]?", "", sichtbar).strip()
             sichtbar = (sichtbar + "\n\nIch habe nichts gefunden, das ich öffnen kann. Sag mir bitte den Titel, so wie er im Cockpit steht.").strip()
@@ -1589,9 +1620,16 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     # genau DIESE Vorschlaege ausgefuehrt; was das Modell jetzt noch einmal anhaengt, entfaellt.
     erledigt_in = None
     vorab = []
-    if hatte_offen and ist_ja(text):
+    # "Das sieht gut aus, schick die E-Mail ab" ist das Ja auf ein angebotenes Abschicken, auch ohne
+    # das Wort "ja" (22.10.2026: gemessen wurde nur erneut gefragt, und danach behauptete das Modell,
+    # die Mail sei raus). Gilt NUR fuer das Abschicken -- das ist ausdruecklich genug.
+    vs_vorher = ((vorher or {}).get("daten") or {}).get("vorschlaege") or [] if hatte_offen else []
+    senden_offen = [i for i, v in enumerate(vs_vorher) if not v.get("erledigt") and v.get("aktion") == "mail" and v.get("was") == "senden"]
+    senden_ja = bool(senden_offen) and bool(re.search(r"\b(abschick\w*|absend\w*|verschick\w*|schick\w*\b.{0,40}\bab\b|raus\s*damit|kann\s+raus|senden)\b", text, re.I)) \
+        and not _ABLEHNUNG.search(text) and not re.search(r"\b(noch nicht|nicht abschick|erst|ändere|aendere|kürzer|kuerzer)\b", text, re.I)
+    if hatte_offen and (ist_ja(text) or senden_ja):
         vs_alt = (vorher.get("daten") or {}).get("vorschlaege") or []
-        idx = [i for i, v in enumerate(vs_alt) if not v.get("erledigt")]
+        idx = senden_offen if senden_ja and not ist_ja(text) else [i for i, v in enumerate(vs_alt) if not v.get("erledigt")]
         vorab = await vorschlaege_ausfuehren(vorher["id"], idx)
         erledigt_in = {"nachricht_id": vorher["id"], "indizes": idx}
         vorschlaege = []
@@ -1648,7 +1686,8 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     # Mail (22.10.2026): gemessen schrieb das Modell "Ich erstelle den Entwurf fuer Hanna" und schickte
     # keinen Block. Will Veiko eine Mail, wird der Block gezielt nachgefordert.
     am_entwurf = (kontext or {}).get("art") == "mail" and (kontext or {}).get("id") not in (None, "alle") and bool(
-        MAIL_BEFEHL.search(text) or re.search(r"kürzer|kuerzer|freundlicher|förmlicher|foermlicher|englisch|klarer|korrigier|abschick", text, re.I))
+        MAIL_BEFEHL.search(text) or re.search(r"kürzer|kuerzer|freundlicher|förmlicher|foermlicher|englisch|klarer|korrigier|abschick|"
+                                              r"drinstehen|drin stehen|reinschreiben|\binhalt\b|\btext\b|änder|aender|betreff", text, re.I))
     if not erledigt_in and (MAIL_ABSICHT.search(text) or am_entwurf) and not [v for v in vorschlaege if v["aktion"] == "mail"]:
         try:
             roh = await llm.chat(modell, system, verlauf + [{"role": "assistant", "content": gesamt}, {"role": "user", "content":
@@ -1663,6 +1702,24 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
             vorschlaege += nach
         except llm.ModellFehler:
             pass
+        # Gemessen am 22.10.: "Schreibe eine E-Mail an von.eckern.web.de" -- das Modell fragte zweimal
+        # zurueck, statt den Entwurf anzulegen. Steht eine Adresse im Satz, legt das Cockpit ihn selbst an.
+        if not [v for v in vorschlaege if v["aktion"] == "mail"] and am_entwurf and not re.search(r"\?\s*$", text):
+            # Auf dem offenen Entwurf ist Veikos Satz die Aenderung -- gemessen schrieb das Modell
+            # "ich habe den Entwurf aktualisiert" und schickte trotz Nachforderung keinen Block.
+            a = {"aktion": "mail", "was": "aendern", "mail_id": kontext["id"], "anweisung": text}
+            a["label"] = beschriften(a)
+            if a["label"]:
+                vorschlaege.append(a)
+        if not [v for v in vorschlaege if v["aktion"] == "mail"] and not am_entwurf:
+            from . import mail as _mail
+            adr = _mail.adresse_im_text(text)
+            if adr:
+                rest = re.sub(r"(?i)\b(bitte|schreib\w*|schick\w*|send\w*|verschick\w*|(eine|die|ne)\s+)?(e-?mail|mail)\b|\ban\s+\S+(\s+(at|ät|punkt)\s+\S+)*", " ", text)
+                a = {"aktion": "mail", "was": "entwurf", "an": adr, "anweisung": text if len(_woerter(rest)) >= 3 else ""}
+                a["label"] = beschriften(a)
+                if a["label"]:
+                    vorschlaege.append(a)
     if not erledigt_in and not extern_gemeint and DANIEL_PRUEFEN.search(text) and not [v for v in vorschlaege if v["aktion"] == "pruefen"]:
         a: dict[str, Any] = {"aktion": "pruefen", "titel": text}
         if (kontext or {}).get("art") == "ergebnis":
@@ -1729,7 +1786,11 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
         if not vorschlaege:
             sichtbar = AENDERUNG_BEHAUPTET.sub("", sichtbar)
             sichtbar = re.sub(r"[^.!?\n]*\b(ich schlage vor|schlage ich vor)\b[^.!?\n]*[.!?]?|\s*Soll ich das so machen\?\s*$", "", sichtbar, flags=re.I).strip()
-            sichtbar = (sichtbar + "\n\nGeändert ist noch nichts -- ich konnte das keiner Aktion zuordnen. Sag mir bitte genau, was wo geändert werden soll.").strip()
+            # Auf eine FRAGE Veikos war das nur ein Angebot des Modells, keine verlangte Aenderung -- dann
+            # faellt das Angebot still weg (22.10.2026: "Was ist bei den Daily Tasks los?" endete mit
+            # "Geändert ist noch nichts").
+            if not re.search(r"\?\s*$", text) and not re.match(r"\s*(was|wie|wo|wer|wann|warum|welche\w*|gibt es|hast du|ist)\b", text, re.I):
+                sichtbar = (sichtbar + "\n\nGeändert ist noch nichts -- ich konnte das keiner Aktion zuordnen. Sag mir bitte genau, was wo geändert werden soll.").strip()
     if bestaetigt:
         if not vorschlaege:
             sichtbar = re.sub(r"[^.!?\n]*(macht sich|arbeitet an|erscheint in der Inbox)[^.!?\n]*[.!?]?", "", sichtbar).strip()
@@ -1764,6 +1825,12 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     # Aenderung, wird daraus die Aenderung -- danach haengt das Cockpit das Abschicken selbst an.
     will_senden = bool(re.search(r"\b(abschick\w*|absend\w*|raus\b|verschick\w*|schick\w*\b.{0,30}\bab\b|send\w*)", text, re.I))
     for v in vorschlaege:
+        # Die Inhaltsangabe muss aus Veikos JETZIGEM Satz stammen (22.10.2026: "Schreib eine Mail an …"
+        # bekam den Inhalt eines alten Entwurfs aus der Lage untergeschoben -- "Film-Ärger").
+        if v["aktion"] == "mail" and v.get("anweisung") and not v.get("erledigt"):
+            eigene = _woerter(text)
+            if len(_woerter(str(v["anweisung"])) & eigene) < 2:
+                v["anweisung"] = ""
         if v["aktion"] == "mail" and v.get("was") == "senden" and not will_senden and not v.get("erledigt"):
             if MAIL_BEFEHL.search(text) or re.search(r"kürzer|kuerzer|freundlicher|förmlicher|foermlicher|englisch|klarer|neu", text, re.I):
                 v.update(was="aendern", anweisung=text)
@@ -1784,6 +1851,9 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
                    # Loeschen nie ohne Ja -- "aendern"/"pausieren" sind umkehrbar, ein geloeschter Task nur ueber den Verlauf.
                    or (daily_befehl and v["aktion"] == "daily" and v.get("was") != "loeschen")
                    or (mail_befehl and v["aktion"] == "mail")
+                   # Auf dem offenen Entwurf ist jede Inhaltsangabe die Aenderung (22.10.2026: "Da soll drinstehen,
+                   # dass …" blieb ein Vorschlag). Ein Entwurf zu aendern verschickt nichts.
+                   or (am_entwurf and v["aktion"] == "mail" and v.get("was") != "senden")
                    or (v.get("zugestimmt") is True and im_satz))]
     ausgefuehrt = list(vorab)
     for v in gleich[:3]:
@@ -1815,9 +1885,10 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
             elif r.get("mail_gesendet"):
                 zeilen.append(f"Gesendet: an {', '.join(r.get('an') or [])} -- „{r.get('betreff') or ''}“. Sie steht unter Mail → Gesendet.")
             elif r.get("mail_id"):
-                zeilen.append(f"Entwurf {'geändert' if r.get('geaendert') else 'angelegt'}: an {r.get('an') or 'noch niemanden'} -- Betreff „{r.get('betreff') or ''}“"
+                zeilen.append(f"Entwurf {'geändert' if r.get('geaendert') else 'angelegt'}: an {r.get('an') or 'noch niemanden'} " + (f" -- Betreff „{r['betreff']}“" if r.get("betreff") else " -- noch ohne Betreff")
                               + (f"\n\n{r['text']}" if r.get("text") else "")
-                              + ("\n\nDie Adresse fehlt noch -- sag sie mir oder trag sie im Entwurf ein." if r.get("adresse_fehlt") else "\n\nSoll ich sie so abschicken?"))
+                              + ("\n\nDie Adresse fehlt noch -- sag sie mir oder trag sie im Entwurf ein." if r.get("adresse_fehlt")
+                                 else "\n\nNoch steht kein Text drin. Was soll drinstehen?" if r.get("leer") else "\n\nSoll ich sie so abschicken?"))
             elif r.get("lief_schon"):
                 zeilen.append(f"Läuft schon: {was}. Sein Urteil steht in wenigen Minuten am Ergebnis.")
             elif r.get("geprueft_wird"):
@@ -1828,6 +1899,11 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
                 zeilen.append(f"Erledigt: {was}.")
         hinweis = "\n".join(zeilen)
         sichtbar = re.sub(r"\s*Soll ich das so machen\?\s*$", "", sichtbar).strip()
+        if any(r.get("ok") and r.get("mail_id") for r in ausgefuehrt):
+            # Die Frage zum Entwurf stellt das Cockpit ("Soll ich sie so abschicken?") -- eigene Fragen des
+            # Modells daneben ("Soll ich den Entwurf anzeigen?") verwirren nur, und ein Satzschnitt am Punkt
+            # einer Adresse ("von.eckern@web.") liess Bruchstuecke stehen. Die Zeile des Cockpits sagt alles.
+            sichtbar = ""
         sichtbar = re.sub(r"[^.!?\n]*\b(ich schlage vor|schlage ich vor|mein vorschlag)\b[^.!?\n]*[.!?]?", "", sichtbar, flags=re.I).strip()
         # Wer was tut, sagt die Zeile des Cockpits -- Saetze des Modells darueber fallen weg
         # ("Ich beauftrage Neo …" ueber "Ersetzt: 8 Stellen", "Daniel prüft" ueber Neals Auftrag).
@@ -1846,7 +1922,7 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
         sichtbar = (sichtbar + "\n\n" + hinweis).strip()
         # Ein frischer Mail-Entwurf bekommt das Abschicken gleich als offenen Vorschlag: ein "Ja"
         # schickt ihn ab -- aber erst NACHDEM Veiko den Text gesehen oder gehoert hat (22.10.2026).
-        entwurf = next((r for r in ausgefuehrt if r.get("ok") and r.get("mail_id") and not r.get("mail_gesendet") and not r.get("adresse_fehlt")), None)
+        entwurf = next((r for r in ausgefuehrt if r.get("ok") and r.get("mail_id") and not r.get("mail_gesendet") and not r.get("adresse_fehlt") and not r.get("leer")), None)
         if entwurf and not any(v["aktion"] == "mail" and v.get("was") == "senden" and not v.get("erledigt") for v in vorschlaege):
             nachher = {"aktion": "mail", "was": "senden", "mail_id": entwurf["mail_id"]}
             nachher["label"] = beschriften(nachher)
@@ -1914,8 +1990,23 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
         sichtbar = (sichtbar + "\n\n" + recherche[0]).strip()
     # Eine Mail gilt erst als gesendet, wenn das Cockpit sie gesendet hat (22.10.2026: gemessen
     # stand "Ich habe die E-Mail angepasst und abgeschickt" ueber einem neuen, ungesendeten Entwurf).
-    if any(v["aktion"] == "mail" for v in vorschlaege) and not any(r.get("mail_gesendet") for r in ausgefuehrt):
-        sichtbar = re.sub(r"[^.!?\n]*\b(abgeschickt|versendet|verschickt|gesendet|rausgeschickt)\b[^.!?\n]*[.!?]?", "", sichtbar or "", flags=re.I).strip()
+    # Gemessen am 22.10.: auf "Hast du das schon weggeschickt?" antwortete das Modell zweimal "ja, erfolgreich
+    # versendet" -- nichts war raus. Ob eine Mail gesendet ist, sagt deshalb das Cockpit, nicht das Modell.
+    um_mail = (any(v["aktion"] == "mail" for v in vorschlaege) or (kontext or {}).get("art") == "mail"
+               or re.search(r"\b(e-?mail|mail)\b", text + " " + (sichtbar or ""), re.I))
+    if um_mail and not any(r.get("mail_gesendet") for r in ausgefuehrt):
+        behauptet = re.search(r"\b(abgeschickt|versendet|verschickt|gesendet|rausgeschickt|weggeschickt)\b", sichtbar or "", re.I)
+        frage = re.search(r"\b(abgeschickt|versendet|verschickt|gesendet|rausgeschickt|weggeschickt|raus)\b", text, re.I) and (
+            "?" in text or re.search(r"^\s*(hast|ist|wurde|sind|habt)\b|\bschon\b", text, re.I))
+        if behauptet or frage:
+            # Satzweise -- ein Punkt IN einer Adresse ("von.eckern@web.de") ist kein Satzende.
+            saetze = re.split(r"(?<=[.!?])\s+", sichtbar or "")
+            sichtbar = " ".join(s for s in saetze if not re.search(r"\b(abgeschickt|versendet|verschickt|gesendet|rausgeschickt|weggeschickt)\b", s, re.I)).strip()
+            if frage:
+                # Die Antwort auf "Ist sie raus?" gibt das Cockpit allein.
+                sichtbar = ""
+            from . import mail as _mail
+            sichtbar = (sichtbar + "\n\n" + _mail.stand_satz((kontext or {}).get("id") if (kontext or {}).get("art") == "mail" else None)).strip()
     # "Aus unserem Gespräch noch offen:" ohne etwas dahinter (gemessen am 22.10.2026) faellt weg.
     sichtbar = re.sub(r"\n*[^\n]*noch offen:\s*$", "", sichtbar or "").strip()
     sichtbar += stab.netz_fuss(quellen)

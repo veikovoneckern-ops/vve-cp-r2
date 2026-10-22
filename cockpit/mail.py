@@ -53,13 +53,50 @@ def adressen(wert: Any) -> list[str]:
         if not t:
             continue
         m = re.search(r"<([^>]+)>", t)
-        t = (m.group(1) if m else t).strip()
+        t = gesprochen_zu_adresse((m.group(1) if m else t).strip())
         if "@" not in t:
             k = kontakt_finden(t)
             t = k["email"] if k else t
         if t.lower() not in [r.lower() for r in raus]:
             raus.append(t)
     return raus
+
+
+# Gesprochene Adressen (22.10.2026): Whisper schreibt "von.eckern.web.de" (das "at" verschluckt), "von eckern at
+# web punkt de" oder "von.äckern". Haeufige Anbieter erkennt das Cockpit am Ende und setzt das @ selbst.
+ANBIETER = r"(web\.de|gmx\.(?:de|net|at|ch)|gmail\.com|googlemail\.com|outlook\.(?:de|com)|hotmail\.(?:de|com)|live\.(?:de|com)|t-online\.de|" \
+           r"icloud\.com|me\.com|yahoo\.(?:de|com)|freenet\.de|posteo\.de|mailbox\.org|aol\.com|krones\.com|veikovoneckern\.org)"
+
+
+def gesprochen_zu_adresse(t: str) -> str:
+    s = t.strip().strip(".,;:!?„“\"'").lower()
+    s = re.sub(r"\s+(at|ät|@)\s+", "@", s)
+    s = re.sub(r"\s+(punkt|dot)\s+", ".", s)
+    s = re.sub(r"\s*@\s*", "@", s)
+    if "@" not in s:
+        m = re.match(r"^([\w.+-]+?)[.\s]+" + ANBIETER + r"$", s)
+        if m:
+            s = f"{m.group(1)}@{m.group(2)}"
+    if "@" in s:
+        s = re.sub(r"\s+", "", s)
+        return s
+    return t.strip()
+
+
+def adresse_im_text(text: str) -> str | None:
+    """Die Adresse oder der Kontakt in einem gesprochenen Satz ("schreib eine Mail an von.eckern.web.de")."""
+    m = re.search(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+", text)
+    if m:
+        return m.group(0)
+    m = re.search(r"\ban\s+([\w.+-]+(?:\s+(?:at|ät|punkt)\s+[\w.-]+)*(?:[.\s]+" + ANBIETER + r")?)", text, re.I)
+    if m:
+        a = gesprochen_zu_adresse(m.group(1))
+        if ADRESSE_RE.match(a):
+            return a
+        k = kontakt_finden(m.group(1).split()[0])
+        if k:
+            return k["email"]
+    return None
 
 
 def pruefen(liste: list[str]) -> list[str]:
@@ -424,6 +461,25 @@ def absender() -> dict[str, Any]:
         return {"ok": bool(d.get("ok")), "absender": d.get("absender"), "fehlt": d.get("fehlt") or []}
     except Exception as f:  # noqa: BLE001
         return {"ok": False, "absender": None, "fehlt": [f"Postausgang nicht erreichbar ({f.__class__.__name__})"]}
+
+
+def stand_satz(mid: str | None = None) -> str:
+    """Ob eine Mail raus ist -- aus der Datenbank, nie aus dem Gedaechtnis des Modells (22.10.2026)."""
+    m = holen(mid) if mid and mid != "alle" else None
+    if not m:
+        r = db.eine("SELECT id FROM mails ORDER BY geaendert DESC LIMIT 1")
+        m = holen(r["id"]) if r else None
+    if not m:
+        return "Es gibt noch keine Mail im Cockpit."
+    an = m.get("an") or "noch niemanden"
+    if m["stand"] == "gesendet":
+        return f"Ja, gesendet am {time.strftime('%d.%m. um %H:%M', time.localtime(m['gesendet']))} an {an}."
+    if m["stand"] == "fehler":
+        return (f"Nein, verschickt ist sie nicht -- der letzte Versuch ist gescheitert: {m.get('fehler')}. "
+                f"Der Entwurf an {an} liegt bereit; sag „schick sie ab“, dann versuche ich es noch einmal.")
+    if not _html_zu_text(m.get("html") or "").strip():
+        return f"Nein, verschickt ist sie noch nicht -- der Entwurf an {an} hat noch keinen Text. Sag mir, was drinstehen soll."
+    return f"Nein, verschickt ist sie noch nicht: der Entwurf „{m.get('betreff') or '(ohne Betreff)'}“ an {an} wartet. Sag „schick sie ab“, dann geht sie raus."
 
 
 def talk_text() -> str:
