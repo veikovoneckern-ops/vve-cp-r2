@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from . import db, llm
+from . import neo_freigabe as nf
 from .konfig import MODELL_NEO, UPLOADS, VORSCHAU_DIR, WURZEL
 
 MAX_SCHRITTE = 40
@@ -44,13 +45,13 @@ WERKZEUGE = [
      "parameters": {"type": "object", "properties": {"pfad": {"type": "string"}, "ab_zeile": {"type": "integer"}}, "required": ["pfad"]}},
     {"name": "suche", "description": "Sucht rekursiv nach Text in einem Ordner (grep). Vorgabe: Repo der neuen Fassung.",
      "parameters": {"type": "object", "properties": {"text": {"type": "string"}, "ordner": {"type": "string"}}, "required": ["text"]}},
-    {"name": "datei_schreiben", "description": "Schreibt sofort die VOLLSTAENDIGE neue Fassung einer Datei. Erst lesen, dann ersetzen. Gesperrt: Systempfade, /opt/vvec, /srv/www, /var/lib/vvec.",
+    {"name": "datei_schreiben", "description": "Schreibt die VOLLSTAENDIGE neue Fassung einer Datei. Erst lesen, dann ersetzen. In den Arbeitsablagen (Vorschau, Exporte, /tmp) sofort; alles andere wird vorgemerkt und erst nach Darios Freigabe eingespielt. Gesperrt: Systempfade, /opt/vvec, /srv/www, /var/lib/vvec.",
      "parameters": {"type": "object", "properties": {"pfad": {"type": "string"}, "inhalt": {"type": "string"}, "begruendung": {"type": "string"}}, "required": ["pfad", "inhalt"]}},
     {"name": "datei_aendern", "description": "Ändert eine Stelle in einer bestehenden Datei: 'alt' (genauer bisheriger Text, kommt GENAU EINMAL vor) wird durch 'neu' ersetzt. Der Weg für kleine Änderungen -- der Rest der Datei bleibt, wie er ist.",
      "parameters": {"type": "object", "properties": {"pfad": {"type": "string"}, "alt": {"type": "string"}, "neu": {"type": "string"}, "begruendung": {"type": "string"}}, "required": ["pfad", "alt", "neu"]}},
     {"name": "datei_kopieren", "description": "Kopiert eine Datei unveraendert, auch Bilder, PDFs und andere Binaerdateien (datei_schreiben kann nur Text). Typisch: ein angehaengtes Bild in den Ordner einer Vorschau-Seite, damit die Seite es zeigen kann. Zielname ohne Leerzeichen waehlen.",
      "parameters": {"type": "object", "properties": {"von": {"type": "string"}, "nach": {"type": "string"}}, "required": ["von", "nach"]}},
-    {"name": "befehl_ausfuehren", "description": "Fuehrt einen Shell-Befehl als vveadmin aus (kein sudo-Passwort). Sofort, ohne Rueckfrage, Zeitlimit 180 s. Verkette mit && statt vieler Einzelaufrufe.",
+    {"name": "befehl_ausfuehren", "description": "Fuehrt einen Shell-Befehl als vveadmin aus (kein sudo-Passwort), Zeitlimit 180 s. Rein lesende Befehle laufen sofort; was etwas veraendern kann, wird vorgemerkt und laeuft erst nach Darios Freigabe. Verkette mit && statt vieler Einzelaufrufe.",
      "parameters": {"type": "object", "properties": {"befehl": {"type": "string"}, "arbeitsverzeichnis": {"type": "string"}}, "required": ["befehl"]}},
     {"name": "vorschau_zeigen", "description": "Zeigt eine HTML-Datei in Veikos Vorschau-Spalte. Die Datei muss unter ~/vve-cp-r2/daten/vorschau/ liegen (z. B. daten/vorschau/entwurf/index.html). Erst mit datei_schreiben anlegen, dann zeigen.",
      "parameters": {"type": "object", "properties": {"pfad": {"type": "string"}}, "required": ["pfad"]}},
@@ -186,7 +187,9 @@ async def werkzeug(name: str, e: dict[str, Any], lauf: dict[str, Any]) -> str:
     if name == "datei_lesen":
         try:
             z = _pfad(e.get("pfad", ""))
-            zeilen = z.read_text(encoding="utf-8", errors="replace").splitlines()
+            # Hat Neo die Datei in diesem Auftrag schon geaendert, sieht er seine vorgemerkte Fassung.
+            vorgemerkt = nf.gelesen(lauf, z)
+            zeilen = (vorgemerkt if vorgemerkt is not None else z.read_text(encoding="utf-8", errors="replace")).splitlines()
         except OSError as f:
             return f"Fehler: {f}"
         ab = max(int(e.get("ab_zeile") or 1), 1)
@@ -210,13 +213,17 @@ async def werkzeug(name: str, e: dict[str, Any], lauf: dict[str, Any]) -> str:
         # beim naechsten Neustart weg gewesen. Wer eine lange Datei auf weniger als die Haelfte
         # schrumpfen will, wird abgewiesen und auf datei_aendern verwiesen.
         try:
-            alt_text = z.read_text(encoding="utf-8") if z.is_file() else ""
+            alt_text = nf.gelesen(lauf, z) or (z.read_text(encoding="utf-8") if z.is_file() else "")
         except (OSError, UnicodeDecodeError):
             alt_text = ""
         if len(alt_text) > 2000 and len(str(e["inhalt"])) < len(alt_text) * 0.5:
             return (f"Abgewiesen: {z} hat {len(alt_text)} Zeichen, deine Fassung nur {len(str(e['inhalt']))}. "
                     "Das würde den Großteil der Datei löschen. Für eine Änderung an einer Stelle nimm datei_aendern (alt/neu); "
                     "eine vollständige Fassung schickst du nur, wenn du die GANZE Datei gelesen hast und sie wirklich ersetzen willst.")
+        if not nf.frei(z):
+            nf.vormerken_text(lauf, z, str(e["inhalt"]), e.get("begruendung") or "")
+            return (f"VORGEMERKT, noch NICHT geschrieben: {z} ({len(str(e['inhalt']))} Zeichen). Wird erst nach Darios Prüfung "
+                    "und Freigabe am Ende dieses Auftrags eingespielt.")
         try:
             z.parent.mkdir(parents=True, exist_ok=True)
             z.write_text(str(e["inhalt"]), encoding="utf-8")
@@ -230,12 +237,17 @@ async def werkzeug(name: str, e: dict[str, Any], lauf: dict[str, Any]) -> str:
             return f"Fehler: '{z}' ist gesperrt."
         alt, neu = str(e.get("alt") or ""), str(e.get("neu") if e.get("neu") is not None else "")
         try:
-            text = z.read_text(encoding="utf-8")
+            text = nf.gelesen(lauf, z)
+            if text is None:
+                text = z.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as f:
             return f"Fehler beim Lesen: {f}"
         n = text.count(alt) if alt else 0
         if n != 1:
             return f"Fehler: 'alt' kommt {n}-mal vor, es muss genau einmal sein. Erst mit datei_lesen nachsehen und mehr Umgebung mitnehmen."
+        if not nf.frei(z):
+            nf.vormerken_text(lauf, z, text.replace(alt, neu, 1), e.get("begruendung") or "")
+            return f"VORGEMERKT, noch NICHT geändert: {z} (1 Stelle). Wird erst nach Darios Prüfung und Freigabe eingespielt."
         try:
             z.write_text(text.replace(alt, neu, 1), encoding="utf-8")
         except OSError as f:
@@ -250,6 +262,9 @@ async def werkzeug(name: str, e: dict[str, Any], lauf: dict[str, Any]) -> str:
             return f"Fehler: {von} gibt es nicht."
         if nach.is_dir() or str(e.get("nach", "")).endswith("/"):
             nach = nach / von.name.replace(" ", "-")
+        if not nf.frei(nach):
+            nf.vormerken_kopie(lauf, von, nach)
+            return f"VORGEMERKT, noch NICHT kopiert: {von} -> {nach}. Wird erst nach Darios Prüfung und Freigabe eingespielt."
         try:
             import shutil
             nach.parent.mkdir(parents=True, exist_ok=True)
@@ -267,7 +282,12 @@ async def werkzeug(name: str, e: dict[str, Any], lauf: dict[str, Any]) -> str:
         cwd = _pfad(e.get("arbeitsverzeichnis") or str(WURZEL))
         if not cwd.is_dir():
             return f"Fehler: Arbeitsverzeichnis {cwd} gibt es nicht."
-        return await _shell(befehl, str(cwd))
+        if nf.nur_lesend(befehl) or nf.frei_schreibend(befehl):
+            return await _shell(befehl, str(cwd))
+        nf.vormerken_befehl(lauf, befehl, str(cwd))
+        return ("VORGEMERKT, noch NICHT ausgeführt: dieser Befehl kann etwas verändern. Er läuft erst nach Darios Prüfung und "
+                "Freigabe am Ende des Auftrags (in der Reihenfolge, in der du ihn vorgemerkt hast). Rein lesende Befehle "
+                "(ls, cat, grep, git status/diff/log, systemctl status, journalctl …) laufen sofort.")
     if name == "vorschau_zeigen":
         roh = str(e.get("pfad", "")).strip()
         z = _pfad(roh)
@@ -371,7 +391,16 @@ def system_text(anhaenge: list[dict[str, Any]] | None = None) -> str:
     return (_kontext_text() + anh +
             f"\n\n## Was über Veiko bekannt ist\n{gedaechtnis_text()}\n\n"
             "## Wie du arbeitest\n"
-            "Sieh nach, bevor du etwas behauptest -- nicht raten. datei_schreiben und befehl_ausfuehren wirken SOFORT. "
+            "Sieh nach, bevor du etwas behauptest -- nicht raten.\n"
+            "## Darios Freigabe -- PFLICHT vor jeder Änderung am Cockpit\n"
+            "Was das Cockpit verändert (Code und Dateien im Repo, Einstellungen, jeder Befehl, der etwas schreibt, installiert, "
+            "löscht oder Dienste startet), wird VORGEMERKT und erst am Ende deines Auftrags von Dario geprüft. Nur bei seiner "
+            "Freigabe spielt das Cockpit es ein, prüft die Syntax, committet und pusht. Sofort wirken nur: Lesen, rein lesende "
+            "Befehle und Schreiben in deine Arbeitsablagen (Vorschau-Seiten, Dokumente zum Herunterladen, /tmp). "
+            "Deshalb: gib bei jeder Änderung eine klare begruendung an; schreib am Ende „vorgemerkt, Dario prüft“, nie „geändert“ "
+            "oder „eingespielt“ -- das sagt das Cockpit nach Darios Urteil selbst. Vollständige, in sich stimmige Änderungen "
+            "vormerken (Dario sieht den ganzen Unterschied) -- halbe Lösungen lehnt er ab. Einen Neustart (systemctl --user restart "
+            "vve-cp-r2) merkst du nur vor, wenn Python-Dateien geändert sind; er läuft nach der Freigabe zuletzt.\n"
             "Lies eine Datei, bevor du sie ersetzt. Verkette Befehle mit && statt vieler Einzelaufrufe. "
             f"Bis zu {MAX_SCHRITTE} Werkzeugaufrufe je Auftrag. Nur die letzten {VOLLE_SCHRITTE} Werkzeugergebnisse bleiben dir in voller Länge.\n"
             "\n## Was Veiko häufig will und wie du es lieferst\n"
@@ -682,14 +711,31 @@ async def _kern(gid: str, modell: str, lauf: dict[str, Any]) -> None:
         else:
             letzter_text += f"\n\nIch habe die Grenze von {MAX_SCHRITTE} Arbeitsschritten erreicht. Sag mir, ob ich weitermachen soll."
     except asyncio.CancelledError:
-        letzter_text = (letzter_text + "\n\n" if letzter_text else "") + "Abgebrochen."
+        letzter_text = (letzter_text + "\n\n" if letzter_text else "") + "Abgebrochen." + (
+            "" if nf.leer(lauf) else " Was Neo vorgemerkt hatte, ist verworfen -- am Cockpit hat sich nichts geändert.")
         _abschliessen(gid, lauf, letzter_text, modell, abgebrochen=True)
         await schlange.put({"typ": "fertig", "text": letzter_text})
         raise
     except llm.ModellFehler as f:
         letzter_text = (letzter_text + "\n\n" if letzter_text else "") + f"Das lokale Modell hat nicht geliefert: {f}"
+    # Darios Freigabe (22.10.2026, neo_freigabe.py): was Neo am Cockpit veraendern will, wird erst
+    # jetzt -- nach Darios Pruefung -- eingespielt, oder gar nicht.
+    neustart = False
+    if not nf.leer(lauf):
+        n = len(nf.entwurf(lauf)["dateien"]) + len(nf.entwurf(lauf)["befehle"])
+        await schlange.put({"typ": "zwischen", "text": f"(Dario prüft jetzt, was Neo verändern will -- {n} vorgemerkte Änderung(en). Ohne seine Freigabe wird nichts eingespielt.)"})
+        pruefung = await nf.pruefen(lauf, lauf.get("auftrag") or "", letzter_text)
+        ergebnis = None
+        if pruefung["urteil"] == "freigegeben":
+            await schlange.put({"typ": "zwischen", "text": "(Dario hat freigegeben. Das Cockpit spielt ein und prüft.)"})
+            ergebnis = await nf.einspielen(lauf, lauf.get("auftrag") or "", pruefung, lauf.get("jid") or "")
+            neustart = bool(ergebnis.get("ok") and ergebnis.get("neustart"))
+        lauf["pruefung"] = {**pruefung, "eingespielt": bool(ergebnis and ergebnis.get("ok"))}
+        letzter_text = ((letzter_text + "\n\n---\n\n") if letzter_text else "") + nf.bericht(pruefung, ergebnis, lauf)
     _abschliessen(gid, lauf, letzter_text, modell)
     await schlange.put({"typ": "fertig", "text": letzter_text})
+    if neustart:
+        nf.neustart_spaeter()
 
 
 def _abschliessen(gid: str, lauf: dict[str, Any], text: str, modell: str, abgebrochen: bool = False) -> None:
@@ -706,6 +752,7 @@ def _abschliessen(gid: str, lauf: dict[str, Any], text: str, modell: str, abgebr
     db.ausfuehren("INSERT INTO nachrichten (gespraech_id,rolle,text,daten,zeit) VALUES (?,?,?,?,?)",
                   (gid, "neo", text or "(keine Antwort)", json.dumps({
                       "schritte": lauf["schritte"], "dateien": lauf["dateien"], "vorschau": lauf.get("vorschau"),
+                      "pruefung": lauf.get("pruefung"),
                       "modell": modell, "dauer": round(time.time() - lauf["start"]), "abgebrochen": abgebrochen,
                   }, ensure_ascii=False), time.time()))
     db.ausfuehren("UPDATE gespraeche SET geaendert=? WHERE id=?", (time.time(), gid))
@@ -740,7 +787,7 @@ async def senden(gid: str, text: str, anhaenge: list[str]) -> str:
     if not modell:
         raise ValueError("Für Neo ist kein lokales Modell installiert.")
     jid = db.neue_id("j")
-    lauf = {"schlange": asyncio.Queue(), "schritte": [], "dateien": [], "start": time.time()}
+    lauf = {"schlange": asyncio.Queue(), "schritte": [], "dateien": [], "start": time.time(), "auftrag": text, "jid": jid}
     job = {"gespraech_id": gid, "ereignisse": [], "fertig": False, "start": time.time(), "modell": modell,
            "lauf": lauf, "neu": asyncio.Event()}
 
