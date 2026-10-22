@@ -285,7 +285,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
       const fehl = r.ergebnisse.filter((x) => !x.ok);
       const ll = r.ergebnisse.find((x) => x.ok && x.langlauf_id);
       if (fehl.length) toast("Nicht alles ging: " + fehl.map((f) => f.grund).join("; "), { fehler: true });
-      else if (ll) { toast("LongRun gestartet."); navigiere("/langlauf/" + ll.langlauf_id); }
+      else if (ll) { toast(ll.extern ? "Die abschließende Prüfung läuft." : "LongRun gestartet."); navigiere("/langlauf/" + ll.langlauf_id); }
       else if (r.ergebnisse.some((x) => x.ok && x.daily_id)) { toast("Daily Task erledigt."); navigiere("/daily/" + r.ergebnisse.find((x) => x.daily_id).daily_id); }
       else {
         const neo = r.ergebnisse.find((x) => x.neo_gespraech);

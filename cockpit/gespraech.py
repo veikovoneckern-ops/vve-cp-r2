@@ -46,6 +46,10 @@ AKTIONEN = {
     "ersetzen": ("alt", "neu", "projekt_id"),
     # Daniel prueft ein vorhandenes Ergebnis (19.10.2026). ergebnis_id oder titel (beschriften loest auf).
     "pruefen": (),
+    # Ein Externer (Dario, Demmis, Elon) prueft ein vorhandenes LongRun-Ergebnis abschliessend
+    # (22.10.2026): "lass Demmis das Buch pruefen" wurde zweimal zu Daniel und einmal zu einem
+    # neuen LongRun, der ein Feedback SCHRIEB -- die Aktion dafuer fehlte Talk schlicht.
+    "extern_pruefen": ("wer",),
     # Ein LongRun aus Talk (19.10.2026): Veiko sagte "als Long Run … unter Einbeziehung von
     # Demmis", Talk machte eine gewoehnliche Ausarbeitung daraus -- bei LongRuns stand nichts.
     "langlauf": ("auftrag",),
@@ -81,7 +85,7 @@ TEAM_BEHAUPTET = re.compile(r"[^.!?\n]*(\b(ich )?(lasse|gebe (das|es|den auftrag
                             r"|\b(neal|annie|clayton|ridley|neo|jason|das team)\b[^.!?\n]{0,30}\b(macht sich|erstellt|baut|schreibt|arbeitet|kümmert sich|legt los)\b)[^.!?\n]*[.!?]?", re.I)
 
 # "Ich korrigiere die Bezeichnung" ohne Block und ohne Frage (19.10.2026): nichts geschah.
-AENDERUNG_BEHAUPTET = re.compile(r"Noch nicht ausgeführt: [^\n]*|[^.!?\n]*\bich (korrigiere|ändere|aendere|benenne|ersetze|aktualisiere|lege|trage|markiere|verschiebe|lösche|loesche|beauftrage)\b[^.!?\n]*[.!?]?", re.I)
+AENDERUNG_BEHAUPTET = re.compile(r"Noch nicht ausgeführt: [^\n]*|[^.!?\n]*\bich (korrigiere|ändere|aendere|benenne|ersetze|aktualisiere|lege|trage|markiere|verschiebe|lösche|loesche|beauftrage|fordere|starte|stoße|stosse|veranlasse)\b[^.!?\n]*[.!?]?", re.I)
 
 # Zustimmung oder Auftrag MITTEN in einem laengeren Satz (gemessen am 16.10.:
 # "Okay, du kannst Jensen sagen, er soll das Projekt anlegen und was muss ich
@@ -110,6 +114,11 @@ BEFEHL_AKTIONEN = ("aufgabe_neu", "aufgabe_erledigt", "aufgabe_aendern", "notiz"
 DAILY_BEFEHL = re.compile(r"\b(führ\w*|fuehr\w*|start\w*|lass\w*)\b.{0,50}\b(aus|laufen|jetzt|sofort|nochmal|noch einmal)\b|"
                           r"\bpausier\w*|\bfortsetz\w*|\bsetz\w*\b.{0,30}\bfort\b|\bwieder (an|aktiv)\b|\bänder\w*|\baender\w*|\bstell\w*\b.{0,30}\bum\b", re.I)
 # "Lass Daniel … pruefen" -- immer eine echte Pruefung, auch wenn das Modell meint, es sei schon geschehen.
+# Ein Externer soll pruefen (22.10.2026). Whisper schreibt "Demis", "Dennis", "Dario", "Elan" ...
+EXTERN_NAME = {"dario": "dario", "claude": "dario", "demmis": "demmis", "demis": "demmis", "dennis": "demmis", "gemini": "demmis",
+               "elon": "elon", "grok": "elon"}
+EXTERN_PRUEFEN = re.compile(r"\b(dario|claude|demmis|demis|dennis|gemini|elon|grok)\b.{0,80}\b(prüf|pruef|überprüf|review|gegenles|begutacht)\w*"
+                            r"|\b(prüf|pruef|überprüf|review|gegenles|begutacht)\w*\b.{0,60}\b(dario|claude|demmis|demis|dennis|gemini|elon|grok)\b", re.I)
 DANIEL_PRUEFEN = re.compile(r"\bdaniel\b.{0,60}\b(prüf|pruef|überprüf|anseh|anschau|begutacht)\w*|\b(prüf|pruef)\w*\b.{0,40}\bdaniel\b", re.I)
 # Eine Behauptung, eine Recherche laufe (19.10.2026) -- die ganze Zeile, damit kein halber Satz stehen bleibt.
 RECHERCHE_BEHAUPTET = re.compile(r"[^\n]*\b(Recherche gestartet|Recherche (läuft|ist gestartet|startet)|starte (die |eine )?(gründliche |neue |erneute )?Recherche)[^\n]*", re.I)
@@ -167,6 +176,7 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"neo","auftrag":"was Neo am Cockpit oder Server tun soll"} -- NUR für Programm und Server des Cockpits, NIE für Inhalte (Projekte, Aufgaben, Ergebnisse, Notizen).
 - {"aktion":"langlauf","titel":"kurzer Titel","auftrag":"was in Etappen entstehen soll, in mehreren Sätzen, mit allem, was Veiko dazu gesagt hat","art":"buch|dokument|praesentation|bilder|webseite|video","rolle":"buch|stratege|designer|video oder null","projekt_id":"p… oder null","aufgabe_id":"t… oder null","pruefer":"dario|demmis","pruef_alle":3,"budget":5} -- ein LongRun: ein großes Vorhaben (ein ganzes Buch, eine große Präsentation, ein ausführliches Konzept, eine Studie, eine Strategie, ein Leitfaden, ein langes Dokument, ein langes Video), das in Etappen entsteht und von Dario (Claude) oder Demmis (Gemini) geprüft wird. Sagt Veiko „Long Run“, „in Etappen“, „durchgängig und tief“, „komplett“, „vollständig“, „ausführlich“, „umfassend“ oder „gründlich“ zu einem Werk, das er HABEN will: IMMER langlauf, nie ausarbeiten. art praesentation für Präsentationen und Foliensätze, bilder für Bildserien und viele Bilder, webseite für Webseiten, buch für Bücher, video für Videos, sonst dokument. Nennt er Demmis/Gemini, ist pruefer demmis, sonst dario. pruef_alle: nach wie vielen Kapiteln/Teilen geprüft wird; 0 = NUR AM ENDE, wenn alles fertig ist -- immer dann, wenn Veiko „danach“, „am Ende“, „wenn es fertig ist“ oder „wenn du fertig bist“ sagt. Vorhandene Ergebnisse und Unterlagen des Projekts nimmt das Cockpit selbst dazu. Die Prüfungen kosten Geld: nenne das Budget (Vorgabe 5 Dollar) und frag immer „Soll ich das so machen?“.
 - {"aktion":"pruefen","ergebnis_id":"r… aus LAGE/KONTEXT","titel":"Titel des Ergebnisses"} -- Daniel (Red Team) prüft ein VORHANDENES Ergebnis, z. B. ein Recherche-Dossier („ungeprüft“). „Lass Daniel das prüfen“ ist IMMER pruefen, NIE ausarbeiten -- eine Ausarbeitung macht etwas Neues, und sie macht nie Daniel.
+- {"aktion":"extern_pruefen","wer":"dario|demmis|elon","ergebnis_id":"r… aus LAGE/KONTEXT","titel":"Titel des Ergebnisses"} -- ein Externer (Dario = Claude, Demmis = Gemini, Elon = Grok) prüft ein VORHANDENES Werk abschließend, z. B. „lass Demmis das Buch prüfen“. Kostet Geld, deshalb immer erst nach Veikos Ja. NIE pruefen (das ist Daniel) und NIE langlauf (der schreibt etwas Neues). Ob ein Externer ein Werk schon geprüft hat, steht im Steckbrief GENAU dieses Ergebnisses.
 - {"aktion":"ersetzen","projekt_id":"p…","alt":"genauer bisheriger Begriff, z. B. OODA-Loop","neu":"neuer Begriff"} -- ersetzt einen Begriff in einem Projekt überall (Projektname und Ziel, Aufgaben, Ergebnisse, Cases). Für „benenne … um“, „korrigiere die Bezeichnung … durchgängig“. Braucht Veikos Ja.
 - {"aktion":"brainstrom","thema":"die Idee in ein, zwei Sätzen","projekt_id":"p… oder null"} -- startet BrainStrom (eine Idee Frage für Frage zuspitzen) und öffnet die Ansicht. Läuft sofort.
 - {"aktion":"brainstrom_antwort","text":"Veikos Antwort, ausformuliert"} -- beantwortet die AKTUELLE FRAGE in BrainStrom (siehe KONTEXT). „Die zweite“ oder „Option B“ heißt: der Text dieser Antwortmöglichkeit. Läuft sofort.
@@ -215,6 +225,54 @@ def _zeit(ts: float | None) -> str:
     return time.strftime("%d.%m.", time.localtime(ts))
 
 
+WOERTER_JE_SEITE = 250   # gedruckte Sachbuchseite; so steht es auch in der Antwort
+
+
+def _langlauf_zum_ergebnis(eid: str) -> dict[str, Any] | None:
+    lid = db.wert("SELECT id FROM langlaeufe WHERE json_extract(daten,'$.ergebnis_id')=? ORDER BY geaendert DESC LIMIT 1", (eid,))
+    return db.holen("langlaeufe", lid) if lid else None
+
+
+def ergebnis_steckbrief(e: dict[str, Any], lang: bool = False) -> str:
+    """Was man ueber ein Ergebnis wissen muss, ohne es zu lesen (22.10.2026). Veiko fragte im Talk
+    „Wie viele Seiten hat die aktuelle Fassung?“ und „Hat Demmis das Buch schon geprueft?“ -- beides
+    stand im System (95.000 Woerter; Dario hat das Buch geprueft, Demmis nur Neals Feedback dazu),
+    aber nirgends, wo Talk es lesen konnte. Talk behauptete daraufhin das Falsche."""
+    inhalt = e.get("inhalt") or ""
+    if not inhalt and e.get("id"):
+        inhalt = db.wert("SELECT inhalt FROM ergebnisse WHERE id=?", (e["id"],)) or ""
+    w = len(inhalt.split())
+    teile = [f"erstellt {time.strftime('%d.%m. %H:%M', time.localtime(e.get('erstellt') or 0))}",
+             f"Umfang {w:,} Wörter".replace(",", ".") + (f", etwa {max(1, round(w / WOERTER_JE_SEITE))} Buchseiten (gerechnet mit {WOERTER_JE_SEITE} Wörtern je Seite)" if w >= 400 else "")]
+    p = e.get("pruefung")
+    if isinstance(p, str):
+        try:
+            p = json.loads(p or "{}")
+        except ValueError:
+            p = {}
+    p = p or {}
+    teile.append("Prüfung: " + stab.urteil_klartext(p))
+    l = _langlauf_zum_ergebnis(e["id"]) if e.get("id") else None
+    if l:
+        d = l.get("daten") or {}
+        wer: dict[str, int] = {}
+        for x in d.get("pruefungen") or []:
+            n = x.get("name") or x.get("wer") or "?"
+            wer[n] = wer.get(n, 0) + 1
+        if wer:
+            teile.append("externe Prüfungen im LongRun: " + ", ".join(f"{n} {k}×" for n, k in wer.items()))
+        grundlage = [m["id"] for m in d.get("material") or [] if m.get("art") == "ergebnis"]
+        if grundlage:
+            titel = [t for t in (db.wert("SELECT titel FROM ergebnisse WHERE id=?", (g,)) for g in grundlage[:3]) if t]
+            if titel:
+                teile.append("Grundlage (worauf es sich bezieht): " + "; ".join(f"„{t[:60]}“" for t in titel)
+                             + (f" und {len(grundlage) - 3} weitere" if len(grundlage) > 3 else ""))
+        teile.append(f"aus LongRun {l['id']}")
+    if lang and p.get("begruendung"):
+        teile.append("Begründung der Prüfung: " + str(p["begruendung"])[:600])
+    return "; ".join(teile)
+
+
 def system_kern() -> str:
     """Der feste Anfang jeder Talk-Anweisung: Regeln und Lage. senden() haengt den Rest an,
     aufwaermen() rechnet genau diesen Teil vorab durch."""
@@ -241,11 +299,36 @@ def lage_text() -> str:
         teile.append("OFFENE ENTSCHEIDUNGEN: keine")
     # Dieselbe Liste wie im Briefing links daneben (stab.neu_entstanden) --
     # vorher kannte Talk die neuen Ergebnisse gar nicht und erzaehlte etwas anderes.
+    # Zeitanker (22.10.2026): "Was ist seit unserem letzten Gespraech geschehen?" liess sich nicht
+    # beantworten -- Talk kannte weder die Uhrzeit noch, wann Veiko zuletzt gesprochen hatte.
+    # Das "letzte Gespraech" ist das vor der laufenden Sitzung: Nachrichten mit weniger als 30 Minuten
+    # Abstand gehoeren zur selben Sitzung.
+    zeiten = [r["zeit"] for r in db.alle("SELECT n.zeit FROM nachrichten n JOIN gespraeche g ON g.id=n.gespraech_id "
+                                         "WHERE g.art='talk' AND n.rolle='du' ORDER BY n.zeit DESC LIMIT 200")]
+    davor, grenze = None, time.time()
+    for z in zeiten:
+        if grenze - z > 1800:
+            davor = z
+            break
+        grenze = z
+    tag = ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag")[time.localtime().tm_wday]
+    teile.append(f"JETZT: {tag}, {time.strftime('%d.%m.%Y %H:%M')}.")
     neu = stab.neu_entstanden()
+    if davor:
+        seit = [e for e in neu if (e.get("bearbeitet") or 0) > davor]
+        ll_fertig = db.alle("SELECT titel, geaendert FROM langlaeufe WHERE stand='fertig' AND geaendert>? ORDER BY geaendert DESC LIMIT 5", (davor,))
+        teile.append(f"SEIT DEM LETZTEN GESPRÄCH ({time.strftime('%d.%m. %H:%M', time.localtime(davor))}) -- nur das gilt bei „seit unserem letzten "
+                     "Gespräch“ oder „was ist inzwischen passiert“; alles andere ist älter und gehört NICHT in die Antwort:\n"
+                     + ("\n".join([f"- Ergebnis {e['id']}: {e['titel'][:90]} ({time.strftime('%d.%m. %H:%M', time.localtime(e['bearbeitet']))})" for e in seit]
+                                  + [f"- LongRun fertig: {l['titel'][:80]} ({time.strftime('%d.%m. %H:%M', time.localtime(l['geaendert']))})" for l in ll_fertig])
+                        or "- nichts Neues: kein Ergebnis entstanden oder bearbeitet, kein LongRun fertig geworden. Sag das so und nenne zur "
+                           "Orientierung das jüngste Ergebnis mit Datum."))
     if neu:
         teile.append("NEU ENTSTANDEN (letzte sieben Tage, zuletzt bearbeitete zuerst -- so steht es auch im Briefing):\n" + "\n".join(
-            f"- {e['id']}: {e['titel'][:90]} (von {e['wer_name']}, bearbeitet {_zeit(e['bearbeitet'])}"
-            + (f", Projekt {e['projekt_name']}" if e.get("projekt_name") else "") + f"): {e['urteil_text']}" for e in neu))
+            f"- {e['id']}: {e['titel'][:90]} (von {e['wer_name']}, bearbeitet {time.strftime('%d.%m. %H:%M', time.localtime(e['bearbeitet']))}"
+            + (f", Projekt {e['projekt_name']}" if e.get("projekt_name") else "") + f") -- {ergebnis_steckbrief(e)}" for e in neu)
+            + "\nWer ein Ergebnis abschließend geprüft hat, steht bei GENAU diesem Ergebnis. Ein Feedback oder Review ZU einem Werk "
+              "ist ein eigenes Ergebnis; wer DAS geprüft hat, hat nicht das Werk selbst geprüft.")
     # Dieselbe Auswahl wie "Läuft gerade" im Briefing. Ist sie leer, steht das da --
     # ohne den Satz nannte Talk am 16.10. Erledigtes als "läuft gerade".
     lauf = [v for v in db.alle("SELECT id, titel, auftrag, stand FROM vorgaenge WHERE stand IN ('neu','in_arbeit','wartet') "
@@ -368,11 +451,11 @@ def kontext_text(k: dict[str, Any] | None) -> str:
         if not p:
             return ""
         auf = db.alle("SELECT id, titel, status FROM aufgaben WHERE projekt_id=? AND archiviert=0 ORDER BY status, erstellt DESC LIMIT 30", (kid,))
-        erg = db.alle("SELECT id, titel, form FROM ergebnisse WHERE projekt_id=? ORDER BY erstellt DESC LIMIT 8", (kid,))
+        erg = db.alle("SELECT id, titel, form, erstellt, pruefung FROM ergebnisse WHERE projekt_id=? ORDER BY erstellt DESC LIMIT 8", (kid,))
         notiz = db.alle("SELECT titel, kurz, text FROM notizen WHERE projekt_id=? ORDER BY erstellt DESC LIMIT 5", (kid,))
         return (f"VEIKO SCHAUT GERADE AUF DAS PROJEKT {kid}: {p['name']}" + (f" (Kategorie {p['kategorie']})" if p.get("kategorie") else "") + (f" -- Ziel: {p['ziel']}" if p.get("ziel") else "") +
                 "\nAufgaben:\n" + "\n".join(f"- {a['id']} [{a['status']}] {a['titel']}" for a in auf) +
-                ("\nErgebnisse:\n" + "\n".join(f"- {e['titel']} ({e['form']})" for e in erg) if erg else "") +
+                ("\nErgebnisse (neueste zuerst):\n" + "\n".join(f"- {e['id']}: {e['titel']} ({e['form']}) -- {ergebnis_steckbrief(e)}" for e in erg) if erg else "") +
                 ("\nJüngste Notizen:\n" + "\n".join(f"- {(n['kurz'] or n['text'] or '')[:200]}" for n in notiz) if notiz else ""))
     if art == "ergebnis":
         e = db.holen("ergebnisse", kid)
@@ -381,7 +464,8 @@ def kontext_text(k: dict[str, Any] | None) -> str:
             # mehr als die erste Seite kennen; bei laengeren Werken steht dabei, dass es gekuerzt ist.
             inhalt = e["inhalt"] or ""
             return (f"VEIKO LIEST GERADE DAS ERGEBNIS „{e['titel']}“ (id {e['id']}{', Projekt ' + e['projekt_id'] if e.get('projekt_id') else ''}) "
-                    f"von {stab.rollen_name(e['rolle'])}. „Daraus“, „dazu“, „davon“, „das“ meint dieses Ergebnis."
+                    f"von {stab.rollen_name(e['rolle'])}. „Daraus“, „dazu“, „davon“, „das“ meint dieses Ergebnis.\n"
+                    f"STECKBRIEF: {ergebnis_steckbrief(e, lang=True)}"
                     + (f" (Du siehst die ersten 20.000 von {len(inhalt):,} Zeichen.)".replace(",", ".") if len(inhalt) > 20000 else "")
                     + f"\n{inhalt[:20000]}")
     if art == "notiz":
@@ -865,6 +949,23 @@ def beschriften(a: dict[str, Any]) -> str | None:
             return None
         a["ergebnis_id"] = e["id"]
         return f"Daniel prüft „{(e['titel'] or '')[:80]}“"
+    if art == "extern_pruefen":
+        from . import langlauf, teamchat
+        wer = EXTERN_NAME.get(str(a.get("wer") or "").lower().strip())
+        e = db.holen("ergebnisse", str(a.get("ergebnis_id") or "")) if a.get("ergebnis_id") else None
+        if not e:
+            o = next((x for x in (oeffnen_suchen(str(t), "ergebnis") for t in (a.get("titel"), a.get("auftrag")) if t) if x), None)
+            e = db.holen("ergebnisse", o["id"]) if o else None
+        l = _langlauf_zum_ergebnis(e["id"]) if e else None
+        if not wer or not l:
+            return None
+        a.update(wer=wer, ergebnis_id=e["id"], langlauf_id=l["id"])
+        try:
+            s = langlauf.abschluss_schaetzen(l["id"], wer)
+        except ValueError:
+            return None
+        return (f"{teamchat.EXTERNE[wer]['name']} prüft „{(e['titel'] or '')[:70]}“ abschließend "
+                f"({s['teile']} Teil{'e' if s['teile'] != 1 else ''}, geschätzt $ {s['usd']:.2f})")
     if art == "langlauf":
         from . import langlauf
         if a.get("art") not in langlauf.ARTEN:
@@ -1117,6 +1218,13 @@ async def ausfuehren(a: dict[str, Any]) -> dict[str, Any]:
         except ValueError as f:
             return {"ok": False, "grund": str(f)}
         return {"ok": True, "langlauf_id": l.get("id"), "titel": l.get("titel"), "material": len(material)}
+    if art == "extern_pruefen":
+        from . import langlauf
+        try:
+            langlauf.abschluss_starten(a["langlauf_id"], a["wer"])
+        except (KeyError, ValueError) as f:
+            return {"ok": False, "grund": str(f)}
+        return {"ok": True, "langlauf_id": a["langlauf_id"], "extern": a["wer"]}
     if art == "pruefen":
         e = _pruef_ergebnis(a)
         if not e:
@@ -1425,7 +1533,35 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     # Worten, das eine ungepruefte Ergebnis), sonst den Block gezielt nachfordern. Gemessen:
     # das Modell antwortete "Daniel hat das bereits geprueft" -- verwechselt mit einem
     # anderen Ergebnis, das nur den Titel "Pruefe …" trug.
-    if not erledigt_in and DANIEL_PRUEFEN.search(text) and not [v for v in vorschlaege if v["aktion"] == "pruefen"]:
+    # "Lass Demmis das Buch pruefen" (22.10.2026): gemessen wurde daraus zweimal Daniel und einmal ein
+    # LongRun, der ein Feedback schrieb. Nennt Veiko einen Externen -- oder sagt Ja zu einem Angebot,
+    # das einen Externen nannte --, ist es extern_pruefen; Daniel und ein Pruef-LongRun entfallen.
+    vorher_text = str((vorher or {}).get("text") or "") if isinstance(vorher, dict) else ""
+    extern_gemeint = EXTERN_PRUEFEN.search(text) or (ist_ja(text) and EXTERN_PRUEFEN.search(vorher_text))
+    if not erledigt_in and extern_gemeint and not [v for v in vorschlaege if v["aktion"] == "extern_pruefen"]:
+        name = next((EXTERN_NAME[w.lower()] for w in re.findall(r"\b(dario|claude|demmis|demis|dennis|gemini|elon|grok)\b",
+                     extern_gemeint.group(0), re.I)), None)
+        alt = next((v for v in vorschlaege if v["aktion"] in ("pruefen", "langlauf") and (v["aktion"] == "pruefen" or _PRUEF_AUFTRAG.search(str(v.get("auftrag") or "")))), None)
+        a = {"aktion": "extern_pruefen", "wer": name, "titel": (alt or {}).get("titel") or text,
+             "ergebnis_id": (alt or {}).get("ergebnis_id") or ((kontext or {}).get("id") if (kontext or {}).get("art") == "ergebnis" else None)}
+        lab = beschriften(a)
+        if not lab:
+            try:
+                roh = await llm.chat(modell, system, verlauf + [{"role": "assistant", "content": gesamt},
+                                                                 {"role": "user", "content": f"Veiko will, dass {name or 'ein Externer'} ein VORHANDENES Werk abschließend prüft. Antworte NUR mit "
+                                                                  f"```aktionen\n[{{\"aktion\":\"extern_pruefen\",\"wer\":\"{name or 'demmis'}\",\"ergebnis_id\":\"r… aus LAGE\",\"titel\":\"Titel des Werks\"}}]\n``` ohne weiteren Text."}],
+                                       temperatur=0.1, denken=False)
+                _, nach = vorschlaege_aus(roh if "```aktionen" in roh else "```aktionen\n" + roh + "\n```")
+                a = next((v for v in nach if v["aktion"] == "extern_pruefen"), a)
+                lab = a.get("label") if a.get("label") else None
+            except llm.ModellFehler:
+                pass
+        if lab:
+            a["label"] = lab
+            a.pop("zugestimmt", None)
+            vorschlaege = [v for v in vorschlaege if v is not alt and v["aktion"] != "pruefen"] + [a]
+            sichtbar = AENDERUNG_BEHAUPTET.sub("", TEAM_BEHAUPTET.sub("", sichtbar or "")).strip()
+    if not erledigt_in and not extern_gemeint and DANIEL_PRUEFEN.search(text) and not [v for v in vorschlaege if v["aktion"] == "pruefen"]:
         a: dict[str, Any] = {"aktion": "pruefen", "titel": text}
         if (kontext or {}).get("art") == "ergebnis":
             a["ergebnis_id"] = kontext["id"]
@@ -1639,6 +1775,8 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
             sichtbar = (sichtbar + "\n\nIch konnte die Recherche nicht starten -- gestartet ist nichts. Sag mir bitte noch einmal das Thema.").strip()
     if recherche:
         sichtbar = (sichtbar + "\n\n" + recherche[0]).strip()
+    # "Aus unserem Gespräch noch offen:" ohne etwas dahinter (gemessen am 22.10.2026) faellt weg.
+    sichtbar = re.sub(r"\n*[^\n]*noch offen:\s*$", "", sichtbar or "").strip()
     sichtbar += stab.netz_fuss(quellen)
     # Ein gerade gestarteter LongRun geht sofort auf (19.10.2026, Veiko: "wenn einer beauftragt
     # wird, soll er sofort bei LongRuns erscheinen, damit ich sehe, dass er wirklich ausgefuehrt wird").
