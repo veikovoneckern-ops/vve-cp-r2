@@ -1611,7 +1611,8 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     # Alles andere (Entscheidungen, Projekte, Aufgaben, Merken) bleibt beim Ja-Knopf.
     vorher = db.eine("SELECT id, text, daten FROM nachrichten WHERE gespraech_id=? AND rolle='assistent' ORDER BY id DESC LIMIT 1", (gid,))
     hatte_offen = bool(vorher and any(not v.get("erledigt") for v in ((vorher.get("daten") or {}).get("vorschlaege") or [])))
-    bestaetigt = bool(vorher and "?" in (vorher.get("text") or "") and not hatte_offen and ist_ja(text))
+    bestaetigt = bool(vorher and "?" in (vorher.get("text") or "") and not hatte_offen and ist_ja(text)
+                      and not _VERB_IRGENDWO.search(text) and not re.search(r"\b(aber|sondern|stattdessen)\b", text, re.I))
     auftrag = bool(AUFTRAG_AN_TEAM.search(text))
     befehl = bool(BEFEHL.search(text)) and not _ABLEHNUNG.search(text)
     # Ja auf die offenen Vorschlaege der vorigen Antwort (19.10.2026: "Ja, das solltest du
@@ -1626,10 +1627,15 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     vs_vorher = ((vorher or {}).get("daten") or {}).get("vorschlaege") or [] if hatte_offen else []
     senden_offen = [i for i, v in enumerate(vs_vorher) if not v.get("erledigt") and v.get("aktion") == "mail" and v.get("was") == "senden"]
     senden_ja = bool(senden_offen) and bool(re.search(r"\b(abschick\w*|absend\w*|verschick\w*|schick\w*\b.{0,40}\bab\b|raus\s*damit|kann\s+raus|senden)\b", text, re.I)) \
-        and not _ABLEHNUNG.search(text) and not re.search(r"\b(noch nicht|nicht abschick|erst|ändere|aendere|kürzer|kuerzer)\b", text, re.I)
-    if hatte_offen and (ist_ja(text) or senden_ja):
+        and not _ABLEHNUNG.search(text) and not re.search(r"\b(noch nicht|nicht abschick|erst|ändere|aendere|kürzer|kuerzer)\b", text, re.I) \
+        and not re.search(r"\?\s*$", text) and not re.match(r"\s*(hast|ist|wurde|sind|habt|wann|ob)\b", text, re.I) \
+        and not re.search(r"\bschon\b.{0,30}\b(verschickt|gesendet|abgeschickt|weggeschickt|raus)\b", text, re.I)
+    # "Ja, aber ich wollte die Daily Task sehen" / "Okay, oeffne …" ist kein Ja auf die offenen Vorschlaege
+    # (22.10.2026: das haette ein angebotenes Abschicken ausgeloest).
+    ja_klar = ist_ja(text) and not _VERB_IRGENDWO.search(text) and not re.search(r"\b(aber|sondern|stattdessen|erst)\b", text, re.I)
+    if hatte_offen and (ja_klar or senden_ja):
         vs_alt = (vorher.get("daten") or {}).get("vorschlaege") or []
-        idx = senden_offen if senden_ja and not ist_ja(text) else [i for i, v in enumerate(vs_alt) if not v.get("erledigt")]
+        idx = senden_offen if senden_ja and not ja_klar else [i for i, v in enumerate(vs_alt) if not v.get("erledigt")]
         vorab = await vorschlaege_ausfuehren(vorher["id"], idx)
         erledigt_in = {"nachricht_id": vorher["id"], "indizes": idx}
         vorschlaege = []
@@ -1687,7 +1693,8 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     # keinen Block. Will Veiko eine Mail, wird der Block gezielt nachgefordert.
     am_entwurf = (kontext or {}).get("art") == "mail" and (kontext or {}).get("id") not in (None, "alle") and bool(
         MAIL_BEFEHL.search(text) or re.search(r"kürzer|kuerzer|freundlicher|förmlicher|foermlicher|englisch|klarer|korrigier|abschick|"
-                                              r"drinstehen|drin stehen|reinschreiben|\binhalt\b|\btext\b|änder|aender|betreff", text, re.I))
+                                              r"drinstehen|drin stehen|reinschreiben|\binhalt\b|\btext\b|änder|aender|betreff", text, re.I)) \
+        and not re.search(r"\?\s*$", text) and not re.match(r"\s*(hast|ist|wurde|sind|habt|wann|ob|was|wie)\b", text, re.I)
     if not erledigt_in and (MAIL_ABSICHT.search(text) or am_entwurf) and not [v for v in vorschlaege if v["aktion"] == "mail"]:
         try:
             roh = await llm.chat(modell, system, verlauf + [{"role": "assistant", "content": gesamt}, {"role": "user", "content":
@@ -1823,7 +1830,14 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     mail_befehl = bool(MAIL_BEFEHL.search(text)) and not _ABLEHNUNG.search(text)
     # Ein vom Modell vorgeschlagenes Abschicken gilt nur, wenn Veiko abschicken WILL. Bittet er um eine
     # Aenderung, wird daraus die Aenderung -- danach haengt das Cockpit das Abschicken selbst an.
-    will_senden = bool(re.search(r"\b(abschick\w*|absend\w*|raus\b|verschick\w*|schick\w*\b.{0,30}\bab\b|send\w*)", text, re.I))
+    # Eine FRAGE nach dem Versand ("Hast du sie schon verschickt?") ist nie ein Auftrag zu senden.
+    ist_frage = bool(re.search(r"\?\s*$", text) or re.match(r"\s*(hast|ist|wurde|sind|habt|wann|ob)\b", text, re.I)
+                     or re.search(r"\bschon\b.{0,30}\b(verschickt|gesendet|abgeschickt|weggeschickt|raus)\b", text, re.I))
+    will_senden = not ist_frage and bool(re.search(r"\b(abschick\w*|absend\w*|raus\b|verschick\w*|schick\w*\b.{0,30}\bab\b|send\w*)", text, re.I))
+    mail_befehl = mail_befehl and not ist_frage    # "Hast du sie verschickt?" ist kein Auftrag an den Entwurf
+    if ist_frage:
+        # Was das Modell auf eine Frage hin an einem Entwurf aendern will, faellt weg (gemessen: ein leeres "aendern").
+        vorschlaege = [v for v in vorschlaege if not (v["aktion"] == "mail" and v.get("was") == "aendern" and not v.get("erledigt"))]
     for v in vorschlaege:
         # Die Inhaltsangabe muss aus Veikos JETZIGEM Satz stammen (22.10.2026: "Schreib eine Mail an …"
         # bekam den Inhalt eines alten Entwurfs aus der Lage untergeschoben -- "Film-Ärger").
@@ -1843,6 +1857,18 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     # Abschicken (22.10.2026) nur als Ja auf die Frage "Soll ich sie so abschicken?" -- also erst,
     # nachdem Veiko den Entwurf gesehen oder gehoert hat. Jeder andere Weg bleibt ein Vorschlag.
     abschicken_ok = bestaetigt and "abschicken" in str((vorher or {}).get("text") or "")
+    # Steht der Entwurf offen vor Veiko und sagt er "kann jetzt verschickt werden", hat er ihn gesehen --
+    # das ist die Zustimmung, auch wenn das Angebot ein paar Antworten zurueckliegt (22.10.2026: dazwischen
+    # lag "oeffne die Suche", und das Abschicken blieb ein Vorschlag).
+    offener_entwurf = db.holen("mails", (kontext or {}).get("id") or "") if (kontext or {}).get("art") == "mail" else None
+    if offener_entwurf and offener_entwurf.get("stand") != "gesendet" and will_senden and not _ABLEHNUNG.search(text) \
+            and not re.search(r"\b(noch nicht|nicht abschick|ändere|aendere|kürzer|kuerzer)\b", text, re.I):
+        abschicken_ok = True
+        if not [v for v in vorschlaege if v["aktion"] == "mail"]:
+            a = {"aktion": "mail", "was": "senden", "mail_id": offener_entwurf["id"]}
+            a["label"] = beschriften(a)
+            if a["label"]:
+                vorschlaege.append(a)
     gleich =[v for v in vorschlaege if v["aktion"] not in SOFORT_VERFAHREN
               and not (v["aktion"] == "mail" and v.get("was") == "senden" and not abschicken_ok)
               and (bestaetigt or (auftrag and v["aktion"] in ("ausarbeiten", "neo", "pruefen"))

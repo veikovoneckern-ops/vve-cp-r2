@@ -13,11 +13,10 @@ Dienste: Ollama (127.0.0.1:11434), ComfyUI (Docker, 8188), SearXNG (8888), Piper
 **Die neue Fassung (in der du gerade arbeitest)** liegt in `~/vve-cp-r2` (GitHub `veikovoneckern-ops/vve-cp-r2`).
 - `server.py` startet FastAPI auf der Tailnet-Adresse 100.65.221.106:8790 (Einstellung `VVEC_HOST` in `~/.config/vve-cp-r2.env`), als User-Dienst `vve-cp-r2.service` (`systemctl --user restart vve-cp-r2`).
 - Erreichbar unter `http://100.65.221.106:8790`. Für https (nötig fürs Mikrofon) muss Veiko einmal `sudo tailscale serve --bg --https=8443 http://100.65.221.106:8790` ausführen; danach `https://vveorgxais.tail4ca1ab.ts.net:8443`. Du hast dafür kein sudo.
-- `cockpit/`: `db.py` (SQLite unter `daten/cockpit.sqlite`), `stab.py` (Jason ordnet ein, Rollen arbeiten aus, Daniel prüft), `gespraech.py` (Talk), `neo.py` (du), `api.py` (alle Endpunkte), `importer.py` (liest das alte Cockpit, schreibt es nie).
-- `frontend/`: ES-Module ohne Bauschritt, Preact + htm aus `frontend/vendor/`. Je Bereich eine Datei unter `frontend/js/` (briefing, inbox, projects, team, system, neo, talk, composer).
-- Nach einer Änderung an Python-Dateien: `systemctl --user restart vve-cp-r2`. Frontend-Dateien wirken nach einem Neuladen im Browser.
-- Prüfen: `.venv/bin/python -c "import ast,sys;[ast.parse(open(f).read()) for f in sys.argv[1:]]" cockpit/*.py server.py` und für JS `node --check` auf eine Kopie mit Endung `.mjs`.
-- Änderungen committen und nach GitHub pushen: `git add -A && git commit -m "…" && git push`.
+- `cockpit/` ist das Backend (FastAPI, SQLite unter `daten/cockpit.sqlite`), `frontend/js/` die Oberfläche (ES-Module ohne Bauschritt, Preact + htm aus `frontend/vendor/`). Welche Datei was tut, steht in der LANDKARTE unten -- sie wird bei jedem Auftrag frisch aus dem Code erzeugt, ebenso der Verlauf der letzten Änderungen und das Inhaltsverzeichnis von CLAUDE.md.
+- **CLAUDE.md im Repo ist die vollständige Doku**: zu jeder Regel das Warum und die Fallen, an denen frühere Änderungen gescheitert sind. Hol dir den Abschnitt zu deinem Bereich mit `projektwissen`, bevor du dort etwas änderst. Steht etwas in CLAUDE.md anders als in diesem Text, gilt CLAUDE.md.
+- Frontend-Dateien wirken nach einem Neuladen im Browser, Python-Dateien nach einem Neustart des Dienstes.
+- **Du committest, pushst und startest nichts selbst.** Deine Änderungen werden vorgemerkt; das Cockpit testet sie (Syntax und Import), Dario prüft sie, und erst bei seiner Freigabe spielt das Cockpit ein, committet und pusht. Grund: am 21.10.2026 lag eine ungeprüfte Änderung an `konfig.py` uncommittet auf dem Server und legte Postausgang und Externe lahm, ohne dass es jemand merkte.
 
 **Das alte Cockpit (Release 1)** läuft weiter und wird NICHT direkt geändert.
 - Laufende Auslieferung: `/opt/vvec` (Backend), `/srv/www/cockpit` (Oberfläche), Daten `/var/lib/vvec`. Dort darfst du lesen, aber nicht schreiben.

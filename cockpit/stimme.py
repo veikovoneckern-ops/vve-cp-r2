@@ -169,7 +169,18 @@ def _plappert_nach(text: str, vorlage: str) -> bool:
     return sum(w in aus_vorlage for w in woerter) / len(woerter) > 0.85
 
 
-def _erkennen(pfad: str, vorlage: str) -> tuple[str, str]:
+def _sicherheit(segmente: list[Any]) -> dict[str, float]:
+    """Wie sicher Whisper war (22.10.2026): Veiko sah einen Film, und Talk bekam Fetzen davon als Auftrag
+    ("Urientus", "Jan, ich sollte jetzt vielleicht etwas Beruhigendes zu dir sagen"). Solche Fetzen haben
+    eine niedrige mittlere Log-Wahrscheinlichkeit und/oder eine hohe Wahrscheinlichkeit fuer "keine Sprache"."""
+    if not segmente:
+        return {"logprob": -9.0, "keine_sprache": 1.0}
+    n = sum(max(1, len(s.text)) for s in segmente)
+    return {"logprob": round(sum(s.avg_logprob * max(1, len(s.text)) for s in segmente) / n, 3),
+            "keine_sprache": round(max(s.no_speech_prob for s in segmente), 3)}
+
+
+def _erkennen(pfad: str, vorlage: str) -> tuple[str, str, dict[str, float]]:
     reihenfolge = [WHISPER_GERAET, "cpu"] if WHISPER_GERAET != "cpu" else ["cpu"]
     letzter: Exception | None = None
     for geraet in reihenfolge:
@@ -177,13 +188,15 @@ def _erkennen(pfad: str, vorlage: str) -> tuple[str, str]:
             m = _modell(geraet)
             segmente, _info = m.transcribe(pfad, language="de", vad_filter=True, beam_size=5,
                                            initial_prompt=vorlage or None)
+            segmente = list(segmente)
             text = " ".join(s.text.strip() for s in segmente).strip()
             if vorlage and _plappert_nach(text, vorlage):
                 # Gemessen am 03.10.2026 mit medium: statt des Satzes kam nur die
                 # Hoerhilfe-Liste zurueck. Dann ohne Hoerhilfe noch einmal.
                 segmente, _info = m.transcribe(pfad, language="de", vad_filter=True, beam_size=5)
+                segmente = list(segmente)
                 text = " ".join(s.text.strip() for s in segmente).strip()
-            return text, geraet
+            return text, geraet, _sicherheit(segmente)
         except Exception as e:  # noqa: BLE001 -- jeder Fehler auf der Karte -> CPU versuchen
             letzter = e
             with _mlock:
@@ -217,13 +230,18 @@ async def hoeren(roh: bytes, vorlage: str = "") -> dict[str, Any]:
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(roh)
-        text, geraet = await asyncio.to_thread(_erkennen, pfad, vorlage)
+        text, geraet, sicher = await asyncio.to_thread(_erkennen, pfad, vorlage)
     finally:
         try:
             os.unlink(pfad)
         except OSError:
             pass
-    return {"text": text, "geraet": geraet,
+    # Unsicher = vermutlich kein an das Cockpit gerichteter Satz (Fernseher, Gespraech im Raum). Talk
+    # verwirft so etwas im Freisprechen, statt darauf zu antworten; das Diktat nimmt es trotzdem.
+    unsicher = bool(text) and (sicher["keine_sprache"] > 0.6 or sicher["logprob"] < -1.0)
+    # Eine Zeile je Erkennung: die Schwellen oben sind Startwerte und werden an diesen Messungen nachgestellt.
+    print(f"[hoeren] logprob={sicher['logprob']} keine_sprache={sicher['keine_sprache']} unsicher={unsicher} -> {text[:70]}", flush=True)
+    return {"text": text, "geraet": geraet, "sicherheit": sicher, "unsicher": unsicher,
             "hinweis": "" if text else "Nichts verstanden. War die Aufnahme still?"}
 
 

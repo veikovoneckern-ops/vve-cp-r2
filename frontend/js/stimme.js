@@ -60,7 +60,7 @@ export async function aufnehmen({ stilleStopp = false, maxSek = 180, pegel } = {
       const t = performance.now();
       if (rms > 0.035) { gesprochen = true; stilleSeit = 0; } else if (!stilleSeit) stilleSeit = t;
       if (stilleStopp && rec.state === "recording") {
-        if (gesprochen && stilleSeit && t - stilleSeit > 1500) rec.stop();
+        if (gesprochen && stilleSeit && t - stilleSeit > 1100) rec.stop();
         else if (!gesprochen && t - start > 9000) rec.stop();
       }
       if (t - start > maxSek * 1000 && rec.state === "recording") rec.stop();
@@ -292,7 +292,8 @@ export async function lauschen({ beiEinsatz, pegel } = {}) {
   // Hochpass ~200 Hz (erste Ordnung) gegen Brummen und Tischgeraeusche.
   const a = 1 / (1 + 2 * Math.PI * 200 / rate);
   let hx = 0, hy = 0;
-  let mittel = 0.01, boden = 0.01, ueber = 0, spitze = 0, echoSpitze = 0, rahmen = 0;
+  let mittel = 0.01, boden = 0.01, ueber = 0, spitze = 0, echoSpitze = 0, rahmen = 0, kopplung = null, sMik = 0, sWied = 0, wiedRahmen = 0;
+  const diag = { mitKurve: 0, ohneKurve: 0, still: 0 };
   const start = performance.now();
   const quelle = ctx.createMediaStreamSource(strom);
   const proz = ctx.createScriptProcessor(2048, 1, 1);
@@ -322,13 +323,49 @@ export async function lauschen({ beiEinsatz, pegel } = {}) {
       // mit einem kuenstlichen, silbenartig schwankenden Echo loeste das Mittel allein falsch aus.
       // Gelernt werden nur Spitzen UNTER der Schwelle (und alles in den ersten 300 ms) -- sonst
       // wuerde Veikos eigener Einsatz die Schwelle mit nach oben ziehen.
-      const schwelle = Math.max(0.02, mittel * 2.2, echoSpitze * 1.4);
-      const warm = t - start <= 300;
+      // Dritte Fassung (22.10.2026, abends): mit laufendem Film blieb Veiko mit Spitzen von 0,026-0,039
+      // unter der Schwelle, weil die Echo-Spitze den GANZEN Satz ueber galt. Jetzt zaehlt, wie laut Talk
+      // in DIESEM Augenblick klingt (wiedergabePegel aus der Lautstaerkekurve des laufenden Satzes) mal
+      // dem gemessenen Uebertragungsfaktor Lautsprecher -> Mikrofon (kopplung). In Talks Sprechpausen
+      // faellt die Schwelle damit fast auf das Grundrauschen -- dort reicht schon leises Reden.
+      const pw = wiedergabePegel();
+      let schwelle;
+      if (pw === null || kopplung === null) {
+        schwelle = Math.max(0.02, mittel * 2.2, echoSpitze * 1.4);
+      } else {
+        schwelle = Math.max(0.014, boden * 3, kopplung * pw * 1.6 + 0.006);
+        diag.mitKurve++;
+      }
+      if (pw === null) diag.ohneKurve++;
+      if (pw !== null && pw === 0) diag.still++;
+      if (window.__lauschVerlauf) window.__lauschVerlauf.push([Math.round(t - start), +rms.toFixed(4), pw === null ? null : +pw.toFixed(3), +schwelle.toFixed(4)]);
+      // Einlaufzeit: die ersten 300 ms UND der Beginn der Wiedergabe, bis die Kopplung gelernt ist -- die
+      // Stimme kommt erst nach dem Laden, und die ersten Echo-Rahmen trafen sonst eine ungelernte Schwelle.
+      // Kopplung Lautsprecher -> Mikrofon lernen (Summen ueber viele Rahmen: Mikrofon gegen MITTELWERT der
+      // Wiedergabe -- das gleicht Silbenluecken und die Verzoegerung des Echos aus). Gemessen an einem
+      // kuenstlichen Echo in vier Staerken:
+      //  - Augenblick gegen Fenster-Spitze verglichen lag die Kopplung mal 4x zu tief (Fehlalarm), mal zu hoch.
+      //  - Alles unter der Schwelle gelernt, kletterte sie waehrend Veikos Einwurf mit (0,07 -> 0,5).
+      //  - Zu frueh festgelegt, war sie zu tief: das Echo kommt erst nach dem Laden und mit Verzoegerung an.
+      // Deshalb: Einlernzeit von ~0,7 s Wiedergabe (die ersten 3 Rahmen ausgelassen), danach nur Rahmen,
+      // die nicht ueber der Schwelle liegen.
+      if (pw !== null && pw > 0) wiedRahmen++;
+      const einlernen = pw !== null && wiedRahmen > 0 && wiedRahmen <= 17;
+      const warm = t - start <= 300 || einlernen || (pw !== null && pw > 0 && kopplung === null);
       if (!warm) { if (rms > schwelle) ueber++; else ueber = 0; }
-      if (warm || rms <= schwelle) echoSpitze = Math.max(echoSpitze * 0.995, rms);
+      if (warm || rms <= schwelle) {
+        echoSpitze = Math.max(echoSpitze * 0.995, rms);
+        const pm = wiedergabePegel(true);
+        if (pm !== null && pm > 0.02 && wiedRahmen > 3) {
+          sMik = sMik * 0.97 + rms; sWied = sWied * 0.97 + pm;
+          if (wiedRahmen >= 17) kopplung = Math.min(3, sMik / Math.max(sWied, 1e-6));
+        }
+      }
       spitze = Math.max(spitze, rms);
       mittel = mittel * 0.92 + Math.min(rms, schwelle) * 0.08;
-      if (rms < mittel) boden = boden * 0.95 + rms * 0.05;
+      // Grundrauschen als langsam steigendes MINIMUM (verdoppelt sich ohne leise Stelle in ~3 s): ein Mittel
+      // der leisen Rahmen zaehlte Echo-Reste mit, und leises Reden in Talks Sprechpausen blieb darunter.
+      boden = rms < boden ? Math.max(rms, 0.0005) : boden * 1.01;
       if (ueber >= 5) {            // ~210 ms bei 48 kHz
         einsatz = t;
         aufnahme = ring; ring = [];
@@ -341,14 +378,14 @@ export async function lauschen({ beiEinsatz, pegel } = {}) {
     if (pegel) pegel(Math.min(1, rms * 10));
     // Talk schweigt jetzt -- Stille heisst: zurueck in die Naehe des Grundrauschens.
     if (rms > Math.max(0.012, boden * 2.5)) stilleSeit = 0; else if (!stilleSeit) stilleSeit = t;
-    if ((stilleSeit && t - stilleSeit > 1300) || t - einsatz > 60000) schluss(wavAus(aufnahme, rate));
+    if ((stilleSeit && t - stilleSeit > 1000) || t - einsatz > 60000) schluss(wavAus(aufnahme, rate));
   };
   quelle.connect(proz); proz.connect(stumm); stumm.connect(ctx.destination);
   bericht.spitze_vorher = 0;
   return {
     ende,
     eingesetzt: () => !!einsatz,
-    bericht: () => ({ ...bericht, echo_spitze: +echoSpitze.toFixed(4), spitze_vorher: bericht.einsatz ? bericht.spitze_vorher : +spitze.toFixed(4), mittel_ende: +mittel.toFixed(4), boden: +boden.toFixed(4) }),
+    bericht: () => ({ ...bericht, ...diag, echo_spitze: +echoSpitze.toFixed(4), kopplung: kopplung === null ? null : +kopplung.toFixed(3), spitze_vorher: bericht.einsatz ? bericht.spitze_vorher : +spitze.toFixed(4), mittel_ende: +mittel.toFixed(4), boden: +boden.toFixed(4) }),
     // Talk ist fertig mit Sprechen: ohne Einsatz ist nichts aufzuheben.
     loslassen() { if (!einsatz) schluss(null); },
     // Von Hand unterbrochen (Kreis angetippt): sofort als Einsatz werten -- was davor gesagt
@@ -382,9 +419,79 @@ if (typeof window !== "undefined") {
 }
 
 let laufend = null, vorleseNr = 0;
+// Was gerade klingt: die Lautstaerkekurve des laufenden Stuecks (huelle, je 50 ms) -- damit das Mithoeren
+// weiss, wie laut Talk in DIESEM Augenblick ist (lauschen), und was nach einem Abbruch noch zu sagen waere.
+let klingt = null, klangEnde = 0, klangLetzter = 0, vorleseRest = "";
 export function vorleseStopp() {
   vorleseNr++;   // auch ein noch ladendes Vorlesen spielt danach nicht mehr ab
   if (laufend) { laufend.pause(); laufend.dispatchEvent(new Event("ended")); laufend = null; }
+}
+// Der Teil einer Antwort, der nach einem Ins-Wort-Fallen noch nicht gesagt war (ab dem unterbrochenen Satz).
+export function rest() { return vorleseRest; }
+
+// Wie laut Talk gerade klingt (0..1, Spitze im Fenster der letzten 200 ms -- laenger haengt das Echo selten
+// nach, und ein laengeres Fenster ueberdeckte die Luecken zwischen Talks Silben, in denen Veiko einsetzen kann).
+// null = unbekannt (Kurve noch nicht berechnet); 0 = Talk schweigt.
+// mittel=true: Mittelwert im selben Fenster -- fuer das Lernen der Kopplung (siehe lauschen).
+export function wiedergabePegel(mittel = false) {
+  const jetzt = performance.now();
+  if (!klingt || !laufend) return jetzt - klangEnde < 300 ? (mittel ? klangLetzter / 2 : klangLetzter) : 0;
+  if (!klingt.huelle) return null;
+  const t = laufend.currentTime, h = klingt.huelle;
+  const von = Math.max(0, Math.floor((t - 0.2) / 0.05)), bis = Math.min(h.length - 1, Math.ceil((t + 0.05) / 0.05));
+  let m = 0, s = 0; for (let i = von; i <= bis; i++) { m = Math.max(m, h[i]); s += h[i]; }
+  if (mittel) return s / Math.max(1, bis - von + 1);
+  klangLetzter = m;
+  return m;
+}
+async function huelleBerechnen(blob, ziel) {
+  try {
+    const ctx = tonKontextHolen();
+    if (!ctx) return;
+    const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
+    const d = buf.getChannelData(0), n = Math.max(1, Math.round(buf.sampleRate * 0.05));
+    const h = new Float32Array(Math.ceil(d.length / n));
+    for (let i = 0; i < h.length; i++) {
+      let s = 0; const a = i * n, b = Math.min(d.length, a + n);
+      for (let j = a; j < b; j++) s += d[j] * d[j];
+      h[i] = Math.sqrt(s / Math.max(1, b - a));
+    }
+    ziel.huelle = h;
+  } catch (e) { /* ohne Kurve gilt die alte Schwelle */ }
+}
+
+// Satzweise statt am Stueck (22.10.2026, Veiko: "der Dialog ist immer noch mit vielen Pausen"): eine
+// Antwort von 300 Zeichen brauchte gemessen 2,9 s Vertonung, bevor das erste Wort kam; ein Satz 0,8 s.
+// Jetzt erklingt der erste Satz, waehrend der Rest schon vertont wird. Getrennt wird nur an einem
+// echten Satzende -- "20. Oktober" und "z. B." bleiben zusammen.
+function saetze(text) {
+  const teile = [];
+  let start = 0;
+  const re = /[.!?…:]["“”]?\s+/g;
+  let m;
+  while ((m = re.exec(text))) {
+    const vor = text.slice(start, m.index).split(/\s+/).pop() || "";
+    const nach = text.charAt(m.index + m[0].length);
+    if (vor.length >= 3 && !/^\d+$/.test(vor) && !/^(bzw|usw|ggf|inkl|evtl|ca|Nr|Dr|vgl)$/i.test(vor) && /[A-ZÄÖÜ„"0-9]/.test(nach)) {
+      teile.push(text.slice(start, m.index + m[0].length).trim());
+      start = m.index + m[0].length;
+    }
+  }
+  if (start < text.length) teile.push(text.slice(start).trim());
+  // Kurze Saetze zusammenlegen (jeder Abruf kostet ~0,8 s Grundzeit); der ERSTE bleibt kurz.
+  const stuecke = [];
+  for (const s of teile.filter(Boolean)) {
+    const l = stuecke[stuecke.length - 1];
+    if (l !== undefined && stuecke.length > 1 && (l + " " + s).length < 280) stuecke[stuecke.length - 1] = l + " " + s;
+    else if (l !== undefined && stuecke.length === 1 && l.length < 40) stuecke[0] = l + " " + s;
+    else stuecke.push(s);
+  }
+  return stuecke;
+}
+function stimmeHolen(t) {
+  return fetch("/api/stimme/sprechen", { method: "POST", credentials: "same-origin",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: t.slice(0, 2500) }) })
+    .then((r) => { if (!r.ok) throw new Error("Sprachausgabe nicht erreichbar"); return r.blob(); });
 }
 
 // vonTalk: Talk liest seine eigene Antwort vor -- dann hoert Talk gerade ohnehin nicht zu.
@@ -397,29 +504,39 @@ export async function vorlesen(text, { vonTalk = false } = {}) {
   try {
     const sauber = String(text || "").replace(/```[\s\S]*?```/g, " ").replace(/[#*_`>|]/g, " ").replace(/\s+/g, " ").trim();
     if (!sauber) return;
-    const r = await fetch("/api/stimme/sprechen", { method: "POST", credentials: "same-origin",
-      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: sauber.slice(0, 2500) }) });
-    if (!r.ok) throw new Error("Sprachausgabe nicht erreichbar");
-    const daten = await r.blob();
-    if (nr !== vorleseNr) return;
-    const url = URL.createObjectURL(daten);
-    const a = abspieler();
-    a.src = url;
-    laufend = a;
-    await new Promise((ok) => {
-      a.addEventListener("ended", ok, { once: true });
-      a.addEventListener("error", ok, { once: true });
-      a.play().catch((e) => {
-        // Nicht mehr still: wer nichts hoert, soll wissen warum und was hilft (einmal je Seite).
-        if (e && e.name === "NotAllowedError" && !blockiertGemeldet) {
-          blockiertGemeldet = true;
-          toast("Der Browser hat den Ton blockiert. Tippe einmal irgendwo ins Cockpit -- danach liest es vor.", { fehler: true, dauer: 8000 });
-        }
-        ok();
+    const stuecke = saetze(sauber.slice(0, 2500));
+    vorleseRest = stuecke.join(" ");
+    let naechstes = stimmeHolen(stuecke[0]);
+    for (let i = 0; i < stuecke.length; i++) {
+      const daten = await naechstes;
+      if (nr !== vorleseNr) return;
+      // Das naechste Stueck wird vertont, waehrend dieses klingt.
+      if (i + 1 < stuecke.length) { naechstes = stimmeHolen(stuecke[i + 1]); naechstes.catch(() => {}); }
+      vorleseRest = stuecke.slice(i).join(" ");
+      const url = URL.createObjectURL(daten);
+      const a = abspieler();
+      const stueck = { huelle: null };
+      huelleBerechnen(daten, stueck);
+      a.src = url;
+      laufend = a; klingt = stueck;
+      const fertig = await new Promise((ok) => {
+        a.addEventListener("ended", () => ok(true), { once: true });
+        a.addEventListener("error", () => ok(true), { once: true });
+        a.play().catch((e) => {
+          // Nicht mehr still: wer nichts hoert, soll wissen warum und was hilft (einmal je Seite).
+          if (e && e.name === "NotAllowedError" && !blockiertGemeldet) {
+            blockiertGemeldet = true;
+            toast("Der Browser hat den Ton blockiert. Tippe einmal irgendwo ins Cockpit -- danach liest es vor.", { fehler: true, dauer: 8000 });
+          }
+          ok(false);
+        });
       });
-    });
-    URL.revokeObjectURL(url);
-    if (laufend === a) laufend = null;
+      URL.revokeObjectURL(url);
+      klangEnde = performance.now(); klingt = null;
+      if (laufend === a) laufend = null;
+      if (!fertig || nr !== vorleseNr) return;
+    }
+    vorleseRest = "";
   } finally {
     if (!vonTalk) mikroFreigeben("vorlesen");
   }

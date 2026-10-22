@@ -16,7 +16,7 @@ import { escFensterZu, useEsc, html, useState, useEffect, useRef, Icon, Md, toas
 import { api, strom } from "./api.js";
 import { Composer } from "./composer.js";
 import { boardFrageMerken } from "./board.js";
-import { aufnehmen, lauschen, erkennen, vorlesen, vorleseStopp, mikrofonGrund, mikroAnfordern, mikroFreigeben } from "./stimme.js";
+import { aufnehmen, lauschen, erkennen, vorlesen, vorleseStopp, rest, mikrofonGrund, mikroAnfordern, mikroFreigeben } from "./stimme.js";
 
 const NEIN_WORT = /\b(nein|nee|nö|nicht|lieber nicht|ablehnen|falsch|stopp)\b/i;
 const JA_WORT = /\b(ja|jawohl|jep|genau|klar|gerne|ok|okay|einverstanden|passt|richtig|bitte|mach(e)? (das|es)|tu (das|es)|(kannst|sollst|darfst) du (so )?(machen|tun)|so machen|so tun|anlegen|merken|ausführen)\b/i;
@@ -36,7 +36,10 @@ const reinigen = (t) => String(t || "").trim().replace(/[.!?,]+$/, "").trim();
 // Satz mit Ja, darf er laenger sein ("Ja, das solltest du vorhin schon ausführen. Führe
 // das jetzt aus" ging am 19.10.2026 als neue Frage ans Modell, und nichts lief).
 const JA_ANFANG = /^(ja|jawohl|genau|okay|ok|gerne|klar|einverstanden)\b/i;
-const istJa = (t) => !NEIN_WORT.test(t) && ((t.split(/\s+/).length <= 10 && JA_WORT.test(t)) || (t.split(/\s+/).length <= 18 && JA_ANFANG.test(t)));
+// Ein "Ja, aber …" oder "Okay, öffne …" ist kein Ja auf offene Vorschläge, sondern etwas Neues (22.10.2026:
+// es hätte ein angebotenes Abschicken ausgelöst).
+const JA_ABER = /\b(aber|sondern|öffne\w*|oeffne\w*|zeig\w*|anschau\w*|wechsel\w*|stattdessen|erst)\b/i;
+const istJa = (t) => !NEIN_WORT.test(t) && !JA_ABER.test(t) && ((t.split(/\s+/).length <= 10 && JA_WORT.test(t)) || (t.split(/\s+/).length <= 18 && JA_ANFANG.test(t)));
 // "bitte" zaehlt hier nicht als Ja: "Nein, warte damit bitte" war sonst kein Nein (19.10.2026).
 const istNein = (t) => t.split(/\s+/).length <= 5 && NEIN_WORT.test(t) && !JA_WORT.test(t.replace(/\b(nein|bitte)\b/gi, ""));
 
@@ -354,6 +357,12 @@ export function Talk({ zu, kontext, setKontext, start }) {
     if (!freiAn.current || !ctl.gesprochen()) return "";
     setFrei((f) => f && { ...f, zustand: "erkennt" });
     const d = await erkennen(blob);
+    // Unsicher Erkanntes (Fernseher, Gespraech im Raum -- 22.10.2026: "Urientus") ist keine Eingabe.
+    // null statt "": das zaehlt nicht als "nichts gehoert", sonst beendete ein laufender Film das Freisprechen.
+    if (d.unsicher && reinigen(d.text).split(/\s+/).length <= 8) {
+      setFrei((f) => f && { ...f, text: "Das klang nicht nach dir -- ich höre weiter zu." });
+      return null;
+    }
     return reinigen(d.text);
   }
   async function sprechen(text) {
@@ -377,17 +386,29 @@ export function Talk({ zu, kontext, setKontext, start }) {
     lauschRef.current = null;
     if (!freiAn.current || !blob) { melden("abgebrochen"); return; }
     setFrei((f) => f && { ...f, zustand: "erkennt" });
+    const offen = rest();     // was Talk noch sagen wollte, ab dem unterbrochenen Satz
+    let weiter = false;
     try {
-      const t = reinigen((await erkennen(blob)).text);
+      const d = await erkennen(blob);
+      const t = reinigen(d.text);
       // Was nur Talks eigene Worte wiederholt, war Echo und kein Einwurf.
       const w = (s) => (String(s).toLowerCase().match(/[a-zäöüß]{3,}/g) || []);
       const eigen = new Set(w(text));
       const seine = w(t);
       const echo = seine.length && seine.filter((x) => eigen.has(x)).length / seine.length > 0.8;
       const nurStopp = /^(stopp?|halt|ruhe|sei still|still|warte|moment|okay|ok|danke)\W*$/i.test(t);
-      if (t && !nurStopp && !echo) vorgriff.current = t;
-      melden(!t ? "nichts verstanden" : echo ? "Echo: " + t.slice(0, 80) : nurStopp ? "nur Stopp" : "Einwurf: " + t.slice(0, 80));
-    } catch (e) { melden("Erkennung gescheitert: " + e.message); }
+      const fremd = d.unsicher && seine.length <= 8;
+      if (t && !nurStopp && !echo && !fremd) vorgriff.current = t;
+      // Fehlalarm (Echo, Fernseher, nichts verstanden): Talk spricht ab dem unterbrochenen Satz weiter,
+      // statt die halbe Antwort zu verschlucken. "Stopp" heisst dagegen: wirklich still sein.
+      weiter = !nurStopp && (!t || echo || fremd);
+      melden(!t ? "nichts verstanden" : echo ? "Echo: " + t.slice(0, 80) : fremd ? "unsicher, verworfen: " + t.slice(0, 80)
+        : nurStopp ? "nur Stopp" : "Einwurf: " + t.slice(0, 80));
+    } catch (e) { melden("Erkennung gescheitert: " + e.message); weiter = true; }
+    if (weiter && offen && freiAn.current) {
+      setFrei((f) => f && { ...f, zustand: "spricht", text: "" });
+      try { await vorlesen(offen, { vonTalk: true }); } catch (e) { /* ohne Ton weiter */ }
+    }
   }
 
   // Vorfahrt am Mikrofon (stimme.mikroAnfordern, 19.10.2026): Talk meldet sich an; drueckt
@@ -440,6 +461,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
       let t = "";
       try { t = await zuhoeren(); } catch (e) { toast(e.message, { fehler: true }); break; }
       if (!an()) return;
+      if (t === null) continue;      // unsicher erkannt: kein Satz an Talk, zaehlt nicht als Stille
       if (!t) { if (++leer >= 3) { await sprechen("Ich höre nichts mehr und beende das Freisprechen."); break; } continue; }
       leer = 0;
       if (istEnde(t)) {
@@ -449,7 +471,11 @@ export function Talk({ zu, kontext, setKontext, start }) {
         ausKopf.current = false; freiBeenden(); zu(); return;
       }
       setFrei((f) => f && { ...f, zustand: "denkt", text: t });
+      // Dauert die Antwort, sagt Talk kurz Bescheid, statt still zu sein (22.10.2026, Veiko: "viele Pausen").
+      let geantwortet = false;
+      const moment = setTimeout(() => { if (!geantwortet && an()) vorlesen("Einen Moment.", { vonTalk: true }).catch(() => {}); }, 3500);
       const r = await eingabe(t, [], true);
+      geantwortet = true; clearTimeout(moment);
       if (!an()) return;
       if (r && r.text) await sprechen(r.text);
     }
@@ -511,6 +537,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
         let t = "";
         try { t = await zuhoeren(); } catch (x) { toast(x.message, { fehler: true }); freiAn.current = false; break; }
         if (!freiAn.current) break;
+        if (t === null) continue;
         if (!t) { if (++versuch >= 2) { await sprechen("Ich lasse das für später."); break; } await sprechen("Ich habe nichts gehört. Ja, nein oder später?"); continue; }
         setMsgs((m) => [...m, { id: "d" + Date.now(), rolle: "du", text: t }]);
         if (istEnde(t)) { freiAn.current = false; break; }

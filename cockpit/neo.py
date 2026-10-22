@@ -26,6 +26,7 @@ from typing import Any
 
 from . import db, llm
 from . import neo_freigabe as nf
+from . import neo_stand
 from .konfig import MODELL_NEO, UPLOADS, VORSCHAU_DIR, WURZEL
 
 MAX_SCHRITTE = 40
@@ -43,6 +44,8 @@ BEFEHL_GESPERRT = re.compile("|".join([
 WERKZEUGE = [
     {"name": "datei_lesen", "description": "Liest eine Datei (absoluter Pfad oder relativ zum Repo der neuen Fassung ~/vve-cp-r2). Lange Dateien mit 'ab_zeile' abschnittsweise.",
      "parameters": {"type": "object", "properties": {"pfad": {"type": "string"}, "ab_zeile": {"type": "integer"}}, "required": ["pfad"]}},
+    {"name": "projektwissen", "description": "Holt aus CLAUDE.md (der vollständigen Doku des Cockpits) alle Abschnitte zu einem Stichwort -- mit dem WARUM und den Fallen, an denen frühere Änderungen gescheitert sind. Vor jeder Änderung an einem Bereich aufrufen (Stichwort = Datei, Funktion oder Thema, z. B. 'mail.py', 'Talk unterbrechen', 'Freigabe').",
+     "parameters": {"type": "object", "properties": {"thema": {"type": "string"}}, "required": ["thema"]}},
     {"name": "suche", "description": "Sucht rekursiv nach Text in einem Ordner (grep). Vorgabe: Repo der neuen Fassung.",
      "parameters": {"type": "object", "properties": {"text": {"type": "string"}, "ordner": {"type": "string"}}, "required": ["text"]}},
     {"name": "datei_schreiben", "description": "Schreibt die VOLLSTAENDIGE neue Fassung einer Datei. Erst lesen, dann ersetzen. In den Arbeitsablagen (Vorschau, Exporte, /tmp) sofort; alles andere wird vorgemerkt und erst nach Darios Freigabe eingespielt. Gesperrt: Systempfade, /opt/vvec, /srv/www, /var/lib/vvec.",
@@ -192,12 +195,23 @@ async def werkzeug(name: str, e: dict[str, Any], lauf: dict[str, Any]) -> str:
             zeilen = (vorgemerkt if vorgemerkt is not None else z.read_text(encoding="utf-8", errors="replace")).splitlines()
         except OSError as f:
             return f"Fehler: {f}"
+        lauf.setdefault("gelesen", set()).add(str(z))
         ab = max(int(e.get("ab_zeile") or 1), 1)
         stueck = zeilen[ab - 1: ab - 1 + 600]
         text = "\n".join(f"{ab + i}\t{z_}" for i, z_ in enumerate(stueck))
         if ab - 1 + 600 < len(zeilen):
             text += f"\n... [Datei hat {len(zeilen)} Zeilen -- weiter mit ab_zeile={ab + 600}]"
         return text[:20000] or "(leer)"
+    if name == "projektwissen":
+        return neo_stand.projektwissen(str(e.get("thema") or ""))
+    if name in ("datei_schreiben", "datei_aendern"):
+        # Nachsehen vor dem Aendern (22.10.2026, "so gut wie Claude Code"): eine bestehende Datei im Cockpit,
+        # die Neo in diesem Auftrag nicht gelesen hat, darf er nicht aendern -- sonst schreibt er gegen einen
+        # Stand, den er nur vermutet.
+        z0 = _pfad(e.get("pfad", ""))
+        if z0.is_file() and not nf.frei(z0) and str(z0) not in lauf.get("gelesen", set()):
+            return (f"Abgewiesen: {z0} hast du in diesem Auftrag noch nicht gelesen. Lies sie zuerst mit datei_lesen "
+                    f"(und hol dir mit projektwissen die Regeln zu diesem Bereich), dann ändere sie.")
     if name == "suche":
         ordner = _pfad(e.get("ordner") or str(WURZEL))
         return await _shell(["grep", "-rnI", "--exclude-dir=.git", "--exclude-dir=.venv", "--exclude-dir=node_modules",
@@ -392,6 +406,20 @@ def system_text(anhaenge: list[dict[str, Any]] | None = None) -> str:
             f"\n\n## Was über Veiko bekannt ist\n{gedaechtnis_text()}\n\n"
             "## Wie du arbeitest\n"
             "Sieh nach, bevor du etwas behauptest -- nicht raten.\n"
+            "## So arbeitest du am Code (wie Claude Code)\n"
+            "1. VERSTEHEN: Welche Dateien betrifft der Auftrag? Sieh in der Landkarte und im Verlauf unten nach, was zuletzt "
+            "dort geändert wurde. Hol dir mit projektwissen die Regeln zu genau diesem Bereich -- dort steht, WARUM etwas so ist "
+            "und woran frühere Änderungen gescheitert sind. Mit befehl_ausfuehren „git log -5 -p -- <datei>“ siehst du die "
+            "letzten Änderungen im Detail.\n"
+            "2. LESEN: Lies jede Datei, die du ändern willst, an der betroffenen Stelle vollständig (datei_lesen, mit ab_zeile). "
+            "Suche alle Stellen, die die Funktion benutzen (suche), bevor du ihren Namen oder ihre Rückgabe änderst. "
+            "Ohne Lesen weist das Cockpit eine Änderung ab.\n"
+            "3. KLEIN ÄNDERN: datei_aendern an genau der Stelle, im Stil der Umgebung (deutsche Namen, Kommentare, die das WARUM "
+            "erklären). Nichts entfernen, was funktioniert. Keine Einstellung abschalten, um ein Problem zu „lösen“ -- am 21.10. "
+            "hat genau das (ALT_BACKEND leer gesetzt) Postausgang und Externe lahmgelegt.\n"
+            "4. PRÜFEN: Vor Darios Prüfung lässt das Cockpit deine Fassung in einer Wegwerf-Kopie laufen (Syntax und Import aller "
+            "Module). Ein Fehler kommt an dich zurück -- behebe ihn. Behaupte erst etwas, wenn es geprüft ist.\n"
+            "5. BERICHTEN: was du vorgemerkt hast (Datei, Stelle, warum), was Veiko danach prüfen soll.\n"
             "## Darios Freigabe -- PFLICHT vor jeder Änderung am Cockpit\n"
             "Was das Cockpit verändert (Code und Dateien im Repo, Einstellungen, jeder Befehl, der etwas schreibt, installiert, "
             "löscht oder Dienste startet), wird VORGEMERKT und erst am Ende deines Auftrags von Dario geprüft. Nur bei seiner "
@@ -428,7 +456,9 @@ def system_text(anhaenge: list[dict[str, Any]] | None = None) -> str:
             "„Bau das noch mal“, „das ist nicht mein Logo“, „das stimmt nicht“: dein letzter Versuch war falsch. Wiederhole ihn NICHT "
             "und schreib deine alte Antwort nicht ab. Sieh zuerst nach, was schiefging (die Seite mit datei_lesen lesen, den Ordner "
             "mit befehl_ausfuehren ls -la ansehen), behebe genau das und zeig das Ergebnis erneut. Nach deiner Antwort prüft das "
-            "Cockpit selbst, ob die Seite gezeigt wird und alle Bilder neben ihr liegen.")
+            "Cockpit selbst, ob die Seite gezeigt wird und alle Bilder neben ihr liegen."
+            # Der aktuelle Stand, bei jedem Auftrag frisch (neo_stand.py, 22.10.2026).
+            + neo_stand.stand_text())
 
 
 _XML_FN = re.compile(r"<function=([\w-]+)>(.*?)(?:</function>|(?=<function=)|\Z)", re.S)
@@ -691,6 +721,19 @@ async def _kern(gid: str, modell: str, lauf: dict[str, Any]) -> None:
                 if problem:
                     letzter_text = ((letzter_text + "\n\n") if letzter_text else "") + \
                         "**Hinweis des Cockpits:** " + problem.replace("PRÜFUNG DES COCKPITS: ", "")
+                # Selbsttest der vorgemerkten Fassung (neo_stand.selbsttest): ein Fehler geht an Neo zurueck,
+                # nicht an Dario -- hoechstens zweimal; danach wird nichts eingespielt.
+                if not nf.leer(lauf):
+                    fehler = await asyncio.to_thread(neo_stand.selbsttest, nf.entwurf(lauf))
+                    lauf["selbsttest_fehler"] = fehler
+                    if fehler and lauf.get("selbsttest_runden", 0) < 2:
+                        lauf["selbsttest_runden"] = lauf.get("selbsttest_runden", 0) + 1
+                        await schlange.put({"typ": "zwischen", "text": "(Selbsttest des Cockpits: deine vorgemerkte Fassung läuft nicht. Neo bessert nach.)"})
+                        verlauf.append({"role": "user", "content":
+                                        "SELBSTTEST DES COCKPITS -- deine vorgemerkte Fassung läuft so NICHT (geprüft in einer Wegwerf-Kopie):\n"
+                                        f"{fehler}\n\nLies die betroffene Stelle (datei_lesen zeigt dir deine vorgemerkte Fassung), "
+                                        "behebe den Fehler mit datei_aendern und antworte dann."})
+                        continue
                 break
             for a in aufrufe:
                 fn = a.get("function") or {}
@@ -723,8 +766,15 @@ async def _kern(gid: str, modell: str, lauf: dict[str, Any]) -> None:
     neustart = False
     if not nf.leer(lauf):
         n = len(nf.entwurf(lauf)["dateien"]) + len(nf.entwurf(lauf)["befehle"])
-        await schlange.put({"typ": "zwischen", "text": f"(Dario prüft jetzt, was Neo verändern will -- {n} vorgemerkte Änderung(en). Ohne seine Freigabe wird nichts eingespielt.)"})
-        pruefung = await nf.pruefen(lauf, lauf.get("auftrag") or "", letzter_text)
+        if "selbsttest_fehler" not in lauf:      # z. B. nach der Grenze der Arbeitsschritte
+            lauf["selbsttest_fehler"] = await asyncio.to_thread(neo_stand.selbsttest, nf.entwurf(lauf))
+        if lauf.get("selbsttest_fehler"):
+            # Laeuft nicht -- Dario muss das gar nicht erst sehen (und es kostet nichts).
+            pruefung = {"urteil": "abgelehnt", "von": "der Selbsttest des Cockpits",
+                        "begruendung": "Neos Fassung läuft auch nach zwei Nachbesserungen nicht:\n" + lauf["selbsttest_fehler"][:1500], "maengel": []}
+        else:
+            await schlange.put({"typ": "zwischen", "text": f"(Dario prüft jetzt, was Neo verändern will -- {n} vorgemerkte Änderung(en). Ohne seine Freigabe wird nichts eingespielt.)"})
+            pruefung = await nf.pruefen(lauf, lauf.get("auftrag") or "", letzter_text)
         ergebnis = None
         if pruefung["urteil"] == "freigegeben":
             await schlange.put({"typ": "zwischen", "text": "(Dario hat freigegeben. Das Cockpit spielt ein und prüft.)"})
