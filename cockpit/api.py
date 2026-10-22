@@ -287,6 +287,9 @@ async def vorgaenge(filter: str = "wartet", projekt: str = "", q: str = "", gren
     if filter in STAND_GRUPPE:
         sql += f" AND v.stand IN ({','.join('?' for _ in STAND_GRUPPE[filter])})"
         args += list(STAND_GRUPPE[filter])
+        # Tagesbriefings (daily.py) haben ihre eigene Seite; in den Reitern stuenden sonst jeden
+        # Morgen ein paar Briefings zwischen den Notizen. Unter "Alle" bleiben sie zu finden.
+        sql += " AND v.quelle!='daily'"
     if projekt:
         sql += " AND v.projekt_id=?"
         args.append(projekt)
@@ -296,9 +299,65 @@ async def vorgaenge(filter: str = "wartet", projekt: str = "", q: str = "", gren
     # Vorgemerktes zuerst: es haengt in der Inbox, bis Veiko entscheidet (21.10.2026).
     sql += " ORDER BY (v.stand='vorgemerkt') DESC, v.geaendert DESC LIMIT ?"
     args.append(min(grenze, 500))
-    zaehler = {k: db.wert(f"SELECT COUNT(*) FROM vorgaenge WHERE stand IN ({','.join('?' for _ in s)})", s)
+    zaehler = {k: db.wert(f"SELECT COUNT(*) FROM vorgaenge WHERE quelle!='daily' AND stand IN ({','.join('?' for _ in s)})", s)
                for k, s in STAND_GRUPPE.items()}
     return {"vorgaenge": db.alle(sql, args), "zaehler": zaehler}
+
+
+# ================================================================ Daily Tasks (22.10.2026, daily.py)
+@router.get("/daily")
+async def daily_liste():
+    from . import daily
+    rollen = [{"id": r["id"], "name": r["name"], "titel": r.get("titel")} for r in
+              db.alle("SELECT id, name, titel FROM team WHERE aktiv=1") if r["id"] in daily.ROLLEN]
+    return {"daily": daily.liste(), "vorlagen": daily.VORLAGEN, "rollen": rollen}
+
+
+@router.get("/daily/{did}")
+async def daily_einzeln(did: str):
+    from . import daily
+    d = daily.holen(did)
+    if not d:
+        raise HTTPException(404, "Daily Task nicht gefunden")
+    return {**d, "zeitplan": daily.zeitplan_text(d), "rolle_name": stab.rollen_name(d.get("rolle")),
+            "verlauf": daily.verlauf(did), "laeuft": daily.laeuft(did), "naechster": daily.naechster_lauf(d)}
+
+
+@router.post("/daily")
+async def daily_anlegen(request: Request):
+    from . import daily
+    try:
+        return daily.anlegen(await _koerper(request))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/daily/{did}")
+async def daily_aendern(did: str, request: Request):
+    from . import daily
+    try:
+        return daily.aendern(did, await _koerper(request))
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+@router.post("/daily/{did}/ausfuehren")
+async def daily_ausfuehren(did: str):
+    from . import daily
+    try:
+        return daily.ausfuehren(did, von_hand=True)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+
+
+@router.delete("/daily/{did}")
+async def daily_loeschen(did: str):
+    from . import daily
+    try:
+        daily.loeschen(did)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    return {"ok": True}
 
 
 @router.get("/vorgaenge/{vid}")

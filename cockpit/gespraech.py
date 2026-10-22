@@ -57,6 +57,8 @@ AKTIONEN = {
     "brainstrom_genug": (),
     "brainstrom_uebernehmen": (),
     "exo": (),
+    # Daily Tasks (22.10.2026): anlegen, aendern, jetzt ausfuehren, pausieren, fortsetzen, loeschen.
+    "daily": ("was",),
     # Vorgemerktes im Gespraech klaeren (21.10.2026, Veiko: "im direkten Dialog weiter entscheiden,
     # was mit dieser Art von Notizen, Eingaengen, Ideen passiert").
     "vorgemerkt": ("vorgang_id", "was"),
@@ -103,7 +105,10 @@ BEFEHL = re.compile(r"^\s*((okay|ok|gut|ja|dann|und|also|bitte)[,.]?\s+)*(leg|tr
                     r"ersetz|korrigier|benenn|erstell|mach|prüf|pruef|lass|schreib)\w*\b", re.I)
 # "Gib das frei", "leg das ab", "verwirf das" zu Vorgemerktem ist die Zustimmung (21.10.2026).
 VORGEMERKT_BEFEHL = re.compile(r"\b(freigeb\w*|freigab\w*|gib\b.{0,50}\bfrei|leg\w*\b.{0,40}\bab\b|ablegen|verwirf|verwerfen|weg\s+damit|kann\s+weg)", re.I)
-BEFEHL_AKTIONEN = ("aufgabe_neu", "aufgabe_erledigt", "aufgabe_aendern", "notiz", "merken", "ersetzen", "pruefen", "projekt_neu")
+BEFEHL_AKTIONEN = ("aufgabe_neu", "aufgabe_erledigt", "aufgabe_aendern", "notiz", "merken", "ersetzen", "pruefen", "projekt_neu", "daily")
+# "Fuehr den Daily Task jetzt aus", "pausier ihn", "setz ihn fort" -- Befehle zu Daily Tasks (22.10.2026).
+DAILY_BEFEHL = re.compile(r"\b(führ\w*|fuehr\w*|start\w*|lass\w*)\b.{0,50}\b(aus|laufen|jetzt|sofort|nochmal|noch einmal)\b|"
+                          r"\bpausier\w*|\bfortsetz\w*|\bsetz\w*\b.{0,30}\bfort\b|\bwieder (an|aktiv)\b|\bänder\w*|\baender\w*|\bstell\w*\b.{0,30}\bum\b", re.I)
 # "Lass Daniel … pruefen" -- immer eine echte Pruefung, auch wenn das Modell meint, es sei schon geschehen.
 DANIEL_PRUEFEN = re.compile(r"\bdaniel\b.{0,60}\b(prüf|pruef|überprüf|anseh|anschau|begutacht)\w*|\b(prüf|pruef)\w*\b.{0,40}\bdaniel\b", re.I)
 # Eine Behauptung, eine Recherche laufe (19.10.2026) -- die ganze Zeile, damit kein halber Satz stehen bleibt.
@@ -157,6 +162,7 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"merken","art":"person|organisation|begriff|hoerfehler|aussprache","begriff":"…","bedeutung":"…"} -- aussprache: wie das Cockpit ein (meist englisches) Wort VORLESEN soll, in deutscher Lautschrift, z. B. begriff "Slides", bedeutung "Slaids".
 - {"aktion":"notiz","text":"…","projekt_id":"p… oder null"}
 - {"aktion":"projekt_neu","name":"…"}
+- {"aktion":"daily","was":"anlegen|aendern|ausfuehren|pausieren|fortsetzen|loeschen","daily_id":"d… aus DAILY TASKS oder KONTEXT, bei anlegen null","titel":"kurzer Titel","auftrag":"was das Team JEDEN TAG untersuchen soll, in Veikos Worten, ausführlich","uhrzeit":"HH:MM oder null","tage":"werktags|täglich|mo,mi,fr oder null","rolle":"stratege|buch|designer|video|cockpit oder null","projekt_id":"p… oder null"} -- ein Daily Task: ein täglicher Auftrag ans Team, aus dem jeden Tag ein Briefing entsteht (Seite Daily Tasks). „Lass das Team jeden Morgen … beobachten“, „ich will täglich ein Briefing zu …“ = anlegen (Vorgabe werktags 06:30, Clayton). „Führ ihn jetzt aus“ = ausfuehren. Bei aendern nur die Felder, die sich ändern. Fragen ZUM Briefing beantwortest du selbst aus dem KONTEXT; „untersuche das tiefer“ ist ausarbeiten mit ergebnis_id des Briefings.
 - {"aktion":"vorgemerkt","vorgang_id":"v… aus VORGEMERKT","was":"freigeben|erledigt|verwerfen","anweisung":"bei freigeben: was das Team jetzt tun soll, in Veikos Worten, oder leer"} -- entscheidet über einen vorgemerkten Case (eine Notiz, an der das Team noch nicht arbeiten sollte): freigeben = Jason plant jetzt mit der Anweisung, was das Team tut (nennt Veiko jemanden, z. B. „Clayton soll …“, steht das in der Anweisung); erledigt = ablegen, nichts mehr tun; verwerfen = weg samt der Aufgaben dazu. Braucht Veikos Ja.
 - {"aktion":"neo","auftrag":"was Neo am Cockpit oder Server tun soll"} -- NUR für Programm und Server des Cockpits, NIE für Inhalte (Projekte, Aufgaben, Ergebnisse, Notizen).
 - {"aktion":"langlauf","titel":"kurzer Titel","auftrag":"was in Etappen entstehen soll, in mehreren Sätzen, mit allem, was Veiko dazu gesagt hat","art":"buch|dokument|praesentation|bilder|webseite|video","rolle":"buch|stratege|designer|video oder null","projekt_id":"p… oder null","aufgabe_id":"t… oder null","pruefer":"dario|demmis","pruef_alle":3,"budget":5} -- ein LongRun: ein großes Vorhaben (ein ganzes Buch, eine große Präsentation, ein ausführliches Konzept, eine Studie, eine Strategie, ein Leitfaden, ein langes Dokument, ein langes Video), das in Etappen entsteht und von Dario (Claude) oder Demmis (Gemini) geprüft wird. Sagt Veiko „Long Run“, „in Etappen“, „durchgängig und tief“, „komplett“, „vollständig“, „ausführlich“, „umfassend“ oder „gründlich“ zu einem Werk, das er HABEN will: IMMER langlauf, nie ausarbeiten. art praesentation für Präsentationen und Foliensätze, bilder für Bildserien und viele Bilder, webseite für Webseiten, buch für Bücher, video für Videos, sonst dokument. Nennt er Demmis/Gemini, ist pruefer demmis, sonst dario. pruef_alle: nach wie vielen Kapiteln/Teilen geprüft wird; 0 = NUR AM ENDE, wenn alles fertig ist -- immer dann, wenn Veiko „danach“, „am Ende“, „wenn es fertig ist“ oder „wenn du fertig bist“ sagt. Vorhandene Ergebnisse und Unterlagen des Projekts nimmt das Cockpit selbst dazu. Die Prüfungen kosten Geld: nenne das Budget (Vorgabe 5 Dollar) und frag immer „Soll ich das so machen?“.
@@ -252,6 +258,14 @@ def lage_text() -> str:
     if vm:
         teile.append("VORGEMERKT (Veiko hat gesagt: noch nicht bearbeiten; wartet auf seine Freigabe in der Inbox -- "
                      "nichts davon von selbst anfangen):\n" + "\n".join(f"- {v['id']}: {v['titel']}" for v in vm))
+    # Daily Tasks (22.10.2026): was heute an taeglichen Briefings da ist oder noch kommt.
+    try:
+        from . import daily
+        dt = daily.heute_text()
+    except Exception:  # noqa: BLE001 -- die Lage darf nie an den Daily Tasks scheitern
+        dt = ""
+    if dt:
+        teile.append("DAILY TASKS HEUTE (tägliche Briefings des Teams; Kennung d…, Briefing als Ergebnis e…):\n" + dt)
     erl = db.alle("SELECT id, titel, einordnung, geaendert FROM vorgaenge WHERE stand='fertig' AND quelle!='alt' "
                   "ORDER BY geaendert DESC LIMIT 6")
     if erl:
@@ -311,6 +325,10 @@ def kontext_text(k: dict[str, Any] | None) -> str:
     if art == "ueberblick":
         from . import ueberblick
         return ueberblick.kontext_text(k)
+    if art == "daily":
+        # Daily Tasks (22.10.2026): der Task mit seinem neusten Briefing, oder die Liste.
+        from . import daily
+        return daily.kontext_text(None if kid == "alle" else kid)
     if art == "webspace":
         from . import webspace
         return webspace.kontext_text(k.get("pfad"))
@@ -528,6 +546,7 @@ SEITEN = [
     ("alle_notizen", r"(alle|meine) notizen|notizliste", "alle Notizen"),
     ("aktionen", r"current actions|aktionen|was (gerade )?läuft", "Current Actions"),
     ("webspace", r"web ?space|meine (website|webseite|homepage)|veikovoneckern", "den WebSpace"),
+    ("daily", r"daily( ?tasks?)?|tägliche[nrs]? (aufgaben|aufträge|auftraege|briefings?)|tagesbriefings?", "die Daily Tasks"),
     ("briefing", r"briefing|startseite", "das Briefing"),
     ("inbox", r"inbox|eingang|posteingang", "die Inbox"),
     ("projects", r"projekte|projects|projektliste|projektübersicht", "die Projekte"),
@@ -566,7 +585,7 @@ def _mitglied_im_text(t: str) -> dict[str, Any] | None:
 
 
 def oeffnen_satz(o: dict[str, Any]) -> str:
-    artikel = "den " if o["art"] in ("langlauf", "vorgang") else "die " if o["art"] in ("aufgabe", "notiz", "datei") else "das "
+    artikel = "den " if o["art"] in ("langlauf", "vorgang", "daily") else "die " if o["art"] in ("aufgabe", "notiz", "datei") else "das "
     return f"Ich öffne dir {artikel}{OEFFNEN_NAME[o['art']]} „{str(o.get('titel') or '')[:90]}“."
 
 
@@ -670,11 +689,13 @@ def bedienung_erkennen(text: str, kontext: dict | None = None, gid: str | None =
 # wenn das Modell keine sichere Kennung hat.
 OEFFNEN_TABELLE = {"ergebnis": ("ergebnisse", "titel"), "langlauf": ("langlaeufe", "titel"), "aufgabe": ("aufgaben", "titel"),
                    "vorgang": ("vorgaenge", "titel"), "projekt": ("projekte", "name"), "notiz": ("notizen", "titel"),
-                   "gespraech": ("gespraeche", "titel"), "datei": ("dateien", "name")}
+                   "gespraech": ("gespraeche", "titel"), "datei": ("dateien", "name"), "daily": ("daily", "titel")}
 OEFFNEN_NAME = {"ergebnis": "Ergebnis", "langlauf": "Langläufer", "aufgabe": "Aufgabe", "vorgang": "Case", "projekt": "Projekt", "notiz": "Notiz",
-                "gespraech": "Gespräch", "datei": "Unterlage"}
+                "gespraech": "Gespräch", "datei": "Unterlage", "daily": "Daily Task"}
 # Gespraech zuerst: "das Gespraech ueber das Kapitel" meint das Gespraech, nicht das Kapitel.
 _ART_WORT = (("gespraech", r"gespräch|gespraech|unterhaltung|\bchat\b"),
+             # Daily Tasks (22.10.2026) vor "ergebnis": "oeffne das Daily-Briefing zu KI" meint den Daily Task.
+             ("daily", r"\bdaily\b|tägliche[nrs]?\b|taegliche[nrs]?\b|tagesbriefing"),
              # Unterlagen (19.10.2026): "oeffne das Dossier zu Verlagen" -- vor "ergebnis", sonst griffe "Dokument".
              ("datei", r"dossier|unterlage|abschrift|anhang|\bdatei"), ("ergebnis", r"ergebnis|resultat|kapitel|dokument|präsentation|praesentation|video|text"),
              ("langlauf", r"langläufer|langlaeufer|langlauf"), ("aufgabe", r"aufgabe|todo"),
@@ -715,7 +736,7 @@ def oeffnen_suchen(text: str, art: str | None = None, ohne: str | None = None) -
         treffer = [(m.start(), i, a) for i, (a, mu) in enumerate(_ART_WORT) for m in [re.search(mu, text or "", re.I)] if m]
         if treffer:
             art = min(treffer)[2]
-    arten = [art] if art in OEFFNEN_TABELLE else ["ergebnis", "langlauf", "projekt", "aufgabe", "vorgang", "datei"]
+    arten = [art] if art in OEFFNEN_TABELLE else ["ergebnis", "langlauf", "projekt", "aufgabe", "vorgang", "datei", "daily"]
     bestes, punkte = None, 0.0
     for a in arten:
         tab, feld = OEFFNEN_TABELLE[a]
@@ -918,6 +939,29 @@ def beschriften(a: dict[str, Any]) -> str | None:
         return {"freigeben": f"Freigeben: „{v['titel'][:70]}“" + (f" -- {str(a.get('anweisung'))[:90]}" if a.get("anweisung") else ""),
                 "erledigt": f"Ablegen, nichts mehr tun: „{v['titel'][:70]}“",
                 "verwerfen": f"Verwerfen samt Aufgaben: „{v['titel'][:70]}“"}[a["was"]]
+    if art == "daily":
+        from . import daily
+        was = a.get("was")
+        if was == "anlegen":
+            if not str(a.get("titel") or "").strip() or not str(a.get("auftrag") or "").strip():
+                return None
+            plan = daily.zeitplan_text({"uhrzeit": daily._uhrzeit(a.get("uhrzeit")), "tage": json.dumps(daily.tage_aus_text(a.get("tage")))})
+            return f"Daily Task anlegen: „{str(a['titel'])[:60]}“ ({plan}, {stab.rollen_name(a.get('rolle') if a.get('rolle') in daily.ROLLEN else 'stratege')})"
+        if was not in ("aendern", "ausfuehren", "pausieren", "fortsetzen", "loeschen"):
+            return None
+        d = daily.holen(str(a.get("daily_id") or ""))
+        if not d and a.get("titel"):
+            # Kennung vergessen, Titel genannt: ueber dieselbe Titelsuche wie "oeffne …".
+            t = oeffnen_suchen(str(a["titel"]), "daily")
+            d = daily.holen(t["id"]) if t else None
+        if not d:
+            return None
+        a["daily_id"] = d["id"]
+        return {"aendern": f"Daily Task „{d['titel'][:60]}“ ändern",
+                "ausfuehren": f"Daily Task „{d['titel'][:60]}“ jetzt ausführen",
+                "pausieren": f"Daily Task „{d['titel'][:60]}“ pausieren",
+                "fortsetzen": f"Daily Task „{d['titel'][:60]}“ wieder einschalten",
+                "loeschen": f"Daily Task „{d['titel'][:60]}“ löschen"}[was]
     if art == "neo":
         return f"Neo beauftragen: {a['auftrag'][:90]}"
     if art == "ersetzen":
@@ -1018,6 +1062,28 @@ async def ausfuehren(a: dict[str, Any]) -> dict[str, Any]:
         else:
             stab.vorgang_schliessen(a["vorgang_id"], a["was"], "Im Gespräch entschieden.")
         return {"ok": True, "vorgang_id": a["vorgang_id"]}
+    if art == "daily":
+        from . import daily
+        was = a["was"]
+        try:
+            if was == "anlegen":
+                d = daily.anlegen(a)
+                return {"ok": True, "daily_id": d.get("id"), "titel": d.get("titel")}
+            did = a["daily_id"]
+            if was == "ausfuehren":
+                r = daily.ausfuehren(did, von_hand=True)
+                return {"ok": bool(r.get("ok", True)), "daily_id": did}
+            if was == "loeschen":
+                daily.loeschen(did)
+                return {"ok": True}
+            if was in ("pausieren", "fortsetzen"):
+                daily.aendern(did, {"aktiv": was == "fortsetzen"})
+                return {"ok": True, "daily_id": did}
+            # aendern: nur, was im Vorschlag wirklich steht -- ein leeres Feld loescht nichts.
+            daily.aendern(did, {k: a[k] for k in ("titel", "auftrag", "rolle", "uhrzeit", "tage", "projekt_id") if a.get(k)})
+            return {"ok": True, "daily_id": did}
+        except ValueError as f:
+            return {"ok": False, "grund": str(f)}
     if art == "projekt_neu":
         pid = db.neue_id("p")
         db.anlegen("projekte", {"id": pid, "name": a["name"][:80], "farbe": "#6D4AE0", "status": "aktiv",
@@ -1195,15 +1261,25 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     if denken:
         yield {"typ": "status", "text": "denkt gründlich nach …"}
     gesamt = ""
-    try:
-        with llm.taetig("Talk antwortet dir" + (" (gründlich)" if denken else "")):
-            async for t in llm.strom(modell, system, verlauf, temperatur=0.4, denken=denken, num_ctx=24576):
-                gesamt += t
-                if "```aktionen" not in gesamt:
-                    yield {"typ": "text", "t": t}
-    except llm.ModellFehler as f:
-        yield {"typ": "fehler", "text": str(f)}
-        return
+    # Eine Denkschleife (llm.Denkschleife) bricht ab, bevor ein Wort Antwort steht -- dann einmal
+    # ohne langes Nachdenken neu (22.10.2026: "leg einen Daily Task an …" lief in zwei von drei
+    # Versuchen im Kreis; Veiko sah nur eine Fehlermeldung statt einer Antwort).
+    for versuch in (denken, False) if denken else (False,):
+        try:
+            with llm.taetig("Talk antwortet dir" + (" (gründlich)" if versuch else "")):
+                async for t in llm.strom(modell, system, verlauf, temperatur=0.4, denken=versuch, num_ctx=24576):
+                    gesamt += t
+                    if "```aktionen" not in gesamt:
+                        yield {"typ": "text", "t": t}
+            break
+        except llm.Denkschleife:
+            if not versuch or gesamt:
+                yield {"typ": "fehler", "text": "Ich habe mich beim Nachdenken verhakt. Sag es mir bitte noch einmal, gern etwas kürzer."}
+                return
+            yield {"typ": "status", "text": "setzt neu an …"}
+        except llm.ModellFehler as f:
+            yield {"typ": "fehler", "text": str(f)}
+            return
     sichtbar, vorschlaege = vorschlaege_aus(gesamt)
     # Was nach Cockpit-Vermerk aussieht, hat das Modell abgeschrieben -- nie anzeigen.
     sichtbar = VERMERK_RE.sub("", sichtbar).strip()
@@ -1444,11 +1520,14 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
             vorschlaege.remove(v)
         sichtbar = re.sub(r"\n*Gestartet: [^\n]*", "", sichtbar)
     vm_befehl = bool(VORGEMERKT_BEFEHL.search(text)) and not _ABLEHNUNG.search(text)
+    daily_befehl = bool(DAILY_BEFEHL.search(text)) and not _ABLEHNUNG.search(text)
     im_satz = zustimmung_im_satz(text)
     gleich =[v for v in vorschlaege if v["aktion"] not in SOFORT_VERFAHREN
               and (bestaetigt or (auftrag and v["aktion"] in ("ausarbeiten", "neo", "pruefen"))
                    or (befehl and v["aktion"] in BEFEHL_AKTIONEN)
                    or (vm_befehl and v["aktion"] == "vorgemerkt")
+                   # Loeschen nie ohne Ja -- "aendern"/"pausieren" sind umkehrbar, ein geloeschter Task nur ueber den Verlauf.
+                   or (daily_befehl and v["aktion"] == "daily" and v.get("was") != "loeschen")
                    or (v.get("zugestimmt") is True and im_satz))]
     ausgefuehrt = list(vorab)
     for v in gleich[:3]:

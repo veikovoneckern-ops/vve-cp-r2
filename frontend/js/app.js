@@ -21,6 +21,7 @@ import { Explorer } from "./explorer.js";
 import { Empfehlungen } from "./empfehlungen.js";
 import { DateiFenster } from "./datei.js";
 import { Langlaeufer } from "./langlauf.js";
+import { Daily } from "./daily.js";
 import { BrainStrom, ExO } from "./verfahren.js";
 import { Aktionen } from "./aktionen.js";
 import { AufgabeFenster } from "./aufgabe.js";
@@ -29,6 +30,9 @@ import { WebSpace } from "./webspace.js";
 const BEREICHE = [
   { id: "briefing", titel: "Briefing", icon: "briefing", unter: "Was jetzt zählt" },
   { id: "inbox", titel: "Inbox", icon: "inbox", unter: "Alles, was hereinkommt" },
+  // Taegliche Auftraege ans Team, jeden Tag ein Briefing (22.10.2026). Hinter der Inbox: neue
+  // Knoepfe landen in Veikos gespeicherter Reihenfolge hinter ihrem Vorgaenger (leiste.ordnen).
+  { id: "daily", titel: "Daily Tasks", kurz: "Daily", icon: "kalender", unter: "Was das Team jeden Tag für dich untersucht" },
   { id: "projects", titel: "Projects", icon: "projects", unter: "Vorhaben, Aufgaben, Ergebnisse" },
   // Lange Vorhaben in Etappen mit Zwischenpruefung durch Dario oder Demmis (17.10.).
   // Heisst seit dem 19.10.2026 "LongRuns" (Veikos Wunsch); die Kennung bleibt langlauf.
@@ -335,6 +339,7 @@ function App() {
       <main class=${"inhalt" + (voll ? " voll" : "")}>
         ${r.bereich === "briefing" && html`<${Briefing} lage=${lage} />`}
         ${r.bereich === "inbox" && html`<${Inbox} id=${r.id} />`}
+        ${r.bereich === "daily" && html`<${Daily} id=${r.id} />`}
         ${r.bereich === "projects" && html`<${Projects} id=${r.id} rest=${r.rest} />`}
         ${r.bereich === "team" && html`<${Team} id=${r.id} rest=${r.rest} />`}
         ${r.bereich === "system" && html`<${System} gesundheit=${lage && lage.gesundheit} abschnitt=${r.id} />`}

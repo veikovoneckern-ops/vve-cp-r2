@@ -74,7 +74,8 @@ function blaettern(richtung) {
 
 function ansehenKnopf(r) {
   if (!r || !r.ok) return null;
-  const ziel = r.langlauf_id ? () => navigiere("/langlauf/" + r.langlauf_id)
+  const ziel = r.daily_id ? () => navigiere("/daily/" + r.daily_id)
+    : r.langlauf_id ? () => navigiere("/langlauf/" + r.langlauf_id)
     : r.vorgang_id ? () => navigiere("/inbox/" + r.vorgang_id)
     : r.neo_gespraech ? () => navigiere("/neo/" + r.neo_gespraech)
     : r.geprueft_wird ? () => bus.sende("ergebnis-zeigen", r.geprueft_wird)
@@ -261,7 +262,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
         else if (o.art === "aufgabe") bus.sende("aufgabe-zeigen", o.id);
         else if (o.art === "notiz") bus.sende("notiz-zeigen", o.id);
         else if (o.art === "datei") bus.sende("datei-zeigen", o.id);
-        else navigiere({ langlauf: "/langlauf/", vorgang: "/inbox/", projekt: "/projects/" }[o.art] + o.id);
+        else navigiere({ langlauf: "/langlauf/", vorgang: "/inbox/", projekt: "/projects/", daily: "/daily/" }[o.art] + o.id);
       } else if (z && z.projekt_id) navigiere("/projects/" + z.projekt_id + (z.ziel && z.ziel !== "ueberblick" ? "/" + z.ziel : ""));
       else if (z && z.ziel) {
         // Ein Bereich des Cockpits; eine mitgegebene Frage ans Board stellt das Board selbst.
@@ -285,6 +286,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
       const ll = r.ergebnisse.find((x) => x.ok && x.langlauf_id);
       if (fehl.length) toast("Nicht alles ging: " + fehl.map((f) => f.grund).join("; "), { fehler: true });
       else if (ll) { toast("LongRun gestartet."); navigiere("/langlauf/" + ll.langlauf_id); }
+      else if (r.ergebnisse.some((x) => x.ok && x.daily_id)) { toast("Daily Task erledigt."); navigiere("/daily/" + r.ergebnisse.find((x) => x.daily_id).daily_id); }
       else {
         const neo = r.ergebnisse.find((x) => x.neo_gespraech);
         const vg = r.ergebnisse.find((x) => x.vorgang_id);

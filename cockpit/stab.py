@@ -844,11 +844,15 @@ def _html_zu_text(h: str) -> str:
     return re.sub(r"\s+", " ", htmlmod.unescape(h)).strip()
 
 
-async def recherche(anfrage: str, seiten: int = 6) -> list[dict[str, str]]:
+async def recherche(anfrage: str, seiten: int = 6, zeitraum: str | None = None) -> list[dict[str, str]]:
+    """zeitraum: "day", "week", "month" -- nur Meldungen aus dieser Zeit (Daily Tasks, 22.10.2026)."""
     try:
         async with httpx.AsyncClient(timeout=12, follow_redirects=True,
                                      headers={"User-Agent": "Mozilla/5.0 VvE-Cockpit"}) as c:
-            r = await c.get(f"{SEARX}/search", params={"q": anfrage, "format": "json", "language": "de"})
+            params = {"q": anfrage, "format": "json", "language": "de"}
+            if zeitraum in ("day", "week", "month", "year"):
+                params["time_range"] = zeitraum
+            r = await c.get(f"{SEARX}/search", params=params)
             treffer = (r.json().get("results") or [])[:12]
             out = []
             for t in treffer:
@@ -1008,7 +1012,8 @@ def _verweise_saeubern(text: str, anzahl: int, vid: str | None = None, rid: str 
     return neu
 
 
-async def recherche_planen(modell: str, system: str, frage: str, vorgabe: str | None, rid: str, vid: str) -> list[dict[str, str]]:
+async def recherche_planen(modell: str, system: str, frage: str, vorgabe: str | None, rid: str, vid: str,
+                           zeitraum: str | None = None) -> list[dict[str, str]]:
     """Die Rolle sucht selbst, statt nur Jasons eine Suchanfrage zu bekommen.
     Jasons Vorgabe bleibt die erste; doppelte Adressen fallen heraus."""
     anfragen = [vorgabe] if vorgabe else []
@@ -1023,7 +1028,11 @@ async def recherche_planen(modell: str, system: str, frage: str, vorgabe: str | 
     gesehen: set[str] = set()
     for q in list(dict.fromkeys(anfragen))[:5]:
         laeuft(rid, f"recherchiert: {q}", vid)
-        treffer = [t for t in await recherche(q, seiten=4) if t.get("url") and t["url"] not in gesehen]
+        treffer = [t for t in await recherche(q, seiten=4, zeitraum=zeitraum) if t.get("url") and t["url"] not in gesehen]
+        if zeitraum and len(treffer) < 2:
+            # Zu wenig Frisches: dieselbe Suche ohne Zeitgrenze, damit das Briefing nicht leer bleibt.
+            treffer += [t for t in await recherche(q, seiten=2) if t.get("url") and t["url"] not in gesehen
+                        and t["url"] not in {x["url"] for x in treffer}]
         gesehen.update(t["url"] for t in treffer)
         quellen += treffer
         db.ereignis(vid, rid, "info", f"Recherche „{q}“: {len(treffer)} neue Treffer.",
@@ -1336,8 +1345,9 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
     system = _arbeits_system(rid, form, a)
     grund = f"AUFTRAG: {a.get('auftrag')}\n\n{_vorgang_kontext(v)}"
     # Die Recherche plant ohne den Teamarbeit-Teil: dort ist ein angehaengter Block nur Stoerung im JSON.
-    quellen = [] if form == "webseite" and not a.get("recherche") else \
-        await recherche_planen(modell, _arbeits_system(rid, form, a, mit_team=False), grund, a.get("recherche"), rid, vid)
+    quellen = [] if (form == "webseite" and not a.get("recherche")) or a.get("ohne_netz") else \
+        await recherche_planen(modell, _arbeits_system(rid, form, a, mit_team=False), grund, a.get("recherche"), rid, vid,
+                               zeitraum=a.get("zeitraum"))
     quellen_text = "\n\n".join(f"[{i + 1}] {q['titel']} — {q['url']}\n{q['text'][:3000]}"
                                for i, q in enumerate(quellen))
     frage = grund + (f"\n\nQUELLEN:\n{quellen_text}\n\nVerweise im Text mit [Nummer] NUR auf diese {len(quellen)} Quellen "
@@ -1371,7 +1381,8 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
         else:
             entwurf = ((await folienweise(modell, system, frage, rid, vid, _folien.ziel(str(a.get("auftrag") or "")))
                         if form == "praesentation" else None)
-                       or await abschnittsweise(modell, system, frage, form, rid, vid)
+                       # Ein Tagesbriefing (daily.py) ist eine Seite in fester Form, kein gegliedertes Werk.
+                       or (None if a.get("kurz") else await abschnittsweise(modell, system, frage, form, rid, vid))
                        or await _chat_robust(modell, system, [{"role": "user", "content": nachricht}],
                                          temperatur=0.5, denken=DENKEN_SCHREIBEN, num_ctx=65536, timeout=LANGE_FRIST))
         if llm.fremdschrift(entwurf) and form == "praesentation":
