@@ -229,65 +229,132 @@ export function mikroHalter() { return halter ? halter.wer : null; }
 // ueber dem liegt, was von Talks eigener Stimme durchkommt, und das eine Viertelsekunde lang,
 // gilt es als Einsatz. Die Schwelle folgt dem gleitenden Mittel des Pegels -- ein fester Wert
 // war entweder taub (laute Lautsprecher) oder fiel auf Talks eigene Stimme herein.
-// Beim Einsatz beginnt eine FRISCHE Aufnahme ab genau diesem Moment: die bis dahin mitgelaufene
-// enthielte Talks Stimme, und Whisper schriebe sie mit ab.
+//
+// Zweite Fassung (22.10.2026, Veiko: "das Unterbrechen funktioniert noch nicht gut"). Drei Fehler
+// der ersten, alle aus dem Aufbau abgeleitet (mit echter Stimme ist es hier nicht pruefbar):
+//  1. Die Aufnahme begann erst NACH der Erkennung -- die erste Viertelsekunde des Satzes fehlte,
+//     Whisper bekam "…arte mal, mach …" und verstand Unsinn. Jetzt laeuft das Mikrofon roh (PCM) in
+//     einen Ringpuffer, und beim Einsatz gehen 0,8 s VOR dem Einsatz mit (als WAV).
+//  2. Die Schwelle (mindestens 0,06 auf dem ganzen Frequenzband) war zu hoch: waehrend Talk spricht,
+//     daempft die Echo-Unterdrueckung des Browsers auch die eigene Stimme. Jetzt nach einem
+//     Hochpass (Brummen, Tisch, Lueftung zaehlen nicht) und relativ zum Echo, mindestens 0,02.
+//  3. Auf dem iPad startet ein AudioContext ohne Tippen angehalten -- dann lief gar keine Messung.
+//     Der Kontext wird jetzt beim ersten Tippen ins Cockpit freigeschaltet und wiederverwendet.
+// Jeder Lauf meldet seine Pegel (bericht) -- Talk schickt sie an den Server, damit sich die
+// Schwellen an echten Messungen statt an Vermutungen einstellen lassen.
+let tonKontext = null;
+function tonKontextHolen() {
+  if (!tonKontext || tonKontext.state === "closed") {
+    try { tonKontext = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { tonKontext = null; }
+  }
+  if (tonKontext && tonKontext.state === "suspended") tonKontext.resume().catch(() => {});
+  return tonKontext;
+}
+if (typeof window !== "undefined") {
+  const freigeben = () => { const k = tonKontextHolen(); if (k && k.state === "running") ["pointerdown", "touchend", "keydown"].forEach((ev) => window.removeEventListener(ev, freigeben, true)); };
+  ["pointerdown", "touchend", "keydown"].forEach((ev) => window.addEventListener(ev, freigeben, { capture: true, passive: true }));
+}
+
+function wavAus(stuecke, rate) {
+  // Auf 16 kHz Mono -- mehr braucht Whisper nicht, und die Datei bleibt klein.
+  const n = stuecke.reduce((s, x) => s + x.length, 0);
+  const alle = new Float32Array(n);
+  let o = 0; for (const x of stuecke) { alle.set(x, o); o += x.length; }
+  const ziel = 16000, f = rate / ziel, m = Math.floor(n / f);
+  const buf = new ArrayBuffer(44 + m * 2), v = new DataView(buf);
+  const s = (p, t) => { for (let i = 0; i < t.length; i++) v.setUint8(p + i, t.charCodeAt(i)); };
+  s(0, "RIFF"); v.setUint32(4, 36 + m * 2, true); s(8, "WAVE"); s(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true); v.setUint32(24, ziel, true); v.setUint32(28, ziel * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  s(36, "data"); v.setUint32(40, m * 2, true);
+  for (let i = 0; i < m; i++) {
+    const p = i * f, a = Math.floor(p), b = Math.min(n - 1, a + 1), w = p - a;
+    const x = Math.max(-1, Math.min(1, alle[a] * (1 - w) + alle[b] * w));
+    v.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7fff, true);
+  }
+  return new Blob([buf], { type: "audio/wav" });
+}
+
 export async function lauschen({ beiEinsatz, pegel } = {}) {
   if (mikrofonGrund()) return null;
+  const ctx = tonKontextHolen();
+  if (!ctx) return null;
   let strom;
   try {
-    strom = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    // autoGainControl aus: die automatische Verstaerkung hob Talks Echo in den Pausen an und
+    // machte die Schwelle unruhig.
+    strom = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } });
   } catch (e) { return null; }
-  const typ = typWaehlen();
-  let ctx, rahmen, rec = null, fertig, aus = false;
-  const teile = [];
+  let fertig, aus = false, einsatz = 0, stilleSeit = 0;
   const ende = new Promise((ok) => { fertig = ok; });
+  const rate = ctx.sampleRate;
+  const VOR = Math.ceil(0.8 * rate);            // so viel geht vor dem Einsatz mit
+  let ring = [], ringLaenge = 0, aufnahme = null;
+  // Hochpass ~200 Hz (erste Ordnung) gegen Brummen und Tischgeraeusche.
+  const a = 1 / (1 + 2 * Math.PI * 200 / rate);
+  let hx = 0, hy = 0;
+  let mittel = 0.01, boden = 0.01, ueber = 0, spitze = 0, echoSpitze = 0, rahmen = 0;
+  const start = performance.now();
+  const quelle = ctx.createMediaStreamSource(strom);
+  const proz = ctx.createScriptProcessor(2048, 1, 1);
+  const stumm = ctx.createGain(); stumm.gain.value = 0;
+  const bericht = { rate, einsatz: false, mittel_bei_einsatz: null, schwelle_bei_einsatz: null, spitze_vorher: 0, rahmen_ueber: 0, dauer_ms: 0, kontext: ctx.state };
   const schluss = (blob) => {
     if (aus) return;
     aus = true;
-    if (rahmen) clearInterval(rahmen);
+    try { proz.disconnect(); quelle.disconnect(); stumm.disconnect(); } catch (e) { /* schon getrennt */ }
     strom.getTracks().forEach((t) => t.stop());
-    if (ctx) ctx.close().catch(() => {});
+    bericht.dauer_ms = Math.round(performance.now() - start);
     fertig(blob);
   };
-  let mittel = 0.02, ueber = 0, stilleSeit = 0, einsatz = 0;
-  const start = performance.now();
-  try {
-    ctx = new (window.AudioContext || window.webkitAudioContext)();
-    if (ctx.state === "suspended") ctx.resume().catch(() => {});
-    const ana = ctx.createAnalyser(); ana.fftSize = 1024;
-    ctx.createMediaStreamSource(strom).connect(ana);
-    const buf = new Uint8Array(ana.fftSize);
-    rahmen = setInterval(() => {
-      ana.getByteTimeDomainData(buf);
-      let s = 0; for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; s += v * v; }
-      const rms = Math.sqrt(s / buf.length);
-      const t = performance.now();
-      if (!rec) {
-        // Die ersten 400 ms nur messen: so laut kommt Talk selbst im Mikrofon an.
-        const schwelle = Math.max(0.06, mittel * 2.6);
-        if (t - start > 400 && rms > schwelle) ueber++; else ueber = 0;
-        mittel = mittel * 0.95 + Math.min(rms, schwelle) * 0.05;
-        if (ueber >= 4) {
-          rec = new MediaRecorder(strom, typ ? { mimeType: typ } : {});
-          rec.ondataavailable = (e) => { if (e.data && e.data.size) teile.push(e.data); };
-          rec.onstop = () => schluss(teile.length ? new Blob(teile, { type: rec.mimeType || typ || "audio/webm" }) : null);
-          rec.start(250);
-          einsatz = t;
-          if (beiEinsatz) beiEinsatz();
-        }
-        return;
+  proz.onaudioprocess = (ev) => {
+    if (aus) return;
+    const ein = ev.inputBuffer.getChannelData(0);
+    const kopie = new Float32Array(ein);
+    let s = 0;
+    for (let i = 0; i < ein.length; i++) { hy = a * (hy + ein[i] - hx); hx = ein[i]; s += hy * hy; }
+    const rms = Math.sqrt(s / ein.length);
+    const t = performance.now();
+    rahmen++;
+    if (!einsatz) {
+      ring.push(kopie); ringLaenge += kopie.length;
+      while (ringLaenge - ring[0].length > VOR) ringLaenge -= ring.shift().length;
+      // Die Schwelle folgt dem Mittel UND den Spitzen von Talks eigener Stimme (Silben): gemessen
+      // mit einem kuenstlichen, silbenartig schwankenden Echo loeste das Mittel allein falsch aus.
+      // Gelernt werden nur Spitzen UNTER der Schwelle (und alles in den ersten 300 ms) -- sonst
+      // wuerde Veikos eigener Einsatz die Schwelle mit nach oben ziehen.
+      const schwelle = Math.max(0.02, mittel * 2.2, echoSpitze * 1.4);
+      const warm = t - start <= 300;
+      if (!warm) { if (rms > schwelle) ueber++; else ueber = 0; }
+      if (warm || rms <= schwelle) echoSpitze = Math.max(echoSpitze * 0.995, rms);
+      spitze = Math.max(spitze, rms);
+      mittel = mittel * 0.92 + Math.min(rms, schwelle) * 0.08;
+      if (rms < mittel) boden = boden * 0.95 + rms * 0.05;
+      if (ueber >= 5) {            // ~210 ms bei 48 kHz
+        einsatz = t;
+        aufnahme = ring; ring = [];
+        Object.assign(bericht, { einsatz: true, mittel_bei_einsatz: +mittel.toFixed(4), schwelle_bei_einsatz: +schwelle.toFixed(4), spitze_vorher: +spitze.toFixed(4), rahmen_ueber: ueber });
+        if (beiEinsatz) beiEinsatz();
       }
-      if (pegel) pegel(Math.min(1, rms * 6));
-      if (rms > 0.035) stilleSeit = 0; else if (!stilleSeit) stilleSeit = t;
-      if (rec.state === "recording" && ((stilleSeit && t - stilleSeit > 1500) || t - einsatz > 60000)) rec.stop();
-    }, 60);
-  } catch (e) { schluss(null); }
+      return;
+    }
+    aufnahme.push(kopie);
+    if (pegel) pegel(Math.min(1, rms * 10));
+    // Talk schweigt jetzt -- Stille heisst: zurueck in die Naehe des Grundrauschens.
+    if (rms > Math.max(0.012, boden * 2.5)) stilleSeit = 0; else if (!stilleSeit) stilleSeit = t;
+    if ((stilleSeit && t - stilleSeit > 1300) || t - einsatz > 60000) schluss(wavAus(aufnahme, rate));
+  };
+  quelle.connect(proz); proz.connect(stumm); stumm.connect(ctx.destination);
+  bericht.spitze_vorher = 0;
   return {
     ende,
-    eingesetzt: () => !!rec,
+    eingesetzt: () => !!einsatz,
+    bericht: () => ({ ...bericht, echo_spitze: +echoSpitze.toFixed(4), spitze_vorher: bericht.einsatz ? bericht.spitze_vorher : +spitze.toFixed(4), mittel_ende: +mittel.toFixed(4), boden: +boden.toFixed(4) }),
     // Talk ist fertig mit Sprechen: ohne Einsatz ist nichts aufzuheben.
-    loslassen() { if (!rec) schluss(null); },
-    abbrechen() { teile.length = 0; if (rec && rec.state === "recording") rec.stop(); else schluss(null); },
+    loslassen() { if (!einsatz) schluss(null); },
+    // Von Hand unterbrochen (Kreis angetippt): sofort als Einsatz werten -- was davor gesagt
+    // wurde, geht aus dem Puffer mit.
+    jetzt() { if (!einsatz && !aus) { einsatz = performance.now(); aufnahme = ring; ring = []; bericht.einsatz = "hand"; } },
+    abbrechen() { schluss(null); },
   };
 }
 

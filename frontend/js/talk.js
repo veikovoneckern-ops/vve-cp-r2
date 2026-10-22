@@ -135,12 +135,12 @@ function StimmeKreis({ zustand, pegel, text, beiKlick }) {
   const s = zustand === "hoert" ? 1 + Math.min(0.12, pegel * 0.18) : 1;
   return html`<div class=${"stimme-kreis " + zustand} role="status">
     <span class="kreis-feld"><button class="kreis" style=${`transform:scale(${s})`} onClick=${beiKlick}
-      aria-label=${zustand === "bereit" ? "Freisprechen starten" : zustand === "pausiert" ? "Weiter zuhören" : "Gespräch beenden und Talk schließen"}
-      title=${zustand === "bereit" ? "Freisprechen starten" : zustand === "pausiert" ? "Antippen: Talk hört wieder zu" : "Antippen: Gespräch beenden und Talk schließen"}>
+      aria-label=${zustand === "bereit" ? "Freisprechen starten" : zustand === "pausiert" ? "Weiter zuhören" : zustand === "spricht" ? "Unterbrechen und selbst sprechen" : "Gespräch beenden und Talk schließen"}
+      title=${zustand === "bereit" ? "Freisprechen starten" : zustand === "pausiert" ? "Antippen: Talk hört wieder zu" : zustand === "spricht" ? "Antippen oder einfach reinsprechen: Talk hört auf und hört dir zu" : "Antippen: Gespräch beenden und Talk schließen"}>
       <${Icon} n=${zustand === "denkt" || zustand === "erkennt" ? "mehr" : zustand === "spricht" ? "welle" : zustand === "pausiert" ? "play" : "mic"} g=${19} w=${2.1} />
     </button></span>
     <span class="kreis-text"><span class="zustand">${TXT[zustand] || ""}</span>
-    ${text ? html`<span class="unter">${text}</span>` : zustand === "hoert" ? html`<span class="unter">Zum Beenden antippen oder „Dialog beenden“ sagen.</span>` : null}</span>
+    ${text ? html`<span class="unter">${text}</span>` : zustand === "hoert" ? html`<span class="unter">Zum Beenden antippen oder „Dialog beenden“ sagen.</span>` : zustand === "spricht" ? html`<span class="unter">Unterbrechen: einfach reinsprechen oder antippen.</span>` : null}</span>
   </div>`;
 }
 
@@ -367,12 +367,15 @@ export function Talk({ zu, kontext, setKontext, start }) {
                                 pegel: (p) => setFrei((f) => f && { ...f, pegel: p }) });
     } catch (e) { lausch = null; }
     lauschRef.current = lausch;
+    const melden = (ergebnis) => { if (lausch) api("/stimme/diagnose", { methode: "POST", daten: { ...lausch.bericht(), ergebnis, zeichen: text.length } }).catch(() => {}); };
     try { await vorlesen(text, { vonTalk: true }); } catch (e) { /* ohne Ton weiter */ }
     if (!lausch) return;
-    if (!lausch.eingesetzt()) { lausch.loslassen(); lauschRef.current = null; return; }
+    // Wer genau am Satzende einsetzt, soll nicht in die Luecke bis zum naechsten Zuhoeren fallen.
+    for (let i = 0; i < 8 && !lausch.eingesetzt() && freiAn.current; i++) await new Promise((ok) => setTimeout(ok, 100));
+    if (!lausch.eingesetzt()) { lausch.loslassen(); lauschRef.current = null; melden("kein Einwurf"); return; }
     const blob = await lausch.ende;
     lauschRef.current = null;
-    if (!freiAn.current || !blob) return;
+    if (!freiAn.current || !blob) { melden("abgebrochen"); return; }
     setFrei((f) => f && { ...f, zustand: "erkennt" });
     try {
       const t = reinigen((await erkennen(blob)).text);
@@ -380,8 +383,11 @@ export function Talk({ zu, kontext, setKontext, start }) {
       const w = (s) => (String(s).toLowerCase().match(/[a-zäöüß]{3,}/g) || []);
       const eigen = new Set(w(text));
       const seine = w(t);
-      if (t && !/^(stopp?|halt|ruhe|sei still|still|warte|moment|okay|ok|danke)\W*$/i.test(t) && !(seine.length && seine.filter((x) => eigen.has(x)).length / seine.length > 0.8)) vorgriff.current = t;
-    } catch (e) { /* nichts verstanden -- dann hoert Talk einfach wieder zu */ }
+      const echo = seine.length && seine.filter((x) => eigen.has(x)).length / seine.length > 0.8;
+      const nurStopp = /^(stopp?|halt|ruhe|sei still|still|warte|moment|okay|ok|danke)\W*$/i.test(t);
+      if (t && !nurStopp && !echo) vorgriff.current = t;
+      melden(!t ? "nichts verstanden" : echo ? "Echo: " + t.slice(0, 80) : nurStopp ? "nur Stopp" : "Einwurf: " + t.slice(0, 80));
+    } catch (e) { melden("Erkennung gescheitert: " + e.message); }
   }
 
   // Vorfahrt am Mikrofon (stimme.mikroAnfordern, 19.10.2026): Talk meldet sich an; drueckt
@@ -469,6 +475,14 @@ export function Talk({ zu, kontext, setKontext, start }) {
   // "pausiert" (Diktat hat Vorfahrt) setzt fort -- dort steht das Play-Zeichen.
   function kreisKlick() {
     if (!frei || frei.zustand === "pausiert") return freiStart();
+    // Waehrend Talk spricht heisst Antippen: "lass mich reden" (22.10.2026) -- vorher beendete es
+    // das ganze Gespraech, und genau das tut man reflexhaft, wenn man unterbrechen will.
+    if (frei.zustand === "spricht") {
+      vorleseStopp();
+      if (lauschRef.current) lauschRef.current.jetzt();
+      setFrei((f) => f && { ...f, zustand: "hoert", pegel: 0, text: "" });
+      return;
+    }
     ausKopf.current = false; freiBeenden(); zu();
   }
 

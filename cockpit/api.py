@@ -1472,6 +1472,26 @@ async def datei_holen(did: str, anzeigen: bool = False):
                         media_type=mime if sicher else None, content_disposition_type="inline" if sicher else "attachment")
 
 
+# Messwerte des Ins-Wort-Fallens (22.10.2026, stimme.lauschen): je Talk-Satz Pegel, Schwelle und
+# was daraus wurde. Die Schwellen lassen sich nur an echten Stimmen einstellen -- der Pruefbrowser
+# hat kein Mikrofon. Die letzten 60 bleiben, und jede Zeile steht im Journal.
+@router.post("/stimme/diagnose")
+async def stimme_diagnose(request: Request):
+    d = {k: v for k, v in (await _koerper(request)).items() if isinstance(v, (str, int, float, bool)) or v is None}
+    d["zeit"] = time.time()
+    d["geraet"] = (request.headers.get("user-agent") or "")[:120]
+    liste = (db.einstellung("stimme_diagnose", []) or [])[-59:] + [d]
+    db.einstellung_setzen("stimme_diagnose", liste)
+    print(f"[stimme] einwurf={d.get('einsatz')} spitze={d.get('spitze_vorher')} schwelle={d.get('schwelle_bei_einsatz')} "
+          f"mittel={d.get('mittel_ende')} boden={d.get('boden')} ctx={d.get('kontext')} -> {d.get('ergebnis')}", flush=True)
+    return {"ok": True}
+
+
+@router.get("/stimme/diagnose")
+async def stimme_diagnose_lesen():
+    return {"messungen": db.einstellung("stimme_diagnose", []) or []}
+
+
 @router.post("/stimme/hoeren")
 async def hoeren(datei: UploadFile = File(...)):
     roh = await datei.read()
