@@ -108,6 +108,17 @@ def _woerter(t: str) -> set[str]:
     return {w for w in re.findall(r"[a-zäöüß0-9]{4,}", (t or "").lower())}
 
 
+# Woerter, die in fast jedem Vorschlagstitel stehen ("Talk ... nicht, wenn Veiko ...") -- sie sagen nichts darueber,
+# ob zwei Vorschlaege derselbe Fehler sind (23.10.2026: "Talk schliesst Projekte nicht, wenn Veiko das will" wurde
+# mit "... wenn Veiko jetzt abschicken sagt" zusammengelegt, weil beide nur diese Woerter teilten).
+ALLERWELT = {"talk", "veiko", "nicht", "wenn", "will", "sagt", "neos", "cockpit", "beim", "nach", "einem", "einer",
+             "wird", "werden", "kein", "keine", "richtig", "richtige", "falsch", "falsche", "immer", "mehr", "dass"}
+
+
+def _inhalt(t: str) -> set[str]:
+    return _woerter(t) - ALLERWELT
+
+
 def _anzeige(n: dict[str, Any]) -> str:
     d = n.get("daten") if isinstance(n.get("daten"), dict) else {}
     return str((d or {}).get("anzeige") or n.get("text") or "").strip()
@@ -160,7 +171,8 @@ def _gleicher_offener(v: dict[str, Any], offen: list[dict[str, Any]]) -> str | N
         # Dieselbe Funktion als Ursache und ein aehnlicher Titel: derselbe Fehler, nur anders beschrieben
         # ("Talk oeffnet nicht das, was Veiko meint" / "... das richtige Projekt bei KI-Singularitaet",
         # beide in oeffnen_suchen).
-        if stellen_v & _stellen(_daten(r)) and _aehnlich(v.get("titel", ""), r["titel"]) >= 0.25:
+        iv, ir = _inhalt(v.get("titel", "")), _inhalt(r["titel"])
+        if stellen_v & _stellen(_daten(r)) and iv & ir and len(iv & ir) / max(1, len(iv | ir)) >= 0.2:
             return r["id"]
         a = _aehnlich(text, f"{r['titel']} {_daten(r).get('problem', '')}")
         if a > wert:
@@ -218,6 +230,10 @@ def befunde_sammeln(seit: float, bis: float | None = None) -> list[dict[str, Any
     befunde: list[dict[str, Any]] = []
     gespraeche = db.alle("SELECT id, art, titel FROM gespraeche WHERE art IN ('talk','neo') AND geaendert>=? ORDER BY geaendert DESC", (seit,))
     for g in gespraeche:
+        # RSI liest sich nicht selbst: die Neo-Gespraeche, die eine RSI-Serie anlegt ("RSI: …"), sind keine
+        # Gespraeche mit Veiko (23.10.2026: ein Beleg fuer "Talk ignoriert Nein" war Neos eigener RSI-Auftrag).
+        if str(g.get("titel") or "").startswith("RSI:"):
+            continue
         msgs = db.alle("SELECT id, rolle, text, daten, zeit FROM nachrichten WHERE gespraech_id=? AND zeit<=? ORDER BY id", (g["id"], bis))
         letzte_meldung = -99
         for i, n in enumerate(msgs):
