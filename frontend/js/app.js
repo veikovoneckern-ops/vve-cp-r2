@@ -27,6 +27,7 @@ import { BrainStrom, ExO } from "./verfahren.js";
 import { Aktionen } from "./aktionen.js";
 import { AufgabeFenster } from "./aufgabe.js";
 import { WebSpace } from "./webspace.js";
+import { Rsi } from "./rsi.js";
 
 const BEREICHE = [
   { id: "briefing", titel: "Briefing", icon: "briefing", unter: "Was jetzt zählt" },
@@ -47,6 +48,9 @@ const BEREICHE = [
   // Postausgang mit Entwuerfen, Adressbuch und Formulierungshilfe (22.10.2026, mail.js).
   { id: "mail", titel: "Mail", icon: "mail", unter: "Entwürfe, Gesendet, Adressbuch -- verschickt über info@veikovoneckern.org" },
   { id: "neo", titel: "Neo", icon: "neo", unter: "Cockpit Engineer", neo: true },
+  // Recursive Self-Improvement (23.10.2026): nachts aus Veikos Gespraechen Verbesserungen ableiten --
+  // Neo schlaegt vor, Dario prueft, Veiko entscheidet (rsi.py). Direkt hinter Neo, weil es Neos Arbeit ist.
+  { id: "rsi", titel: "RSI", icon: "neu_laden", unter: "Das Cockpit verbessert sich aus deinen Gesprächen" },
   // Team = Mitglieder + das fruehere "Stab & Modelle", in aufklappbaren Abschnitten (19.10.2026).
   { id: "team", titel: "Team", icon: "team", unter: "Mitglieder, Besetzung, Modelle, Optimierung" },
   // Verbrauch als eigene Seite (19.10.2026): Token, Rechenzeit, Kosten, Strom -- nach Projekt, Aufgabe, Modell.
@@ -363,6 +367,7 @@ function App() {
         ${r.bereich === "langlauf" && html`<${Langlaeufer} id=${r.id} />`}
         ${r.bereich === "aktionen" && html`<${Aktionen} />`}
         ${r.bereich === "webspace" && html`<${WebSpace} pfad=${r.id} />`}
+        ${r.bereich === "rsi" && html`<${Rsi} />`}
       </main>
     </div>
     ${talk && html`<${Talk} zu=${() => setTalk(false)} kontext=${fensterKontext || kontext} setKontext=${(k) => { setFensterKontext(null); setKontext(k); }} start=${talkStart} />`}

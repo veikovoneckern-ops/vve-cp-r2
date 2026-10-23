@@ -170,7 +170,7 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"bild","prompt":"ausführliche Bildbeschreibung auf ENGLISCH (Motiv, Stil, Licht, Perspektive)","titel":"kurzer deutscher Titel","format":"quadrat|quer|hoch","vorlage":"z-image"} -- erzeugt ein Bild auf dem eigenen Server. Vorlage IMMER z-image (etwa 15 Sekunden), auch für fotorealistische Bilder; qwen nur, wenn lesbarer Text im Bild stehen soll; flux2 nur, wenn Veiko ausdrücklich höchste Qualität verlangt (dauert mehrere Minuten). Läuft sofort.
 - {"aktion":"visualisierung","beschreibung":"was dargestellt werden soll, mit allen Inhalten (Schritte, Begriffe, Zahlen) auf Deutsch","titel":"kurzer Titel"} -- zeichnet ein Schaubild (Ablauf, Mindmap, Diagramm, Vergleich). Läuft sofort.
 - {"aktion":"oeffnen","art":"ergebnis|langlauf|aufgabe|vorgang|projekt|notiz|gespraech|datei","id":"r…|l…|t…|v…|p…|n…|d… aus LAGE/KONTEXT","titel":"der Titel, wie Veiko ihn nennt"} -- öffnet GENAU DIESES eine Ding sofort, ohne Rückfrage (ändert nichts): „öffne das Ergebnis zu X“ = art ergebnis, „zeig mir den Langläufer X“ = art langlauf. Das Ergebnis eines Langläufers steht in LANGLÄUFER als „Ergebnis r…“. Kennst du die id nicht sicher, lass sie weg und gib nur den titel -- das Cockpit sucht dann selbst.
-- {"aktion":"zeigen","ziel":"board|briefing|inbox|projects|team|neo|system|watchdog|website_stand|brainstrom|exo|langlauf|aktionen|modelle|einstellungen|memory|versionen|usage|explorer|empfehlungen|uebersicht_modelle|installiert|optimierung|neue_modelle|alle_aufgaben|alle_notizen|neuer_langlaeufer"} -- öffnet einen Bereich oder Abschnitt des Cockpits sofort (system = Stack: Server, Updates, WatchDog, ganz unten website_stand = Stand der Website; langlauf = LongRuns; usage = Verbrauch an Token, Kosten und Strom nach Projekt, Aufgabe, Modell; explorer = alle erzeugten Inhalte zum Suchen und Filtern; memory = was das Team über Veiko weiß, unter Settings; versionen = Versionsverlauf des Cockpits (was sich wann geändert hat), unter Settings; empfehlungen = Recommendations, alle Empfehlungen zu Server, Software, Modellen und Website; optimierung = Modell-Revision, neue_modelle = Neu bei Ollama).
+- {"aktion":"zeigen","ziel":"board|briefing|inbox|projects|team|neo|system|watchdog|website_stand|brainstrom|exo|langlauf|aktionen|modelle|einstellungen|memory|versionen|usage|explorer|empfehlungen|rsi|uebersicht_modelle|installiert|optimierung|neue_modelle|alle_aufgaben|alle_notizen|neuer_langlaeufer"} -- öffnet einen Bereich oder Abschnitt des Cockpits sofort (system = Stack: Server, Updates, WatchDog, ganz unten website_stand = Stand der Website; langlauf = LongRuns; usage = Verbrauch an Token, Kosten und Strom nach Projekt, Aufgabe, Modell; explorer = alle erzeugten Inhalte zum Suchen und Filtern; memory = was das Team über Veiko weiß, unter Settings; versionen = Versionsverlauf des Cockpits (was sich wann geändert hat), unter Settings; empfehlungen = Recommendations, alle Empfehlungen zu Server, Software, Modellen und Website; optimierung = Modell-Revision, neue_modelle = Neu bei Ollama).
 - {"aktion":"zeigen","ziel":"chat","wer":"Name des Teammitglieds"} -- öffnet den Chat mit diesem Mitglied (Neo: ziel neo).
 - {"aktion":"werkzeug","was":"erfassen|suche|hell|dunkel|zurueck|fenster_zu|ueberblick|runter|hoch|anfang|ende"} -- Capture öffnen, Suche öffnen, helle oder dunkle Darstellung, eine Seite zurück, oberstes Fenster schließen; ueberblick = Fenster mit den neuesten Ergebnissen und Vorschaubildern („gib mir einen Überblick“, „zeig mir den aktuellen Stand“); runter/hoch/anfang/ende = im offenen Fenster bzw. auf der Seite blättern. Sofort, ohne Rückfrage. Will Veiko „mit dem Advisory Board sprechen“: ziel board. Stellt er dabei schon eine Frage ans Board, gib sie als "frage" mit -- das Board antwortet dann selbst, du antwortest nicht an seiner Stelle.
 - {"aktion":"ausarbeiten","rolle":"stratege|buch|designer|video","form":"text|aufstellung|konzept|dokument|webseite|praesentation|video","titel":"kurzer Titel, höchstens acht Wörter","auftrag":"…","aufgaben_ableiten":"true, wenn Veiko aus dem Ergebnis auch Aufgaben angelegt haben will, sonst weglassen","recherche":"Suchanfrage oder null","vorgang_id":"v… oder null","projekt_id":"p… oder null","aufgabe_id":"t… oder null (die Aufgabe, zu der das gehört)","stil":"vveorg|cockpit|eigen oder null","stil_text":"…"} -- stil nur bei einer Präsentation und nur, wenn Veiko das Aussehen nennt: „im VVEORG-Look“/„in meiner Vorlage“ = vveorg, „im Cockpit-Design“ = cockpit, eigene Gestaltungswünsche (Farben, Schrift, Footer) = eigen mit stil_text in seinen Worten. Sonst weglassen (dann gilt die Vorgabe, die VVEORG-Vorlage).
@@ -557,6 +557,20 @@ def _stack_kontext() -> str:
             + "\n" + webspace.stack_text())
 
 
+def _rsi_kontext() -> str:
+    """Seite RSI (23.10.2026): die offenen Verbesserungsvorschlaege, damit Talk darueber sprechen kann."""
+    zeilen = []
+    for r in db.alle("SELECT titel, stand, daten FROM rsi WHERE stand IN ('neu','geprueft','plan','bei_neo') ORDER BY erstellt DESC LIMIT 10"):
+        d = r["daten"] if isinstance(r["daten"], dict) else {}
+        da = d.get("dario") or {}
+        zeilen.append(f"- {r['titel']} ({r['stand']}): {str(d.get('problem') or '')[:200]}"
+                      + (f" Dario: {da.get('urteil')}, {str(da.get('begruendung') or '')[:200]} Weiter mit: {da.get('wer_weiter')}." if da.get("urteil") else ""))
+    return ("VEIKO SCHAUT AUF RSI (Recursive Self-Improvement): nachts liest Neo die Gespräche, findet, wo es hakte, und schlägt "
+            "Verbesserungen vor (ohne etwas zu ändern); Dario prüft und sagt, wer sie ausarbeiten soll. Beauftragen, Plan bei Dario "
+            "bestellen und Verwerfen geht dort per Knopf, nicht über Talk.\n"
+            + ("Offene Vorschläge:\n" + "\n".join(zeilen) if zeilen else "Keine offenen Vorschläge."))
+
+
 def _empfehlungen_kontext() -> str:
     from . import systeminfo
     from .api import REVISION_ZULETZT
@@ -578,7 +592,7 @@ def _explorer_kontext() -> str:
 
 
 SEITEN_KONTEXT = {"team": _team_kontext, "einstellungen": _einstellungen_kontext, "usage": _usage_kontext,
-                  "stack": _stack_kontext, "explorer": _explorer_kontext, "empfehlungen": _empfehlungen_kontext}
+                  "stack": _stack_kontext, "explorer": _explorer_kontext, "empfehlungen": _empfehlungen_kontext, "rsi": _rsi_kontext}
 
 
 def vorschlaege_aus(text: str) -> tuple[str, list[dict[str, Any]]]:
@@ -616,7 +630,7 @@ BEREICHE = {"board": "Advisory Board", "briefing": "Briefing", "inbox": "Inbox",
             "neue_modelle": "Neu bei Ollama", "verbrauch": "Usage", "alle_aufgaben": "Alle Aufgaben",
             "alle_notizen": "Alle Notizen", "neuer_langlaeufer": "Neuer LongRun",
             # Fehlten bis 22.10.2026 -- ein "zeigen daily" des Modells fiel deshalb still heraus.
-            "daily": "Daily Tasks", "mail": "Mail"}
+            "daily": "Daily Tasks", "mail": "Mail", "rsi": "RSI"}
 # Wohin ein Ziel im Browser fuehrt (Adresse hinter #/). Fehlt es hier, ist das Ziel selbst die Adresse.
 BEREICH_PFAD = {"watchdog": "system/watchdog", "stack": "system", "website_stand": "system/website", "modelle": "team/besetzung",
                 "uebersicht_modelle": "team/besetzung", "installiert": "team/installiert",
@@ -653,6 +667,7 @@ SEITEN = [
     ("optimierung", r"optimierung|revision", "die Optimierung"),
     ("installiert", r"installiert\w*( modelle)?", "die installierten Modelle"),
     ("modelle", r"stab (und|&) modelle|modelle|besetzung", "die Besetzung im Team"),
+    ("rsi", r"\brsi\b|self[- ]?improvement|selbstverbesserung|verbesserungsvorschl(ä|ae)ge", "die RSI-Seite"),
     ("empfehlungen", r"recommendations?|empfehlungen|vorschläge|vorschlaege", "die Recommendations"),
     ("explorer", r"explorer|alle inhalte|alle ergebnisse|ablage", "den Explorer"),
     ("memory", r"memory|gedächtnis|gedaechtnis", "das Memory"),

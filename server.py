@@ -19,7 +19,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from cockpit import anmeldung, daily, dossier, folienbilder, importer, langlauf, medien, nachtladen, revision, stab, usage, webspace
+from cockpit import anmeldung, daily, dossier, folienbilder, importer, langlauf, medien, nachtladen, revision, rsi, stab, usage, webspace
 from cockpit.api import router
 from cockpit.konfig import FRONTEND, HOST, PORT
 
@@ -58,7 +58,10 @@ async def lebenszeit(app: FastAPI):
     strom = asyncio.create_task(usage.strom_schleife())
     # Recherche-Dossiers, die ein Neustart unterbrochen hat, fortsetzen (19.10.2026).
     weiter = asyncio.create_task(dossier.fortsetzen())
+    # RSI (23.10.2026): nachts aus den Gespraechen Verbesserungen vorschlagen (Neo) und pruefen (Dario).
+    besser = asyncio.create_task(rsi.schleife())
     yield
+    besser.cancel()
     weiter.cancel()
     strom.cancel()
     bilder.cancel()

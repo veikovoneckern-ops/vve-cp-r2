@@ -31,8 +31,10 @@ const ENDE_SATZ = /\b(dialog|gespräch|gespraech|unterhaltung|freisprechen|talk)
 // 23.10.2026: "Ok, du kannst in Dialogba in" (= "du kannst den Dialog beenden") -- jedes "Dialog" mit
 // angehaengtem b-Wortrest, in einem Satz bis acht Woertern.
 const ENDE_HOERFEHLER = /\bdialog\s*(b\w*|bin)\b/i;
-const istEnde = (t) => ENDE.test(t) || (t.split(/\s+/).length <= 10 && ENDE_SATZ.test(t))
-  || (t.split(/\s+/).length <= 8 && ENDE_HOERFEHLER.test(t));
+// Kommas raus (23.10.2026: "Okay, Dialog, Ben" -- Whisper setzt sie nach Gefuehl, das Muster sah "Dialog," statt "Dialog Ben").
+const ohneKomma = (t) => String(t).replace(/[,;:]/g, " ").replace(/\s+/g, " ").trim();
+const istEnde = (t0) => { const t = ohneKomma(t0); return ENDE.test(t) || (t.split(/\s+/).length <= 10 && ENDE_SATZ.test(t))
+  || (t.split(/\s+/).length <= 8 && ENDE_HOERFEHLER.test(t)); };
 const reinigen = (t) => String(t || "").trim().replace(/[.!?,]+$/, "").trim();
 const sehrUnsicher = (d) => !!(d && d.sicherheit && d.sicherheit.logprob < -1.8);
 // Ein kurzes Ja ohne Nein -- laengere Saetze sind eine neue Frage, kein Ja. Beginnt der

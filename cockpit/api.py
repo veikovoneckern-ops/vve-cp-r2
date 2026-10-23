@@ -1723,6 +1723,69 @@ async def talk_ausfuehren(request: Request):
 
 
 # ================================================================ Neo
+# ================================================================ RSI (23.10.2026, rsi.py)
+# Verbesserungen aus Veikos Gespraechen: Neo schlaegt vor (nur lesend), Dario prueft, Veiko entscheidet.
+@router.get("/rsi")
+async def rsi_liste():
+    from . import rsi
+    d = rsi.liste()
+    for v in d["vorschlaege"]:
+        n = (v.get("daten") or {}).get("neo") or {}
+        v["neo_laeuft"] = bool(n.get("gespraech_id") and neo.laufender_job(n["gespraech_id"]))
+    return d
+
+
+@router.post("/rsi/lauf")
+async def rsi_lauf():
+    from . import rsi
+    if not rsi.starten(von_hand=True):
+        raise HTTPException(409, "RSI läuft schon.")
+    return {"ok": True}
+
+
+@router.post("/rsi/einstellungen")
+async def rsi_einstellungen(request: Request):
+    from . import rsi
+    d = await _koerper(request)
+    if "an" in d:
+        db.einstellung_setzen("rsi_aktiv", bool(d["an"]))
+    if "dario_auto" in d:
+        db.einstellung_setzen("rsi_dario_auto", bool(d["dario_auto"]))
+    if "budget" in d:
+        try:
+            db.einstellung_setzen("rsi_budget", round(min(20.0, max(0.0, float(d["budget"]))), 2))
+        except (TypeError, ValueError):
+            raise HTTPException(400, "Budget muss eine Zahl sein.")
+    return rsi.liste()
+
+
+@router.post("/rsi/{rid}/{was}")
+async def rsi_handeln(rid: str, was: str, request: Request):
+    """Veikos Entscheidung je Vorschlag. Was Geld kostet (Dario), braucht bestaetigt=true --
+    ohne kommt nur die Schaetzung zurueck (Kostensperre)."""
+    from . import rsi
+    d = await _koerper(request)
+    r = db.holen("rsi", rid)
+    if not r:
+        raise HTTPException(404, "Vorschlag nicht gefunden")
+    if was == "neo":
+        return await rsi.neo_beauftragen(rid)
+    if was in ("pruefen", "plan"):
+        daten = r["daten"] if isinstance(r["daten"], dict) else {}
+        s = rsi.schaetzung(rsi.DARIO_RSI_SYSTEM if was == "pruefen" else rsi.DARIO_PLAN_SYSTEM,
+                           rsi._vorschlag_text(daten), rsi.AUS_SCHAETZUNG if was == "pruefen" else 4000)
+        if not d.get("bestaetigt"):
+            return {"ok": False, "schaetzung": round(s, 3), "grund": "bestaetigen"}
+        if not rsi.im_hintergrund(rid, was):
+            raise HTTPException(409, "Dario arbeitet an diesem Vorschlag schon.")
+        return {"ok": True, "laeuft": True}
+    if was in ("verwerfen", "erledigt", "zurueck"):
+        stand_ = {"verwerfen": "verworfen", "erledigt": "erledigt", "zurueck": "neu"}[was]
+        db.ausfuehren("UPDATE rsi SET stand=?, geaendert=? WHERE id=?", (stand_, time.time(), rid))
+        return {"ok": True}
+    raise HTTPException(400, "Unbekannte Aktion")
+
+
 @router.get("/neo/gespraeche")
 async def neo_liste():
     liste = db.alle("SELECT g.id, g.titel, g.geaendert, (SELECT COUNT(*) FROM nachrichten n WHERE n.gespraech_id=g.id) AS anzahl "

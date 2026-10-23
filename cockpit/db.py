@@ -129,6 +129,12 @@ CREATE TABLE IF NOT EXISTS mails (
   betreff TEXT DEFAULT '', html TEXT DEFAULT '', daten TEXT DEFAULT '{}', fehler TEXT,
   erstellt REAL, geaendert REAL, gesendet REAL
 );
+-- RSI (23.10.2026, rsi.py): Verbesserungsvorschlaege aus Veikos Gespraechen -- Neo schlaegt vor,
+-- Dario prueft, Veiko entscheidet. daten traegt Belege, Neos Vorschlag, Darios Urteil und den Weg danach.
+CREATE TABLE IF NOT EXISTS rsi (
+  id TEXT PRIMARY KEY, nacht TEXT, stand TEXT DEFAULT 'neu', titel TEXT, daten TEXT DEFAULT '{}',
+  erstellt REAL, geaendert REAL
+);
 CREATE TABLE IF NOT EXISTS kontakte (
   id TEXT PRIMARY KEY, name TEXT, email TEXT, notiz TEXT DEFAULT '', anzahl INTEGER DEFAULT 0,
   zuletzt REAL, erstellt REAL
