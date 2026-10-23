@@ -911,9 +911,19 @@ async def ergebnis(rid: str):
     from . import langlauf
     e["langlauf_id"] = langlauf.zum_ergebnis(rid)
     try:
-        e["auftrag"] = (json.loads(v.get("auftrag") or "{}") or {}).get("auftrag")
+        auftrag = json.loads(v.get("auftrag") or "{}") or {}
     except ValueError:
-        e["auftrag"] = None
+        auftrag = {}
+    e["auftrag"] = auftrag.get("auftrag")
+    # Wozu das Ergebnis gehoert (23.10.2026, Veiko: "in dieser Ansicht moechte ich auch sehen, zu welchem
+    # Projekt oder welcher Aufgabe das gehoert"). Die Aufgabe steht am Case (auftrag.aufgabe_id -- dort suchen
+    # sie auch Explorer, Aufgabenfenster und Talk), sonst eine Aufgabe, die der Case angelegt hat.
+    pr = db.holen("projekte", e.get("projekt_id") or "") or {}
+    e["projekt_farbe"] = pr.get("farbe")
+    a = db.holen("aufgaben", str(auftrag.get("aufgabe_id") or "")) if auftrag.get("aufgabe_id") else None
+    if not a and e.get("vorgang_id"):
+        a = db.eine("SELECT id, titel, status FROM aufgaben WHERE vorgang_id=? ORDER BY erstellt LIMIT 1", (e["vorgang_id"],))
+    e["aufgabe"] = {"id": a["id"], "titel": a["titel"], "status": a.get("status")} if a else None
     from . import video
     e["video"] = video.stand(e)
     if e["video"]:

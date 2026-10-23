@@ -574,6 +574,15 @@ export function ErgebnisAnsicht({ id, zu, vorlage = "" }) {
       <button class=${"btn" + (chatAuf ? " an" : "")} onClick=${() => setChatAuf(!chatAuf)}><${Icon} n="chat" g=${15} />${chatAuf ? "Weiterarbeiten ausblenden" : "Weiterarbeiten"}</button>
       ${e.vorgang_id && html`<a class="btn" href=${"#/inbox/" + e.vorgang_id} onClick=${zu} title="Die ursprüngliche Notiz, was Jason daraus gemacht hat, alle Ergebnisse dazu">Herkunft</a>`}
       <button class="btn primaer" onClick=${zu}>Schließen</button>`}>
+    <div class="erg-zuordnung klein">
+      <span class="leise">Gehört zu</span>
+      ${e.projekt_id && e.projekt_name
+        ? html`<a href=${"#/projects/" + e.projekt_id} onClick=${zu} title="Projekt öffnen"><span class="punkt" style=${"background:" + (e.projekt_farbe || "#999")}></span>Projekt ${e.projekt_name}</a>`
+        : html`<span class="leise">ohne Projekt</span>`}
+      ${e.aufgabe && html`<button class="erg-zuordnung-link" onClick=${() => { zu(); bus.sende("aufgabe-zeigen", e.aufgabe.id); }} title="Aufgabe öffnen">
+        <${Icon} n="check" g=${12} />Aufgabe ${e.aufgabe.titel}${e.aufgabe.status === "erledigt" ? " (erledigt)" : ""}</button>`}
+      ${e.vorgang_titel && html`<a href=${"#/inbox/" + e.vorgang_id} onClick=${zu} title="Der Case: die ursprüngliche Notiz und was das Team daraus gemacht hat">Case ${e.vorgang_titel}</a>`}
+    </div>
     <div class=${"erg-raster" + (chatAuf ? " mit-chat" : "")}>
       <div class="erg-text">
         <div class="erg-text-kopf">
