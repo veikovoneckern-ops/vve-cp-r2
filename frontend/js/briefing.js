@@ -4,6 +4,7 @@ import { html, useState, useEffect, Icon, Avatar, Leer, rolleName, bus, toast, f
 import { ErgebnisZeile } from "./ergebnis.js";
 import { api } from "./api.js";
 import { Entscheidung } from "./entscheidung.js";
+import { ErgebnisReihe } from "./ueberblick.js";
 
 function gruss() {
   const h = new Date().getHours();
@@ -91,6 +92,7 @@ export function Briefing({ lage }) {
             <a class="btn klein" href=${"#/inbox/" + v.id}>Ansehen und freigeben</a>
           </div>`)}
         </section>`}
+    <${ErgebnisReihe} />
     <div class="raster zwei briefing-raster">
         <section class="karte">
           <div class="karte-kopf"><h3>Neu entstanden</h3><span class="leise klein">Ergebnisse deines Teams, letzte sieben Tage</span></div>

@@ -51,3 +51,51 @@ export function UeberblickFenster({ zu }) {
       </div>`}`}
   <//>`;
 }
+
+// ------------------------------------------------------------ Mini-Reihe im Briefing (23.10.2026)
+// Veiko: "die tolle Uebersicht mit Vorschaubildern ... koennte doch auch in einer Mini-Kachelansicht
+// noch zusaetzlich bei dem Briefing sein, damit ich das bildhaft sehen kann -- auf- und zuklappbar."
+// Dieselbe Liste (/ueberblick, ueberblick.liste) und dieselben Vorschauen wie das Fenster, damit
+// beide immer dasselbe zeigen. Geladen wird erst beim Aufklappen -- zugeklappt kostet sie nichts.
+// Ob sie offen ist, merkt sich DIESES Geraet (am Telefon will man sie vielleicht zu, am Rechner auf).
+const MERK = "vvec_briefing_kacheln";
+function gemerkt() { try { return localStorage.getItem(MERK) === "1"; } catch (x) { return false; } }
+function merken(auf) { try { localStorage.setItem(MERK, auf ? "1" : "0"); } catch (x) { /* egal */ } }
+
+function MiniKacheln() {
+  const [d, setD] = useState(null);
+  useEffect(() => { api("/ueberblick").then(setD).catch(fehlerMelden); }, []);
+  if (!d) return html`<div class="lade">Lade …</div>`;
+  const liste = d.ergebnisse || [];
+  if (!liste.length) return html`<div class="leise klein">In den letzten dreißig Tagen ist kein Ergebnis entstanden.</div>`;
+  return html`<div class="ub-reihe">
+    ${liste.map((e) => {
+      const u = URTEIL[e.urteil] || null;
+      return html`<button class="ub-kachel ub-mini" key=${e.id} onClick=${() => bus.sende("ergebnis-zeigen", e.id)} title=${"Öffnen: " + e.titel}>
+        <div class="ub-bild"><${Vorschau} e=${e} /><span class="ub-form">${FORM[e.form] || e.form}</span></div>
+        <div class="ub-text">
+          <b class="ub-titel">${e.titel}</b>
+          <div class="leise klein">${[e.wer, zeitText(e.bearbeitet)].filter(Boolean).join(" · ")}</div>
+          ${u && html`<span class=${"pill " + u.farbe}>${u.wort}</span>`}
+        </div>
+      </button>`;
+    })}
+  </div>`;
+}
+
+export function ErgebnisReihe() {
+  const [auf, setAuf] = useState(gemerkt);
+  const umschalten = () => { setAuf(!auf); merken(!auf); };
+  return html`<section class=${"klappe ub-klappe" + (auf ? " auf" : "")}>
+    <div class="klappe-kopf">
+      <button class="klappe-knopf" onClick=${umschalten} aria-expanded=${auf}>
+        <span class="klappe-pfeil" aria-hidden="true"><${Icon} n="rechts" g=${16} w=${2.4} /></span>
+        <span class="klappe-titel"><b>Ergebnisse in Bildern</b><small>die neuesten Ergebnisse mit Vorschau -- antippen öffnet</small></span>
+        <span class="klappe-tun">${auf ? "Zuklappen" : "Aufklappen"}</span>
+      </button>
+      ${auf && html`<span class="klappe-rechts"><button class="btn klein geist" onClick=${() => bus.sende("ueberblick-zeigen")}
+        title="Das große Überblick-Fenster -- per Sprache: „gib mir einen Überblick“"><${Icon} n="auge" g=${13} />Groß ansehen</button></span>`}
+    </div>
+    ${auf && html`<div class="klappe-inhalt"><${MiniKacheln} /></div>`}
+  </section>`;
+}

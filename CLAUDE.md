@@ -219,6 +219,8 @@ Veiko ist kein Entwickler von Beruf. Erklären ohne Jargon, eine Empfehlung stat
 
 > **23.10.2026, abends — RSI-Auswahl vereinfacht:** eine Ankreuzbox je Kachel, die Leiste darunter bietet „Prüfen und umsetzen“ oder „Verwerfen“ (plus „Alle auswählen“). Nach Darios Widerspruchsprüfung setzt Neo **ohne zweiten Klick** um, was nicht zurückgestellt ist (`auswahl(..., automatisch=True)`, Vorgabe auch für Talk) — Veikos Ja zur Auswahl ist das Ja zur Umsetzung. Stellt Dario alles zurück, endet die Serie mit einer Meldung, ohne Release. Reines Verwerfen lässt einen bestehenden Serienstand stehen.
 
+> **23.10.2026 — „Ergebnisse in Bildern“ im Briefing** (`ueberblick.js` → `ErgebnisReihe`): aufklappbare, waagerecht scrollende Reihe kleiner Kacheln mit denselben Vorschauen und derselben Liste wie das Überblick-Fenster (`/ueberblick`), geladen erst beim Aufklappen; antippen öffnet das Ergebnis, „Groß ansehen“ das Fenster. Auf/zu merkt sich das Gerät (`localStorage` `vvec_briefing_kacheln`), bewusst nicht der Server — am Telefon will man sie eher zu.
+
 ## Prüfen
 
 ```bash
