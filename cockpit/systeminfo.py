@@ -398,7 +398,9 @@ def _protokoll_lesbar(roh: str) -> str:
 OLLAMA_SKRIPT = "/usr/local/sbin/vve-ollama-aktualisieren"
 EIGEN_LAUF = Path(os.environ.get("VVEC_WARTUNG_LAUF", "/var/lib/vve-cp-r2-wartung"))
 OLLAMA_EINRICHTEN = ("sudo install -o root -g root -m 755 ~/vve-cp-r2/server/vve-ollama-aktualisieren.sh " + OLLAMA_SKRIPT +
-                     " && echo 'vveadmin ALL=(root) NOPASSWD: " + OLLAMA_SKRIPT + "' | sudo tee /etc/sudoers.d/vve-ollama-aktualisieren >/dev/null"
+                     # '""' hinter dem Pfad: sudo erlaubt dann NUR den Aufruf ohne Argumente (ohne die Angabe jeden).
+                     # Das Skript liest ohnehin keine Argumente -- so steht es aber auch in der Regel.
+                     " && echo 'vveadmin ALL=(root) NOPASSWD: " + OLLAMA_SKRIPT + " \"\"' | sudo tee /etc/sudoers.d/vve-ollama-aktualisieren >/dev/null"
                      " && sudo chmod 440 /etc/sudoers.d/vve-ollama-aktualisieren && sudo visudo -c -q && echo eingerichtet")
 
 
