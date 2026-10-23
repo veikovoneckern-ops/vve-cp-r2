@@ -77,10 +77,25 @@ def einrichten_befehl() -> str:
             "&& echo uebernommen")
 
 
+def laeuft_selbst() -> bool:
+    """Hat der eigene Abruf schon einmal ERFOLGREICH geholt? Erst dann liest das Team die eigene
+    Ablage. Eine vorhandene Anmeldedatei allein reicht nicht (23.10.2026: in ~/.plaud lag noch eine
+    abgelaufene Anmeldung vom August -- das Team las die neue, leere Ablage, waehrend die neuen
+    Notizen weiter beim alten Cockpit ankamen)."""
+    try:
+        return bool(json.loads(STAND.read_text(encoding="utf-8")).get("erfolg_seit"))
+    except (OSError, ValueError):
+        return False
+
+
+def _erstmals() -> dict[str, Any]:
+    return {} if laeuft_selbst() else {"erfolg_seit": time.time()}
+
+
 def ordner() -> Path:
     """Wo die Notizen liegen, die das Team liest: die eigene Ablage, sobald der eigene Abruf
-    eingerichtet ist -- vorher wie bisher die des alten Cockpits."""
-    return ORDNER if eingerichtet() else ALT_ORDNER
+    einmal geklappt hat -- vorher wie bisher die des alten Cockpits."""
+    return ORDNER if laeuft_selbst() else ALT_ORDNER
 
 
 def stand() -> dict[str, Any]:
@@ -89,6 +104,7 @@ def stand() -> dict[str, Any]:
     except (OSError, ValueError):
         s = {}
     s["eingerichtet"] = eingerichtet()
+    s["laeuft_selbst"] = laeuft_selbst()
     try:
         s["synced"] = json.loads((ordner() / "index.json").read_text(encoding="utf-8")).get("synced")
     except (OSError, ValueError):
@@ -224,7 +240,7 @@ def abrufen(schnell: bool = False, alle: bool = False) -> dict[str, Any]:
         n = bestand_uebernehmen()
         (ORDNER / ".uebernommen").write_text(str(n), encoding="utf-8")
     if schnell and not alle and _schnell_nichts_neu():
-        _stand_setzen(zeit=time.time(), ok=True, fehler=None, neu=0)
+        _stand_setzen(zeit=time.time(), ok=True, fehler=None, neu=0, **_erstmals())
         return {"neu": 0, "schnell": True}
     liste: list[dict[str, Any]] = []
     for s in range(1, SEITEN + 1):
@@ -270,7 +286,7 @@ def abrufen(schnell: bool = False, alle: bool = False) -> dict[str, Any]:
     tmp = INDEX.with_suffix(".tmp")
     tmp.write_text(json.dumps(idx, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(INDEX)
-    _stand_setzen(zeit=time.time(), ok=True, fehler=None, neu=neu, ohne_text=ohne_text, gesamt=len(notizen))
+    _stand_setzen(zeit=time.time(), ok=True, fehler=None, neu=neu, ohne_text=ohne_text, gesamt=len(notizen), **_erstmals())
     return {"neu": neu, "ohne_text": ohne_text, "gesamt": len(notizen)}
 
 

@@ -251,10 +251,11 @@ def empfehlungen(s: dict[str, Any] | None, upd: dict[str, Any], ollama_neu: str 
     # Plaud (plaud.py, 23.10.2026): eigener Abruf, sobald eingerichtet -- bis dahin der des alten Cockpits.
     from . import plaud
     pl = plaud.stand()
-    if not pl.get("eingerichtet"):
+    if not pl.get("laeuft_selbst"):
         e.append({"stufe": "achtung", "titel": "Hängt noch am alten Cockpit: Plaud-Notizen",
                   "warum": "Die Sprachnotizen holt bisher das alte Cockpit. Einmal übernehmen (fragt dein Passwort) -- danach holt das "
-                           "neue sie selbst jede Minute, der Abruf des alten wird dabei abgeschaltet. Bisherige Notizen kommen nicht doppelt.",
+                           "neue sie selbst jede Minute, der Abruf des alten wird dabei abgeschaltet. Bisherige Notizen kommen nicht doppelt."
+                           + (f" (Der eigene Abruf scheitert gerade: {str(pl['fehler'])[:160]})" if pl.get("fehler") else ""),
                   "befehl": plaud.einrichten_befehl()})
     elif pl.get("ok") is False:
         e.append({"stufe": "achtung", "titel": "Plaud-Abruf gescheitert", "warum": str(pl.get("fehler") or "")[:300]})
