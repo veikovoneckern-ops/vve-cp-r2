@@ -19,6 +19,7 @@ alles fertig ist:
   04:50        Morgens bereit (hier): Talk-Modell laden und Whisper einmal rechnen lassen,
                damit der erste Satz um 5 nicht auf das Laden wartet
   05:00        Downloads pausieren; die Leitung gehoert wieder Veiko
+  05:00        Morgenbericht per Mail (tagesbericht.py) -- beschreibt die ganze Nacht
 
 Bis zum 23.10.2026 liefen daneben noch Arbeiten des alten Cockpits (Sicherungen 03:00/03:15,
 Stab-Bericht 07:00); sie enden mit dessen Abschaltung. Was davon gebraucht wird, macht diese
@@ -84,8 +85,9 @@ def _wann(t: Any) -> str | None:
 
 def plan() -> list[dict[str, Any]]:
     """Fuer die Settings: der Plan mit dem letzten Lauf je Eintrag -- aus dem Stand, den jedes Modul ohnehin fuehrt."""
-    from . import board, nachtladen, revision, rsi, sicherung, stab
+    from . import board, nachtladen, revision, rsi, sicherung, stab, tagesbericht
     nl, rv, rs, mb, sich = nachtladen.stand(), revision.stand(), rsi.stand(), _stand(), sicherung.stand()
+    tb = tagesbericht.stand()
     bd = board.stand()
     dailys = db.alle("SELECT titel, uhrzeit, aktiv FROM daily ORDER BY uhrzeit")
 
@@ -124,4 +126,8 @@ def plan() -> list[dict[str, Any]]:
          "zuletzt": ("läuft gerade" if mb.get("laeuft") else
                      f"zuletzt {_wann(mb.get('zeit'))}, {mb.get('sekunden')} s" + (" -- mit Fehler" if mb.get("fehler_modell") or mb.get("fehler_whisper") else "")
                      if mb.get("zeit") else "noch nicht gelaufen")},
+        {"zeit": "05:00", "titel": "Morgenbericht per Mail", "an": tagesbericht.an(), "wo": "Settings → Morgenbericht",
+         "warum": f"Was der Stab seit dem letzten Bericht getan hat, an {tagesbericht.empfaenger()}. Nichts zu berichten -- keine Mail.",
+         "zuletzt": (f"zuletzt gesendet {_wann(tb.get('zeit'))}: {tb.get('betreff') or ''}" if tb.get("zeit") else "noch nicht gesendet")
+                    + (f" -- zuletzt gescheitert: {tb['fehler']}" if tb.get("fehler") else "")},
     ]

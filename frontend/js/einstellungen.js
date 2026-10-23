@@ -58,6 +58,48 @@ function ExplorerOeffnen() {
   </section>`;
 }
 
+// Morgenbericht per Mail (tagesbericht.py, 23.10.2026) -- vorher schickte ihn das alte Cockpit um 07:00.
+// An/aus, Empfaenger, letzter Versand; "Vorschau" zeigt, was jetzt drinstuende, ohne zu schicken.
+function Morgenbericht() {
+  const [s, setS] = useState(null);
+  const [an, setAn] = useState("");
+  const [vorschau, setVorschau] = useState(undefined);
+  const [laeuft, setLaeuft] = useState(false);
+  const laden = () => api("/tagesbericht").then((x) => { setS(x); setAn(x.empfaenger); }).catch(fehlerMelden);
+  useEffect(() => { laden(); }, []);
+  if (!s) return "";
+  async function setzen(daten) {
+    try { await api("/einstellungen", { methode: "POST", daten }); toast("Gespeichert."); laden(); } catch (x) { fehlerMelden(x); }
+  }
+  async function zeigen() {
+    try { setVorschau((await api("/tagesbericht?vorschau=true")).vorschau || null); } catch (x) { fehlerMelden(x); }
+  }
+  async function jetzt() {
+    setLaeuft(true);
+    try { const r = await api("/tagesbericht/jetzt", { methode: "POST" }); toast(r.gesendet ? `Geschickt an ${s.empfaenger}.` : r.grund); laden(); }
+    catch (x) { fehlerMelden(x); }
+    setLaeuft(false);
+  }
+  return html`<section class="karte" style="margin-top:14px"><div class="karte-kopf"><h3>Morgenbericht per Mail</h3></div>
+    <div class="knopfreihe"><span class="leise">Jeden Morgen um ${s.um}</span>
+      <div class="segment"><button class=${s.an ? "an" : ""} onClick=${() => setzen({ bericht_aktiv: true })}>an</button>
+        <button class=${!s.an ? "an" : ""} onClick=${() => setzen({ bericht_aktiv: false })}>aus</button></div></div>
+    <div class="knopfreihe" style="margin-top:8px"><span class="leise">an</span>
+      <input class="eingabe" style="min-width:240px;max-width:340px" value=${an} onInput=${(e) => setAn(e.target.value)}
+        onKeyDown=${(e) => { if (e.key === "Enter") setzen({ bericht_an: an.trim() }); }} />
+      ${an.trim() !== s.empfaenger && html`<button class="btn klein" onClick=${() => setzen({ bericht_an: an.trim() })}>Speichern</button>`}</div>
+    <p class="leise klein" style="margin-top:8px">Was seit dem letzten Bericht passiert ist: Achtung (Plaud steht, Sicherung gescheitert), was auf dich wartet, neue Ergebnisse, fällige Aufgaben, was läuft. Ist nichts zu berichten, kommt keine Mail.
+      ${" "}${s.zeit ? `Zuletzt gesendet ${zeitText(s.zeit)}: ${s.betreff || ""}` : "Noch keiner gesendet."}</p>
+    ${s.fehler && html`<div class="fehlerbox" style="margin-top:8px">Zuletzt gescheitert: ${s.fehler}</div>`}
+    <div class="knopfreihe karte-fuss">
+      <button class="btn klein" onClick=${zeigen}><${Icon} n="auge" g=${13} />Vorschau</button>
+      <button class="btn klein" disabled=${laeuft} onClick=${jetzt}><${Icon} n="senden" g=${13} />${laeuft ? "Schicke …" : "Jetzt schicken"}</button></div>
+    ${vorschau === null && html`<div class="hinweisbox" style="margin-top:8px">Gerade nichts zu berichten -- es käme keine Mail.</div>`}
+    ${vorschau && html`<div style="margin-top:10px"><b>${vorschau.betreff}</b>
+      <iframe sandbox="" srcdoc=${vorschau.html} style="width:100%;height:360px;border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:6px"></iframe></div>`}
+  </section>`;
+}
+
 export function Einstellungen({ konto, thema, abschnitt }) {
   const [d, laden] = useAbruf("/system", 30000, []);
   const [laeuft, setLaeuft] = useState("");
@@ -81,6 +123,7 @@ export function Einstellungen({ konto, thema, abschnitt }) {
     <${Vertrauen} />
     <${PraesentationStil} />
     <${ExplorerOeffnen} />
+    <${Morgenbericht} />
     <div style="margin-top:14px"><${Klappe} id="memory" titel="Memory" unter="Was dein Team über dich weiß: Personen, Begriffe, Hörfehler, Aussprache" vorgabe=${true}>
       <${Gedaechtnis} /></${Klappe}></div>
     <div style="margin-top:14px"><${Klappe} id="nachts" titel="Nachts" unter="Was zwischen 22 und 5 Uhr läuft, in welcher Reihenfolge, und wann zuletzt">

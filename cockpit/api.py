@@ -1315,6 +1315,11 @@ async def einstellungen_setzen(request: Request):
         db.einstellung_setzen("praesentation_stil", d["praesentation_stil"])
     if "modelle_nachts_laden" in d:
         db.einstellung_setzen(nachtladen.SCHALTER, bool(d["modelle_nachts_laden"]))
+    # Morgenbericht (tagesbericht.py, 23.10.2026): an/aus und Empfaenger -- nur eine gueltige Adresse.
+    if "bericht_aktiv" in d:
+        db.einstellung_setzen("bericht_aktiv", bool(d["bericht_aktiv"]))
+    if isinstance(d.get("bericht_an"), str) and re.fullmatch(r"[^@\s,;]+@[^@\s,;]+\.[a-z]{2,}", d["bericht_an"].strip(), re.I):
+        db.einstellung_setzen("bericht_an", d["bericht_an"].strip())
     # Explorer-Klick (23.10.2026): Vorschau im Cockpit oder gleich das Original in der App.
     if d.get("explorer_oeffnen") in ("vorschau", "app"):
         db.einstellung_setzen("explorer_oeffnen", d["explorer_oeffnen"])
@@ -1770,6 +1775,25 @@ async def sicherung_schluessel(request: Request):
 async def nachtplan_liste():
     from . import nachtplan
     return {"plan": nachtplan.plan()}
+
+
+# ================================================================ Morgenbericht (23.10.2026, tagesbericht.py)
+@router.get("/tagesbericht")
+async def tagesbericht_stand(vorschau: bool = False):
+    from . import tagesbericht
+    s = tagesbericht.stand()
+    if vorschau:
+        s["vorschau"] = tagesbericht.bauen()
+    return s
+
+
+@router.post("/tagesbericht/jetzt")
+async def tagesbericht_jetzt():
+    from . import tagesbericht
+    try:
+        return await tagesbericht.schicken(erzwingen=True)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
 
 
 # ================================================================ RSI (23.10.2026, rsi.py)
