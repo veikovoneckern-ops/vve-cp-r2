@@ -28,10 +28,13 @@ const ENDE = /^(stopp|stop|ende|beenden|aufhören|aufhoeren|das wars|das war's|d
 const ENDE_SATZ = /\b(dialog|gespräch|gespraech|unterhaltung|freisprechen|talk)\b.{0,20}\b(beenden|beende|beendet|ende|schließen|schliessen|aus|vorbei)\b|\b(beende|beenden|schließ|schliess|schließe)\w*\b.{0,20}\b(dialog|gespräch|gespraech|unterhaltung)\b/i;
 // Whisper hoert "Dialog beenden" auch als "Dialogbein" (19.10.2026) -- in einem ganz
 // kurzen Satz reicht "Dialog" plus "be…" oder "bin".
-const ENDE_HOERFEHLER = /\bdialog\s*(be\w*|bin)\b/i;
+// 23.10.2026: "Ok, du kannst in Dialogba in" (= "du kannst den Dialog beenden") -- jedes "Dialog" mit
+// angehaengtem b-Wortrest, in einem Satz bis acht Woertern.
+const ENDE_HOERFEHLER = /\bdialog\s*(b\w*|bin)\b/i;
 const istEnde = (t) => ENDE.test(t) || (t.split(/\s+/).length <= 10 && ENDE_SATZ.test(t))
-  || (t.split(/\s+/).length <= 4 && ENDE_HOERFEHLER.test(t));
+  || (t.split(/\s+/).length <= 8 && ENDE_HOERFEHLER.test(t));
 const reinigen = (t) => String(t || "").trim().replace(/[.!?,]+$/, "").trim();
+const sehrUnsicher = (d) => !!(d && d.sicherheit && d.sicherheit.logprob < -1.8);
 // Ein kurzes Ja ohne Nein -- laengere Saetze sind eine neue Frage, kein Ja. Beginnt der
 // Satz mit Ja, darf er laenger sein ("Ja, das solltest du vorhin schon ausführen. Führe
 // das jetzt aus" ging am 19.10.2026 als neue Frage ans Modell, und nichts lief).
@@ -274,6 +277,9 @@ export function Talk({ zu, kontext, setKontext, start }) {
       // gehen -- ausser beim Freisprechen, das liefe sonst mitten im Satz aus.
       const wegTreten = () => { if (!freiAn.current && matchMedia("(max-width:820px)").matches) setTimeout(zu, 400); };
       if ((o && !(o.art === "gespraech" && o.g_art === "talk")) || z || w === "erfassen" || w === "suche" || w === "ueberblick") wegTreten();
+      // Eine SEITE oeffnen heisst: das Fenster darueber geht zu (23.10.2026: "oeffne mir den Explorer"
+      // wechselte die Seite, aber das Ergebnisfenster blieb davor liegen -- es sah aus, als passiere nichts).
+      if (z || (o && ["langlauf", "vorgang", "projekt", "daily", "mail"].includes(o.art))) bus.sende("fenster-alle-zu");
       if (o) {
         if (o.art === "gespraech") gespraechOeffnen({ art: o.g_art, id: o.id, wer: o.wer }, bus);
         else if (o.art === "ergebnis") bus.sende("ergebnis-zeigen", o.id);
@@ -370,7 +376,9 @@ export function Talk({ zu, kontext, setKontext, start }) {
     const d = await erkennen(blob);
     // Unsicher Erkanntes (Fernseher, Gespraech im Raum -- 22.10.2026: "Urientus") ist keine Eingabe.
     // null statt "": das zaehlt nicht als "nichts gehoert", sonst beendete ein laufender Film das Freisprechen.
-    if (d.unsicher && reinigen(d.text).split(/\s+/).length <= 8) {
+    // Sehr unsicher (logprob unter -1,8) ist auch ein langer Satz kein Auftrag -- 23.10.: eine Zeile
+    // Kauderwelsch mit -2,2 kam als Eingabe an, weil sie mehr als acht "Woerter" hatte.
+    if (d.unsicher && (reinigen(d.text).split(/\s+/).length <= 8 || sehrUnsicher(d))) {
       setFrei((f) => f && { ...f, text: "Das klang nicht nach dir -- ich höre weiter zu." });
       return null;
     }
@@ -408,7 +416,7 @@ export function Talk({ zu, kontext, setKontext, start }) {
       const seine = w(t);
       const echo = seine.length && seine.filter((x) => eigen.has(x)).length / seine.length > 0.8;
       const nurStopp = /^(stopp?|halt|ruhe|sei still|still|warte|moment|okay|ok|danke)\W*$/i.test(t);
-      const fremd = d.unsicher && seine.length <= 8;
+      const fremd = d.unsicher && (seine.length <= 8 || sehrUnsicher(d));
       if (t && !nurStopp && !echo && !fremd) vorgriff.current = t;
       // Fehlalarm (Echo, Fernseher, nichts verstanden): Talk spricht ab dem unterbrochenen Satz weiter,
       // statt die halbe Antwort zu verschlucken. "Stopp" heisst dagegen: wirklich still sein.

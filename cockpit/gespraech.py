@@ -173,7 +173,7 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"zeigen","ziel":"board|briefing|inbox|projects|team|neo|system|watchdog|website_stand|brainstrom|exo|langlauf|aktionen|modelle|einstellungen|memory|versionen|usage|explorer|empfehlungen|uebersicht_modelle|installiert|optimierung|neue_modelle|alle_aufgaben|alle_notizen|neuer_langlaeufer"} -- öffnet einen Bereich oder Abschnitt des Cockpits sofort (system = Stack: Server, Updates, WatchDog, ganz unten website_stand = Stand der Website; langlauf = LongRuns; usage = Verbrauch an Token, Kosten und Strom nach Projekt, Aufgabe, Modell; explorer = alle erzeugten Inhalte zum Suchen und Filtern; memory = was das Team über Veiko weiß, unter Settings; versionen = Versionsverlauf des Cockpits (was sich wann geändert hat), unter Settings; empfehlungen = Recommendations, alle Empfehlungen zu Server, Software, Modellen und Website; optimierung = Modell-Revision, neue_modelle = Neu bei Ollama).
 - {"aktion":"zeigen","ziel":"chat","wer":"Name des Teammitglieds"} -- öffnet den Chat mit diesem Mitglied (Neo: ziel neo).
 - {"aktion":"werkzeug","was":"erfassen|suche|hell|dunkel|zurueck|fenster_zu|ueberblick|runter|hoch|anfang|ende"} -- Capture öffnen, Suche öffnen, helle oder dunkle Darstellung, eine Seite zurück, oberstes Fenster schließen; ueberblick = Fenster mit den neuesten Ergebnissen und Vorschaubildern („gib mir einen Überblick“, „zeig mir den aktuellen Stand“); runter/hoch/anfang/ende = im offenen Fenster bzw. auf der Seite blättern. Sofort, ohne Rückfrage. Will Veiko „mit dem Advisory Board sprechen“: ziel board. Stellt er dabei schon eine Frage ans Board, gib sie als "frage" mit -- das Board antwortet dann selbst, du antwortest nicht an seiner Stelle.
-- {"aktion":"ausarbeiten","rolle":"stratege|buch|designer|video","form":"text|aufstellung|konzept|dokument|webseite|praesentation|video","auftrag":"…","recherche":"Suchanfrage oder null","vorgang_id":"v… oder null","projekt_id":"p… oder null","aufgabe_id":"t… oder null (die Aufgabe, zu der das gehört)","stil":"vveorg|cockpit|eigen oder null","stil_text":"…"} -- stil nur bei einer Präsentation und nur, wenn Veiko das Aussehen nennt: „im VVEORG-Look“/„in meiner Vorlage“ = vveorg, „im Cockpit-Design“ = cockpit, eigene Gestaltungswünsche (Farben, Schrift, Footer) = eigen mit stil_text in seinen Worten. Sonst weglassen (dann gilt die Vorgabe, die VVEORG-Vorlage).
+- {"aktion":"ausarbeiten","rolle":"stratege|buch|designer|video","form":"text|aufstellung|konzept|dokument|webseite|praesentation|video","titel":"kurzer Titel, höchstens acht Wörter","auftrag":"…","aufgaben_ableiten":"true, wenn Veiko aus dem Ergebnis auch Aufgaben angelegt haben will, sonst weglassen","recherche":"Suchanfrage oder null","vorgang_id":"v… oder null","projekt_id":"p… oder null","aufgabe_id":"t… oder null (die Aufgabe, zu der das gehört)","stil":"vveorg|cockpit|eigen oder null","stil_text":"…"} -- stil nur bei einer Präsentation und nur, wenn Veiko das Aussehen nennt: „im VVEORG-Look“/„in meiner Vorlage“ = vveorg, „im Cockpit-Design“ = cockpit, eigene Gestaltungswünsche (Farben, Schrift, Footer) = eigen mit stil_text in seinen Worten. Sonst weglassen (dann gilt die Vorgabe, die VVEORG-Vorlage).
 - {"aktion":"merken","art":"person|organisation|begriff|hoerfehler|aussprache","begriff":"…","bedeutung":"…"} -- aussprache: wie das Cockpit ein (meist englisches) Wort VORLESEN soll, in deutscher Lautschrift, z. B. begriff "Slides", bedeutung "Slaids".
 - {"aktion":"notiz","text":"…","projekt_id":"p… oder null"}
 - {"aktion":"projekt_neu","name":"…"}
@@ -677,6 +677,25 @@ SEITEN = [
     ("neo", r"\bneo\b", "Neo"),
     ("team", r"\bteam\b|teamseite", "die Teamseite"),
 ]
+def auftrag_titel(auftrag: str) -> str:
+    """Ein kurzer Titel aus einem Auftrag, wenn das Modell keinen mitgibt: der erste Satz ohne
+    Befehlsanfang ("Erstelle eine Zusammenfassung der Notizen zum Projekt X" -> "Zusammenfassung
+    der Notizen zum Projekt X"), an einer Wortgrenze gekuerzt."""
+    s = re.split(r"(?<=[.!?])\s", (auftrag or "").strip(), maxsplit=1)[0].rstrip(".!? ")
+    s = re.sub(r"^(bitte\s+)?(erstelle|schreibe|mache|mach|arbeite|fasse|recherchiere|entwirf|entwickle|baue|gestalte)\s+"
+               r"(mir\s+|uns\s+)?(bitte\s+)?(eine[nrs]?\s+|ein\s+|die\s+|den\s+|das\s+)?", "", s, flags=re.I)
+    s = s[:1].upper() + s[1:]
+    if len(s) > 80:
+        s = s[:80].rsplit(" ", 1)[0] + " …"
+    return s or "Ausarbeitung"
+
+
+_AUFGABEN_DAZU = re.compile(r"\baufgaben?\b.{0,40}\b(an)?(leg|anleg|erstell|mach|ableit|ab)\w*|\b(leg|erstell|mach|leit)\w*\b.{0,50}\baufgaben\b", re.I)
+# "nicht die Ergebnisse, (sondern/du sollst mir) die Datei" -- Gruppe 2 ist die gemeinte Art.
+_KORR_WORT = r"ergebnis\w*|aufgabe\w*|projekt\w*|case\w*|vorg[aä]ng\w*|datei\w*|unterlage\w*|notiz\w*|powerpoint|präsentation\w*|praesentation\w*"
+_KORREKTUR = re.compile(r"\bnicht\b.{0,40}?\b(" + _KORR_WORT + r")\b.{0,70}?\b(" + _KORR_WORT + r")\b", re.I)
+_KORR_ART = (("datei", r"datei\w*|unterlage\w*|powerpoint"), ("ergebnis", r"ergebnis\w*|präsentation\w*|praesentation\w*"),
+             ("aufgabe", r"aufgabe\w*"), ("projekt", r"projekt\w*"), ("vorgang", r"case\w*|vorg[aä]ng\w*"), ("notiz", r"notiz\w*"))
 _ZURUECK = re.compile(r"^(bitte\s+)?(geh\w*\s+)?(eine seite\s+)?zurück(\s+bitte)?$|vorherige seite", re.I)
 # hell/dunkel nur mit Schaltwort -- "das ist mir zu dunkel" ist eine Bemerkung, kein Befehl.
 _THEMA = re.compile(r"\b(schalt\w*|stell\w*|wechsel\w*|mach\w*|geh\w*)\b.{0,25}\b(hell|dunkel|light|dark)\w*"
@@ -746,6 +765,19 @@ def bedienung_erkennen(text: str, kontext: dict | None = None, gid: str | None =
             from .api import kurztitel
             o = {"art": "ergebnis", "id": ub_id, "titel": kurztitel(e)}
             return {"satz": oeffnen_satz(o), "oeffnen": o}
+    # Korrektur (23.10.2026): "Nein, du sollst mir nicht die Ergebnisse oeffnen, du sollst mir die Datei im
+    # Explorer oeffnen" -- Talk oeffnete daraufhin nur die Explorer-SEITE. Gemeint ist: dieselbe Bitte wie eben,
+    # aber als die zuletzt genannte Art. Also die vorige Bitte noch einmal, nur unter dieser Art suchen.
+    k = _KORREKTUR.search(t)
+    if k and gid:
+        art = next(a for a, mu in _KORR_ART if re.fullmatch(mu, k.group(2).lower()))
+        # Die juengste eigene Nachricht ist diese Korrektur selbst (sie steht schon in der Tabelle).
+        vorige = [((n.get("daten") or {}).get("anzeige") if isinstance(n.get("daten"), dict) else None) or n.get("text") or ""
+                  for n in db.alle("SELECT text, daten FROM nachrichten WHERE gespraech_id=? AND rolle='du' ORDER BY id DESC LIMIT 3 OFFSET 1", (gid,))]
+        o = next((x for x in (oeffnen_suchen(v, art) for v in vorige[:2] if v.strip()) if x), None)
+        if o:
+            return {"satz": oeffnen_satz(o), "oeffnen": o}
+        return {"satz": f"Dazu finde ich {'keine passende Unterlage' if art == 'datei' else 'nichts Passendes'}. Sag mir bitte den Namen, so wie er im Cockpit steht."}
     if _ZURUECK.search(t):
         return {"satz": "Ich gehe eine Seite zurück.", "werkzeug": "zurueck"}
     # Ein aufklappbarer Abschnitt der offenen Seite (23.10.2026: "zeig mir alle externen Teammitglieder",
@@ -765,6 +797,17 @@ def bedienung_erkennen(text: str, kontext: dict | None = None, gid: str | None =
     # "Zeig mir alle (meine) offenen Aufgaben" (23.10.2026: angekuendigt, nicht geoeffnet).
     if oeffnen_wort and re.search(r"\balle\b.{0,25}\baufgaben\b", t, re.I):
         return {"satz": "Ich öffne dir alle offenen Aufgaben.", "zeigen": {"ziel": "alle_aufgaben"}}
+    # "Such mir alle Notizen zum Thema HR for Business raus" (23.10.2026): das Modell fasste sie in Worten
+    # zusammen, gezeigt wurde nichts. Gehoert das Thema zu einem Projekt, geht dessen Notizen-Reiter auf.
+    sn = re.search(r"\b(such|find|zeig|hol|sammel)\w*\b.{0,40}\bnotizen\b(.*)$", t, re.I)
+    if sn:
+        thema = re.sub(r"\b(raus|heraus|zusammen|in zusammenhang mit|im zusammenhang mit|zum|zur|zu|über|ueber|mit|dem|der|des)\b", " ", sn.group(2), flags=re.I)
+        p = oeffnen_suchen(thema, "projekt") if _woerter(thema) else None
+        k = kontext or {}
+        pid = p["id"] if p else (k.get("id") if k.get("art") == "projekt" and not _woerter(thema) else None)
+        if pid:
+            name = p["titel"] if p else ((db.holen("projekte", pid) or {}).get("name") or "")
+            return {"satz": f"Ich öffne dir die Notizen von {name}.", "zeigen": {"ziel": "notizen", "projekt_id": pid}}
     if oeffnen_wort and re.search(r"\balle\b.{0,25}\bnotizen\b", t, re.I):
         return {"satz": "Ich öffne dir alle Notizen.", "zeigen": {"ziel": "alle_notizen"}}
     if _THEMA.search(t) and "?" not in t:
@@ -781,6 +824,12 @@ def bedienung_erkennen(text: str, kontext: dict | None = None, gid: str | None =
     # Ohne Bedienwort nur ganz kurze Zurufe ("Verbrauch", "die Inbox") -- und nie in
     # BrainStrom/ExO, wo ein kurzes Wort meist eine Antwort auf die Frage ist.
     if not verb and (len(t.split()) > 3 or (kontext or {}).get("art") in ("brainstrom", "exo") or "?" in t):
+        # Im Explorer ist ein genannter Titel die Bitte, ihn zu oeffnen (23.10.2026: "Die letzte Ausgabe
+        # des FR5 Magazin" ging ans Modell, das eine aeltere Fassung waehlte).
+        if (kontext or {}).get("art") == "explorer" and "?" not in t:
+            o = oeffnen_suchen(t)
+            if o and len(_woerter(o["titel"]) & _woerter(t)) >= 2:
+                return {"satz": oeffnen_satz(o), "oeffnen": o}
         return None
     if verb:
         if re.search(r"\b(capture|erfass\w*)\b", t, re.I):
@@ -862,7 +911,10 @@ _FUELL = {"öffne", "öffnen", "oeffne", "oeffnen", "zeig", "zeige", "zeigen", "
           "mich", "anzeigen", "aufmachen", "aufrufen", "jetzt", "dann", "okay", "dir", "ein", "eine", "einen", "bitte", "gerne",
           "moechte", "spring", "navigiere", "hin", "dort", "dahin", "rein", "hinein", "neue", "neuen",
           # Gesprochene Fuellwoerter (22.10.2026): "das THEMA Video-Podcast", "ich meine die SEITE Daily Task"
-          "thema", "seite", "meine", "meinte", "nochmal", "eigentlich", "wollte", "anschauen", "schauen", "sehen", "aber", "ja"}
+          "thema", "seite", "meine", "meinte", "nochmal", "eigentlich", "wollte", "anschauen", "schauen", "sehen", "aber", "ja",
+          # "die LETZTE Ausgabe", "das AKTUELLSTE Dokument" (23.10.2026) -- sagt, welche Fassung, nicht welcher Titel
+          "letzte", "letzten", "neueste", "neuesten", "aktuellste", "aktuellsten", "aktuelle", "jüngste", "juengste",
+          "explorer", "datei", "sollst", "nicht", "nein", "sondern"}
 
 
 def _stamm(w: str) -> str:
@@ -884,7 +936,10 @@ def oeffnen_suchen(text: str, art: str | None = None, ohne: str | None = None) -
     kurzen Titels) -- lieber nichts oeffnen als das Falsche."""
     # "Version 10" heisst im Dateinamen "V10" (23.10.2026: "oeffne das FR5 Magazin Version 10"),
     # "PowerPoint" heisst dort "pptx".
-    text = re.sub(r"\bversion\s*(\d{1,3})\b", lambda m: f"v{int(m.group(1))} v{int(m.group(1)):02d}", text or "", flags=re.I)
+    roh = text or ""
+    vg = re.search(r"\b(?:version|fassung|v)\s*(\d{1,3})\b", roh, re.I)
+    version_gesucht = int(vg.group(1)) if vg else None
+    text = re.sub(r"\b(?:version|fassung)\s*(\d{1,3})\b", " ", text or "", flags=re.I)
     text = re.sub(r"\bpower\s?point\b", "pptx", text, flags=re.I)
     gesucht = _woerter(text)
     if not gesucht:
@@ -897,7 +952,7 @@ def oeffnen_suchen(text: str, art: str | None = None, ohne: str | None = None) -
         if treffer:
             # Findet die erkannte Art nichts, ueberall suchen (22.10.2026: "das Thema Video-Podcast"
             # -- "Video" klang nach einem Video-Ergebnis, gemeint war das Projekt VIDEO PODCAST).
-            return oeffnen_suchen(text, min(treffer)[2], ohne) or oeffnen_suchen(text, "_alle", ohne)
+            return oeffnen_suchen(roh, min(treffer)[2], ohne) or oeffnen_suchen(roh, "_alle", ohne)
     arten = [art] if art in OEFFNEN_TABELLE else ["ergebnis", "langlauf", "projekt", "aufgabe", "vorgang", "datei", "daily"]
     bestes, punkte = None, 0.0
     for a in arten:
@@ -908,15 +963,25 @@ def oeffnen_suchen(text: str, art: str | None = None, ohne: str | None = None) -
                "SELECT id, titel AS t FROM gespraeche WHERE id!=? AND art IN ('talk','team','neo','board') ORDER BY geaendert DESC LIMIT 300")
         for z in db.alle(sql, (ohne or "",)) if a == "gespraech" else db.alle(sql):
             w = _woerter(z["t"])
+            fassung = 0
+            if a == "datei":
+                # Unterlagen in mehreren Fassungen ("…_V01", "…_V10", 23.10.2026): Endung und Fassung zaehlen
+                # nicht als Titelwoerter -- sonst gewinnt der kuerzeste Name (die erste Fassung ohne "V"), und ein
+                # Ergebnis, dessen Titel den Dateinamen nur erwaehnt, schlaegt die Datei selbst.
+                v = re.search(r"(?:^|[\s_\-.])v(\d{1,3})(?=[\s_\-.]|$)", z["t"] or "", re.I)
+                fassung = int(v.group(1)) if v else 0
+                w = {x for x in w if not re.fullmatch(r"v\d{1,3}|pptx?|docx?|xlsx?|pdf|txt|md", x)}
             if not w:
                 continue
             gemein = len(gesucht & w)
             if gemein >= min(2, len(gesucht)) or (gemein >= 1 and gemein == len(w)):
                 p = gemein + gemein / len(w)   # bei Gleichstand der kuerzere, genauere Titel; sonst der neueste (Reihenfolge)
                 if a == "datei":
-                    # Unterlagen in mehreren Fassungen ("…_V01", "…_V10"): bei gleich vielen Treffern die NEUESTE,
-                    # nicht die mit dem kuerzesten Namen -- das war meist die aelteste.
-                    p = gemein + 0.001 * gemein / len(w)
+                    # Genannte Fassung ("Version 10") muss passen; sonst gewinnt die hoechste ("die letzte Ausgabe").
+                    if version_gesucht is not None:
+                        p += 1 if fassung == version_gesucht else -1
+                    else:
+                        p += fassung / 10000
                 if p > punkte:
                     bestes, punkte = {"art": a, "id": z["id"], "titel": z["t"]}, p
     return _gespraech_ort(bestes)
@@ -1108,7 +1173,8 @@ def beschriften(a: dict[str, Any]) -> str | None:
         # Aufgeloest wird erst in senden() (mit Veikos Worten als Rueckfall).
         return f"Öffnen: {OEFFNEN_NAME.get(a.get('art'), 'Ansicht')} {str(a.get('titel') or a.get('id') or '')[:80]}".strip()
     if art == "ausarbeiten":
-        return f"{stab.rollen_name(a.get('rolle') or 'stratege')} ausarbeiten lassen: {a['auftrag'][:90]}"
+        return (f"{stab.rollen_name(a.get('rolle') or 'stratege')} ausarbeiten lassen: {str(a.get('titel') or '').strip()[:90] or auftrag_titel(a['auftrag'])}"
+                + (", danach Aufgaben anlegen" if a.get("aufgaben_ableiten") else ""))
     if art == "merken":
         return f"Merken: {a['begriff']} = {a['bedeutung'][:80]}"
     if art == "notiz":
@@ -1248,7 +1314,7 @@ async def ausfuehren(a: dict[str, Any]) -> dict[str, Any]:
             # Form wie teamchat.ausarbeitung_starten, damit die Rolle nicht bei null anfaengt.
             text_v = a["auftrag"] + (f"\n\nGRUNDLAGE -- das Ergebnis „{grundlage['titel']}“:\n" + (grundlage.get("inhalt") or "")[:30000] if grundlage else "")
             v = stab.aus_text(text_v, quelle="gespraech", projekt_id=stab.projekt_finden(a.get("projekt_id")),
-                              titel=a["auftrag"][:80])
+                              titel=str(a.get("titel") or "").strip()[:80] or auftrag_titel(a["auftrag"]))
             vid = v["id"]
             db.ausfuehren("UPDATE vorgaenge SET stand='eingeordnet' WHERE id=?", (vid,))
         stab.auftrag_setzen(vid, {"rolle": a.get("rolle"), "form": a.get("form"), "auftrag": a["auftrag"],
@@ -1258,7 +1324,11 @@ async def ausfuehren(a: dict[str, Any]) -> dict[str, Any]:
                                   "aufgabe_id": a.get("aufgabe_id") if db.holen("aufgaben", str(a.get("aufgabe_id") or "")) else None,
                                   # Praesentations-Stil (folien_stil.py): nur wenn Veiko einen genannt hat, sonst die Vorgabe.
                                   "stil": a.get("stil") if a.get("stil") in ("vveorg", "cockpit") else
-                                  ({"id": "eigen", "text": str(a.get("stil_text"))[:800]} if a.get("stil") == "eigen" and a.get("stil_text") else None)})
+                                  ({"id": "eigen", "text": str(a.get("stil_text"))[:800]} if a.get("stil") == "eigen" and a.get("stil_text") else None),
+                                  # Ein Titel statt des abgeschnittenen Auftrags (23.10.2026: "Erstelle eine Zusammenfassung
+                                  # der Notizen zum Projekt HR for Business. Berücksichtige die ") und Aufgaben danach.
+                                  "titel": str(a.get("titel") or "").strip()[:90] or auftrag_titel(a["auftrag"]),
+                                  "aufgaben_ableiten": bool(a.get("aufgaben_ableiten"))})
         stab.wecken()
         return {"ok": True, "vorgang_id": vid}
     if art == "merken":
@@ -1554,6 +1624,14 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
                 v["label"] = beschriften(v) or v["label"]
     _bezug_einsetzen(vorschlaege, bez)
     _kontext_einsetzen(vorschlaege, kontext)
+    # "… und lege dazu Aufgaben an" (23.10.2026): das Modell schlug nur die Ausarbeitung vor und sagte danach,
+    # es lege die Aufgaben an -- passiert ist nichts. Verlangt der Satz Aufgaben, leitet das Team sie aus
+    # dem fertigen Ergebnis ab (stab.aufgaben_aus_ergebnis); das muss nicht am Modell haengen.
+    if _AUFGABEN_DAZU.search(text or ""):
+        for v in vorschlaege:
+            if v["aktion"] == "ausarbeiten":
+                v["aufgaben_ableiten"] = True
+                v["label"] = beschriften(v) or v.get("label")
     # Ein grosses Vorhaben wird ein LongRun, keine einzelne Ausarbeitung (19.10.2026, Veiko:
     # "dass erkannt wird, dass es ein LongRun ist, und dann wirklich richtig intensiv gearbeitet
     # wird"). Das Modell waehlt trotz Anweisung oft "ausarbeiten" -- dann entsteht ein Buch oder

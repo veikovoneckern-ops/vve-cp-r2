@@ -1417,6 +1417,11 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
     if llm.fremdschrift(entwurf):
         pruefung.setdefault("maengel", []).append("Enthält fremde Schriftzeichen.")
     eid = ergebnis_speichern(v, a, entwurf, rid, modell, quellen, pruefung)
+    if a.get("aufgaben_ableiten"):
+        try:
+            await aufgaben_aus_ergebnis(v, a, entwurf, modell)
+        except Exception as e:  # noqa: BLE001 -- das Ergebnis steht; nur die Aufgaben fehlen dann, und das steht am Case
+            db.ereignis(vid, "system", "fehler", f"Aufgaben aus dem Ergebnis ließen sich nicht ableiten: {e}")
     from . import folienbilder
     if form in folienbilder.MIT_BILDERN:
         n = folienbilder.starten(eid)
@@ -1440,6 +1445,54 @@ async def ausarbeiten(v: dict[str, Any]) -> None:
     if pruefung.get("urteil") == "rueckfrage" and pruefung.get("frage"):
         entscheidung_anlegen(vid, "rueckfrage", _kurz(pruefung["frage"], 400), {}, wer="kritiker")
     stand_berechnen(vid)
+
+
+ABLEITEN_SYSTEM = ("Du leitest aus einem fertigen Arbeitsergebnis die konkreten nächsten Aufgaben für Veiko ab. "
+                   "Nur Handlungen, die wirklich jemand tun muss (anrufen, entscheiden, schreiben, prüfen, beauftragen) -- "
+                   "keine Zusammenfassung, kein „Ergebnis lesen“, nichts, was schon erledigt ist. Drei bis acht Aufgaben, "
+                   "jede mit einem kurzen Titel (Verb zuerst, höchstens zehn Wörter) und in info die Einzelheiten aus dem "
+                   "Ergebnis, die man dafür braucht. Deutsch, lateinische Schrift. Antworte NUR als JSON: "
+                   '{"aufgaben":[{"titel":"…","info":"…"}]}')
+
+
+async def aufgaben_aus_ergebnis(v: dict[str, Any], a: dict[str, Any], text: str, modell: str) -> list[str]:
+    """Aufgaben aus einem fertigen Ergebnis (23.10.2026). Veiko in Talk: "mach aus den Notizen eine
+    Zusammenfassung und lege dazu verschiedene Aufgaben in dem Projekt an" -- die Zusammenfassung
+    entstand, Aufgaben nie: es gab keinen Weg dafuer, und Talk behauptete trotzdem, es lege sie an.
+    Aufgaben lassen sich erst ableiten, wenn das Ergebnis steht; deshalb haengt das am Auftrag
+    (aufgaben_ableiten) und laeuft hier, nach dem Speichern. Vertrauensstufe "aufgaben" wie beim Einordnen."""
+    vid = v["id"]
+    frage = f"AUFTRAG: {a.get('auftrag') or ''}\n\nERGEBNIS:\n{text[:24000]}"
+    d = None
+    for _ in range(2):
+        d = llm.json_aus(await llm.chat(modell, ABLEITEN_SYSTEM, [{"role": "user", "content": frage}],
+                                        json_format=True, temperatur=0.2, denken=False))
+        if isinstance(d, dict) and isinstance(d.get("aufgaben"), list) and not llm.fremdschrift(json.dumps(d, ensure_ascii=False)):
+            break
+        d = None
+    if not d:
+        db.ereignis(vid, "system", "fehler", "Aus dem Ergebnis kamen keine lesbaren Aufgaben -- bitte im Ergebnisfenster nachfragen.")
+        return []
+    pid = v.get("projekt_id")
+    vorhandene = {x["titel"].lower() for x in db.alle("SELECT titel FROM aufgaben WHERE projekt_id IS ? AND status='offen'", (pid,))}
+    selbst = vertrauen().get("aufgaben") == "selbst"
+    angelegt: list[str] = []
+    for x in d["aufgaben"][:8]:
+        t = _kurz(x.get("titel") if isinstance(x, dict) else x, 140)
+        if not t or t.lower() in vorhandene:
+            continue
+        info = _kurz(x.get("info"), 1200) if isinstance(x, dict) else ""
+        if selbst:
+            db.anlegen("aufgaben", {"id": db.neue_id("t"), "titel": t, "projekt_id": pid, "status": "offen",
+                                    "notiz": info, "prio": 2, "quelle": "stab", "vorgang_id": vid,
+                                    "erstellt": time.time(), "geaendert": time.time()}, wer="pmo", vorgang_id=vid)
+        else:
+            entscheidung_anlegen(vid, "aufgabe", f"Aufgabe anlegen: „{t}“?", {"titel": t, "projekt_id": pid})
+        vorhandene.add(t.lower())
+        angelegt.append(t)
+    if angelegt:
+        db.ereignis(vid, "pmo", "info", ("Aus dem Ergebnis angelegt: " if selbst else "Zur Freigabe vorgeschlagen: ") + "; ".join(angelegt))
+    return angelegt
 
 
 PRUEF_SICHT = 60000      # so viel vom Ergebnis liest Daniel

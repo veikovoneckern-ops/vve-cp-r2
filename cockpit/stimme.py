@@ -238,6 +238,15 @@ async def hoeren(roh: bytes, vorlage: str = "") -> dict[str, Any]:
             pass
     # Unsicher = vermutlich kein an das Cockpit gerichteter Satz (Fernseher, Gespraech im Raum). Talk
     # verwirft so etwas im Freisprechen, statt darauf zu antworten; das Diktat nimmt es trotzdem.
+    # Fremde Schrift (23.10.2026): bei Hintergrundton schrieb Whisper trotz language="de" eine Zeile
+    # chinesischer Zeichen -- sie hatte viele Zeichen, aber wenige Leerzeichen, rutschte so durch die
+    # Wortgrenze im Browser und ging als Auftrag an Talk. Ueberwiegend nicht-lateinische Buchstaben
+    # sind nie ein deutscher Satz: verworfen, fuer Talk wie fuers Diktat.
+    buchst = [c for c in text if c.isalpha()]
+    if buchst and sum(1 for c in buchst if ord(c) > 0x24F) / len(buchst) > 0.3:
+        print(f"[hoeren] fremde Schrift verworfen -> {text[:70]}", flush=True)
+        return {"text": "", "geraet": geraet, "sicherheit": sicher, "unsicher": True,
+                "hinweis": "Nicht verstanden (keine deutsche Sprache erkannt)."}
     unsicher = bool(text) and (sicher["keine_sprache"] > 0.6 or sicher["logprob"] < -1.0)
     # Eine Zeile je Erkennung: die Schwellen oben sind Startwerte und werden an diesen Messungen nachgestellt.
     print(f"[hoeren] logprob={sicher['logprob']} keine_sprache={sicher['keine_sprache']} unsicher={unsicher} -> {text[:70]}", flush=True)
