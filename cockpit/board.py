@@ -5,9 +5,10 @@ Woher was kommt:
   - Die Profile (Gruppen, Kurzbiografie, Prinzipien, typische Fragen, Staerken,
     blinde Flecken) stehen in board_profile.json -- einmalig aus BOARD_DATA des
     alten Cockpits gezogen. Wer am Tisch sitzt, ist Veikos Auswahl.
-  - Der aktuelle oeffentliche Stand je Person wird nachts vom alten Backend
-    aufgefrischt (board.py dort, SearXNG + lokales Modell) und liegt in
-    /var/lib/vvec/board-stand.json. Diese Fassung LIEST ihn nur.
+  - Der aktuelle oeffentliche Stand je Person: bis zum 23.10.2026 frischte ihn das alte
+    Backend nachts auf (/var/lib/vvec/board-stand.json), diese Fassung las nur. Seitdem
+    frischt sie SELBST auf (auffrischen() unten, daten/board-stand.json, nachts 23 Uhr und
+    per Knopf) -- portiert aus dem alten board.py, damit das alte Cockpit wegkann.
 
 Anders als im alten Cockpit:
   - Gespraeche bleiben gespeichert (gespraeche.art = 'board'), mehrere nebeneinander.
@@ -25,18 +26,160 @@ from pathlib import Path
 from typing import Any, AsyncIterator
 
 from . import db, llm
-from .konfig import ALT_DATEN, MODELL_TALK
+from .konfig import ALT_DATEN, DATEN, MODELL_TALK, SEARX
 
 PROFILE = json.loads((Path(__file__).with_name("board_profile.json")).read_text(encoding="utf-8"))
 NACH_ID = {p["id"]: p for p in PROFILE["persons"]}
 GRUPPEN = {c["id"]: c["name"] for c in PROFILE["clusters"]}
+STAND_DATEI = DATEN / "board-stand.json"
+ALT_STAND = ALT_DATEN / "board-stand.json"
 
 
 def stand() -> dict[str, Any]:
+    """Der eigene Stand; solange es ihn nicht gibt, der zuletzt vom alten Cockpit geschriebene."""
+    for f in (STAND_DATEI, ALT_STAND):
+        try:
+            return json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+    return {}
+
+
+# ---------------------------------------------------------------- Auffrischen (23.10.2026)
+# Portiert aus dem alten board.py -- dieselben Regeln, weil sie dort trugen:
+#   - NUR aus den Treffern der eigenen SearXNG, nichts erfinden; ohne Treffer bleibt der alte Stand.
+#   - Tote oder lange Ruhende werden so benannt, statt ihnen Aktuelles anzudichten.
+#   - Sechs Personen je Nacht (19 sind in vier Naechten durch), aelteste zuerst; der Knopf nimmt
+#     alle, die aelter als zwei Tage sind.
+#   - Lokales Modell, ohne Cloud. Nachts um 23 Uhr (Nachtplan, nachtplan.py): da rechnet sonst
+#     nichts auf den Karten -- das alte Cockpit tat es um 04:30, mitten in die Daily Tasks.
+MAX_JE_NACHT = 6
+FRISCH_S = 2 * 24 * 3600
+LAUF: dict[str, Any] = {"aktiv": False, "wer": "", "getan": 0, "offen": 0, "fehler": None, "start": 0}
+
+VERDICHTEN = (
+    "Du verdichtest öffentliche Aussagen von {name} zu einem aktuellen Persönlichkeits-Stand.\n\n"
+    "REGELN:\n- NUR aus den TREFFERN. Nichts erfinden. Kein Zitat, das nicht in den Treffern steht.\n"
+    "- Ist die Person tot, lange ohne neue Aussage, oder die Treffer sind nur Nachrufe/Rückblicke: "
+    "tot_oder_ruhend=true, stand sagt das in einem Satz, aussagen leer.\n"
+    "- Keine Biografie. Nur was HEUTE gilt: Haltung, Themen, was sich verschoben hat.\n"
+    "- Deutsch, kurze Sätze, keine Fachsprache.\n"
+    "- 'geaendert' nur füllen, wenn die Treffer eine Verschiebung gegenüber dem LETZTEN STAND zeigen.\n\n"
+    'Antworte AUSSCHLIESSLICH mit JSON: {{"stand": "zwei bis vier Sätze: wofür steht diese Person HEUTE", '
+    '"themen": ["höchstens fünf aktuelle Themen"], "aussagen": [{{"text": "eng an den Treffern", "quelle": "Medium oder Titel", '
+    '"wann": "JJJJ-MM oder leer"}}], "tot_oder_ruhend": false, "geaendert": ""}}')
+
+
+def _stand_schreiben(d: dict[str, Any]) -> None:
+    tmp = STAND_DATEI.with_suffix(".tmp")
+    tmp.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(STAND_DATEI)
+
+
+async def _suchen(frage: str) -> list[dict[str, str]]:
+    import httpx
+    async with httpx.AsyncClient(timeout=20) as c:
+        r = await c.get(f"{SEARX}/search", params={"q": frage, "format": "json", "language": "en", "safesearch": "0"})
+    if r.status_code != 200:
+        raise RuntimeError(f"Websuche antwortete mit {r.status_code}")
+    return [{"titel": (t.get("title") or "").strip()[:200], "adresse": (t.get("url") or "")[:300],
+             "auszug": (t.get("content") or "").strip()[:600]} for t in (r.json().get("results") or [])[:6]]
+
+
+async def person_auffrischen(pid: str, name: str, modell: str) -> dict[str, Any]:
+    jahr = time.gmtime().tm_year
+    treffer, gesehen, suchfehler = [], set(), ""
+    for q in (f'"{name}" {jahr} (interview OR speech OR statement OR said OR keynote)',
+              f'"{name}" (interview OR podcast OR "I believe" OR opinion) {jahr - 1} OR {jahr}'):
+        try:
+            for t in await _suchen(q):
+                k = t["adresse"] or t["titel"]
+                if k and k not in gesehen:
+                    gesehen.add(k)
+                    treffer.append(t)
+        except Exception as e:  # noqa: BLE001
+            suchfehler = str(e)
+        if len(treffer) >= 6:
+            break
+    alt = (stand().get("personen") or {}).get(pid) or {}
+    e: dict[str, Any] = {"id": pid, "name": name, "stand": alt.get("stand") or "", "themen": alt.get("themen") or [],
+                         "aussagen": alt.get("aussagen") or [], "quellen": alt.get("quellen") or [],
+                         "tot_oder_ruhend": bool(alt.get("tot_oder_ruhend")), "geaendert": "",
+                         "aktualisiert": int(time.time()), "modell": modell, "fehler": ""}
+    if not treffer:
+        # Lieber ehrlich alt als frei erfunden: der bisherige Stand bleibt.
+        e["fehler"] = suchfehler or "Keine öffentlichen Treffer"
+        return e
+    e["quellen"] = [{"titel": t["titel"], "adresse": t["adresse"]} for t in treffer[:8]]
+    text = "\n\n".join(f"{i}. {t['titel']}\n   {t['adresse']}\n   {t['auszug'][:500]}" for i, t in enumerate(treffer, 1))
+    frage = f"PERSON: {name}\n\nLETZTER STAND:\n{alt.get('stand') or '(noch keiner)'}\n\nTREFFER:\n{text}"
     try:
-        return json.loads((ALT_DATEN / "board-stand.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
+        d = llm.json_aus(await llm.chat(modell, VERDICHTEN.format(name=name), [{"role": "user", "content": frage}],
+                                        json_format=True, temperatur=0.2, denken=False)) or {}
+    except Exception as f:  # noqa: BLE001
+        e["fehler"] = f"Modell: {f}"
+        return e
+    if not str(d.get("stand") or "").strip() or llm.fremdschrift(json.dumps(d, ensure_ascii=False)):
+        e["fehler"] = "Modell lieferte keinen lesbaren Stand"
+        return e
+    e.update(stand=str(d["stand"]).strip()[:800],
+             themen=[str(x).strip()[:80] for x in (d.get("themen") or []) if str(x).strip()][:5],
+             aussagen=[{"text": str(a.get("text"))[:400], "quelle": str(a.get("quelle") or "")[:120], "wann": str(a.get("wann") or "")[:10]}
+                       for a in (d.get("aussagen") or [])[:5] if isinstance(a, dict) and str(a.get("text") or "").strip()],
+             tot_oder_ruhend=bool(d.get("tot_oder_ruhend")), geaendert=str(d.get("geaendert") or "").strip()[:300])
+    return e
+
+
+async def auffrischen(alle: bool = False, nur_id: str = "") -> dict[str, Any]:
+    if LAUF["aktiv"]:
+        return {"ok": False, "grund": "Läuft schon."}
+    d = stand()
+    d.setdefault("personen", {})
+    jetzt = time.time()
+    wartend = [p for p in PROFILE["persons"] if (not nur_id or p["id"] == nur_id)
+               and (alle or nur_id or jetzt - float(((d["personen"].get(p["id"]) or {}).get("aktualisiert")) or 0) >= FRISCH_S)]
+    wartend.sort(key=lambda p: float(((d["personen"].get(p["id"]) or {}).get("aktualisiert")) or 0))
+    if not alle and not nur_id:
+        wartend = wartend[:MAX_JE_NACHT]
+    if not wartend:
+        return {"ok": True, "getan": 0, "hinweis": "Alle sind frisch genug."}
+    modell = llm.vorgabe("arbeit")
+    LAUF.update(aktiv=True, wer="", getan=0, offen=len(wartend), fehler=None, start=time.time())
+    letzter_fehler = ""
+    try:
+        with llm.taetig("Advisory Board: frischt auf"):
+            for p in wartend:
+                LAUF["wer"] = p["name"]
+                e = await person_auffrischen(p["id"], p["name"], modell)
+                d = stand()
+                d.setdefault("personen", {})[p["id"]] = e
+                d["letzterLauf"] = int(time.time())
+                letzter_fehler = f"{p['name']}: {e['fehler']}" if e.get("fehler") else letzter_fehler
+                d["letzterFehler"] = letzter_fehler
+                _stand_schreiben(d)
+                LAUF.update(getan=LAUF["getan"] + 1, offen=LAUF["offen"] - 1)
+    finally:
+        LAUF.update(aktiv=False, wer="", fehler=letzter_fehler or None)
+    return {"ok": True, "getan": LAUF["getan"], "modell": modell, "fehler": letzter_fehler or None}
+
+
+async def schleife() -> None:
+    """Einmal je Nacht ab 23 Uhr deutscher Zeit (Nachtplan)."""
+    import asyncio
+    import datetime
+    import traceback
+    from zoneinfo import ZoneInfo
+    await asyncio.sleep(180)
+    while True:
+        try:
+            jetzt = datetime.datetime.now(ZoneInfo("Europe/Berlin"))
+            heute = jetzt.date().isoformat()
+            if jetzt.hour == 23 and db.einstellung("board_nacht") != heute and not LAUF["aktiv"]:
+                db.einstellung_setzen("board_nacht", heute)
+                await auffrischen()
+        except Exception:  # noqa: BLE001
+            traceback.print_exc()
+        await asyncio.sleep(300)
 
 
 def tisch() -> list[str]:
@@ -64,7 +207,7 @@ def uebersicht() -> dict[str, Any]:
     gespraeche = db.alle("SELECT g.id, g.titel, g.geaendert, (SELECT COUNT(*) FROM nachrichten n WHERE n.gespraech_id=g.id) AS anzahl "
                          "FROM gespraeche g WHERE g.art='board' ORDER BY g.geaendert DESC LIMIT 40")
     return {"gruppen": PROFILE["clusters"], "personen": personen, "tisch": tisch(), "gespraeche": gespraeche,
-            "aufgefrischt": st.get("letzterLauf")}
+            "aufgefrischt": st.get("letzterLauf"), "lauf": dict(LAUF), "letzter_fehler": st.get("letzterFehler") or ""}
 
 
 def _profil(p: dict[str, Any], aktuell: str) -> str:

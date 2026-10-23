@@ -1663,6 +1663,17 @@ async def board_uebersicht():
     return board.uebersicht()
 
 
+@router.post("/board/auffrischen")
+async def board_auffrischen(request: Request):
+    """Jetzt auffrischen: alle, die aelter als zwei Tage sind (oder eine Person mit id). Laeuft im Hintergrund."""
+    from . import board
+    d = await _koerper(request)
+    if board.LAUF["aktiv"]:
+        raise HTTPException(409, "Das Board wird gerade aufgefrischt.")
+    asyncio.create_task(board.auffrischen(alle=bool(d.get("alle")), nur_id=str(d.get("id") or "")))
+    return {"ok": True}
+
+
 @router.post("/board/tisch")
 async def board_tisch(request: Request):
     from . import board

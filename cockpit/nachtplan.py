@@ -85,8 +85,9 @@ def _wann(t: Any) -> str | None:
 
 def plan() -> list[dict[str, Any]]:
     """Fuer die Settings: der Plan mit dem letzten Lauf je Eintrag -- aus dem Stand, den jedes Modul ohnehin fuehrt."""
-    from . import nachtladen, revision, rsi, sicherung, stab
+    from . import board, nachtladen, revision, rsi, sicherung, stab
     nl, rv, rs, mb, sich = nachtladen.stand(), revision.stand(), rsi.stand(), _stand(), sicherung.stand()
+    bd = board.stand()
     dailys = db.alle("SELECT titel, uhrzeit, aktiv FROM daily ORDER BY uhrzeit")
 
     def zuletzt(s: dict[str, Any]) -> str:
@@ -99,6 +100,11 @@ def plan() -> list[dict[str, Any]]:
     return [
         {"zeit": "22:00", "titel": "Neue Modelle laden", "an": nachtladen.an(), "wo": "Team → Modelle",
          "warum": "Nur Leitung, keine Grafikkarte -- läuft parallel zu allem. Um 05:00 wird pausiert.", "zuletzt": zuletzt(nl)},
+        {"zeit": "23:00", "titel": "Advisory Board auffrischen", "an": True, "wo": "Advisory Board",
+         "warum": "Sechs Advisors je Nacht aus öffentlichen Quellen (eigene Websuche + lokales Modell), älteste zuerst. "
+                  "Um 23 Uhr rechnet sonst nichts auf den Karten.",
+         "zuletzt": (f"zuletzt {_wann(bd.get('letzterLauf'))}" + (f" -- {bd['letzterFehler'][:100]}" if bd.get("letzterFehler") else ""))
+                    if bd.get("letzterLauf") else "noch nicht gelaufen"},
         {"zeit": "00:30", "titel": "Modell-Revision", "an": stab.stab_aktiv(), "wo": "Team → Optimierung (läuft nur, wenn die Team-Pipeline an ist)",
          "warum": "Misst, ob ein anderes Modell eine Rolle besser macht. Wartet bis 02:00 auf laufende Downloads; startet spätestens 03:00.",
          "zuletzt": zuletzt(rv)},
@@ -119,7 +125,7 @@ def plan() -> list[dict[str, Any]]:
          "zuletzt": ("läuft gerade" if mb.get("laeuft") else
                      f"zuletzt {_wann(mb.get('zeit'))}, {mb.get('sekunden')} s" + (" -- mit Fehler" if mb.get("fehler_modell") or mb.get("fehler_whisper") else "")
                      if mb.get("zeit") else "noch nicht gelaufen")},
-        {"zeit": "03:00 · 03:15 · 04:30 · 07:00", "titel": "Altes Cockpit auf demselben Server", "an": True, "wo": "",
-         "warum": "Sicherungen nach OneDrive (03:00, 03:15), Advisory Board auffrischen (04:30, lokales Modell -- deshalb liegt "
-                  "alles Rechnende davor), Stab-Bericht per Mail (07:00).", "zuletzt": ""},
+        {"zeit": "03:00 · 03:15 · 07:00", "titel": "Altes Cockpit auf demselben Server", "an": True, "wo": "",
+         "warum": "Sicherungen des alten Cockpits nach OneDrive (03:00, 03:15) und dessen Stab-Bericht per Mail (07:00). "
+                  "Das Advisory Board frischt seit dem 23.10. das neue Cockpit selbst auf (23:00).", "zuletzt": ""},
     ]

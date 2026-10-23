@@ -93,6 +93,13 @@ export function Board({ id }) {
 
   const laden = () => api("/board").then(setD).catch(fehlerMelden);
   useEffect(() => { laden(); api("/projekte").then((x) => setProjekte(x.projekte)).catch(() => {}); bus.sende("talk-kontext", null); }, []);
+  // Auffrischen (board.auffrischen, 23.10.2026): laeuft im Hintergrund; solange, alle 5 s nachsehen.
+  const frischt = !!(d && d.lauf && d.lauf.aktiv);
+  useEffect(() => { if (!frischt) return; const t = setInterval(laden, 5000); return () => clearInterval(t); }, [frischt]);
+  const auffrischen = async () => {
+    try { await api("/board/auffrischen", { methode: "POST", daten: {} }); toast("Das Board wird aufgefrischt -- das dauert einige Minuten."); setTimeout(laden, 800); }
+    catch (e) { fehlerMelden(e); }
+  };
   useEffect(() => {
     if (!id) { setMsgs([]); return; }
     api("/board/gespraech/" + id).then((x) => {
@@ -169,6 +176,12 @@ export function Board({ id }) {
           <button class="btn klein geist bd-personen-auf" onClick=${() => setPersonenAuf(!personenAuf)} aria-expanded=${personenAuf}>
             <${Icon} n=${personenAuf ? "runter" : "rechts"} g=${12} />${personenAuf ? "Personen ausblenden" : "Personen zeigen"}</button></h3>
         <span class="leise klein">Klick auf eine Person oder Gruppe holt sie an den Tisch oder nimmt sie weg.${d.aufgefrischt ? " Stand aufgefrischt " + zeitText(d.aufgefrischt) + "." : ""}</span>
+        ${d.lauf && d.lauf.aktiv
+          ? html`<span class="leise klein">Frischt auf: ${d.lauf.wer || "…"} (${d.lauf.getan} fertig, ${d.lauf.offen} offen)</span>`
+          : html`<button class="btn klein geist" style="align-self:flex-start" onClick=${auffrischen}
+              title="Aus öffentlichen Quellen (eigene Websuche + lokales Modell) den aktuellen Stand aller holen, deren Stand älter als zwei Tage ist. Nachts um 23 Uhr passiert das von selbst für sechs Personen.">
+              <${Icon} n="neu_laden" g=${12} />Jetzt auffrischen</button>`}
+        ${d.letzter_fehler && !(d.lauf && d.lauf.aktiv) && html`<span class="leise klein" title=${d.letzter_fehler}>Zuletzt: ${d.letzter_fehler.slice(0, 90)}</span>`}
       </div>
       <div class="bd-gruppen" role="group" aria-label="Ganze Gruppen an den Tisch">
         <button class=${"bd-gr" + (d.tisch.length === d.personen.length ? " an" : "")} onClick=${() => tischSetzen(d.personen.map((p) => p.id))} title="Alle an den Tisch">Alle</button>

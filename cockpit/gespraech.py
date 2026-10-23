@@ -408,12 +408,9 @@ def lage_text() -> str:
 
 
 def beirat_text() -> str:
-    """Der Beirat des alten Cockpits (nachts aufgefrischt, board.py) -- nur lesen."""
-    from .konfig import ALT_DATEN
-    try:
-        d = json.loads((ALT_DATEN / "board-stand.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return ""
+    """Der Beirat (nachts aufgefrischt, board.auffrischen) -- nur lesen."""
+    from . import board
+    d = board.stand()
     zeilen = [f"- {p.get('name')}: {(p.get('stand') or '')[:300]}" for p in (d.get("personen") or {}).values()]
     return ("ADVISORY BOARD (Veikos Advisors, öffentlicher Stand; nichts darüber hinaus erfinden):\n"
             + "\n".join(zeilen)) if zeilen else ""

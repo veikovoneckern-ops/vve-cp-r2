@@ -248,6 +248,17 @@ def empfehlungen(s: dict[str, Any] | None, upd: dict[str, Any], ollama_neu: str 
         teile = [t.strip() for t in z.split(",")]
         if len(teile) > 1 and teile[1].isdigit() and int(teile[1]) >= 80:
             e.append({"stufe": "achtung", "titel": f"Grafikkarte {i + 1} heiß: {teile[1]} °C", "warum": "Ab 90 °C greift der WatchDog mit dem Notfallablauf. Lüftung und Docks prüfen."})
+    # Advisory Board (board.py, 23.10.2026): frischt die neue Fassung selbst auf; laeuft der Zeitgeber des alten
+    # Cockpits noch, rechnet er um 04:30 doppelt -- mitten in die Daily Tasks und "Morgens bereit".
+    try:
+        alt_board = subprocess.run(["systemctl", "is-enabled", "vvec-board.timer"], capture_output=True, text=True, timeout=5).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        alt_board = ""
+    if alt_board == "enabled":
+        e.append({"stufe": "achtung", "titel": "Altes Cockpit frischt das Advisory Board noch zusätzlich auf",
+                  "warum": "Das neue Cockpit macht das seit dem 23.10. selbst (nachts 23 Uhr). Der alte Zeitgeber rechnet um 04:30 "
+                           "doppelt auf den Grafikkarten. Abschalten (fragt dein Passwort):",
+                  "befehl": "sudo systemctl disable --now vvec-board.timer && echo abgeschaltet"})
     # Plaud (plaud.py, 23.10.2026): eigener Abruf, sobald eingerichtet -- bis dahin der des alten Cockpits.
     from . import plaud
     pl = plaud.stand()

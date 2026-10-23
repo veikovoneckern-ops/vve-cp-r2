@@ -19,7 +19,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from cockpit import anmeldung, daily, dossier, folienbilder, importer, langlauf, medien, nachtladen, nachtplan, revision, rsi, stab, usage, webspace
+from cockpit import anmeldung, board, daily, dossier, folienbilder, importer, langlauf, medien, nachtladen, nachtplan, revision, rsi, stab, usage, webspace
 from cockpit.api import router
 from cockpit.konfig import FRONTEND, HOST, PORT
 
@@ -62,7 +62,10 @@ async def lebenszeit(app: FastAPI):
     besser = asyncio.create_task(rsi.schleife())
     # Morgens um 04:50 Talk-Modell und Spracherkennung laden (nachtplan.py, 23.10.2026).
     bereit = asyncio.create_task(nachtplan.schleife())
+    # Advisory Board nachts um 23 Uhr selbst auffrischen (board.py, 23.10.2026; vorher das alte Cockpit).
+    beirat = asyncio.create_task(board.schleife())
     yield
+    beirat.cancel()
     bereit.cancel()
     besser.cancel()
     weiter.cancel()
