@@ -74,3 +74,21 @@ HEALTH_DIR = Path(os.environ.get("VVEC_HEALTH_DIR", "~/vve-health")).expanduser(
 
 for _d in (DATEN, UPLOADS, ERGEBNIS_DIR, VORSCHAU_DIR, MEDIEN_DIR):
     _d.mkdir(parents=True, exist_ok=True)
+
+
+# Zugangsdaten, die das neue Cockpit seit dem 23.10.2026 SELBST traegt (Cloud-Schluessel, SMTP):
+# erst aus der Umgebung, sonst frisch aus der env-Datei. Veiko traegt sie mit einem Befehl nach;
+# der laufende Dienst haette eine nachtraeglich angehaengte Zeile sonst erst nach einem Neustart.
+ENV_DATEI = Path.home() / ".config" / "vve-cp-r2.env"
+
+
+def env_wert(name: str) -> str:
+    if os.environ.get(name):
+        return os.environ[name].strip()
+    try:
+        for z in ENV_DATEI.read_text(encoding="utf-8").splitlines():
+            if z.startswith(name + "="):
+                return z.split("=", 1)[1].strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return ""

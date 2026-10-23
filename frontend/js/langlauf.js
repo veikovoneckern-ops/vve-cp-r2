@@ -147,7 +147,7 @@ function Neu({ zu, fertig, d, vorlage }) {
       wird geschätzt, und reicht der Rest nicht, läuft es lokal weiter, ohne zu fragen. Angehalten wird nur, wenn der Prüfer sagt, dass es
       ohne deine Entscheidung nicht weitergeht -- dann steht eine Frage im Briefing.
       ${f.art === "video" ? " Ein langes Video rechnet am Ende viele Stunden (etwa 12 Szenen je Minute)." : ""}</p>
-    ${!d.zugang_extern && html`<p class="fehlerbox klein">Für Dario und Demmis fehlt der Zugang (VVEC_ALT_TOKEN). Der LongRun läuft dann ohne externe Prüfung, nur mit Daniel.</p>`}
+    ${!d.zugang_extern && html`<p class="fehlerbox klein">Für Dario und Demmis fehlt der Zugang (ihre Schlüssel -- der Befehl dafür steht unter Recommendations). Der LongRun läuft dann ohne externe Prüfung, nur mit Daniel.</p>`}
   </${Modal}>`;
 }
 

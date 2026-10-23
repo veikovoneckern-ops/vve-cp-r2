@@ -735,12 +735,11 @@ Höchstens fünf Hinweise, je ein Satz, umsetzbar. Deutsch."""
 
 async def _extern_pruefen(l: dict[str, Any], letzte: list[dict[str, Any]], schluss: bool) -> None:
     from . import teamchat
-    from .konfig import ALT_TOKEN
     d, art, vid = l["daten"], l["art"], l["vorgang_id"]
     wer = d["pruefer"]
     x = teamchat.EXTERNE[wer]
-    if not ALT_TOKEN:
-        _extern_aus(l, "Für Dario und Demmis fehlt der Zugang zum alten Backend (VVEC_ALT_TOKEN) -- es läuft lokal weiter.")
+    if not teamchat.extern_moeglich():
+        _extern_aus(l, "Für Dario und Demmis fehlt der Zugang (Schlüssel in ~/.config/vve-cp-r2.env) -- es läuft lokal weiter.")
         return
     n = ARTEN[art]["etappe"]
     fertig = [e for e in d["etappen"] if e.get("stand") == "fertig"]
@@ -1050,9 +1049,9 @@ async def _abschluss_lauf(lid: str, wer: str, usd: float) -> None:
 
 
 def abschluss_starten(lid: str, wer: str) -> dict[str, Any]:
-    from .konfig import ALT_TOKEN
-    if not ALT_TOKEN:
-        raise ValueError("Für die Externen fehlt der Zugang zum alten Backend (VVEC_ALT_TOKEN).")
+    from . import teamchat
+    if not teamchat.extern_moeglich():
+        raise ValueError("Für die Externen fehlt der Zugang (Schlüssel in ~/.config/vve-cp-r2.env).")
     s = abschluss_schaetzen(lid, wer)
     if s["laeuft"]:
         raise ValueError("Die abschließende Prüfung läuft schon.")

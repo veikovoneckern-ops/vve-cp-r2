@@ -6,11 +6,12 @@ Aufgaben, Notizen. Hierbei moechte ich das auch mit Talk ausfuehren koennen, und
 gleich gute Vorschlaege zur Formulierung gemacht werden. Ich brauche dazu eine Art E-Mail-
 Client im Cockpit mit sehr guten Funktionalitaeten."
 
-Versendet wird ueber den Postausgang des ALTEN Backends (/api/mail/senden, info@veikovoneckern.org
-bei one.com) -- er ist eingerichtet und getestet, und die neue Fassung laeuft als vveadmin und
-kommt an /etc/vvec/secrets.env ohnehin nicht heran. Ein zweites SMTP-Konto hier einzurichten
-hiesse, dasselbe Passwort an zweiter Stelle zu pflegen. Das alte Backend ist damit Zulieferer
-fuer den Versand, wie schon fuer Plaud und die Cloud-Modelle.
+Versendet wird ueber info@veikovoneckern.org bei one.com. Bis zum 23.10.2026 lief das ueber den
+Postausgang des ALTEN Backends (/api/mail/senden), weil nur dort die Zugangsdaten lagen. Seit Veiko
+das alte Cockpit loeschen will, schickt diese Fassung SELBST per SMTP (_smtp_senden, dieselbe
+Verbindungslogik wie dort: Port 465 = TLS ab der ersten Sekunde, sonst STARTTLS), sobald die fuenf
+VVEC_SMTP_*-Zeilen in ~/.config/vve-cp-r2.env stehen (cloud.einrichten_befehl, einmal mit Passwort).
+Bis dahin bleibt der alte Weg -- der Umzug soll keine Mail verlieren.
 
 Drei Riegel, weil eine Mail nach aussen nicht zurueckzuholen ist:
   1. Gesendet wird NUR auf Veikos ausdrueckliches Senden (Knopf oder Ja in Talk). Der Stab
@@ -35,7 +36,7 @@ from typing import Any
 import httpx
 
 from . import db, llm, stab
-from .konfig import ALT_BACKEND, ALT_TOKEN
+from .konfig import ALT_BACKEND, ALT_TOKEN, env_wert
 
 ADRESSE_RE = re.compile(r"^[^\s@,;<>\"]+@[^\s@,;<>\"]+\.[^\s@,;<>\"]{2,}$")
 MAX_ANHANG = 20 * 1024 * 1024        # wie im alten Backend: one.com deckelt die ganze Nachricht
@@ -414,8 +415,10 @@ async def senden(mid: str) -> dict[str, Any]:
     html = m.get("html") or ""
     if not _html_zu_text(html) and not m["daten"]["anhaenge"]:
         raise ValueError("Die Mail ist leer.")
-    if not ALT_TOKEN:
-        raise ValueError("Der Postausgang ist nicht erreichbar: VVEC_ALT_TOKEN fehlt in ~/.config/vve-cp-r2.env.")
+    direkt = smtp_stand()["ok"]
+    if not direkt and not ALT_TOKEN:
+        raise ValueError("Der Postausgang ist nicht eingerichtet: die VVEC_SMTP_*-Zeilen fehlen in ~/.config/vve-cp-r2.env "
+                         "(der Befehl dafür steht unter Recommendations).")
     anh, gesamt = [], 0
     for a in m["daten"]["anhaenge"]:
         roh, typ, name = _anhang_bytes(a)
@@ -427,13 +430,18 @@ async def senden(mid: str) -> dict[str, Any]:
     body = {"an": ", ".join(an), "cc": ", ".join(cc), "bcc": ", ".join(bcc), "betreff": m.get("betreff") or "(ohne Betreff)",
             "html": koerper, "text": _html_zu_text(html), "anhaenge": anh}
     try:
-        async with httpx.AsyncClient(timeout=90) as c:
-            r = await c.post(f"{ALT_BACKEND}/api/mail/senden", json=body, headers={"X-Cockpit-Token": ALT_TOKEN})
-        d = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
-        if r.status_code != 200:
-            raise ValueError(str(d.get("detail") or f"Postausgang antwortet mit {r.status_code}"))
-    except (httpx.HTTPError, ValueError) as f:
-        grund = str(f) if isinstance(f, ValueError) else f"Postausgang nicht erreichbar ({f.__class__.__name__})"
+        if direkt:
+            import asyncio
+            await asyncio.to_thread(_smtp_senden, body)
+        else:
+            async with httpx.AsyncClient(timeout=90) as c:
+                r = await c.post(f"{ALT_BACKEND}/api/mail/senden", json=body, headers={"X-Cockpit-Token": ALT_TOKEN})
+            d = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+            if r.status_code != 200:
+                raise ValueError(str(d.get("detail") or f"Postausgang antwortet mit {r.status_code}"))
+    except (httpx.HTTPError, ValueError, OSError) as f:
+        grund = (str(f) if isinstance(f, ValueError) else
+                 f"Mailserver: {f}"[:300] if isinstance(f, OSError) and str(f) else f"Postausgang nicht erreichbar ({f.__class__.__name__})")
         db.aendern("mails", mid, {"stand": "fehler", "fehler": grund[:500], "geaendert": time.time()})
         raise ValueError(grund) from f
     db.aendern("mails", mid, {"stand": "gesendet", "fehler": None, "gesendet": time.time(), "geaendert": time.time(),
@@ -453,8 +461,66 @@ async def senden(mid: str) -> dict[str, Any]:
     return {"ok": True, "an": an, "betreff": m.get("betreff")}
 
 
+def smtp_stand() -> dict[str, Any]:
+    """Die eigenen SMTP-Zugangsdaten (seit 23.10.2026) -- dieselben fuenf Namen wie im alten Backend."""
+    host, user, pw = env_wert("VVEC_SMTP_HOST"), env_wert("VVEC_SMTP_USER"), env_wert("VVEC_SMTP_PASS")
+    von = env_wert("VVEC_SMTP_FROM") or user
+    try:
+        port = int(env_wert("VVEC_SMTP_PORT") or "587")
+    except ValueError:
+        port = 587
+    ok = bool(host and user and pw and von)
+    return {"ok": ok, "host": host, "port": port, "user": user, "absender": von,
+            "fehlt": [] if ok else [n for n, da in (("VVEC_SMTP_HOST", host), ("VVEC_SMTP_USER", user),
+                                                     ("VVEC_SMTP_PASS", pw), ("VVEC_SMTP_FROM", von)) if not da]}
+
+
+def _smtp_senden(body: dict[str, Any]) -> None:
+    """Direkt per SMTP (blockierend, im Thread). Port 465 spricht TLS von der ersten Sekunde an
+    (one.com), alles andere startet offen und hebt per STARTTLS an -- das ist Protokoll, kein
+    Geschmack: ein SMTP_SSL-Server versteht ein Klartext-EHLO gar nicht erst.
+    Nur fuer den Test (VVEC_SMTP_TEST=1, Host 127.0.0.1): unverschluesselt und ohne Anmeldung,
+    an einen nachgestellten Mailserver -- damit kein Test je eine echte Mail verschickt."""
+    import smtplib
+    import ssl
+    from email.message import EmailMessage
+    from email.utils import make_msgid
+    st = smtp_stand()
+    msg = EmailMessage()
+    msg["Subject"] = re.sub(r"[\r\n]+", " ", str(body.get("betreff") or ""))[:180]
+    msg["From"] = st["absender"]
+    msg["To"] = body["an"]
+    if body.get("cc"):
+        msg["Cc"] = body["cc"]
+    msg["Message-Id"] = make_msgid(domain=st["absender"].split("@")[-1] if "@" in st["absender"] else None)
+    msg.set_content(body.get("text") or " ")
+    if body.get("html"):
+        msg.add_alternative(body["html"], subtype="html")
+    for a in body.get("anhaenge") or []:
+        haupt, _, sub = (a.get("typ") or "application/octet-stream").partition("/")
+        msg.add_attachment(base64.b64decode(a["daten"]), maintype=haupt, subtype=sub or "octet-stream", filename=a["name"])
+    alle = [x.strip() for x in ",".join(body.get(k) or "" for k in ("an", "cc", "bcc")).split(",") if x.strip()]
+    test = env_wert("VVEC_SMTP_TEST") == "1" and st["host"] in ("127.0.0.1", "localhost")
+    if test:
+        verbindung = smtplib.SMTP(st["host"], st["port"], timeout=25)
+    elif st["port"] == 465:
+        verbindung = smtplib.SMTP_SSL(st["host"], st["port"], context=ssl.create_default_context(), timeout=25)
+    else:
+        verbindung = smtplib.SMTP(st["host"], st["port"], timeout=25)
+        verbindung.ehlo()
+        verbindung.starttls(context=ssl.create_default_context())
+        verbindung.ehlo()
+    with verbindung as s:
+        if not test:
+            s.login(st["user"], env_wert("VVEC_SMTP_PASS"))
+        s.send_message(msg, to_addrs=alle)
+
+
 def absender() -> dict[str, Any]:
-    """Wer als Absender erscheint -- aus dem alten Backend, sonst ehrlich 'unbekannt'."""
+    """Wer als Absender erscheint -- aus den eigenen Zugangsdaten, sonst aus dem alten Backend, sonst ehrlich 'unbekannt'."""
+    st = smtp_stand()
+    if st["ok"]:
+        return {"ok": True, "absender": st["absender"], "fehlt": [], "weg": "direkt"}
     try:
         r = httpx.get(f"{ALT_BACKEND}/api/mail/status", headers={"X-Cockpit-Token": ALT_TOKEN}, timeout=4)
         d = r.json()

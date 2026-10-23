@@ -2329,7 +2329,7 @@ async def langlaeufe_liste(projekt_id: str = ""):
     liste = [{**l, "nebenbei": aktionen.fuer(l["id"], l.get("ergebnis_id"))} for l in langlauf.liste(projekt_id or None)]
     return {"langlaeufe": liste, "arten": langlauf.ARTEN,
             "rollen": [{"id": r, "name": stab.rollen_name(r)} for r in stab.ROLLEN_FUER_ARBEIT if r != "pmo"],
-            "preise": _preise(), "zugang_extern": bool(ALT_TOKEN)}
+            "preise": _preise(), "zugang_extern": teamchat.extern_moeglich()}
 
 
 @router.post("/langlaeufe")

@@ -198,6 +198,16 @@ def empfehlungen(s: dict[str, Any] | None, upd: dict[str, Any], ollama_neu: str 
                       "warum": "Für den Knopf braucht diese Fassung einmal den Cockpit-Token des alten Backends (das Update läuft dort als root). "
                                "Den Befehl einmal auf dem Server ausführen (fragt dein Passwort), danach steht hier „Einspielen“.",
                       "befehl": "sudo grep '^COCKPIT_TOKEN=' /etc/vvec/secrets.env | sed 's/^COCKPIT_TOKEN=/VVEC_ALT_TOKEN=/' >> ~/.config/vve-cp-r2.env && chmod 600 ~/.config/vve-cp-r2.env && systemctl --user restart vve-cp-r2"})
+    # Externe und Postausgang (cloud.py, mail.py, 23.10.2026): solange die Schluessel nicht hier liegen, laufen
+    # Dario, Elon, Demmis und jede Mail ueber das alte Cockpit -- und fielen mit ihm aus.
+    from . import cloud, mail
+    fehlt = [n for n, da in (("Dario (Claude)", cloud.schluessel("claude")), ("Demmis (Gemini)", cloud.schluessel("gemini")),
+                             ("Elon (Grok)", cloud.schluessel("grok")), ("Postausgang", mail.smtp_stand()["ok"])) if not da]
+    if fehlt:
+        e.append({"stufe": "achtung", "titel": "Hängt noch am alten Cockpit: " + ", ".join(fehlt),
+                  "warum": "Die Schlüssel liegen bisher nur im alten Cockpit. Einmal übernehmen (fragt dein Passwort) -- danach spricht "
+                           "das neue Cockpit die Externen und den Mailserver selbst an, und das alte kann weg.",
+                  "befehl": cloud.einrichten_befehl()})
     fw = ((s.get("firmware") or {}).get("fwupd") or {})
     for u in fw.get("updates") or []:
         sb_db = u.get("secure_boot_db")
