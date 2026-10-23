@@ -1294,7 +1294,8 @@ async def einstellungen():
             "alt_cockpit": ALT_COCKPIT_URL, "leiste": db.einstellung("leiste", []),
             "talk_stimme": stimme.gewaehlte_stimme(), "stimmen": stimme.STIMMEN,
             "praesentation_stil": folien_stil.vorgabe(), "praesentation_stile": folien_stil.liste(),
-            "modelle_nachts_laden": nachtladen.an(), "nachtladen": nachtladen.stand()}
+            "modelle_nachts_laden": nachtladen.an(), "nachtladen": nachtladen.stand(),
+            "explorer_oeffnen": db.einstellung("explorer_oeffnen", "vorschau")}
 
 
 @router.post("/einstellungen")
@@ -1322,6 +1323,9 @@ async def einstellungen_setzen(request: Request):
         db.einstellung_setzen("praesentation_stil", d["praesentation_stil"])
     if "modelle_nachts_laden" in d:
         db.einstellung_setzen(nachtladen.SCHALTER, bool(d["modelle_nachts_laden"]))
+    # Explorer-Klick (23.10.2026): Vorschau im Cockpit oder gleich das Original in der App.
+    if d.get("explorer_oeffnen") in ("vorschau", "app"):
+        db.einstellung_setzen("explorer_oeffnen", d["explorer_oeffnen"])
     return await einstellungen()
 
 
@@ -1422,6 +1426,41 @@ async def datei_ansicht(did: str):
     from . import dokumente
     titel, text = _datei_text(did)
     return Response(dokumente.zu_html(titel, text) + ESC_WEITERGEBEN, media_type="text/html; charset=utf-8", headers=SANDBOX)
+
+
+# PowerPoint als Folien (23.10.2026, pptx_ansicht.py): Lage, Text und Bilder jeder Folie
+# im richtigen Seitenverhaeltnis -- auch Hochformat. Gezeichnet wird in datei.js.
+def _pptx_pfad(did: str) -> str:
+    d = db.holen("dateien", did)
+    if not d or not Path(d["pfad"]).is_file():
+        raise HTTPException(404, "Datei nicht gefunden")
+    if not str(d["pfad"]).lower().endswith((".pptx", ".ppsx", ".potx", ".pptm")):
+        raise HTTPException(415, "Keine PowerPoint-Datei (nur .pptx; altes .ppt kann das Cockpit nicht lesen)")
+    return d["pfad"]
+
+
+@router.get("/dateien/{did}/folien")
+async def datei_folien(did: str):
+    from . import pptx_ansicht
+    pfad = _pptx_pfad(did)
+    try:
+        return await asyncio.to_thread(pptx_ansicht.folien, pfad)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(422, f"Die Folien ließen sich nicht lesen: {e}")
+
+
+@router.get("/dateien/{did}/folienmedium")
+async def datei_folienmedium(did: str, n: str, b: int = 1600):
+    from . import pptx_ansicht
+    pfad = _pptx_pfad(did)
+    try:
+        roh, mime = await asyncio.to_thread(pptx_ansicht.medium, pfad, n, b)
+    except KeyError:
+        raise HTTPException(404, "Bild nicht in der Datei")
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(422, f"Bild nicht lesbar: {e}")
+    return Response(roh, media_type=mime, headers={"Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff",
+                                                   "Content-Security-Policy": "sandbox"})
 
 
 @router.get("/dateien/{did}/word")

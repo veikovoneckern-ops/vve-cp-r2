@@ -13,7 +13,7 @@ import { System } from "./system.js";
 import { Neo } from "./neo.js";
 import { Talk } from "./talk.js";
 import { Board } from "./board.js";
-import { Logo, CockpitLeiste, ServerKaesten, SprechKnopf, TalkPille, kopfAbruf } from "./kopf.js";
+import { Logo, CockpitLeiste, ServerKaesten, SprechKnopf, TalkPille, VollbildKnopf, kopfAbruf } from "./kopf.js";
 import { LeisteNav, useLeiste, FENSTER } from "./leiste.js";
 import { Einstellungen } from "./einstellungen.js";
 import { Usage } from "./usage.js";
@@ -227,6 +227,9 @@ function App() {
   // Im eigenen Fenster startet Talk zu: dort soll nur die eine Seite stehen.
   const [talk, setTalk] = useState(() => { try { return !FENSTER && localStorage.getItem("vvec_talk") === "1" && innerWidth > 1180; } catch (e) { return false; } });
   const [talkStart, setTalkStart] = useState(null);
+  // Linke Leiste ausgeblendet (23.10.2026, Klick aufs Logo) -- gemerkt je Geraet, wie die Breiten.
+  const [leisteZu, setLeisteZuState] = useState(() => { try { return localStorage.getItem("vvec_leiste_zu") === "1"; } catch (e) { return false; } });
+  const setLeisteZu = (v) => { setLeisteZuState(v); try { localStorage.setItem("vvec_leiste_zu", v ? "1" : "0"); } catch (e) { /* ohne Speicher */ } };
   const [kontext, setKontext] = useState(null);
   const [erfassen, setErfassen] = useState(false);
   const [lage, setLage] = useState(null);
@@ -311,9 +314,9 @@ function App() {
     themaSetzen(jetzt === "dark" ? "light" : "dark");
   }
 
-  return html`<div class=${"schale" + (talk ? " mit-talk" : "") + (FENSTER ? " fenster" : "")}>
+  return html`<div class=${"schale" + (talk ? " mit-talk" : "") + (FENSTER ? " fenster" : "") + (leisteZu && !FENSTER ? " leiste-zu" : "")}>
     ${!FENSTER && html`<nav class="rail" aria-label="Bereiche">
-      <div class="marke"><${Logo} gross=${true} /></div>
+      <div class="marke"><${Logo} gross=${true} beiKlick=${() => setLeisteZu(true)} zweck="Menüleiste ausblenden -- volle Breite" /></div>
       <button class="erfassen-knopf" onClick=${() => setErfassen(true)} title="Etwas ans Team geben"><${Icon} n="plus" g=${17} w=${2.4} />Capture</button>
       <${LeisteNav} liste=${leiste} aktiv=${r.bereich} zahl=${zahl} speichern=${leisteSpeichern} />
       <div class="rail-fuss">
@@ -324,6 +327,7 @@ function App() {
     <div class="haupt">
       <header class="topbar">
         <span class="nur-mobil kopf-logo"><${Logo} /></span>
+        ${leisteZu && !FENSTER && html`<span class="nur-breit kopf-logo"><${Logo} beiKlick=${() => setLeisteZu(false)} zweck="Menüleiste wieder einblenden" /></span>`}
         <div class="kopf-titel">
           <h1>${titel}</h1><span>${unter}</span>
         </div>
@@ -335,6 +339,7 @@ function App() {
           <button class="kopf-icon nur-mobil" onClick=${() => setErfassen(true)} aria-label="Capture" title="Capture"><${Icon} n="plus" g=${19} /></button>
           <${SprechKnopf} />
           <${SucheKnopf} />
+          <span class="nur-breit"><${VollbildKnopf} /></span>
           <button class=${"kopf-icon talk-auf" + (talk ? " an" : "")} onClick=${() => setTalk(!talk)} aria-pressed=${talk}
             title=${talk ? "Gesprächsspalte schließen" : "Gesprächsspalte öffnen (zum Tippen)"} aria-label="Gesprächsspalte"><${Icon} n="chat" g=${18} /></button>
         </span>

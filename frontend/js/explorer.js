@@ -10,7 +10,7 @@
 // Ergebnisfenster, Unterlage, Notiz, Bild. Der Explorer fuehrt keinen eigenen
 // Bestand (cockpit/explorer.py liest die Tabellen); aendern kann er nur, wohin
 // eine Unterlage gehoert.
-import { html, useState, useEffect, Icon, Md, fehlerMelden, zeitText, bus } from "./ui.js";
+import { html, useState, useEffect, Icon, Md, fehlerMelden, zeitText, bus, toast } from "./ui.js";
 import { api } from "./api.js";
 import { URTEIL } from "./ergebnis.js";
 import { ZuordnungWahl } from "./datei.js";
@@ -40,7 +40,27 @@ const groesse = (e) => (e.einheit === "Byte"
 const lies = (k, v) => { try { return localStorage.getItem("ex-" + k) || v; } catch (e) { return v; } };
 const merk = (k, v) => { try { localStorage.setItem("ex-" + k, v); } catch (e) { /* egal */ } };
 
+// Doppelklick: Vorschau im Cockpit oder gleich die App (Einstellung "explorer_oeffnen",
+// 23.10.2026). Der Wert steht auf dem Server, damit er auf jedem Geraet gleich ist.
+let OEFFNEN = "vorschau";
+const oeffnenLaden = () => api("/einstellungen").then((d) => { OEFFNEN = d.explorer_oeffnen || "vorschau"; }).catch(() => {});
+bus.an("explorer-oeffnen", (w) => { OEFFNEN = w; });
+const APP_DATEI = new Set(["powerpoint", "word", "excel", "bild", "pdf", "audio", "film"]);
+const APP_ERGEBNIS = { praesentation: "pptx", text: "docx", aufstellung: "docx", konzept: "docx", dokument: "docx", dossier: "docx" };
+function laden_(url) {
+  const a = document.createElement("a");
+  a.href = url; a.download = ""; a.rel = "noopener";
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function inApp(e) {
+  if (e.art === "datei" && APP_DATEI.has(e.typ)) { laden_("/api/dateien/" + e.id); return true; }
+  if (e.art === "ergebnis" && APP_ERGEBNIS[e.typ]) { laden_("/api/ergebnisse/" + e.id + "/datei?format=" + APP_ERGEBNIS[e.typ]); return true; }
+  if (e.art === "bild" && e.datei) { laden_("/api/medien/datei/" + e.datei); return true; }
+  return false;
+}
+
 export function oeffnen(e) {
+  if (OEFFNEN === "app" && inApp(e)) { toast("Lädt das Original; es öffnet sich in der App."); return; }
   if (e.art === "ergebnis") bus.sende("ergebnis-zeigen", e.id);
   else if (e.art === "datei" && DIREKT.has(e.typ)) window.open("/api/dateien/" + e.id + "?anzeigen=1", "_blank", "noopener");
   else if (e.art === "datei") bus.sende("datei-zeigen", e.id);
@@ -49,6 +69,7 @@ export function oeffnen(e) {
 }
 
 export function Explorer() {
+  useEffect(() => { oeffnenLaden(); }, []);
   const [d, setD] = useState(null);
   const [q, setQ] = useState("");
   const [inhalt, setInhalt] = useState(() => lies("inhalt", "0") === "1");

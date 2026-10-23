@@ -226,7 +226,13 @@ export function Talk({ zu, kontext, setKontext, start }) {
     let fertig = null, stromFehler = null;
     const k = kontextRef.current;
     try {
-      await strom("/talk/senden", { gespraech_id: gidRef.current, text, kontext: k ? { art: k.art, id: k.id } : null, anhaenge, stimme, schnell: !talkSchalter("gruendlich"), netz: talkSchalter("netz") }, (e) => {
+      // Die aufklappbaren Abschnitte der Seite (ui.Klappe) gehen mit -- "oeffne den Abschnitt Extern"
+      // (23.10.2026: auf der Team-Seite zweimal "nichts gefunden", weil Talk sie nicht kannte).
+      const abschnitte = [...document.querySelectorAll("main section.klappe[id^='klappe-']")].map((s) => ({
+        id: s.id.slice(7), titel: (s.querySelector(".klappe-titel b") || {}).textContent || "" })).filter((a) => a.titel).slice(0, 20);
+      const kx = k ? { art: k.art, id: k.id } : abschnitte.length ? { art: "seite", id: "seite" } : null;
+      if (kx && abschnitte.length) kx.abschnitte = abschnitte;
+      await strom("/talk/senden", { gespraech_id: gidRef.current, text, kontext: kx, anhaenge, stimme, schnell: !talkSchalter("gruendlich"), netz: talkSchalter("netz") }, (e) => {
         if (e.typ === "start") setGid(e.gespraech_id);
         else if (e.typ === "text") setLauf((l) => ({ ...(l || {}), text: (l ? l.text : "") + e.t }));
         else if (e.typ === "status") setLauf((l) => ({ ...(l || { text: "" }), status: e.text }));
@@ -255,6 +261,11 @@ export function Talk({ zu, kontext, setKontext, start }) {
       if (w === "erfassen") bus.sende("erfassen");
       else if (w === "suche") bus.sende("suche-oeffnen");
       else if (w === "hell" || w === "dunkel") bus.sende("thema-setzen", w === "dunkel" ? "dark" : "light");
+      else if (w && w.startsWith("abschnitt:")) {
+        const aid = w.slice(10);
+        bus.sende("klappe-auf", aid);
+        setTimeout(() => { const el = document.getElementById("klappe-" + aid); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }, 150);
+      }
       else if (w === "zurueck") history.back();
       else if (w === "fenster_zu" && !escFensterZu("talk")) toast("Es ist kein Fenster offen.");
       else if (w === "ueberblick") bus.sende("ueberblick-zeigen");

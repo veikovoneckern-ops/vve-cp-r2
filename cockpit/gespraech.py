@@ -632,8 +632,10 @@ _UEBERBLICK = re.compile(r"\b(aktuell\w*\s+(überblick|ueberblick|stand|lage)|(�
                          r"gesamtüberblick|gesamtueberblick|was\s+gibt\s*(es|'s)?\s+neues|was\s+ist\s+neu|neueste[nr]?\s+ergebnisse|"
                          r"letzte[nr]?\s+ergebnisse|wo\s+stehen\s+wir|(einen|den)\s+(überblick|ueberblick)\b(?!\s+(von|über|ueber|zu)\b))", re.I)
 # Blaettern: "scroll runter", "weiter nach unten", "ganz nach oben", "zurück nach oben"
-_BLAETTERN = re.compile(r"^((bitte|kannst du|mal|noch|jetzt|und)\s+)*(scroll\w*|blätter\w*|blaetter\w*|geh\w*|fahr\w*|spring\w*)?\s*"
-                        r"(mal\s+|bitte\s+|noch\s+|weiter\s+|etwas\s+|ein\s+stück\s+|ein\s+bisschen\s+|ganz\s+|wieder\s+|zurück\s+)*"
+# 23.10.2026: "Woll bitte mal langsam weiter nach unten" (Whisper hoerte "Woll" statt "Scroll") ging ans Modell,
+# das "ich blaettere" sagte und nichts tat. Ein unbekanntes erstes Wort und "langsam" sind jetzt erlaubt.
+_BLAETTERN = re.compile(r"^((bitte|kannst du|mal|noch|jetzt|und|okay|ok)\s+)*(scroll\w*|roll\w*|woll\w*|blätter\w*|blaetter\w*|geh\w*|fahr\w*|spring\w*|\w{3,8})?\s*"
+                        r"(mal\s+|bitte\s+|noch\s+|weiter\s+|etwas\s+|langsam\s+|ein\s+stück\s+|ein\s+bisschen\s+|ganz\s+|wieder\s+|zurück\s+)*"
                         r"(nach\s+)?(unten|runter|oben|hoch|rauf|anfang|ende)(\s+bitte)?$", re.I)
 
 # ---------------------------------------------------------------- Bedienen per Sprache
@@ -704,7 +706,11 @@ def _mitglied_im_text(t: str) -> dict[str, Any] | None:
 
 def oeffnen_satz(o: dict[str, Any]) -> str:
     artikel = "den " if o["art"] in ("langlauf", "vorgang", "daily") else "die " if o["art"] in ("aufgabe", "notiz", "datei") else "das "
-    return f"Ich öffne dir {artikel}{OEFFNEN_NAME[o['art']]} „{str(o.get('titel') or '')[:90]}“."
+    titel = str(o.get("titel") or "")
+    if o["art"] == "datei":
+        # Gesprochen klingt "FR5_MAGAZIN_AUSGABE_2026_V10.pptx" wie Buchstabensalat: Endung weg, Unterstriche zu Leerzeichen.
+        titel = re.sub(r"\s+", " ", re.sub(r"\.[a-z0-9]{2,5}$", "", titel, flags=re.I).replace("_", " ")).strip()
+    return f"Ich öffne dir {artikel}{OEFFNEN_NAME[o['art']]} „{titel[:90]}“."
 
 
 def bedienung_erkennen(text: str, kontext: dict | None = None, gid: str | None = None) -> dict[str, Any] | None:
@@ -712,7 +718,8 @@ def bedienung_erkennen(text: str, kontext: dict | None = None, gid: str | None =
     t = re.sub(r"[.!]+$", "", (text or "").strip()).strip()
     # Blaettern (22.10.2026): kein Satz dazu -- "Ich scrolle nach unten" vorzulesen dauerte laenger als
     # das Scrollen. VOR der Ja-Pruefung: "ganz nach unten bitte" ist kein Ja auf eine Frage.
-    b = _BLAETTERN.search(t) if t else None
+    # Kommas ("Okay, scroll mal runter") trennen fuer das Muster nichts -- Whisper setzt sie nach Gefuehl.
+    b = _BLAETTERN.search(re.sub(r"\s+", " ", re.sub(r"[,;:]", " ", t)).strip()) if t else None
     # "Okay, oeffne die Daily Task" und "Ja, aber ich will die Daily Task sehen" sind kein Ja auf eine
     # Frage, sondern Bedienung (22.10.2026: beide liefen deshalb am Bedienen vorbei ins Leere).
     oeffnen_wort = bool(_VERB_IRGENDWO.search(t)) if t else False
@@ -741,6 +748,25 @@ def bedienung_erkennen(text: str, kontext: dict | None = None, gid: str | None =
             return {"satz": oeffnen_satz(o), "oeffnen": o}
     if _ZURUECK.search(t):
         return {"satz": "Ich gehe eine Seite zurück.", "werkzeug": "zurueck"}
+    # Ein aufklappbarer Abschnitt der offenen Seite (23.10.2026: "zeig mir alle externen Teammitglieder",
+    # "oeffne die Sektion Extern" -- zweimal "nichts gefunden"). Die Abschnitte schickt die Oberflaeche mit.
+    abschnitte = (kontext or {}).get("abschnitte") or []
+    if abschnitte and (oeffnen_wort or re.search(r"\b(sektion|abschnitt|bereich|aufklapp\w*|klapp\w*)\b", t, re.I)):
+        gesucht = _woerter(re.sub(r"\b(sektion|abschnitt|bereich|aufklapp\w*|klapp\w*)\b", " ", t, flags=re.I))
+        beste = None
+        for a in abschnitte:
+            w = _woerter(str(a.get("titel") or ""))
+            # Auch Wortteile: "Teammitglieder" enthaelt "mitglied", "externen" -> "extern".
+            n = len(w & gesucht) + sum(1 for x in w for y in gesucht if x != y and len(x) >= 5 and (x in y or y in x))
+            if n and (not beste or n > beste[0]):
+                beste = (n, a)
+        if beste:
+            return {"satz": f"Ich klappe dir „{beste[1]['titel']}“ auf.", "werkzeug": "abschnitt:" + str(beste[1]["id"])}
+    # "Zeig mir alle (meine) offenen Aufgaben" (23.10.2026: angekuendigt, nicht geoeffnet).
+    if oeffnen_wort and re.search(r"\balle\b.{0,25}\baufgaben\b", t, re.I):
+        return {"satz": "Ich öffne dir alle offenen Aufgaben.", "zeigen": {"ziel": "alle_aufgaben"}}
+    if oeffnen_wort and re.search(r"\balle\b.{0,25}\bnotizen\b", t, re.I):
+        return {"satz": "Ich öffne dir alle Notizen.", "zeigen": {"ziel": "alle_notizen"}}
     if _THEMA.search(t) and "?" not in t:
         dunkel = re.search(r"dunkel|dark|nacht", t, re.I)
         return {"satz": "Ich schalte auf " + ("dunkel." if dunkel else "hell."), "werkzeug": "dunkel" if dunkel else "hell"}
@@ -798,6 +824,12 @@ def bedienung_erkennen(text: str, kontext: dict | None = None, gid: str | None =
         if o and (re.search(art_muster, t, re.I) or len(rest_woerter) >= 2 or _woerter(o["titel"]) == rest_woerter):
             return {"satz": oeffnen_satz(o), "oeffnen": o}
     if seite and (verb or oeffnen_wort):
+        # Steckt das Seitenwort in einem Titel ("das Thema Cockpit-Gedächtnis" -- 23.10.2026 ging die
+        # Memory-Seite auf statt der Aufgabe "Konzept für Cockpit-Gedächtnis"), gewinnt der Titel, sobald er
+        # mindestens zwei Wörter mit dem Satz teilt.
+        o2 = oeffnen_suchen(t)
+        if o2 and len(_woerter(o2["titel"]) & _woerter(t)) >= 2:
+            return {"satz": oeffnen_satz(o2), "oeffnen": o2}
         return {"satz": f"Ich öffne dir {seite[2]}.", "zeigen": {"ziel": seite[0]}}
     return None
 
@@ -819,7 +851,7 @@ _ART_WORT = (("gespraech", r"gespräch|gespraech|unterhaltung|\bchat\b"),
              # Daily Tasks (22.10.2026) vor "ergebnis": "oeffne das Daily-Briefing zu KI" meint den Daily Task.
              ("daily", r"\bdaily\b|tägliche[nrs]?\b|taegliche[nrs]?\b|tagesbriefing"),
              # Unterlagen (19.10.2026): "oeffne das Dossier zu Verlagen" -- vor "ergebnis", sonst griffe "Dokument".
-             ("datei", r"dossier|unterlage|abschrift|anhang|\bdatei"), ("ergebnis", r"ergebnis|resultat|kapitel|dokument|präsentation|praesentation|video|text"),
+             ("datei", r"dossier|unterlage|abschrift|anhang|\bdatei|power\s?point|\bpptx?\b|\bexcel\b|\bpdf\b|word-?datei|word-?dokument|foliensatz"), ("ergebnis", r"ergebnis|resultat|kapitel|dokument|präsentation|praesentation|video|text"),
              ("langlauf", r"langläufer|langlaeufer|langlauf"), ("aufgabe", r"aufgabe|todo"),
              ("vorgang", r"\bcase|vorgang"), ("projekt", r"projekt"), ("notiz", r"notiz"))
 _FUELL = {"öffne", "öffnen", "oeffne", "oeffnen", "zeig", "zeige", "zeigen", "mal", "bitte", "dem", "den", "das", "der", "die",
@@ -850,6 +882,10 @@ def oeffnen_suchen(text: str, art: str | None = None, ohne: str | None = None) -
     """Das Ding, dessen Titel am besten zu Veikos Worten passt. Nur bei einem
     klaren Treffer (mindestens zwei gemeinsame Woerter, bzw. alle Woerter eines
     kurzen Titels) -- lieber nichts oeffnen als das Falsche."""
+    # "Version 10" heisst im Dateinamen "V10" (23.10.2026: "oeffne das FR5 Magazin Version 10"),
+    # "PowerPoint" heisst dort "pptx".
+    text = re.sub(r"\bversion\s*(\d{1,3})\b", lambda m: f"v{int(m.group(1))} v{int(m.group(1)):02d}", text or "", flags=re.I)
+    text = re.sub(r"\bpower\s?point\b", "pptx", text, flags=re.I)
     gesucht = _woerter(text)
     if not gesucht:
         return None
@@ -877,6 +913,10 @@ def oeffnen_suchen(text: str, art: str | None = None, ohne: str | None = None) -
             gemein = len(gesucht & w)
             if gemein >= min(2, len(gesucht)) or (gemein >= 1 and gemein == len(w)):
                 p = gemein + gemein / len(w)   # bei Gleichstand der kuerzere, genauere Titel; sonst der neueste (Reihenfolge)
+                if a == "datei":
+                    # Unterlagen in mehreren Fassungen ("…_V01", "…_V10"): bei gleich vielen Treffern die NEUESTE,
+                    # nicht die mit dem kuerzesten Namen -- das war meist die aelteste.
+                    p = gemein + 0.001 * gemein / len(w)
                 if p > punkte:
                     bestes, punkte = {"art": a, "id": z["id"], "titel": z["t"]}, p
     return _gespraech_ort(bestes)
@@ -1586,9 +1626,12 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
             sichtbar = (sichtbar + "\n\nIch habe nichts gefunden, das ich öffnen kann. Sag mir bitte den Titel, so wie er im Cockpit steht.").strip()
     if oeffnen:
         o = oeffnen[0]
-        satz = f"Ich öffne dir {('den ' if o['art'] in ('langlauf', 'vorgang') else 'die ' if o['art'] in ('aufgabe', 'notiz') else 'das ')}{OEFFNEN_NAME[o['art']]} „{o['titel'][:90]}“."
-        # Den Satz des Modells durch den genauen ersetzen -- es soll dastehen, WAS aufgeht.
-        rest = re.sub(r"[^.!?\n]*\b(öffne|oeffne|zeige) (dir|ich)\b[^.!?\n]*[.!?]?", "", sichtbar).strip()
+        satz = oeffnen_satz(o)
+        # Den Satz des Modells durch den genauen ersetzen -- es soll dastehen, WAS aufgeht. Satzweise an echten
+        # Satzenden: am Punkt in "6mrmi.jpg" geschnitten blieb am 23.10. Wortsalat stehen ("jpg, 6mrmi.jpg, …").
+        saetze = re.split(r"(?<=[.!?])\s+", sichtbar or "")
+        rest = " ".join(s for s in saetze if not re.search(r"\b(öffne|oeffne|zeige) (dir|ich)\b", s, re.I)
+                        and not re.search(r"\.\w{2,4}\b", s) and len(s.strip()) >= 25).strip()
         sichtbar = (satz + ("\n\n" + rest if rest else "")).strip()
     # Bilder und Visualisierungen kosten nur Rechenzeit: sofort starten, Ergebnis im Gespraech.
     from . import medien

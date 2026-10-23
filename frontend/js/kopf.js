@@ -11,7 +11,7 @@
 // dreht sich, solange eine lokale KI rechnet, und traegt dann die Farbe der
 // LED-Leiste auf den Grafikkarten: weiss bei wenig Last, rot unter Volllast --
 // dieselbe Rechnung wie vve-rgb.py und ledFarbe() im alten Layer.
-import { html, useEffect, useState, Icon, bus, zeitText } from "./ui.js";
+import { html, useEffect, useState, Icon, bus, zeitText, toast } from "./ui.js";
 import { api } from "./api.js";
 
 let letzterKopf = null;
@@ -65,14 +65,55 @@ export function kopfAbruf() {
   return () => { aus = true; clearTimeout(timer); sofort(); };
 }
 
-export function Logo({ gross = false }) {
+// beiKlick (23.10.2026, Veiko: "wenn ich oben links auf das Logo klicke, soll sich die Menüleiste links
+// ausblenden, damit ich die volle Breite nutzen kann"): dann ist das Logo ein Knopf statt ein Link
+// zum Briefing. Auf dem Telefon bleibt es der Link -- dort gibt es keine linke Leiste.
+export function Logo({ gross = false, beiKlick = null, zweck = "" }) {
   const k = useKopf();
   const ki = k && k.ki;
-  const titel = ki && ki.arbeitet
+  const rechnet = ki && ki.arbeitet
     ? `Lokale KI rechnet · Grafikkarten ${ki.gpu_last} %` + (ki.aufrufe ? ` · ${ki.aufrufe} ${ki.aufrufe === 1 ? "Anfrage" : "Anfragen"}` : "")
-    : "Zum Briefing";
+    : "";
+  if (beiKlick) {
+    const titel = (rechnet ? rechnet + " · " : "") + zweck;
+    return html`<button class=${"logo-knopf" + (gross ? " gross" : "")} onClick=${beiKlick} title=${titel} aria-label=${zweck}>
+      <span class="logo" aria-hidden="true"></span></button>`;
+  }
+  const titel = rechnet || "Zum Briefing";
   return html`<a class=${"logo-knopf" + (gross ? " gross" : "")} href="#/briefing" title=${titel} aria-label=${titel}>
     <span class="logo" aria-hidden="true"></span></a>`;
+}
+
+// Vollbild (23.10.2026, Veiko: "dass gar nicht mehr der Rahmen vom Browser und die einzelnen Tabs zu sehen
+// sind, sondern das Cockpit wirklich den gesamten Screen ausfüllt"). Die Vollbild-Schnittstelle des
+// Browsers; Escape beendet es wie gewohnt. Wo der Browser sie nicht anbietet (Safari auf dem iPhone),
+// erscheint der Knopf gar nicht -- ein Knopf, der nichts tut, waere schlimmer als keiner.
+export function VollbildKnopf() {
+  const geht = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+  const [an, setAn] = useState(() => !!(document.fullscreenElement || document.webkitFullscreenElement));
+  useEffect(() => {
+    const f = () => setAn(!!(document.fullscreenElement || document.webkitFullscreenElement));
+    document.addEventListener("fullscreenchange", f);
+    document.addEventListener("webkitfullscreenchange", f);
+    return () => { document.removeEventListener("fullscreenchange", f); document.removeEventListener("webkitfullscreenchange", f); };
+  }, []);
+  if (!geht) return null;
+  function umschalten() {
+    const d = document, e = d.documentElement;
+    try {
+      const p = (d.fullscreenElement || d.webkitFullscreenElement)
+        ? (d.exitFullscreen || d.webkitExitFullscreen).call(d)
+        : (e.requestFullscreen || e.webkitRequestFullscreen).call(e);
+      if (p && p.catch) p.catch(abgelehnt);
+    } catch (x) { abgelehnt(); }
+  }
+  // Lehnt der Browser ab (eingebettete Ansicht, Richtlinie), wird das gesagt statt still nichts zu tun.
+  function abgelehnt() {
+    toast("Der Browser lässt hier kein Vollbild zu. Taste F11 schaltet es am Rechner ebenfalls um.");
+  }
+  const titel = an ? "Vollbild beenden (Esc)" : "Vollbild: Browserrahmen und Tabs ausblenden";
+  return html`<button class=${"kopf-icon vollbild" + (an ? " an" : "")} onClick=${umschalten} aria-pressed=${an} title=${titel} aria-label=${titel}>
+    <${Icon} n=${an ? "klein" : "voll"} g=${17} /></button>`;
 }
 
 const STUFE = (wert, warn, krit) => (wert == null ? "" : wert >= krit ? "kritisch" : wert >= warn ? "warnung" : "");

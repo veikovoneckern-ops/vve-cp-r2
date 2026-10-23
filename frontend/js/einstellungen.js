@@ -32,6 +32,32 @@ function PraesentationStil() {
   </section>`;
 }
 
+// Explorer-Klick (23.10.2026) -- Veiko: "ob ich beim Klick im Explorer das als Vorschau
+// grundsaetzlich oeffne oder sofort in einer der Apps, also PowerPoint, WinWord, Excel,
+// oder Bilder". "In der App" heisst: der Browser laedt das Original, und Windows oeffnet es
+// mit dem Programm, das fuer die Endung eingetragen ist. Ein direkter Sprung nach
+// PowerPoint (ms-powerpoint:) braucht eine Adresse, die Office OHNE Anmeldung abrufen
+// kann -- das waere ein offener Link auf Veikos Dateien, und das Cockpit baut keinen.
+function ExplorerOeffnen() {
+  const [d, setD] = useState(null);
+  useEffect(() => { api("/einstellungen").then(setD).catch(fehlerMelden); }, []);
+  if (!d) return "";
+  async function setzen(w) {
+    try { setD(await api("/einstellungen", { methode: "POST", daten: { explorer_oeffnen: w } })); bus.sende("explorer-oeffnen", w); toast("Gespeichert."); }
+    catch (x) { fehlerMelden(x); }
+  }
+  const w = d.explorer_oeffnen || "vorschau";
+  return html`<section class="karte" style="margin-top:14px"><div class="karte-kopf"><h3>Dateien im Explorer öffnen</h3></div>
+    <div class="knopfreihe"><span class="leise">Ein Doppelklick im Explorer öffnet</span>
+      <div class="segment"><button class=${w === "vorschau" ? "an" : ""} onClick=${() => setzen("vorschau")}>die Vorschau im Cockpit</button>
+        <button class=${w === "app" ? "an" : ""} onClick=${() => setzen("app")}>gleich die App</button></div></div>
+    <p class="leise klein" style="margin-top:8px">${w === "app"
+      ? "PowerPoint, Word, Excel, PDF, Bilder, Ton und Film kommen als Original auf diesen Rechner und öffnen sich im Programm, das Windows dafür kennt. Fertige Präsentationen des Teams kommen als PowerPoint, Texte als Word. Alles andere (Notizen, Webseiten, Videos des Teams) zeigt weiter die Vorschau."
+      : "PowerPoint als Folien, Word und Texte als Seite, Fotos und PDF im Browser. Das Original lässt sich in jeder Vorschau herunterladen."}</p>
+    ${w === "app" && html`<p class="leise klein">Damit sich die Datei <b>ohne weiteren Klick</b> öffnet: beim ersten Mal in der Download-Leiste von Edge oder Chrome auf die drei Punkte neben der Datei und <b>„Dateien dieses Typs immer öffnen"</b> wählen — einmal je Dateityp (pptx, docx, xlsx …). Auf iPad und Telefon gibt es das nicht; dort landet die Datei bei den Downloads.</p>`}
+  </section>`;
+}
+
 export function Einstellungen({ konto, thema, abschnitt }) {
   const [d, laden] = useAbruf("/system", 30000, []);
   const [laeuft, setLaeuft] = useState("");
@@ -54,6 +80,7 @@ export function Einstellungen({ konto, thema, abschnitt }) {
   return html`<div class="seite">
     <${Vertrauen} />
     <${PraesentationStil} />
+    <${ExplorerOeffnen} />
     <div style="margin-top:14px"><${Klappe} id="memory" titel="Memory" unter="Was dein Team über dich weiß: Personen, Begriffe, Hörfehler, Aussprache" vorgabe=${true}>
       <${Gedaechtnis} /></${Klappe}></div>
     <div style="margin-top:14px"><${Klappe} id="versionen" titel="Versionsverlauf" unter="Was sich am Cockpit wann geändert hat -- jede Auslieferung, nach Tagen und Bereichen">
