@@ -20,10 +20,9 @@ alles fertig ist:
                damit der erste Satz um 5 nicht auf das Laden wartet
   05:00        Downloads pausieren; die Leitung gehoert wieder Veiko
 
-Dazu Dinge des alten Cockpits auf demselben Server (systemd, nicht in diesem Repo):
-03:00/03:15 die Sicherungen nach OneDrive (Platte und Leitung), 04:30 das Auffrischen des
-Advisory Boards (lokales Modell -- deshalb liegen RSI und Daily Tasks davor), 07:00 der
-Stab-Bericht per Mail.
+Bis zum 23.10.2026 liefen daneben noch Arbeiten des alten Cockpits (Sicherungen 03:00/03:15,
+Stab-Bericht 07:00); sie enden mit dessen Abschaltung. Was davon gebraucht wird, macht diese
+Fassung selbst (Sicherung samt Serverstand 03:30, Advisory Board 23:00).
 """
 from __future__ import annotations
 
@@ -112,7 +111,7 @@ def plan() -> list[dict[str, Any]]:
          "warum": "Neo schlägt vor, Dario prüft. Wartet bis 03:30 auf die Revision, damit sich die beiden nicht die Karten teilen.",
          "zuletzt": zuletzt(rs)},
         {"zeit": "03:30", "titel": "Sicherung des Cockpits", "an": True, "wo": "Stack → Sicherungen",
-         "warum": "Datenbank lokal; dazu Datenbank, Unterlagen, Medien und Zugangsdaten verschlüsselt nach OneDrive "
+         "warum": "Datenbank lokal; dazu Datenbank, Unterlagen, Medien, Zugangsdaten und der Serverstand verschlüsselt nach OneDrive "
                   + ("(eingerichtet)." if sich.get("eingerichtet") else "-- OneDrive ist noch NICHT eingerichtet, dann nur die Datenbank lokal."),
          "zuletzt": ("läuft gerade" if sich.get("laeuft") else f"zuletzt {_wann(sich.get('zeit'))}: {sich.get('zustand')}"
                      + (f", {sich.get('groesse_mb')} MB" if sich.get("zustand") == "ok" else "") if sich.get("zeit") else "noch nicht gelaufen")},
@@ -125,7 +124,4 @@ def plan() -> list[dict[str, Any]]:
          "zuletzt": ("läuft gerade" if mb.get("laeuft") else
                      f"zuletzt {_wann(mb.get('zeit'))}, {mb.get('sekunden')} s" + (" -- mit Fehler" if mb.get("fehler_modell") or mb.get("fehler_whisper") else "")
                      if mb.get("zeit") else "noch nicht gelaufen")},
-        {"zeit": "03:00 · 03:15 · 07:00", "titel": "Altes Cockpit auf demselben Server", "an": True, "wo": "",
-         "warum": "Sicherungen des alten Cockpits nach OneDrive (03:00, 03:15) und dessen Stab-Bericht per Mail (07:00). "
-                  "Das Advisory Board frischt seit dem 23.10. das neue Cockpit selbst auf (23:00).", "zuletzt": ""},
     ]

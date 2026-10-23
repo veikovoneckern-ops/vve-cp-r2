@@ -36,7 +36,7 @@ from typing import Any
 import httpx
 
 from . import db, llm, stab
-from .konfig import ALT_BACKEND, ALT_TOKEN, env_wert
+from .konfig import env_wert
 
 ADRESSE_RE = re.compile(r"^[^\s@,;<>\"]+@[^\s@,;<>\"]+\.[^\s@,;<>\"]{2,}$")
 MAX_ANHANG = 20 * 1024 * 1024        # wie im alten Backend: one.com deckelt die ganze Nachricht
@@ -415,8 +415,8 @@ async def senden(mid: str) -> dict[str, Any]:
     html = m.get("html") or ""
     if not _html_zu_text(html) and not m["daten"]["anhaenge"]:
         raise ValueError("Die Mail ist leer.")
-    direkt = smtp_stand()["ok"]
-    if not direkt and not ALT_TOKEN:
+    # Nur noch direkt per SMTP; der Umweg ueber das alte Backend ist seit dem 23.10.2026 weg.
+    if not smtp_stand()["ok"]:
         raise ValueError("Der Postausgang ist nicht eingerichtet: die VVEC_SMTP_*-Zeilen fehlen in ~/.config/vve-cp-r2.env "
                          "(der Befehl dafür steht unter Recommendations).")
     anh, gesamt = [], 0
@@ -430,15 +430,8 @@ async def senden(mid: str) -> dict[str, Any]:
     body = {"an": ", ".join(an), "cc": ", ".join(cc), "bcc": ", ".join(bcc), "betreff": m.get("betreff") or "(ohne Betreff)",
             "html": koerper, "text": _html_zu_text(html), "anhaenge": anh}
     try:
-        if direkt:
-            import asyncio
-            await asyncio.to_thread(_smtp_senden, body)
-        else:
-            async with httpx.AsyncClient(timeout=90) as c:
-                r = await c.post(f"{ALT_BACKEND}/api/mail/senden", json=body, headers={"X-Cockpit-Token": ALT_TOKEN})
-            d = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
-            if r.status_code != 200:
-                raise ValueError(str(d.get("detail") or f"Postausgang antwortet mit {r.status_code}"))
+        import asyncio
+        await asyncio.to_thread(_smtp_senden, body)
     except (httpx.HTTPError, ValueError, OSError) as f:
         grund = (str(f) if isinstance(f, ValueError) else
                  f"Mailserver: {f}"[:300] if isinstance(f, OSError) and str(f) else f"Postausgang nicht erreichbar ({f.__class__.__name__})")
@@ -517,16 +510,11 @@ def _smtp_senden(body: dict[str, Any]) -> None:
 
 
 def absender() -> dict[str, Any]:
-    """Wer als Absender erscheint -- aus den eigenen Zugangsdaten, sonst aus dem alten Backend, sonst ehrlich 'unbekannt'."""
+    """Wer als Absender erscheint -- aus den eigenen Zugangsdaten, sonst ehrlich 'nicht eingerichtet'."""
     st = smtp_stand()
     if st["ok"]:
         return {"ok": True, "absender": st["absender"], "fehlt": [], "weg": "direkt"}
-    try:
-        r = httpx.get(f"{ALT_BACKEND}/api/mail/status", headers={"X-Cockpit-Token": ALT_TOKEN}, timeout=4)
-        d = r.json()
-        return {"ok": bool(d.get("ok")), "absender": d.get("absender"), "fehlt": d.get("fehlt") or []}
-    except Exception as f:  # noqa: BLE001
-        return {"ok": False, "absender": None, "fehlt": [f"Postausgang nicht erreichbar ({f.__class__.__name__})"]}
+    return {"ok": False, "absender": None, "fehlt": st.get("fehlt") or ["VVEC_SMTP_*-Zeilen in ~/.config/vve-cp-r2.env"]}
 
 
 def stand_satz(mid: str | None = None) -> str:

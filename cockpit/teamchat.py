@@ -29,7 +29,7 @@ from typing import Any, AsyncIterator
 import httpx
 
 from . import db, llm, stab
-from .konfig import ALT_BACKEND, ALT_TOKEN, MODELL_TALK
+from .konfig import MODELL_TALK
 
 # Die drei Externen. Namen wie im alten Cockpit (dort Anzeige-Kennungen der
 # Anbieter). Die Modellvorgabe ist eine Wunschliste: genommen wird das erste,
@@ -180,35 +180,19 @@ async def cloud_stand(frisch: bool = False) -> dict[str, Any]:
     if not frisch and time.time() - _cloud_cache["zeit"] < 600 and _cloud_cache["modelle"]:
         return _cloud_cache
     from . import cloud
-    kopf = {"X-Cockpit-Token": ALT_TOKEN} if ALT_TOKEN else {}
     modelle: dict[str, list[str]] = {}
     schluessel: dict[str, bool] = {}
-    # Direkt (cloud.py, 23.10.2026), wo der Schluessel hier liegt -- sonst wie bisher ueber das alte Backend.
+    # Nur noch direkt (cloud.py). Der Umweg ueber das alte Backend ist seit dem 23.10.2026
+    # weg -- das alte Cockpit wird abgeschaltet, und ein Rueckfall auf einen Dienst, den es
+    # bald nicht mehr gibt, waere eine Abhaengigkeit, die erst beim Loeschen auffaellt.
     for x in EXTERNE.values():
         p = x["anbieter"]
-        if cloud.schluessel(p):
-            schluessel[p] = True
+        schluessel[p] = bool(cloud.schluessel(p))
+        if schluessel[p]:
             try:
                 modelle[p] = [m for m in await cloud.modelle(p) if not _KEIN_TEXT.search(m)]
             except (httpx.HTTPError, ValueError):
-                modelle[p] = _cloud_cache["modelle"].get(p, [])
-    try:
-        if not all(p in schluessel for p in (x["anbieter"] for x in EXTERNE.values())):
-            async with httpx.AsyncClient(timeout=8) as c:
-                h = (await c.get(f"{ALT_BACKEND}/api/health")).json()
-                for x in EXTERNE.values():
-                    p = x["anbieter"]
-                    if p in schluessel:
-                        continue
-                    schluessel[p] = bool((h.get("cloud_keys") or {}).get(p))
-                    if not schluessel[p]:
-                        continue
-                    r = await c.get(f"{ALT_BACKEND}/api/cloud/{p}", headers=kopf)
-                    if r.status_code == 200:
-                        modelle[p] = [m["id"] for m in r.json().get("models", []) if not _KEIN_TEXT.search(m.get("id", ""))]
-    except (httpx.HTTPError, ValueError):
-        if not modelle:
-            return _cloud_cache  # lieber den alten Stand als eine leere Liste, die nach "kein Schluessel" aussieht
+                modelle[p] = _cloud_cache["modelle"].get(p, [])  # lieber den alten Stand als eine leere Liste
     _cloud_cache.update(zeit=time.time(), modelle=modelle, schluessel=schluessel)
     return _cloud_cache
 
@@ -237,40 +221,22 @@ async def _extern_modell(wer: str) -> str | None:
 
 
 def extern_moeglich() -> bool:
-    """Gibt es einen Weg zu den Externen? Direkt (Schluessel hier) oder ueber das alte Backend."""
+    """Gibt es einen Weg zu den Externen? Nur noch direkt: ein Schluessel liegt hier."""
     from . import cloud
-    return any(cloud.schluessel(x["anbieter"]) for x in EXTERNE.values()) or bool(ALT_TOKEN)
+    return any(cloud.schluessel(x["anbieter"]) for x in EXTERNE.values())
 
 
 async def _cloud_chat(wer: str, modell: str, system: str, nachrichten: list[dict[str, str]]) -> str:
     from . import cloud
     p = EXTERNE[wer]["anbieter"]
-    if cloud.schluessel(p):
-        # Direkt (cloud.py, 23.10.2026) -- unabhaengig vom alten Cockpit.
-        try:
-            d0 = await cloud.chat(p, modell, system, nachrichten, max_tokens=16000)
-        except cloud.CloudFehler as e:
-            raise llm.ModellFehler(f"{EXTERNE[wer]['name']}: {e}") from e
-        antwort = d0["text"]
-        u = {"input_tokens": d0["ein"], "output_tokens": d0["aus"]}
-    else:
-        if not ALT_TOKEN:
-            raise llm.ModellFehler(f"Für {EXTERNE[wer]['name']} fehlt der Schlüssel ({cloud.ANBIETER[p]['key']}) in ~/.config/vve-cp-r2.env.")
-        body = {"model": modell, "max_tokens": 16000, "system": system, "messages": nachrichten}
-        try:
-            async with httpx.AsyncClient(timeout=320) as c:
-                r = await c.post(f"{ALT_BACKEND}/api/cloud/{p}", json=body, headers={"X-Cockpit-Token": ALT_TOKEN})
-        except httpx.HTTPError as e:
-            raise llm.ModellFehler(f"{EXTERNE[wer]['name']} nicht erreichbar: {e.__class__.__name__}") from e
-        try:
-            d = r.json()
-        except ValueError:
-            raise llm.ModellFehler(f"{EXTERNE[wer]['name']}: unlesbare Antwort ({r.status_code})")
-        if r.status_code != 200:
-            raise llm.ModellFehler(((d.get("error") or {}).get("message") if isinstance(d.get("error"), dict) else None)
-                                   or d.get("detail") or f"Fehler {r.status_code}")
-        antwort = "\n".join(b.get("text", "") for b in d.get("content") or [] if b.get("type") == "text").strip()
-        u = d.get("usage") or {}
+    if not cloud.schluessel(p):
+        raise llm.ModellFehler(f"Für {EXTERNE[wer]['name']} fehlt der Schlüssel ({cloud.ANBIETER[p]['key']}) in ~/.config/vve-cp-r2.env.")
+    try:
+        d0 = await cloud.chat(p, modell, system, nachrichten, max_tokens=16000)
+    except cloud.CloudFehler as e:
+        raise llm.ModellFehler(f"{EXTERNE[wer]['name']}: {e}") from e
+    antwort = d0["text"]
+    u = {"input_tokens": d0["ein"], "output_tokens": d0["aus"]}
     # Verbrauch buchen (Seite Verbrauch): die Zaehler meldet der Anbieter selbst;
     # fehlen sie, wird geschaetzt (Zeichen / 4) und das steht als geschaetzt dabei.
     ein, aus = u.get("input_tokens") or 0, u.get("output_tokens") or 0

@@ -5,6 +5,10 @@ After=network.target
 [Service]
 ExecStart=/usr/local/bin/vve-status.py
 User=vveadmin
+# Die Shelly-Adressen standen bis zum 23.10.2026 in /etc/vvec/vvec.env (altes Cockpit). Fehlen sie,
+# faellt vve-status auf Geraetenamen zurueck, die im Netz nicht sicher aufloesen.
+Environment=VVEC_SHELLY_SERVER=192.168.178.159
+Environment=VVEC_SHELLY_DOCK=192.168.178.161
 Restart=always
 RestartSec=5
 

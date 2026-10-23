@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any
 
@@ -184,12 +185,68 @@ def abgleichen() -> dict[str, int]:
         db.ausfuehren("UPDATE vorgaenge SET geaendert=? WHERE id=?", (float(v.get("geaendert") or erstellt), vid))
         zaehler["vorgaenge"] += 1
 
+    zaehler["anhaenge"] = anhaenge_uebernehmen()
+
     if db.einstellung("stab_ab") is None:
         # Ab JETZT bekommt jede neue Plaud-Notiz einen Vorgang in der neuen Fassung.
         db.einstellung_setzen("stab_ab", time.time())
         _startvorschlaege()
     db.einstellung_setzen("letzter_abgleich", time.time())
     return zaehler
+
+
+def anhaenge_uebernehmen() -> int:
+    """Die Anhaenge der Projekte aus dem alten Cockpit (23.10.2026). Die erste Uebernahme
+    nahm Projekte, Aufgaben, Notizen und Vorgaenge mit, die Anhaenge nicht -- beim Planen
+    des Loeschens fielen 24 Dateien auf, die es nur dort gab (u. a. die Modulbeschreibung
+    des OTH-Wahlfachs).
+
+    Inhaltsgleiche Kopien (gleiche sha256) werden EINMAL uebernommen, die juengste zaehlt.
+    Verschiedene Fassungen unter demselben Namen bleiben alle erhalten und bekommen den
+    Zeitpunkt in den Namen -- fuenfmal derselbe Name in einer Liste ist keine Liste.
+    Wiederholbar: was schon da ist (Kennung dalt<id>), kommt nicht doppelt."""
+    from .konfig import ALT_DATEN, UPLOADS
+    wurzel = ALT_DATEN / "dateien"
+    liste = ((_lesen(wurzel / "index.json") or {}).get("dateien")) or []
+    je_inhalt: dict[str, dict[str, Any]] = {}
+    for d in liste:
+        if not d.get("id") or not d.get("name"):
+            continue
+        schluessel = d.get("sha256") or d["id"]
+        if schluessel not in je_inhalt or (d.get("wann") or 0) > (je_inhalt[schluessel].get("wann") or 0):
+            je_inhalt[schluessel] = d
+    namen_zahl: dict[str, int] = {}
+    for d in je_inhalt.values():
+        namen_zahl[d["name"]] = namen_zahl.get(d["name"], 0) + 1
+
+    n = 0
+    for d in sorted(je_inhalt.values(), key=lambda x: x.get("wann") or 0):
+        did = "dalt" + d["id"][:12]
+        if db.holen("dateien", did):
+            continue
+        quelle = wurzel / (d.get("projektId") or "_ohne") / f"{d['id']}{d.get('endung') or ''}"
+        try:
+            roh = quelle.read_bytes()
+        except OSError:
+            continue
+        name = Path(d["name"]).name[:120]
+        if namen_zahl[d["name"]] > 1 and d.get("wann"):
+            stempel = datetime.fromtimestamp(float(d["wann"]), ZoneInfo("Europe/Berlin")).strftime("%d.%m.%Y %H.%M")
+            name = f"{Path(name).stem} (Stand {stempel}){Path(name).suffix}"
+        projekt_id = d.get("projektId") if d.get("projektId") and db.holen("projekte", d["projektId"]) else None
+        ziel = UPLOADS / f"{did}_{name}"
+        ziel.write_bytes(roh)
+        text = ""
+        try:
+            from .anhang import _auswerten
+            text = (_auswerten(name, roh).get("text") or "")[:120000]
+        except Exception:  # noqa: BLE001 -- ein unlesbarer Inhalt soll die Datei nicht verhindern
+            pass
+        db.einfuegen("dateien", {"id": did, "name": name, "typ": d.get("typ") or "", "groesse": len(roh),
+                                 "pfad": str(ziel), "text": text, "projekt_id": projekt_id, "aufgabe_id": None,
+                                 "erstellt": float(d.get("wann") or time.time())})
+        n += 1
+    return n
 
 
 def _startvorschlaege() -> None:

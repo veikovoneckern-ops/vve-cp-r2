@@ -179,18 +179,16 @@ function UpdatesBlock({ u, s, auftrag, starten, neuPruefen }) {
   </div>`;
 }
 
+// Seit dem 23.10.2026 nur noch die eigene Sicherung; der Serverstand (Caddy, Tunnel, sudo-Regeln,
+// Units -- vorher die Server-Sicherung des alten Cockpits) liegt in ihrem Paket.
 function SicherungenBlock({ sich }) {
-  const jetzt = Date.now() / 1000;
+  const sst = sich && sich.neu && sich.neu.serverstand;
   return html`<div class="sv-teil">
     <h5>Sicherungen</h5>
     <${NeueSicherung} />
-    ${sich ? ["inhalt", "server"].map((k) => {
-      const x = sich[k] || {};
-      const alt = x.zeit && jetzt - x.zeit > 48 * 3600;
-      return html`<${Zeile} name=${k === "inhalt" ? "Altes Cockpit → OneDrive" : "Server → OneDrive"}
-        wert=${x.zeit ? `${x.zustand === "ok" ? "ok" : x.zustand} · ${zeitText(x.zeit)}` : "unbekannt"} s=${x.zustand !== "ok" ? "kritisch" : alt ? "warnung" : ""} />`;
-    }) : html`<${Zeile} name="OneDrive" wert="Stand nicht lesbar" s="warnung" />`}
-    <p class="leise klein" style="margin:6px 0 0">Altes Cockpit und Server täglich um 03:00/03:15, das neue Cockpit um 03:30. Gewarnt wird ab 48 Stunden.</p>
+    <${Zeile} name="Serverstand im Paket" wert=${sst === "ok" ? "dabei" : sst === "nicht_eingerichtet" ? "nicht eingerichtet" : sst ? "Fehler" : "noch kein Lauf"}
+      s=${sst === "ok" ? "" : sst ? "kritisch" : "warnung"} />
+    <p class="leise klein" style="margin:6px 0 0">Täglich um 03:30: Datenbank, Unterlagen, Medien, Zugangsdaten und der Serverstand (Caddy, Cloudflare-Tunnel, sudo-Regeln, Units, Firewall, Paketliste). Gewarnt wird ab 48 Stunden.</p>
   </div>`;
 }
 
@@ -289,12 +287,11 @@ function Software({ s, sys, auftrag, starten }) {
   const hier = location.host;
   const ts = String(sv.tailscale || "");
   const c = { comfy: container(s, /comfy/i), owui: container(s, /open.?webui/i), searx: container(s, /searx/i), tts: container(s, /speech|piper/i) };
-  const altOk = sys && sys.alt_backend && !sys.alt_backend.code;
   const neustartKnopf = (dienst) => html`<div class="sw-z-knopf"><${GefahrKnopfKlein} dienst=${dienst} starten=${starten} auftrag=${auftrag} /></div>`;
   const karten = [
     [ "So kommen Sie herein", "zwei Wege, ein Ziel", html`
       <${SwZ} st="ok" name="Diese Fassung" marke="gerade hier" satz=${hier} />
-      <${SwZ} st=${zustand(n.tailscale_ip, false)} name="Tailnet" satz="vveorgxais.tail4ca1ab.ts.net:8443 · nur eigene Geräte (ohne :8443 das alte Cockpit)" />
+      <${SwZ} st=${zustand(n.tailscale_ip, false)} name="Tailnet" satz="vveorgxais.tail4ca1ab.ts.net · nur eigene Geräte (mit und ohne :8443)" />
       <${SwZ} st="unbekannt" name="Cloudflare" satz="cockpit.vveorgxais.org · für Geräte ohne Tailscale, mit Access-MFA -- seit 23.10.2026 dieses Cockpit" />
       <${SwZ} st=${zustand(/running/i.test(ts), ts && !/running/i.test(ts))} name="tailscaled" marke=${n.tailscale_ip || ""} satz="hält den Direktdraht offen" />` ],
     [ "Was Ihre Anfragen verteilt", "", html`
@@ -307,8 +304,7 @@ function Software({ s, sys, auftrag, starten }) {
       <${SwZ} st=${zustand(c.owui && c.owui.laeuft, c.owui)} name="Open WebUI" marke="8080" satz=${c.owui ? c.owui.st : "Container nicht gefunden"} />
       <${SwZ} st=${zustand(c.searx && c.searx.laeuft, c.searx)} name="SearXNG" marke="8888" satz=${c.searx ? "Websuche · " + c.searx.st : "Container nicht gefunden"} />
       <${SwZ} st=${zustand(c.tts && c.tts.laeuft, c.tts)} name="openedai-speech" marke="5050" satz=${c.tts ? "Piper · " + c.tts.st : "Container nicht gefunden"} />
-      <${SwZ} st="ok" name="vve-status" marke="9099" satz="misst die Maschine, liefert dieses Bild" />
-      <${SwZ} st=${zustand(altOk, sys && !altOk)} name="Backend altes Cockpit" marke="8770" satz=${sys ? (altOk ? "antwortet" : "antwortet nicht") : "nicht gemeldet"} />` ],
+      <${SwZ} st="ok" name="vve-status" marke="9099" satz="misst die Maschine, liefert dieses Bild" />` ],
     [ "Was von selbst läuft", "", Object.entries(s.timers || {}).filter(([k]) => !NICHT_ZEIGEN.has(k)).map(([k, t]) => html`<${SwZ}
         st=${!t.geladen ? "warnung" : t.aktiv === "active" ? "ok" : t.aktiv === "failed" ? "warnung" : "unbekannt"}
         name=${k.replace(/\.timer$/, "")} marke=${!t.geladen ? "fehlt" : t.naechster ? "nächster " + new Date(t.naechster * 1000).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : t.abstand ? "läuft ständig" : ""}

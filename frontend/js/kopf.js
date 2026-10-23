@@ -142,8 +142,9 @@ export function serverKaesten(k) {
   if (k.updates && k.updates.offen != null) v.push({ b: "Updates", w: String(k.updates.offen), s: k.updates.sicherheit ? "kritisch" : k.updates.offen ? "warnung" : "", p: 2,
     t: k.updates.sicherheit ? `davon ${k.updates.sicherheit} Sicherheit` : "aktualisierbare Pakete, gestaffelte mitgezählt" });
   if (k.updates && k.updates.neustart) v.push({ b: "Neustart", w: "fällig", s: "warnung", p: 1, t: "Ein Update wird erst nach einem Neustart wirksam" });
-  // "neu" = die neue Fassung (sicherung.py, 23.10.2026); "inhalt" ist seitdem das ALTE Cockpit.
-  [["neu", "Cockpit", 2], ["inhalt", "alt", 2], ["server", "Server", 9]].forEach(([art, name, grenze]) => {
+  // Nur noch die eigene Sicherung (sicherung.py); "Backup alt" und "Backup Server" des alten Cockpits
+  // standen hier bis zum 23.10.2026 -- sie enden mit dem alten Cockpit.
+  [["neu", "Cockpit", 2]].forEach(([art, name, grenze]) => {
     const x = k.sicherungen && k.sicherungen[art];
     if (!x) return;
     const fehlt = x.zustand === "nicht_eingerichtet";
@@ -151,7 +152,7 @@ export function serverKaesten(k) {
     const tage = x.alter_h == null ? null : Math.floor(x.alter_h / 24);
     v.push({ b: "Backup " + name, w: fehlt ? "fehlt" : fehler ? "Fehler" : x.alter_h == null ? "nie" : x.alter_h < 24 ? "heute" : tage + " T",
       s: fehler || fehlt ? "kritisch" : x.alter_h == null || tage > grenze ? "warnung" : "", p: 3,
-      t: fehlt ? "Das neue Cockpit wird noch nicht nach OneDrive gesichert -- Stack → Sicherungen" : art === "inhalt" ? "Sicherung des alten Cockpits nach OneDrive" : "Sicherung nach OneDrive" });
+      t: fehlt ? "Das neue Cockpit wird noch nicht nach OneDrive gesichert -- Stack → Sicherungen" : "Sicherung des Cockpits nach OneDrive (verschlüsselt)" });
   });
   return v;
 }

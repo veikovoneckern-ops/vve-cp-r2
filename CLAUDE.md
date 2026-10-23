@@ -211,6 +211,8 @@ Veiko ist kein Entwickler von Beruf. Erklären ohne Jargon, eine Empfehlung stat
 
 > **23.10.2026 — die Systemdienste liegen jetzt in diesem Repo** (`server/dienste/`, `server/systemd/`, Erklärung in `server/README.md`): `vve-status`, `vve-health`, `vve-sicherheit`, `vve-rgb`, `vve-admin`, Stand wie auf dem Server. Vorher gab es ihren Quelltext nur im alten Repo. Ausgeliefert wird NICHT automatisch — die laufenden Kopien gehören root und werden nur über den Installationsbefehl im README ersetzt. Das README listet auch, was vor dem Löschen des alten Cockpits an ihnen noch zu ändern ist (Shelly-Adressen aus `/etc/vvec/vvec.env`, alte Zeitgeber in `ZEITGEBER`).
 
+> **23.10.2026 — vom alten Cockpit gelöst (Phase 1 der Abschaltung).** Kein Code ruft mehr das alte Backend (8770): Externe (`teamchat.py`) und Postausgang (`mail.py`) nur noch direkt, Ollama-Update nur noch über das eigene Skript, „was rechnet sonst“ fragt nur noch ComfyUI, Kopfzeile und Sicherungskachel zeigen nur noch die eigene Sicherung, der Nachtplan kennt das alte Cockpit nicht mehr. Übernommen, was es nur dort gab: die Projekt-Anhänge (`importer.anhaenge_uebernehmen()`, Kennung `dalt…`, inhaltsgleiche Kopien einmal, gleichnamige Fassungen mit „(Stand …)“) und der alte KI-Verbrauch (Einstellung `alt_usage`, beim ersten Aufruf von `/verbrauch`). **Neu: der Serverstand** (`server/vve-serverstand.sh`, root-eigen unter `/usr/local/sbin`, per `sudo -n` ohne Argumente): Caddy, Cloudflare, sudo-Regeln, Units, Firewall, Paketliste, `docker inspect` — liegt als `server/serverstand.tgz` im verschlüsselten Sicherungspaket. Ersetzt die Server-Sicherung des alten Cockpits; ohne Einrichtung steht eine Empfehlung mit dem Befehl da.
+
 ## Prüfen
 
 ```bash

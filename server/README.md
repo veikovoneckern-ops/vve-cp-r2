@@ -12,9 +12,16 @@ den Installationsbefehl unten ersetzt. Das ist Absicht und derselbe Gedanke wie
 beim Ollama-Update-Skript: weder das Cockpit noch Neo sollen Code umschreiben
 können, der mit root-Rechten oder an der Stromversorgung arbeitet.
 
-Stand der Kopien: **identisch mit dem, was am 23.10.2026 auf dem Server lief**
-(vom Server geholt, nicht aus dem alten Repo — dort fehlten die Units von
-`vve-status` und `vve-admin`).
+Stand der Kopien: vom Server geholt am 23.10.2026 (nicht aus dem alten Repo —
+dort fehlten die Units von `vve-status` und `vve-admin`). Danach im Repo geändert,
+wirksam erst nach dem Installationsbefehl: `vve-status` bekommt die Shelly-Adressen
+über seine Unit und fragt die alten Zeitgeber nicht mehr ab (Punkte 1 und 2 unten).
+
+Außerdem liegen hier zwei root-eigene Einzelskripte, die das Cockpit per `sudo -n`
+ohne Argumente aufrufen darf — je mit eigenem Einrichtungsbefehl im Cockpit
+(Recommendations): `vve-ollama-aktualisieren.sh` (Ollama-Update) und
+`vve-serverstand.sh` (liest Caddy, Cloudflare, sudo-Regeln, Units, Firewall,
+Paketliste für die Sicherung — Ersatz für die Server-Sicherung des alten Cockpits).
 
 ## Die Dienste
 
@@ -41,6 +48,8 @@ siehe unten.
 ## Was vor dem Löschen des alten Cockpits noch geändert werden muss
 
 Geprüft am 23.10.2026. Diese Stellen hängen noch an `/etc/vvec` bzw. `/var/lib/vvec`:
+
+Punkte 1 und 2 sind im Repo erledigt und wirken mit dem Installationsbefehl.
 
 1. **`vve-status` liest die Shelly-Adressen aus `/etc/vvec/vvec.env`**
    (`VVEC_SHELLY_SERVER`, `VVEC_SHELLY_DOCK`, `_strom_ziel()`). Ist die Datei weg,

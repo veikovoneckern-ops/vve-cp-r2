@@ -9,7 +9,7 @@ Woher die Werte kommen:
     eingespielt wuerde, haelt Ubuntu GESTAFFELT zurueck -- das ist die Antwort
     auf "was einspielen, was nicht".
   - GitHub fuer die neueste Ollama-Fassung (6 Stunden gemerkt).
-  - /var/lib/vvec/sicherung-status.json fuer die OneDrive-Sicherungen.
+  - sicherung.py fuer die eigene Sicherung nach OneDrive.
 
 Was eingespielt werden darf, entscheidet die sudo-Regel fuer vveadmin, nicht
 dieser Code: genau `apt-get update`, `apt-get -y upgrade` und `reboot` gehen
@@ -33,7 +33,7 @@ from typing import Any
 import httpx
 
 from . import db
-from .konfig import ALT_DATEN, STATUS_URL
+from .konfig import STATUS_URL
 
 _cache: dict[str, Any] = {}
 APT_SIM = ["apt-get", "-s", "-o", "Debug::NoLocking=1", "-o", "Dir::Bin::ischroot=/bin/false", "upgrade"]
@@ -114,17 +114,14 @@ def _fassung(s: str | None) -> tuple:
 
 
 def sicherungen() -> dict[str, Any] | None:
-    try:
-        s = json.loads((ALT_DATEN / "sicherung-status.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        s = {}
-    # Die neue Fassung (sicherung.py, 23.10.2026) unter "neu" -- dieselbe Form wie die alten
-    # (zeit, zustand), damit Kopfzeile, Kachel und Empfehlungen sie ohne Sonderweg lesen.
+    # Nur noch die eigene Sicherung (sicherung.py). Die beiden des alten Cockpits ("inhalt",
+    # "server") standen hier bis zum 23.10.2026 mit -- sie enden mit dem alten Cockpit, und
+    # der Serverstand liegt seitdem im eigenen Paket (vve-serverstand).
     from . import sicherung
     n = sicherung.stand()
-    s["neu"] = {"zeit": n.get("zeit"), "zustand": n.get("zustand") if n.get("eingerichtet") else "nicht_eingerichtet",
-                "groesse_mb": n.get("groesse_mb"), "laeuft": n.get("laeuft"), "fehler": n.get("fehler")}
-    return s
+    return {"neu": {"zeit": n.get("zeit"), "zustand": n.get("zustand") if n.get("eingerichtet") else "nicht_eingerichtet",
+                    "groesse_mb": n.get("groesse_mb"), "laeuft": n.get("laeuft"), "fehler": n.get("fehler"),
+                    "serverstand": n.get("serverstand")}}
 
 
 async def status() -> dict[str, Any] | None:
@@ -183,15 +180,13 @@ def empfehlungen(s: dict[str, Any] | None, upd: dict[str, Any], ollama_neu: str 
                   "aktion": {"art": "neustart", "text": "Server neu starten"}})
     laufend = (s.get("versions") or {}).get("ollama", "")
     if ollama_neu and laufend and _fassung(ollama_neu) > _fassung(laufend):
-        from .konfig import ALT_TOKEN
         titel = f"Ollama {ollama_neu} verfügbar (läuft: {laufend.replace('Ollama ', '')})"
         if AUFTRAG.get("art") == "ollama-update" and AUFTRAG.get("laeuft"):
             e.append({"stufe": "info", "titel": titel, "warum": "Das Update läuft gerade -- den Fortschritt siehst du oben im Auftrag."})
-        elif ollama_eigen() or ALT_TOKEN:
+        elif ollama_eigen():
             e.append({"stufe": "einspielen", "titel": titel,
                       "warum": "Neuere Modelle lassen sich mit einer alten Fassung oft nicht laden. Die neue Fassung wird erst vollständig geladen, "
-                               "dann in Sekunden getauscht; antwortet Ollama danach nicht, kommt die alte zurück. "
-                               + ("Läuft über das eigene Update-Skript des Cockpits." if ollama_eigen() else "Läuft noch über den Wartungsdienst des alten Cockpits."),
+                               "dann in Sekunden getauscht; antwortet Ollama danach nicht, kommt die alte zurück.",
                       "aktion": {"art": "ollama-update", "text": "Einspielen"}})
         else:
             # Ohne eigenes Skript und ohne Token gibt es keinen Weg ohne Passwort -- dann steht hier
@@ -225,14 +220,17 @@ def empfehlungen(s: dict[str, Any] | None, upd: dict[str, Any], ollama_neu: str 
             e.append({"stufe": "einspielen", "titel": f"Firmware {u.get('name')} {u.get('version')} → {u.get('neu')}",
                       "warum": f"{u.get('was') or 'Firmware-Update'} von {u.get('hersteller') or 'Hersteller'}. Braucht dein Passwort.",
                       "befehl": "sudo fwupdmgr update"})
-    for art, name in (("inhalt", "Inhalt"), ("server", "Server")):
-        x = (sich or {}).get(art) or {}
-        if not x:
-            continue
-        alter = jetzt - float(x.get("zeit") or 0)
-        if x.get("zustand") != "ok" or alter > 48 * 3600:
-            e.append({"stufe": "achtung", "titel": f"Sicherung {name}: {'fehlgeschlagen' if x.get('zustand') != 'ok' else 'älter als zwei Tage'}",
-                      "warum": f"Letzter Lauf {time.strftime('%d.%m. %H:%M', time.localtime(float(x.get('zeit') or 0)))}: {x.get('text') or x.get('zustand')}. Läuft täglich um 03:00/03:15; zwei Ausfälle in Folge sind kein Zufall."})
+    # Der Serverstand (Caddy, Cloudflare, sudo-Regeln, Units ...) -- nur root kann ihn lesen.
+    from . import sicherung as _si
+    if not _si.serverstand_eingerichtet():
+        e.append({"stufe": "achtung", "titel": "Sicherung ohne Serverstand",
+                  "warum": "Caddy, Cloudflare-Tunnel, sudo-Regeln, systemd-Units, Firewall und Paketliste kann nur root lesen. "
+                           "Bisher sicherte sie das alte Cockpit; mit ihm fällt das weg. Einmal das Skript einrichten (fragt dein "
+                           "Passwort) -- es liest nur, und das Cockpit darf genau diesen einen Aufruf ohne Argumente.",
+                  "befehl": _si.SERVERSTAND_EINRICHTEN})
+    elif str(_si.stand().get("serverstand") or "").startswith("fehler"):
+        e.append({"stufe": "achtung", "titel": "Serverstand fehlte in der letzten Sicherung",
+                  "warum": str(_si.stand().get("serverstand"))[:300]})
     # Die neue Fassung (sicherung.py, 23.10.2026): ohne OneDrive liegt alles nur auf dieser einen Platte.
     from . import sicherung
     n = sicherung.stand()
@@ -374,14 +372,10 @@ def starten(art: str) -> bool:
     return True
 
 
-# ------------------------------------------------------------ Ollama-Update (ueber das alte Cockpit)
-# Das Installationsskript braucht root. Es gibt dafuer schon EINEN erprobten Weg:
-# den Wartungsdienst des alten Cockpits (vvec-wartung.service, Art
-# "ollama-aktualisieren", seit 30.09. zweimal sauber gelaufen). Einen zweiten
-# root-Weg hier zu bauen waere eine zweite Stelle, an der Rechte falsch stehen
-# koennen. Diese Fassung stoesst ihn nur an (Token) und liest das Protokoll mit,
-# das der Lauf ohnehin lesbar ablegt (/var/lib/vvec/wartung/lauf, 644) -- sie
-# schreibt im alten Bestand nichts.
+# ------------------------------------------------------------ Ollama-Update
+# Das Update braucht root. Bis zum 23.10.2026 lief es ueber den Wartungsdienst des
+# alten Cockpits (vvec-wartung.service); seitdem nur noch ueber das eigene Skript
+# (siehe EIGENER WEG unten), dessen Ablauf von dort uebernommen ist.
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 
@@ -420,47 +414,22 @@ def ollama_eigen() -> bool:
 
 
 async def ollama_update_starten() -> dict[str, Any]:
-    from .konfig import ALT_BACKEND, ALT_TOKEN
     if AUFTRAG["laeuft"]:
         return {"ok": False, "grund": "Es läuft schon ein Auftrag."}
-    if ollama_eigen():
-        start = time.time()
-        befehl = os.environ.get("VVEC_OLLAMA_UPDATE_TEST")
-        aufruf = ([befehl] if befehl else
-                  ["systemd-run", "--user", "--collect", f"--unit=vve-cp-r2-ollama-{int(start)}", "sudo", "-n", OLLAMA_SKRIPT])
-        p = await asyncio.create_subprocess_exec(*aufruf, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-        if befehl:
-            asyncio.create_task(p.wait())
-        else:
-            _, fehler = await p.communicate()
-            if p.returncode:
-                return {"ok": False, "grund": f"Update ließ sich nicht starten: {fehler.decode(errors='replace')[:300]}"}
-        ziel = await _ollama_paketgroesse()
-        plan = {"start": start, "netz_start": _netz_rx(), "ziel": ziel, "eigen": True}
-        try:
-            _OLLAMA_PLAN.write_text(json.dumps(plan), encoding="utf-8")
-        except OSError:
-            pass
-        AUFTRAG.update(art="ollama-update", laeuft=True, rc=None, start=start, ende=None, fortschritt={"phase": "wartet"},
-                       log="Update gestartet …\n")
-        asyncio.create_task(_ollama_folgen(start - 10, plan, EIGEN_LAUF))
-        return {"ok": True}
-    if not ALT_TOKEN:
-        return {"ok": False, "grund": "Dafür fehlt einmalig der Cockpit-Token des alten Backends (siehe Befehl in der Empfehlung)."}
-    try:
-        async with httpx.AsyncClient(timeout=15) as c:
-            r = await c.post(f"{ALT_BACKEND}/api/wartung/ollama", headers={"X-Cockpit-Token": ALT_TOKEN})
-    except httpx.HTTPError as f:
-        return {"ok": False, "grund": f"Das Backend des alten Cockpits antwortet nicht ({f.__class__.__name__})."}
-    if r.status_code == 401:
-        return {"ok": False, "grund": "Das alte Backend lehnt den Token ab. Steht in ~/.config/vve-cp-r2.env der aktuelle COCKPIT_TOKEN?"}
-    try:
-        d = r.json()
-    except ValueError:
-        d = {}
-    if d.get("darf_nicht"):
-        return {"ok": False, "grund": "Der Wartungsdienst des alten Cockpits ist nicht eingerichtet."}
+    # Nur noch der eigene Weg; der Wartungsdienst des alten Cockpits ist seit dem 23.10.2026 kein Rueckfall mehr.
+    if not ollama_eigen():
+        return {"ok": False, "grund": "Das Update-Skript des Cockpits ist nicht eingerichtet -- der Befehl dafür steht unter Recommendations."}
     start = time.time()
+    befehl = os.environ.get("VVEC_OLLAMA_UPDATE_TEST")
+    aufruf = ([befehl] if befehl else
+              ["systemd-run", "--user", "--collect", f"--unit=vve-cp-r2-ollama-{int(start)}", "sudo", "-n", OLLAMA_SKRIPT])
+    p = await asyncio.create_subprocess_exec(*aufruf, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    if befehl:
+        asyncio.create_task(p.wait())
+    else:
+        _, fehler = await p.communicate()
+        if p.returncode:
+            return {"ok": False, "grund": f"Update ließ sich nicht starten: {fehler.decode(errors='replace')[:300]}"}
     # Fortschritt (Veiko, 03.10.: "ich brauche eine klare Anzeige, Prozent oder Balken"):
     # Das Skript schreibt waehrend des Downloads NICHTS ins Protokoll -- der Balken
     # von curl kommt erst am Ende -- und der Zielordner ist beim Entpacken root-only.
@@ -468,14 +437,14 @@ async def ollama_update_starten() -> dict[str, Any]:
     # GitHub ergibt das eine ehrliche Schaetzung. Startwerte liegen in einer Datei,
     # damit ein Neustart dieses Dienstes die Anzeige nicht verliert.
     ziel = await _ollama_paketgroesse()
-    plan = {"start": start, "netz_start": _netz_rx(), "ziel": ziel}
+    plan = {"start": start, "netz_start": _netz_rx(), "ziel": ziel, "eigen": True}
     try:
         _OLLAMA_PLAN.write_text(json.dumps(plan), encoding="utf-8")
     except OSError:
         pass
     AUFTRAG.update(art="ollama-update", laeuft=True, rc=None, start=start, ende=None, fortschritt={"phase": "wartet"},
-                   log="Auftrag an den Wartungsdienst übergeben" + (" (lief schon)" if d.get("laeuft_bereits") else "") + " …\n")
-    asyncio.create_task(_ollama_folgen(start - (3600 if d.get("laeuft_bereits") else 10), plan))
+                   log="Update gestartet …\n")
+    asyncio.create_task(_ollama_folgen(start - 10, plan, EIGEN_LAUF))
     return {"ok": True}
 
 
@@ -524,7 +493,7 @@ def ollama_update_wiederaufnehmen() -> None:
         plan = json.loads(_OLLAMA_PLAN.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return
-    lauf_dir = EIGEN_LAUF if plan.get("eigen") else ALT_DATEN / "wartung" / "lauf"
+    lauf_dir = EIGEN_LAUF
     try:
         neueste = max(lauf_dir.glob("ollama-aktualisieren-*.stand"), key=lambda p: p.stat().st_mtime)
         if not neueste.read_text().startswith("running") or neueste.stat().st_mtime < plan["start"] - 60:
@@ -553,7 +522,7 @@ def _phase(log: str) -> str:
 
 
 async def _ollama_folgen(ab: float, plan: dict[str, Any] | None = None, lauf_dir: Path | None = None) -> None:
-    lauf_dir = lauf_dir or (ALT_DATEN / "wartung" / "lauf")
+    lauf_dir = lauf_dir or EIGEN_LAUF
     ende = time.time() + 3700
     gefunden = None
     plan = plan or {}
@@ -740,24 +709,13 @@ async def _prozessor_spitze_rechnen() -> list[dict[str, Any]]:
 
 
 async def _fremd_taetig_rechnen() -> list[str]:
-    """Was AUSSERHALB dieser Fassung auf denselben Karten rechnet: das alte
-    Cockpit (eigene Pipeline) und ComfyUI. 15 Sekunden gemerkt -- die Kopfzeile
-    fragt alle 3 bis 6 Sekunden, und beide Antworten aendern sich langsamer."""
+    """Was AUSSERHALB dieser Fassung auf denselben Karten rechnet: ComfyUI. (Die Pipeline
+    des alten Cockpits stand hier bis zum 23.10.2026 mit -- sie ist abgeschaltet.)
+    15 Sekunden gemerkt -- die Kopfzeile fragt alle 3 bis 6 Sekunden."""
     gemerkt = _gemerkt("fremd_taetig", 15)
     if gemerkt is not None:
         return gemerkt
-    from .konfig import ALT_BACKEND, ALT_TOKEN
     zeilen: list[str] = []
-    try:
-        async with httpx.AsyncClient(timeout=3) as c:
-            kopf_alt = {"X-Cockpit-Token": ALT_TOKEN} if ALT_TOKEN else {}
-            st = (await c.get(f"{ALT_BACKEND}/api/vorgang/status", headers=kopf_alt)).json()
-            if st.get("laeuft"):
-                v = (await c.get(f"{ALT_BACKEND}/api/vorgang", headers=kopf_alt)).json()
-                wer, was = v.get("laeuftWer") or "", v.get("laeuftWas") or ""
-                zeilen.append("Altes Cockpit: " + (f"{wer} {was}".strip() or "die Vorgänge-Pipeline arbeitet"))
-    except (httpx.HTTPError, ValueError, AttributeError):
-        pass
     try:
         async with httpx.AsyncClient(timeout=3) as c:
             q = (await c.get("http://127.0.0.1:8188/queue")).json()
@@ -837,7 +795,7 @@ async def kopf() -> dict[str, Any]:
     out["taetigkeit"] = await taetigkeit(gpu_last, [str(x).split("|")[0] for x in ((s or {}).get("ollama_running") or [])])
     sich = sicherungen() or {}
     out["sicherungen"] = {k: {"alter_h": round((jetzt - float(x.get("zeit") or 0)) / 3600, 1) if x.get("zeit") else None,
-                              "zustand": x.get("zustand")} for k, x in sich.items() if k in ("inhalt", "server", "neu") and isinstance(x, dict)}
+                              "zustand": x.get("zustand")} for k, x in sich.items() if k == "neu" and isinstance(x, dict)}
     ges = stab.gesundheit()
     if upd is not None:
         e = empfehlungen(s, upd, _gemerkt("ollama_neu", 6 * 3600), sich or None, ges)

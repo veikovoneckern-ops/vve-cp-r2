@@ -21,7 +21,7 @@ from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFil
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from . import anmeldung, db, gespraech, importer, llm, nachtladen, neo, stab, stimme, teamchat
-from .konfig import (ALT_BACKEND, ALT_TOKEN, ALT_COCKPIT_URL, ALT_STATE, SEARX, STATUS_URL, UPLOADS,
+from .konfig import (ALT_COCKPIT_URL, ALT_STATE, SEARX, STATUS_URL, UPLOADS,
                      VORSCHAU_DIR)
 
 router = APIRouter(prefix="/api")
@@ -1281,15 +1281,7 @@ async def postfach_abrufen():
 @router.get("/einstellungen")
 async def einstellungen():
     from . import folien_stil, postfach
-    from .konfig import ALT_DATEN
-    # Was das ALTE Cockpit gerade selbst tut -- nur gelesen (die Datei gehoert
-    # dem alten Backend). Seit dem 16.10.2026 arbeitet Veiko nur noch hier;
-    # der Notizimport dort bleibt an, weil diese Fassung dessen Ablage liest.
-    try:
-        alt = json.loads((ALT_DATEN / "automatisierung.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        alt = None
-    return {"postfach": postfach.stand(), "alt_automatik": alt, "vertrauen": stab.vertrauen(), "stab_aktiv": stab.stab_aktiv(),
+    return {"postfach": postfach.stand(), "vertrauen": stab.vertrauen(), "stab_aktiv": stab.stab_aktiv(),
             "stab_ab": db.einstellung("stab_ab"), "letzter_abgleich": db.einstellung("letzter_abgleich"),
             "alt_cockpit": ALT_COCKPIT_URL, "leiste": db.einstellung("leiste", []),
             "talk_stimme": stimme.gewaehlte_stimme(), "stimmen": stimme.STIMMEN,
@@ -1959,11 +1951,6 @@ async def system():
             out["status"] = r.json()
         except (httpx.HTTPError, ValueError):
             out["status"] = None
-        try:
-            r = await c.get(f"{ALT_BACKEND}/api/health")
-            out["alt_backend"] = r.json() if r.status_code == 200 else {"code": r.status_code}
-        except (httpx.HTTPError, ValueError):
-            out["alt_backend"] = None
         # Websuche: /healthz der eigenen SearXNG -- fragt keine Suchmaschine an.
         try:
             r = await c.get(f"{SEARX}/healthz")
@@ -2202,7 +2189,13 @@ async def verbrauch(von: float = 0, bis: float = 0, projekt: str = ""):
     alt: dict[tuple[str, str], dict[str, Any]] = {}
     if not projekt:
         try:
-            for u in (json.loads(ALT_STATE.read_text(encoding="utf-8")).get("usage") or []):
+            # Einmal in die eigene Datenbank uebernommen (23.10.2026) -- die Datei des alten Cockpits
+            # wird geloescht, der Verbrauch von damals soll in dieser Ansicht bleiben.
+            alt_usage = db.einstellung("alt_usage")
+            if alt_usage is None and ALT_STATE.is_file():
+                alt_usage = json.loads(ALT_STATE.read_text(encoding="utf-8")).get("usage") or []
+                db.einstellung_setzen("alt_usage", alt_usage)
+            for u in (alt_usage or []):
                 ts = (u.get("ts") or 0) / 1000
                 if not (von <= ts <= bis):
                     continue

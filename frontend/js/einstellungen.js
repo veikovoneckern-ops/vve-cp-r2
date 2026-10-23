@@ -69,7 +69,7 @@ export function Einstellungen({ konto, thema, abschnitt }) {
     try {
       const r = await api("/system/abgleich", { methode: "POST" });
       const n = r.neu; const summe = Object.values(n).reduce((a, b) => a + b, 0);
-      toast(summe ? `Übernommen: ${n.projekte} Projekte, ${n.aufgaben} Aufgaben, ${n.notizen + n.plaud} Notizen, ${n.vorgaenge} Cases.` : "Nichts Neues im alten Cockpit.");
+      toast(summe ? `Übernommen: ${n.projekte} Projekte, ${n.aufgaben} Aufgaben, ${n.notizen + n.plaud} Notizen, ${n.vorgaenge} Cases, ${n.anhaenge || 0} Anhänge.` : "Nichts Neues im alten Cockpit.");
       laden(); aktualisieren();
     } catch (x) { fehlerMelden(x); }
     setLaeuft("");

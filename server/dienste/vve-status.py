@@ -78,14 +78,13 @@ def comfy_modelle():
     return sorted(raus)
 
 
+# Bis zum 23.10.2026 standen hier die Zeitgeber des ALTEN Cockpits (vvec-*.timer). Sie enden mit
+# dessen Abschaltung -- das neue Cockpit meldet jeden geladenen, aber nicht aktiven Zeitgeber als
+# Warnung, alte Eintraege haetten also falschen Alarm gemacht. Die Zeitgeber des neuen Cockpits
+# sind Benutzer-Units (systemctl --user) und von diesem systemweiten Dienst aus nicht sichtbar;
+# ihren Stand fuehrt das Cockpit selbst.
 ZEITGEBER = [
-    "vvec-plaud-sync.timer",
-    "vvec-vorgang.timer",
-    "vvec-board.timer",
-    "vvec-suche-index.timer",
-    "vvec-sicherung-inhalt.timer",
-    "vvec-sicherung-server.timer",
-    "vvec-backup.timer",
+    "vve-sicherheit.timer",
 ]
 
 

@@ -112,6 +112,48 @@ def einrichten_befehl() -> str:
             "| sed 's/^/VVEC_SICHERUNG_/' >> ~/.config/vve-cp-r2.env && echo eingerichtet")
 
 
+# Der SERVERSTAND (23.10.2026): was nur root lesen kann und man zum Neuaufbau braucht (Caddy,
+# Cloudflare, sudo-Regeln, Units, Firewall, Paketliste, Container-Aufrufe). Bis dahin sicherte das
+# die Server-Sicherung des alten Cockpits; sie faellt mit ihm weg. Ein root-eigenes Skript
+# (server/vve-serverstand.sh) liefert es als tar.gz auf die Standardausgabe; vveadmin darf genau
+# diesen Aufruf ohne Argumente. Fehlt es, laeuft die Sicherung trotzdem -- und der Stand sagt das.
+SERVERSTAND_SKRIPT = "/usr/local/sbin/vve-serverstand"
+SERVERSTAND_EINRICHTEN = (
+    "sudo install -o root -g root -m 755 ~/vve-cp-r2/server/vve-serverstand.sh " + SERVERSTAND_SKRIPT +
+    " && echo 'vveadmin ALL=(root) NOPASSWD: " + SERVERSTAND_SKRIPT + " \"\"' | sudo tee /etc/sudoers.d/vve-serverstand >/dev/null"
+    " && sudo chmod 440 /etc/sudoers.d/vve-serverstand && sudo visudo -c -q && echo eingerichtet")
+
+
+_sst_gemerkt: dict[str, Any] = {"zeit": 0.0, "wert": False}
+
+
+def serverstand_eingerichtet() -> bool:
+    # Fuenf Minuten gemerkt -- stand() wird von der Kopfzeile alle paar Sekunden gelesen.
+    if time.time() - _sst_gemerkt["zeit"] < 300:
+        return _sst_gemerkt["wert"]
+    try:
+        r = subprocess.run(["sudo", "-n", "-l", SERVERSTAND_SKRIPT], capture_output=True, timeout=5)
+        wert = r.returncode == 0 and Path(SERVERSTAND_SKRIPT).is_file()
+    except (OSError, subprocess.TimeoutExpired):
+        wert = False
+    _sst_gemerkt.update(zeit=time.time(), wert=wert)
+    return wert
+
+
+def serverstand_holen(arbeit: Path) -> Path | None:
+    """Das tar.gz des Skripts in den Arbeitsordner; None, wenn es nicht eingerichtet ist."""
+    if not serverstand_eingerichtet():
+        return None
+    ziel_ = arbeit / "serverstand.tgz"
+    with open(ziel_, "wb") as f:
+        r = subprocess.run(["sudo", "-n", SERVERSTAND_SKRIPT], stdout=f, stderr=subprocess.PIPE, timeout=600)
+    if r.returncode or ziel_.stat().st_size < 1000:
+        raise RuntimeError(f"Serverstand gescheitert: {r.stderr.decode(errors='replace')[:300] or 'leer'}")
+    with tarfile.open(ziel_, "r:gz") as t:  # lesbar?
+        t.getmembers()
+    return ziel_
+
+
 def schluessel() -> str:
     """Der Schluessel -- beim ersten Mal erzeugt (48 Zeichen Zufall), nur fuer vveadmin lesbar."""
     if not SCHLUESSEL.is_file():
@@ -131,6 +173,7 @@ def stand() -> dict[str, Any]:
     s["ziel"] = f"{fern}:{ordner}/{UNTERORDNER}" if fern and ordner else None
     s["schluessel_da"] = SCHLUESSEL.is_file()
     s["lokal"] = len(list(ZIEL.glob("cockpit-*.sqlite"))) if ZIEL.is_dir() else 0
+    s["serverstand_eingerichtet"] = serverstand_eingerichtet()
     return s
 
 
@@ -182,12 +225,14 @@ def _filter(ti: tarfile.TarInfo) -> tarfile.TarInfo | None:
     return ti
 
 
-def paket_bauen(db_kopie: Path, arbeit: Path) -> tuple[Path, int]:
+def paket_bauen(db_kopie: Path, arbeit: Path, serverstand: Path | None = None) -> tuple[Path, int]:
     """Baut das unverschluesselte .tgz und gibt (Pfad, Anzahl Eintraege) zurueck."""
     roh = arbeit / "paket.tgz"
     with tarfile.open(roh, "w:gz", compresslevel=6) as tar:
         tar.add(str(DATEN), arcname="daten", filter=_filter)
         tar.add(str(db_kopie), arcname="daten/cockpit.sqlite")
+        if serverstand:
+            tar.add(str(serverstand), arcname="server/serverstand.tgz")
         for p in ZUGANG:
             if p.exists():
                 tar.add(str(p), arcname="zugang/" + str(p.relative_to(HEIM)))
@@ -265,8 +310,14 @@ def voll(probe: bool = False) -> dict[str, Any]:
             return stand()
         shutil.rmtree(arbeit, ignore_errors=True)
         arbeit.mkdir(parents=True)
-        _stand_setzen(schritt="Paket packen")
-        roh, n = paket_bauen(db_kopie, arbeit)
+        _stand_setzen(schritt="Serverstand holen")
+        try:
+            sst = serverstand_holen(arbeit)
+            sst_zustand = "ok" if sst else "nicht_eingerichtet"
+        except Exception as e:  # noqa: BLE001 -- ohne Serverstand ist das Paket immer noch viel wert
+            sst, sst_zustand = None, f"fehler: {e}"[:300]
+        _stand_setzen(schritt="Paket packen", serverstand=sst_zustand)
+        roh, n = paket_bauen(db_kopie, arbeit, sst)
         _stand_setzen(schritt="Verschlüsseln und gegenprüfen")
         enc = verschluesseln_und_pruefen(roh, n)
         roh.unlink()
