@@ -1,8 +1,13 @@
 [Unit]
-Description=VvE Cockpit (neue Fassung): Datenbank sichern
+Description=VvE Cockpit (neue Fassung): sichern -- Datenbank lokal, alles verschluesselt nach OneDrive
+After=network-online.target
 
 [Service]
 Type=oneshot
 WorkingDirectory=%h/vve-cp-r2
 EnvironmentFile=-%h/.config/vve-cp-r2.env
 ExecStart=%h/vve-cp-r2/.venv/bin/python -m cockpit.sicherung
+# Packen und Verschluesseln von ~250 MB soll nichts anderes ausbremsen (23.10.2026).
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=2h

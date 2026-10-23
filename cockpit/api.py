@@ -1723,6 +1723,45 @@ async def talk_ausfuehren(request: Request):
 
 
 # ================================================================ Neo
+# ================================================================ Sicherung (23.10.2026, sicherung.py)
+@router.get("/sicherung")
+async def sicherung_stand():
+    from . import sicherung
+    s = sicherung.stand()
+    s["befehl"] = None if s["eingerichtet"] else sicherung.einrichten_befehl()
+    return s
+
+
+@router.post("/sicherung/jetzt")
+async def sicherung_jetzt():
+    """Startet denselben Dienst wie der naechtliche Zeitgeber -- eigener Prozess, eigene
+    Prioritaet (Nice, IO idle), und er laeuft weiter, auch wenn das Cockpit neu startet."""
+    from . import sicherung
+    s = sicherung.stand()
+    if s.get("laeuft") and time.time() - (s.get("start") or 0) < 7200:
+        raise HTTPException(409, "Die Sicherung läuft schon.")
+    p = await asyncio.create_subprocess_exec("systemctl", "--user", "start", "--no-block", "vve-cp-r2-sicherung.service",
+                                             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    _, fehler = await p.communicate()
+    if p.returncode:
+        raise HTTPException(500, f"Konnte die Sicherung nicht starten: {fehler.decode(errors='replace')[:300]}")
+    return {"ok": True}
+
+
+@router.post("/sicherung/schluessel")
+async def sicherung_schluessel(request: Request):
+    """Den Schluessel zeigen -- nur auf ausdrueckliche Bitte (bestaetigt), damit er im Passwortmanager
+    landet. Ohne ihn ist jede Sicherung in OneDrive wertlos, wenn die Platte ausfaellt."""
+    from . import sicherung
+    d = await _koerper(request)
+    if d.get("gesichert"):
+        sicherung.schluessel_gesichert()
+        return {"ok": True}
+    if not d.get("bestaetigt"):
+        raise HTTPException(400, "bestaetigt fehlt")
+    return {"schluessel": sicherung.schluessel()}
+
+
 # ================================================================ Nachtplan (23.10.2026, nachtplan.py)
 @router.get("/nachtplan")
 async def nachtplan_liste():

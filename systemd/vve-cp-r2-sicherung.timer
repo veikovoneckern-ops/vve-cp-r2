@@ -1,8 +1,9 @@
 [Unit]
-Description=VvE Cockpit (neue Fassung): Datenbank taeglich sichern
+Description=VvE Cockpit (neue Fassung): taeglich sichern
 
 [Timer]
-# Nach den beiden Sicherungen des alten Cockpits (03:00/03:15 deutscher Zeit).
+# 03:30 deutscher Zeit: nach RSI (03:00) und nach den Sicherungen des alten Cockpits
+# (03:00/03:15) -- siehe nachtplan.py. Persistent: ein verpasster Lauf (Server aus) kommt nach.
 OnCalendar=*-*-* 03:30:00 Europe/Berlin
 Persistent=true
 

@@ -183,14 +183,55 @@ function SicherungenBlock({ sich }) {
   const jetzt = Date.now() / 1000;
   return html`<div class="sv-teil">
     <h5>Sicherungen</h5>
+    <${NeueSicherung} />
     ${sich ? ["inhalt", "server"].map((k) => {
       const x = sich[k] || {};
       const alt = x.zeit && jetzt - x.zeit > 48 * 3600;
-      return html`<${Zeile} name=${k === "inhalt" ? "Inhalt → OneDrive" : "Server → OneDrive"}
+      return html`<${Zeile} name=${k === "inhalt" ? "Altes Cockpit → OneDrive" : "Server → OneDrive"}
         wert=${x.zeit ? `${x.zustand === "ok" ? "ok" : x.zustand} · ${zeitText(x.zeit)}` : "unbekannt"} s=${x.zustand !== "ok" ? "kritisch" : alt ? "warnung" : ""} />`;
     }) : html`<${Zeile} name="OneDrive" wert="Stand nicht lesbar" s="warnung" />`}
-    <${Zeile} name="Neue Fassung, lokal" wert="täglich 03:30" />
-    <p class="leise klein" style="margin:6px 0 0">Beide OneDrive-Läufe täglich früh um 3. Gewarnt wird ab 48 Stunden.</p>
+    <p class="leise klein" style="margin:6px 0 0">Altes Cockpit und Server täglich um 03:00/03:15, das neue Cockpit um 03:30. Gewarnt wird ab 48 Stunden.</p>
+  </div>`;
+}
+
+// Die Sicherung der neuen Fassung (sicherung.py, 23.10.2026): Datenbank, Unterlagen, Medien und Zugangsdaten,
+// verschluesselt nach OneDrive. Hier: Stand, "Jetzt sichern", der Schluessel (muss in Veikos Passwortmanager)
+// und -- solange OneDrive fehlt -- der eine Einrichtungsbefehl.
+function NeueSicherung() {
+  const [s, setS] = useState(null);
+  const [schl, setSchl] = useState("");
+  const [frage, setFrage] = useState(false);
+  const laden = () => api("/sicherung").then(setS).catch(() => setS({ fehler: "Stand nicht abrufbar" }));
+  useEffect(() => { laden(); }, []);
+  useEffect(() => { if (!s || !s.laeuft) return; const t = setInterval(laden, 4000); return () => clearInterval(t); }, [s && s.laeuft]);
+  if (!s) return html`<${Zeile} name="Neues Cockpit → OneDrive" wert="…" />`;
+  async function jetzt() { try { await api("/sicherung/jetzt", { methode: "POST" }); toast("Sicherung läuft."); setTimeout(laden, 1500); } catch (e) { fehlerMelden(e); } }
+  async function zeigen() { try { setSchl((await api("/sicherung/schluessel", { methode: "POST", daten: { bestaetigt: true } })).schluessel); setFrage(false); } catch (e) { fehlerMelden(e); } }
+  async function gesichert() { try { await api("/sicherung/schluessel", { methode: "POST", daten: { gesichert: true } }); setSchl(""); toast("Danke -- vermerkt."); laden(); } catch (e) { fehlerMelden(e); } }
+  const wert = s.laeuft ? `läuft: ${s.schritt || ""}` : !s.eingerichtet ? "nicht eingerichtet"
+    : s.zustand === "ok" ? `ok · ${zeitText(s.zeit)} · ${String(s.groesse_mb).replace(".", ",")} MB` : s.zustand === "fehler" ? "Fehler" : "noch nie";
+  const st = s.laeuft ? "" : !s.eingerichtet || s.zustand === "fehler" ? "kritisch" : s.zeit && Date.now() / 1000 - s.zeit > 48 * 3600 ? "warnung" : "";
+  return html`<div class="sicherung-neu">
+    <${Zeile} name="Neues Cockpit → OneDrive" wert=${wert} s=${st} />
+    ${s.fehler && !s.laeuft && html`<p class="klein" style="color:var(--signal);margin:4px 0">${s.fehler}</p>`}
+    ${!s.eingerichtet && s.befehl && html`<div class="hinweisbox klein" style="margin:6px 0">
+      Einmal einrichten -- im Terminal auf dem Server (<code>ssh vveki</code>), braucht dein Passwort. Er übernimmt die OneDrive-Anmeldung
+      des alten Cockpits für das neue; mehr Rechte bekommt dabei niemand:
+      <pre class="log" style="white-space:pre-wrap">${s.befehl}</pre>
+      <button class="btn klein" onClick=${async () => toast((await kopieren(s.befehl)) ? "Kopiert." : "Kopieren ging nicht -- bitte markieren.")}><${Icon} n="kopie" g=${12} />Befehl kopieren</button>
+      Woran du es erkennst: am Ende steht „eingerichtet“. Danach hier „Jetzt sichern“.</div>`}
+    ${s.zustand === "ok" && html`<p class="leise klein" style="margin:4px 0">${s.eintraege} Dateien, Ziel ${s.ziel}, ${s.in_onedrive} Stände in OneDrive, ${s.lokal} Datenbank-Stände lokal.</p>`}
+    ${schl ? html`<div class="hinweisbox klein" style="margin:6px 0">
+        <b>Schlüssel der Sicherung:</b> <code style="user-select:all;word-break:break-all">${schl}</code><br />
+        Leg ihn in deinen Passwortmanager (z. B. „VvE Cockpit – Sicherungsschlüssel“). Ohne ihn lässt sich keine Sicherung öffnen, wenn die Platte ausfällt.
+        <span class="knopfreihe" style="margin-top:6px"><button class="btn klein" onClick=${async () => toast((await kopieren(schl)) ? "Kopiert." : "Bitte markieren.")}><${Icon} n="kopie" g=${12} />Kopieren</button>
+          <button class="btn klein primaer" onClick=${gesichert}>Ist im Passwortmanager</button></span></div>`
+      : frage ? html`<div class="hinweisbox klein" style="margin:6px 0">Der Schlüssel öffnet jede Sicherung samt deinen Zugangsdaten. Jetzt anzeigen?
+        <span class="knopfreihe"><button class="btn klein primaer" onClick=${zeigen}>Anzeigen</button><button class="btn klein geist" onClick=${() => setFrage(false)}>Abbrechen</button></span></div>` : ""}
+    <span class="knopfreihe" style="margin-top:6px">
+      <button class="btn klein" disabled=${s.laeuft} onClick=${jetzt}><${Icon} n="play" g=${12} />${s.eingerichtet ? "Jetzt sichern" : "Datenbank jetzt lokal sichern"}</button>
+      ${s.schluessel_da && !schl && !frage && html`<button class=${"btn klein" + (s.zustand === "ok" && !s.schluessel_bestaetigt ? " primaer" : " geist")} onClick=${() => setFrage(true)}>Schlüssel anzeigen</button>`}
+    </span>
   </div>`;
 }
 
@@ -286,7 +327,7 @@ function Software({ s, sys, auftrag, starten }) {
       <${SwZ} st=${sys.stab.letzter_fehler ? "warnung" : "ok"} name="Letzter Fehler" satz=${sys.stab.letzter_fehler || "keiner"} />` : html`<div class="leise klein">wird geholt …</div>` ],
     [ "Was auf der Platte liegt", s.disk_gb ? Math.round(s.disk_gb.free) + " GB frei" : "", html`
       <${SwZ} st="ok" name="daten/cockpit.sqlite" satz="der Bestand dieser Fassung, ein Schreiber" />
-      <${SwZ} st="ok" name="daten/sicherungen" satz="tägliche Sicherung der Datenbank, 30 Stände" />
+      <${SwZ} st="ok" name="daten/sicherungen" satz="täglich 03:30: Datenbank lokal (30 Stände), alles verschlüsselt nach OneDrive (14 Stände)" />
       <${SwZ} st="ok" name="/var/lib/vvec" satz="Bestand des alten Cockpits, hier nur gelesen" />
       <${SwZ} st="ok" name="/var/lib/vvec/plaud" satz="die Plaud-Notizen, beide Fassungen lesen sie" />` ],
     [ "Nach draußen", "zuschaltbar, nie zwingend", html`

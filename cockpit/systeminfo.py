@@ -114,9 +114,16 @@ def _fassung(s: str | None) -> tuple:
 
 def sicherungen() -> dict[str, Any] | None:
     try:
-        return json.loads((ALT_DATEN / "sicherung-status.json").read_text(encoding="utf-8"))
+        s = json.loads((ALT_DATEN / "sicherung-status.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return None
+        s = {}
+    # Die neue Fassung (sicherung.py, 23.10.2026) unter "neu" -- dieselbe Form wie die alten
+    # (zeit, zustand), damit Kopfzeile, Kachel und Empfehlungen sie ohne Sonderweg lesen.
+    from . import sicherung
+    n = sicherung.stand()
+    s["neu"] = {"zeit": n.get("zeit"), "zustand": n.get("zustand") if n.get("eingerichtet") else "nicht_eingerichtet",
+                "groesse_mb": n.get("groesse_mb"), "laeuft": n.get("laeuft"), "fehler": n.get("fehler")}
+    return s
 
 
 async def status() -> dict[str, Any] | None:
@@ -209,6 +216,21 @@ def empfehlungen(s: dict[str, Any] | None, upd: dict[str, Any], ollama_neu: str 
         if x.get("zustand") != "ok" or alter > 48 * 3600:
             e.append({"stufe": "achtung", "titel": f"Sicherung {name}: {'fehlgeschlagen' if x.get('zustand') != 'ok' else 'älter als zwei Tage'}",
                       "warum": f"Letzter Lauf {time.strftime('%d.%m. %H:%M', time.localtime(float(x.get('zeit') or 0)))}: {x.get('text') or x.get('zustand')}. Läuft täglich um 03:00/03:15; zwei Ausfälle in Folge sind kein Zufall."})
+    # Die neue Fassung (sicherung.py, 23.10.2026): ohne OneDrive liegt alles nur auf dieser einen Platte.
+    from . import sicherung
+    n = sicherung.stand()
+    if not n.get("eingerichtet"):
+        e.append({"stufe": "achtung", "titel": "Neues Cockpit: keine Sicherung außerhalb des Servers",
+                  "warum": "Datenbank, Unterlagen, Medien und Zugangsdaten liegen nur auf dieser Platte. Einmal einrichten "
+                           "(braucht dein Passwort) -- danach sichert es jede Nacht um 03:30 verschlüsselt nach OneDrive.",
+                  "befehl": sicherung.einrichten_befehl()})
+    elif n.get("zustand") == "fehler" or (n.get("zeit") and jetzt - float(n["zeit"]) > 48 * 3600):
+        e.append({"stufe": "achtung", "titel": "Neues Cockpit: Sicherung " + ("fehlgeschlagen" if n.get("zustand") == "fehler" else "älter als zwei Tage"),
+                  "warum": str(n.get("fehler") or "Läuft täglich um 03:30.")[:300]})
+    if n.get("zustand") == "ok" and not n.get("schluessel_bestaetigt"):
+        e.append({"stufe": "achtung", "titel": "Schlüssel der Sicherung in deinen Passwortmanager",
+                  "warum": "Die Sicherung in OneDrive ist verschlüsselt. Fällt die Platte des Servers aus, ist der Schlüssel mit weg -- "
+                           "und die Sicherung wertlos. Im Stack unter Sicherungen: „Schlüssel anzeigen“."})
     platte = s.get("disk_gb") or {}
     if platte.get("total") and platte.get("free", 0) / platte["total"] < 0.1:
         e.append({"stufe": "achtung", "titel": f"Platte fast voll ({round(platte['free'])} GB frei)", "warum": "Unter zehn Prozent frei. Große Modelle oder ComfyUI-Ausgaben aufräumen."})
@@ -720,7 +742,7 @@ async def kopf() -> dict[str, Any]:
     out["taetigkeit"] = await taetigkeit(gpu_last, [str(x).split("|")[0] for x in ((s or {}).get("ollama_running") or [])])
     sich = sicherungen() or {}
     out["sicherungen"] = {k: {"alter_h": round((jetzt - float(x.get("zeit") or 0)) / 3600, 1) if x.get("zeit") else None,
-                              "zustand": x.get("zustand")} for k, x in sich.items() if k in ("inhalt", "server") and isinstance(x, dict)}
+                              "zustand": x.get("zustand")} for k, x in sich.items() if k in ("inhalt", "server", "neu") and isinstance(x, dict)}
     ges = stab.gesundheit()
     if upd is not None:
         e = empfehlungen(s, upd, _gemerkt("ollama_neu", 6 * 3600), sich or None, ges)

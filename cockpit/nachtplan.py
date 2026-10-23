@@ -14,6 +14,7 @@ alles fertig ist:
   22:00        Modelle laden (nachtladen.py, nur wenn eingeschaltet) -- nur Leitung, keine Karte
   00:30-03:00  Modell-Revision startet (revision.py); wartet bis 02:00 auf laufende Downloads
   03:00        RSI (rsi.py, Veikos Vorgabe 3-5 Uhr); wartet bis 03:30 auf die Revision
+  03:30        Sicherung (sicherung.py): Datenbank lokal, alles verschluesselt nach OneDrive
   04:00        Daily Tasks, neue mit dieser Vorgabe (daily.py) -- die Briefings liegen um 5 bereit
   04:50        Morgens bereit (hier): Talk-Modell laden und Whisper einmal rechnen lassen,
                damit der erste Satz um 5 nicht auf das Laden wartet
@@ -84,8 +85,8 @@ def _wann(t: Any) -> str | None:
 
 def plan() -> list[dict[str, Any]]:
     """Fuer die Settings: der Plan mit dem letzten Lauf je Eintrag -- aus dem Stand, den jedes Modul ohnehin fuehrt."""
-    from . import nachtladen, revision, rsi, stab
-    nl, rv, rs, mb = nachtladen.stand(), revision.stand(), rsi.stand(), _stand()
+    from . import nachtladen, revision, rsi, sicherung, stab
+    nl, rv, rs, mb, sich = nachtladen.stand(), revision.stand(), rsi.stand(), _stand(), sicherung.stand()
     dailys = db.alle("SELECT titel, uhrzeit, aktiv FROM daily ORDER BY uhrzeit")
 
     def zuletzt(s: dict[str, Any]) -> str:
@@ -104,6 +105,11 @@ def plan() -> list[dict[str, Any]]:
         {"zeit": "03:00", "titel": "RSI -- Verbesserungen aus deinen Gesprächen", "an": rsi.an(), "wo": "RSI",
          "warum": "Neo schlägt vor, Dario prüft. Wartet bis 03:30 auf die Revision, damit sich die beiden nicht die Karten teilen.",
          "zuletzt": zuletzt(rs)},
+        {"zeit": "03:30", "titel": "Sicherung des Cockpits", "an": True, "wo": "Stack → Sicherungen",
+         "warum": "Datenbank lokal; dazu Datenbank, Unterlagen, Medien und Zugangsdaten verschlüsselt nach OneDrive "
+                  + ("(eingerichtet)." if sich.get("eingerichtet") else "-- OneDrive ist noch NICHT eingerichtet, dann nur die Datenbank lokal."),
+         "zuletzt": ("läuft gerade" if sich.get("laeuft") else f"zuletzt {_wann(sich.get('zeit'))}: {sich.get('zustand')}"
+                     + (f", {sich.get('groesse_mb')} MB" if sich.get("zustand") == "ok" else "") if sich.get("zeit") else "noch nicht gelaufen")},
         {"zeit": "04:00", "titel": "Daily Tasks", "an": bool([d for d in dailys if d["aktiv"]]), "wo": "Daily Tasks",
          "warum": "Neue Daily Tasks starten um 04:00, damit die Briefings um 5 bereitliegen. "
                   + (("Eingerichtet: " + ", ".join(f"{d['titel']} ({d['uhrzeit']})" for d in dailys)) if dailys else "Noch keiner eingerichtet."),
