@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 import subprocess
 import time
@@ -186,18 +187,24 @@ def empfehlungen(s: dict[str, Any] | None, upd: dict[str, Any], ollama_neu: str 
         titel = f"Ollama {ollama_neu} verfügbar (läuft: {laufend.replace('Ollama ', '')})"
         if AUFTRAG.get("art") == "ollama-update" and AUFTRAG.get("laeuft"):
             e.append({"stufe": "info", "titel": titel, "warum": "Das Update läuft gerade -- den Fortschritt siehst du oben im Auftrag."})
-        elif ALT_TOKEN:
+        elif ollama_eigen() or ALT_TOKEN:
             e.append({"stufe": "einspielen", "titel": titel,
-                      "warum": "Neuere Modelle lassen sich mit einer alten Fassung oft nicht laden. Lokale Modelle sind während des Updates einige Minuten nicht erreichbar. "
-                               "Läuft über den Wartungsdienst des alten Cockpits als root -- unabhängig von dieser Seite.",
+                      "warum": "Neuere Modelle lassen sich mit einer alten Fassung oft nicht laden. Die neue Fassung wird erst vollständig geladen, "
+                               "dann in Sekunden getauscht; antwortet Ollama danach nicht, kommt die alte zurück. "
+                               + ("Läuft über das eigene Update-Skript des Cockpits." if ollama_eigen() else "Läuft noch über den Wartungsdienst des alten Cockpits."),
                       "aktion": {"art": "ollama-update", "text": "Einspielen"}})
         else:
-            # Ohne Token gibt es keinen Weg ohne Passwort. Statt des Updates selbst steht
-            # hier der EINMALIGE Schritt, nach dem es fuer immer per Knopf geht.
+            # Ohne eigenes Skript und ohne Token gibt es keinen Weg ohne Passwort -- dann steht hier
+            # der EINMALIGE Schritt, nach dem es fuer immer per Knopf geht.
             e.append({"stufe": "einspielen", "titel": titel,
-                      "warum": "Für den Knopf braucht diese Fassung einmal den Cockpit-Token des alten Backends (das Update läuft dort als root). "
-                               "Den Befehl einmal auf dem Server ausführen (fragt dein Passwort), danach steht hier „Einspielen“.",
-                      "befehl": "sudo grep '^COCKPIT_TOKEN=' /etc/vvec/secrets.env | sed 's/^COCKPIT_TOKEN=/VVEC_ALT_TOKEN=/' >> ~/.config/vve-cp-r2.env && chmod 600 ~/.config/vve-cp-r2.env && systemctl --user restart vve-cp-r2"})
+                      "warum": "Für den Knopf braucht das Cockpit einmal sein Update-Skript (fragt dein Passwort), danach steht hier „Einspielen“.",
+                      "befehl": OLLAMA_EINRICHTEN})
+    if not ollama_eigen():
+        e.append({"stufe": "achtung", "titel": "Hängt noch am alten Cockpit: Ollama-Update",
+                  "warum": "Ollama zu aktualisieren braucht Administratorrechte; bisher läuft das über den Wartungsdienst des alten Cockpits. "
+                           "Einmal das eigene Update-Skript einrichten (fragt dein Passwort). Es gehört root, das Cockpit darf genau dieses eine "
+                           "Skript ohne Argumente starten -- sonst nichts.",
+                  "befehl": OLLAMA_EINRICHTEN})
     # Externe und Postausgang (cloud.py, mail.py, 23.10.2026): solange die Schluessel nicht hier liegen, laufen
     # Dario, Elon, Demmis und jede Mail ueber das alte Cockpit -- und fielen mit ihm aus.
     from . import cloud, mail
@@ -384,10 +391,58 @@ def _protokoll_lesbar(roh: str) -> str:
     return "\n".join(z for z in zeilen if z.strip())[-8000:]
 
 
+# EIGENER WEG (23.10.2026): ein root-eigenes Skript (server/vve-ollama-aktualisieren.sh, von Veiko einmal
+# nach /usr/local/sbin installiert), das vveadmin per sudo OHNE Argumente starten darf. Gestartet als eigene
+# systemd-Benutzereinheit, damit ein Neustart des Cockpits das Update nicht abbricht. Protokoll und Stand
+# liegen in derselben Form wie beim alten Wartungsdienst -- _ollama_folgen liest beide gleich.
+OLLAMA_SKRIPT = "/usr/local/sbin/vve-ollama-aktualisieren"
+EIGEN_LAUF = Path(os.environ.get("VVEC_WARTUNG_LAUF", "/var/lib/vve-cp-r2-wartung"))
+OLLAMA_EINRICHTEN = ("sudo install -o root -g root -m 755 ~/vve-cp-r2/server/vve-ollama-aktualisieren.sh " + OLLAMA_SKRIPT +
+                     " && echo 'vveadmin ALL=(root) NOPASSWD: " + OLLAMA_SKRIPT + "' | sudo tee /etc/sudoers.d/vve-ollama-aktualisieren >/dev/null"
+                     " && sudo chmod 440 /etc/sudoers.d/vve-ollama-aktualisieren && sudo visudo -c -q && echo eingerichtet")
+
+
+def ollama_eigen() -> bool:
+    """Ist der eigene Weg eingerichtet? sudo -l mit genau diesem Befehl sagt es, ohne etwas auszufuehren."""
+    g = _gemerkt("ollama_eigen", 300)
+    if g is not None:
+        return g
+    befehl = os.environ.get("VVEC_OLLAMA_UPDATE_TEST")  # nur Pruefung: ein nachgestelltes Skript ohne sudo
+    if befehl:
+        return _merken("ollama_eigen", True)
+    try:
+        r = subprocess.run(["sudo", "-n", "-l", OLLAMA_SKRIPT], capture_output=True, timeout=5)
+        return _merken("ollama_eigen", r.returncode == 0 and Path(OLLAMA_SKRIPT).is_file())
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 async def ollama_update_starten() -> dict[str, Any]:
     from .konfig import ALT_BACKEND, ALT_TOKEN
     if AUFTRAG["laeuft"]:
         return {"ok": False, "grund": "Es läuft schon ein Auftrag."}
+    if ollama_eigen():
+        start = time.time()
+        befehl = os.environ.get("VVEC_OLLAMA_UPDATE_TEST")
+        aufruf = ([befehl] if befehl else
+                  ["systemd-run", "--user", "--collect", f"--unit=vve-cp-r2-ollama-{int(start)}", "sudo", "-n", OLLAMA_SKRIPT])
+        p = await asyncio.create_subprocess_exec(*aufruf, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        if befehl:
+            asyncio.create_task(p.wait())
+        else:
+            _, fehler = await p.communicate()
+            if p.returncode:
+                return {"ok": False, "grund": f"Update ließ sich nicht starten: {fehler.decode(errors='replace')[:300]}"}
+        ziel = await _ollama_paketgroesse()
+        plan = {"start": start, "netz_start": _netz_rx(), "ziel": ziel, "eigen": True}
+        try:
+            _OLLAMA_PLAN.write_text(json.dumps(plan), encoding="utf-8")
+        except OSError:
+            pass
+        AUFTRAG.update(art="ollama-update", laeuft=True, rc=None, start=start, ende=None, fortschritt={"phase": "wartet"},
+                       log="Update gestartet …\n")
+        asyncio.create_task(_ollama_folgen(start - 10, plan, EIGEN_LAUF))
+        return {"ok": True}
     if not ALT_TOKEN:
         return {"ok": False, "grund": "Dafür fehlt einmalig der Cockpit-Token des alten Backends (siehe Befehl in der Empfehlung)."}
     try:
@@ -467,7 +522,7 @@ def ollama_update_wiederaufnehmen() -> None:
         plan = json.loads(_OLLAMA_PLAN.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return
-    lauf_dir = ALT_DATEN / "wartung" / "lauf"
+    lauf_dir = EIGEN_LAUF if plan.get("eigen") else ALT_DATEN / "wartung" / "lauf"
     try:
         neueste = max(lauf_dir.glob("ollama-aktualisieren-*.stand"), key=lambda p: p.stat().st_mtime)
         if not neueste.read_text().startswith("running") or neueste.stat().st_mtime < plan["start"] - 60:
@@ -475,10 +530,15 @@ def ollama_update_wiederaufnehmen() -> None:
     except (OSError, ValueError, KeyError):
         return
     AUFTRAG.update(art="ollama-update", laeuft=True, rc=None, start=plan["start"], ende=None, fortschritt={"phase": "download"}, log="")
-    asyncio.create_task(_ollama_folgen(plan["start"] - 10, plan))
+    asyncio.create_task(_ollama_folgen(plan["start"] - 10, plan, lauf_dir))
 
 
 def _phase(log: str) -> str:
+    # Eigenes Skript (23.10.2026): schreibt seine Phase ausdruecklich.
+    if "PHASE einrichten" in log:
+        return "einrichten"
+    if "PHASE download" in log:
+        return "download"
     zeilen = [z for z in log.splitlines() if z.startswith(">>>")]
     letzte = zeilen[-1] if zeilen else ""
     if "Downloading" in letzte:
@@ -490,8 +550,8 @@ def _phase(log: str) -> str:
     return "vorbereiten"
 
 
-async def _ollama_folgen(ab: float, plan: dict[str, Any] | None = None) -> None:
-    lauf_dir = ALT_DATEN / "wartung" / "lauf"
+async def _ollama_folgen(ab: float, plan: dict[str, Any] | None = None, lauf_dir: Path | None = None) -> None:
+    lauf_dir = lauf_dir or (ALT_DATEN / "wartung" / "lauf")
     ende = time.time() + 3700
     gefunden = None
     plan = plan or {}

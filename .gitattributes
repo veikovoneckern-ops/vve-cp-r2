@@ -1,0 +1,2 @@
+# Shell-Skripte laufen auf dem Server; CRLF bricht sie (23.10.2026).
+*.sh text eol=lf
