@@ -160,6 +160,14 @@ async def lage_gesehen():
     return {"ok": True}
 
 
+def _rsi_briefing() -> dict[str, Any] | None:
+    try:
+        from . import rsi_serie
+        return rsi_serie.briefing()
+    except Exception:  # noqa: BLE001 -- das Briefing darf nie an RSI scheitern
+        return None
+
+
 async def _optimierung_zahl() -> int:
     from . import revision
     try:
@@ -256,6 +264,8 @@ async def lage():
         # Modell-Revision: belegte Vorschlaege zum Umstellen (17.10.2026) -- das Briefing
         # sagt es, damit Veiko nicht erst die Seite Stab & Modelle oeffnen muss.
         "optimierung": await _optimierung_zahl(),
+        # RSI (23.10.2026): ob das Cockpit sich zuletzt veraendert hat, was gerade umgesetzt wird, was wartet.
+        "rsi": _rsi_briefing(),
         # Antworten, die gerade auf dem Server entstehen -- auch wenn das Fenster zu ist.
         "gespraeche_laufen": [{"gespraech_id": g, "art": s["art"], "wer": s["wer"],
                                "wer_name": teamchat.wer_name(s["wer"]) if s["wer"] else ("Talk" if s["art"] == "talk" else "Advisory Board"),

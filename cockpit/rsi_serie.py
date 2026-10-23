@@ -433,16 +433,26 @@ def abbrechen() -> dict[str, Any]:
 
 
 def fortsetzen_nach_neustart() -> None:
-    """Beim Start des Dienstes: lief eine Serie, ist der aktuelle Punkt verloren -- vermerken, weiter."""
+    """Beim Start des Dienstes: eine unterbrochene Serie macht weiter. Der Punkt, an dem Neo gerade arbeitete,
+    wird EINMAL neu begonnen -- Darios Plan liegt ja schon vor, verloren ist nur Neos halbe Arbeit (23.10.2026:
+    ein Ausliefern brach den einzigen Punkt einer Serie ab, und er galt als gescheitert, obwohl nichts schiefging).
+    Wird derselbe Punkt ein zweites Mal unterbrochen, gilt er als gescheitert -- sonst liefe eine Serie, die
+    jedes Mal einen Neustart ausloest, endlos."""
     s = stand()
     if s.get("stand") == "pruefung":
-        _setzen(stand="fehler", fehler="Das Cockpit wurde während der Widerspruchsprüfung neu gestartet. Bitte noch einmal prüfen lassen.")
+        _starten(_pruefen())                       # nur Darios Pruefung -- einfach noch einmal
         return
     if s.get("stand") != "laeuft":
         return
-    if s.get("aktuell"):
-        _ergebnis(s["aktuell"], "gescheitert", grund="Unterbrochen: das Cockpit wurde neu gestartet, während Neo daran arbeitete.",
-                  gespraech_id=s.get("aktuell_gespraech"))
+    rid = s.get("aktuell")
+    if rid:
+        neu = dict(s.get("unterbrochen") or {})
+        neu[rid] = int(neu.get(rid) or 0) + 1
+        if neu[rid] > 1:
+            _ergebnis(rid, "gescheitert", grund="Zweimal unterbrochen: das Cockpit wurde neu gestartet, während Neo daran arbeitete.",
+                      gespraech_id=s.get("aktuell_gespraech"))
+        else:
+            _setzen(unterbrochen=neu, aktuell=None)
     _starten(_abarbeiten())
 
 
@@ -548,3 +558,28 @@ def talk_text() -> str:
     if s.get("stand") == "fehler":
         return f"RSI: Die letzte Serie ist gescheitert: {s.get('fehler')}"
     return ""
+
+
+def briefing() -> dict[str, Any]:
+    """Fuers Briefing (23.10.2026, Veiko: "im Briefing sollte auch stehen, ob RSI etwas veraendert hat"):
+    was gerade laeuft, was in den letzten sieben Tagen umgesetzt wurde, was auf ihn wartet."""
+    s = stand()
+    woche = time.time() - 7 * 86400
+    rel = [{"zeit": r["zeit"], "zurueckgenommen": r.get("zurueckgenommen"),
+            "punkte": [p["titel"] for p in r["punkte"] if not p.get("zurueckgenommen")]} for r in releases() if r["zeit"] >= woche]
+    laeuft_text = None
+    if s.get("stand") == "pruefung":
+        laeuft_text = "Dario prüft deine Auswahl"
+    elif s.get("stand") == "laeuft":
+        reihe = s.get("reihenfolge") or []
+        laeuft_text = f"Neo setzt um -- Punkt {min(len(s.get('ergebnisse') or {}) + 1, len(reihe))} von {len(reihe)}"
+    from . import rsi
+    if not laeuft_text and rsi.laeuft():
+        laeuft_text = "Neo sieht deine Gespräche durch"
+    letzte = None
+    if s.get("stand") == "fertig" and (s.get("ende") or 0) >= woche:
+        erg = s.get("ergebnisse") or {}
+        letzte = {"zeit": s.get("ende"), "umgesetzt": sum(1 for e in erg.values() if e.get("stand") == "umgesetzt"),
+                  "nicht": sum(1 for e in erg.values() if e.get("stand") != "umgesetzt")}
+    return {"laeuft": laeuft_text, "releases": rel, "letzte_serie": letzte,
+            "offen": db.wert(f"SELECT COUNT(*) FROM rsi WHERE stand IN {OFFEN}") or 0}

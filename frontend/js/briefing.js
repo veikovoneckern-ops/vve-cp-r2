@@ -34,6 +34,23 @@ function Gesundheit({ g, neo, optimierung }) {
 // (aufgabe.js). Der Weg ins Gespraech bzw. zum Ergebnis steht dort als Knopf --
 // vorher fuehrte der Klick direkt dorthin, und bearbeiten ging gar nicht.
 
+// RSI im Briefing (23.10.2026, Veiko: "im Briefing sollte auch stehen, ob RSI etwas veraendert hat"):
+// eine Zeile -- laeuft gerade etwas, was wurde diese Woche verbessert (oder ehrlich: nichts), was wartet.
+function RsiZeile({ r }) {
+  if (!r) return null;
+  const rel = (r.releases || []).filter((x) => !x.zurueckgenommen && x.punkte.length);
+  const teile = [];
+  if (r.laeuft) teile.push(html`<span><i class="punkt lila"></i>RSI: ${r.laeuft}</span>`);
+  if (rel.length) {
+    const titel = rel.flatMap((x) => x.punkte);
+    teile.push(html`<span><i class="punkt"></i>RSI hat das Cockpit verbessert (${zeitText(rel[0].zeit)}): ${titel.slice(0, 3).join(" · ")}${titel.length > 3 ? ` und ${titel.length - 3} weitere` : ""}</span>`);
+  } else if (!r.laeuft) {
+    teile.push(html`<span class="leise"><i class="punkt grau"></i>RSI hat diese Woche nichts verändert${r.letzte_serie && r.letzte_serie.nicht ? " -- der letzte Versuch kam nicht durch" : ""}</span>`);
+  }
+  if (r.offen && !r.laeuft) teile.push(html`<span><i class="punkt gelb"></i>${r.offen === 1 ? "1 Verbesserungsvorschlag wartet" : `${r.offen} Verbesserungsvorschläge warten`} auf dich</span>`);
+  return html`<a class="gesundheit rsi-briefing" href="#/rsi" title="Zur Seite RSI">${teile}</a>`;
+}
+
 // Aufbau in Zeilen statt in zwei unabhaengigen Spalten (19.10.2026, Veiko: "die Rahmen
 // sind nicht buendig"): Kaesten nebeneinander stehen in derselben Rasterzeile, sind also
 // gleich hoch und enden buendig; was allein steht, geht ueber die volle Breite (.breit).
@@ -76,6 +93,7 @@ export function Briefing({ lage }) {
       </div>
     </div>
     <${Gesundheit} g=${lage.gesundheit} neo=${lage.neo_laeuft} optimierung=${lage.optimierung} />
+    <${RsiZeile} r=${lage.rsi} />
         ${ents.length > 0 && html`<section class="karte briefing-voll">
           <div class="karte-kopf"><h3>Wartet auf dich</h3><span class="pill gelb">${ents.length}</span>
             <button class="btn klein rechts" onClick=${() => bus.sende("talk-oeffnen", { durchgehen: true })} title="Das Cockpit liest jede Entscheidung vor, du antwortest mit ja, nein, später oder frei">

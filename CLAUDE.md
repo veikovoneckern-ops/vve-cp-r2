@@ -225,6 +225,8 @@ Veiko ist kein Entwickler von Beruf. Erklären ohne Jargon, eine Empfehlung stat
 
 > **23.10.2026 abends — RSI-Seite vereinfacht** (Veiko: „idiotensicher: was muss ich machen und was ist gelaufen“). Oben **ein** Kasten „Was jetzt zu tun ist“ mit Schrittleiste (Neo findet → du wählst → Neo setzt um → Release): genau ein Zustand, ein Satz („Du musst nichts tun“ / „So geht es: ankreuzen, Umsetzen“), höchstens ein Hauptknopf; die Auswahlleiste sitzt dort. Kacheln: Ankreuzbox (auch Klick auf den Titel), Problem, Darios Einschätzung in einem Satz, Technisches hinter „Details“ — die Einzelknöpfe je Karte (Neo ausarbeiten, Plan bestellen, prüfen) sind weg. Unten „Was gelaufen ist“ (letztes Durchsehen, Releases mit Zurücknehmen, Erledigtes) und zugeklappte Einstellungen. Ein Durchsehen lässt sich als eigener Prozess starten (`python -m cockpit.rsi`, überlebt einen Neustart); `rsi.laeuft()` liest dafür auch den Stand in der Datenbank (verwaist nach 3 h).
 
+> **23.10.2026 — RSI im Briefing, Serie übersteht einen Neustart.** Eine Zeile unter der Gesundheitsleiste (`RsiZeile`, Daten `rsi_serie.briefing()` in `/lage`): was RSI gerade tut, was es in den letzten 7 Tagen verbessert hat — oder ehrlich „hat diese Woche nichts verändert“ — und wie viele Vorschläge warten; die Zeile führt zur Seite RSI. `fortsetzen_nach_neustart`: der unterbrochene Punkt wird EINMAL neu begonnen (Plan liegt schon vor), erst beim zweiten Mal gilt er als gescheitert; eine unterbrochene Widerspruchsprüfung läuft einfach noch einmal. Anlass: ein Ausliefern brach die einzige laufende Serie ab. **Vor jedem Neustart auch `rsi_serie.stand()` und `rsi.laeuft()` prüfen.**
+
 ## Prüfen
 
 ```bash

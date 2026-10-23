@@ -2527,3 +2527,7 @@ button.logo-knopf:hover{background:var(--chrome-line)}
 .rsi-einst summary{cursor:pointer}
 .rsi-einst .rsi-schalter{margin-top:10px}
 @media (max-width:600px){.rsi-karte > p,.rsi-karte > .fehlerbox,.rsi-karte > .hinweisbox,.rsi-details{margin-left:0}.rsi-verlauf-zeile{flex-direction:column;gap:0}}
+/* RSI im Briefing (23.10.2026): eine Zeile im Stil der Gesundheitsleiste, die ganze Zeile fuehrt zur Seite RSI */
+.rsi-briefing{text-decoration:none;color:var(--ink-2)}
+.rsi-briefing:hover{border-color:var(--steel)}
+.gesundheit .punkt.grau{background:var(--ink-4)}
