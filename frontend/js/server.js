@@ -294,8 +294,8 @@ function Software({ s, sys, auftrag, starten }) {
   const karten = [
     [ "So kommen Sie herein", "zwei Wege, ein Ziel", html`
       <${SwZ} st="ok" name="Diese Fassung" marke="gerade hier" satz=${hier} />
-      <${SwZ} st=${zustand(n.tailscale_ip, false)} name="Tailnet (altes Cockpit)" satz="vveorgxais.tail4ca1ab.ts.net · nur eigene Geräte" />
-      <${SwZ} st="unbekannt" name="Cloudflare (altes Cockpit)" satz="cockpit.vveorgxais.org · für fremde Geräte, mit Access-MFA" />
+      <${SwZ} st=${zustand(n.tailscale_ip, false)} name="Tailnet" satz="vveorgxais.tail4ca1ab.ts.net:8443 · nur eigene Geräte (ohne :8443 das alte Cockpit)" />
+      <${SwZ} st="unbekannt" name="Cloudflare" satz="cockpit.vveorgxais.org · für Geräte ohne Tailscale, mit Access-MFA -- seit 23.10.2026 dieses Cockpit" />
       <${SwZ} st=${zustand(/running/i.test(ts), ts && !/running/i.test(ts))} name="tailscaled" marke=${n.tailscale_ip || ""} satz="hält den Direktdraht offen" />` ],
     [ "Was Ihre Anfragen verteilt", "", html`
       <${SwZ} st=${zustand(sv.caddy === "active", sv.caddy && sv.caddy !== "active")} name="Caddy" marke="Port 8000" satz="verteilt alles des alten Cockpits nach Pfad an die Dienste" knopf=${neustartKnopf("caddy")} />
