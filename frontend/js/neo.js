@@ -169,7 +169,7 @@ export function Neo({ id }) {
       <div class="liste">
         ${!liste ? html`<div class="lade">Lade …</div>` : liste.map((x) => html`<div key=${x.id} style="display:flex;align-items:center">
           <button class=${"neo-g" + (x.id === id ? " an" : "")} onClick=${() => navigiere("/neo/" + x.id)} title=${x.titel}>
-            ${x.laeuft && html`<span class="punkt" style="background:var(--matrix)"></span>`}<span>${x.titel || "Gespräch"}</span>
+            <span>${x.titel || "Gespräch"}</span>
             <small class="leise">${zeitText(x.geaendert).replace("vor ", "")}</small></button>
           ${x.id === id && !x.laeuft && html`<button class="btn klein geist icon" title="Archivieren" aria-label="Gespräch archivieren" onClick=${() => archivieren(x.id)}><${Icon} n="archiv" g=${13} /></button>`}
         </div>`)}
