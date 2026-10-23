@@ -66,6 +66,9 @@ async def lebenszeit(app: FastAPI):
     beirat = asyncio.create_task(board.schleife())
     # Morgenbericht per Mail um 05:00 (tagesbericht.py, 23.10.2026; vorher das alte Cockpit um 07:00).
     bericht = asyncio.create_task(tagesbericht.schleife())
+    # Eine RSI-Serie, die ein Neustart unterbrochen hat, laeuft mit dem naechsten Punkt weiter (rsi_serie.py).
+    from cockpit import rsi_serie
+    rsi_serie.fortsetzen_nach_neustart()
     yield
     bericht.cancel()
     beirat.cancel()

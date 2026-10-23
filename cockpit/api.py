@@ -1805,6 +1805,8 @@ async def rsi_liste():
     for v in d["vorschlaege"]:
         n = (v.get("daten") or {}).get("neo") or {}
         v["neo_laeuft"] = bool(n.get("gespraech_id") and neo.laufender_job(n["gespraech_id"]))
+    from . import rsi_serie
+    d.update(rsi_serie.uebersicht())
     return d
 
 
@@ -1830,6 +1832,50 @@ async def rsi_einstellungen(request: Request):
         except (TypeError, ValueError):
             raise HTTPException(400, "Budget muss eine Zahl sein.")
     return rsi.liste()
+
+
+# ---- RSI-Serie (23.10.2026, rsi_serie.py): mehrere Punkte auswaehlen, auf Widersprueche pruefen,
+# nacheinander umsetzen, als Release melden, zuruecknehmen. Diese Routen stehen VOR /rsi/{rid}/{was},
+# sonst faenge die allgemeine Route "/rsi/serie/start" als Vorschlag "serie" ab.
+@router.post("/rsi/serie/auswahl")
+async def rsi_serie_auswahl(request: Request):
+    """umsetzen/verwerfen: Kennungen. Ohne bestaetigt=true nur die Schaetzung der Pruefkosten (Kostensperre)."""
+    from . import rsi_serie
+    d = await _koerper(request)
+    umsetzen = [str(x) for x in d.get("umsetzen") or []]
+    verwerfen = [str(x) for x in d.get("verwerfen") or []]
+    if not d.get("bestaetigt"):
+        return {"ok": False, "grund": "bestaetigen", "schaetzung": rsi_serie.schaetzung(umsetzen) if umsetzen else 0}
+    try:
+        return rsi_serie.auswahl(umsetzen, verwerfen)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+
+
+@router.post("/rsi/serie/{was}")
+async def rsi_serie_handeln(was: str):
+    from . import rsi_serie
+    try:
+        if was == "start":
+            return rsi_serie.starten()
+        if was == "abbrechen":
+            return rsi_serie.abbrechen()
+        if was == "gemeldet":
+            rsi_serie.gemeldet()
+            return {"ok": True}
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    raise HTTPException(400, "Unbekannte Aktion")
+
+
+@router.post("/rsi/release/zuruecknehmen")
+async def rsi_zuruecknehmen(request: Request):
+    from . import rsi_serie
+    d = await _koerper(request)
+    r = rsi_serie.zuruecknehmen(d.get("release_id"), d.get("rsi_id"))
+    if not r.get("ok"):
+        raise HTTPException(409, r.get("grund") or "Ging nicht.")
+    return r
 
 
 @router.post("/rsi/{rid}/{was}")

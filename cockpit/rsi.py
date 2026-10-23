@@ -476,20 +476,23 @@ def neo_auftrag_text(r: dict[str, Any]) -> str:
             + "\n\nArbeite wie immer: erst lesen, dann klein ändern, vormerken. Dario prüft vor dem Einspielen.")
 
 
-async def neo_beauftragen(rid: str) -> dict[str, Any]:
+async def neo_beauftragen(rid: str, hinweis: str = "", kein_neustart: bool = False) -> dict[str, Any]:
     """Ein normaler Neo-Auftrag in einem eigenen Gespraech -- mit Darios Freigabe vor dem Einspielen
-    (neo_freigabe.py). Veiko sieht Neo dort arbeiten und kann eingreifen wie in jedem Neo-Gespraech."""
+    (neo_freigabe.py). Veiko sieht Neo dort arbeiten und kann eingreifen wie in jedem Neo-Gespraech.
+    hinweis/kein_neustart: aus einer RSI-Serie (rsi_serie.py) -- was die uebrigen Punkte der Serie
+    betrifft, und kein Neustart zwischen den Punkten."""
     from . import neo
     r = db.holen("rsi", rid)
     if not r:
         return {"ok": False, "grund": "Vorschlag nicht gefunden"}
     gid = db.neue_id("g")
     db.einfuegen("gespraeche", {"id": gid, "art": "neo", "titel": f"RSI: {r['titel']}"[:80], "erstellt": time.time(), "geaendert": time.time()})
-    jid = await neo.senden(gid, neo_auftrag_text(r), [])
+    text = neo_auftrag_text(r) + (f"\n\n{hinweis}" if hinweis else "")
+    jid = await neo.senden(gid, text, [], kein_neustart=kein_neustart)
     d = r["daten"] if isinstance(r["daten"], dict) else {}
     d["neo"] = {"gespraech_id": gid, "job": jid, "zeit": time.time()}
     _speichern(rid, d, "bei_neo")
-    return {"ok": True, "gespraech_id": gid}
+    return {"ok": True, "gespraech_id": gid, "job": jid}
 
 
 DARIO_PLAN_SYSTEM = (
@@ -546,7 +549,7 @@ def im_hintergrund(rid: str, art: str) -> bool:
 
 def liste() -> dict[str, Any]:
     zeilen = db.alle("SELECT * FROM rsi ORDER BY CASE stand WHEN 'geprueft' THEN 0 WHEN 'neu' THEN 1 WHEN 'plan' THEN 2 "
-                     "WHEN 'bei_neo' THEN 3 ELSE 4 END, erstellt DESC LIMIT 200")
+                     "WHEN 'in_serie' THEN 3 WHEN 'bei_neo' THEN 3 WHEN 'umgesetzt' THEN 5 ELSE 6 END, erstellt DESC LIMIT 200")
     s = stand()
     for z in zeilen:
         z["arbeitet"] = ARBEITET.get(z["id"])

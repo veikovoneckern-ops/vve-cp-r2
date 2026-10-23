@@ -68,6 +68,8 @@ AKTIONEN = {
     # Vorgemerktes im Gespraech klaeren (21.10.2026, Veiko: "im direkten Dialog weiter entscheiden,
     # was mit dieser Art von Notizen, Eingaengen, Ideen passiert").
     "vorgemerkt": ("vorgang_id", "was"),
+    # RSI-Serie (23.10.2026, rsi_serie.py): auswaehlen (umsetzen/verwerfen), starten, abbrechen, zuruecknehmen.
+    "rsi": ("was",),
 }
 # Laufen sofort, ohne Knopf: sie aendern nur den Stand des Verfahrens, nicht den
 # Bestand (Projekte, Aufgaben). Uebernehmen in Projekte bleibt ein Vorschlag mit Ja.
@@ -181,6 +183,7 @@ Erlaubte Aktionen (nur diese, nur mit ids aus LAGE/KONTEXT):
 - {"aktion":"mail","was":"entwurf|aendern|senden","mail_id":"m… aus KONTEXT oder MAIL-ENTWÜRFE, bei entwurf null","an":"Name aus dem ADRESSBUCH oder E-Mail-Adresse","bezug_art":"ergebnis|aufgabe|notiz|datei|projekt oder null","bezug_id":"Kennung aus LAGE/KONTEXT oder null","titel":"Titel des Dings, falls die Kennung fehlt","anweisung":"was in der Mail stehen soll, in Veikos Worten (Ton, du/Sie, Bitte, Frist)","stil":"kuerzer|freundlicher|foermlicher|klarer|englisch|korrektur oder null"} -- eine E-Mail. „Schick das Ergebnis an Hanna“ = entwurf: das Cockpit legt den Entwurf an, formuliert ihn, hängt das Ding an und zeigt ihn; abgeschickt wird erst auf Veikos Ja. „Mach sie kürzer“, „füg Lisa in Kopie hinzu“ (dann an = alle Empfänger) = aendern. senden NUR, wenn Veiko den Entwurf abschicken will. Formuliere den Mailtext NIE selbst in deiner Antwort -- das macht das Cockpit.
 - {"aktion":"vorgemerkt","vorgang_id":"v… aus VORGEMERKT","was":"freigeben|erledigt|verwerfen","anweisung":"bei freigeben: was das Team jetzt tun soll, in Veikos Worten, oder leer"} -- entscheidet über einen vorgemerkten Case (eine Notiz, an der das Team noch nicht arbeiten sollte): freigeben = Jason plant jetzt mit der Anweisung, was das Team tut (nennt Veiko jemanden, z. B. „Clayton soll …“, steht das in der Anweisung); erledigt = ablegen, nichts mehr tun; verwerfen = weg samt der Aufgaben dazu. Braucht Veikos Ja.
 - {"aktion":"neo","auftrag":"was Neo am Cockpit oder Server tun soll"} -- NUR für Programm und Server des Cockpits, NIE für Inhalte (Projekte, Aufgaben, Ergebnisse, Notizen).
+- {"aktion":"rsi","was":"auswaehlen|starten|abbrechen|zuruecknehmen","umsetzen":["s… aus RSI"],"verwerfen":["s… aus RSI"],"release_id":"x… oder null","rsi_id":"s… oder null"} -- RSI-Verbesserungen am Cockpit (siehe RSI im KONTEXT bzw. in LAGE). auswaehlen: Veiko sagt, welche Punkte umgesetzt und welche verworfen werden („setz Punkt 1 und 3 um, verwirf 2“, „alle, die Dario sinnvoll findet“) -- Verworfenes ist sofort weg, für den Rest prüft Dario die Auswahl auf Widersprüche (kostet wenige Cent). Fass bei mehreren Punkten zusammen, was umgesetzt und was verworfen wird. starten: NUR wenn die geprüfte Auswahl bereitliegt (RSI in LAGE) und Veiko „los“, „starte“, „mach“ sagt -- dann setzt Neo die Punkte nacheinander um, Dario prüft jede Änderung vor dem Einspielen, am Ende kommt ein neues Release. abbrechen: eine geprüfte Auswahl verwerfen oder eine laufende Umsetzung nach dem aktuellen Punkt anhalten. zuruecknehmen: „nimm das letzte Release zurück“ = ohne Kennungen; ein einzelner Punkt mit rsi_id; ein bestimmtes Release mit release_id. Braucht immer Veikos Ja. Steht in LAGE „RSI-RELEASE (noch nicht gemeldet …)“, sag Veiko das zuerst, in einfachen Worten.
 - {"aktion":"langlauf","titel":"kurzer Titel","auftrag":"was in Etappen entstehen soll, in mehreren Sätzen, mit allem, was Veiko dazu gesagt hat","art":"buch|dokument|praesentation|bilder|webseite|video","rolle":"buch|stratege|designer|video oder null","projekt_id":"p… oder null","aufgabe_id":"t… oder null","pruefer":"dario|demmis","pruef_alle":3,"budget":5} -- ein LongRun: ein großes Vorhaben (ein ganzes Buch, eine große Präsentation, ein ausführliches Konzept, eine Studie, eine Strategie, ein Leitfaden, ein langes Dokument, ein langes Video), das in Etappen entsteht und von Dario (Claude) oder Demmis (Gemini) geprüft wird. Sagt Veiko „Long Run“, „in Etappen“, „durchgängig und tief“, „komplett“, „vollständig“, „ausführlich“, „umfassend“ oder „gründlich“ zu einem Werk, das er HABEN will: IMMER langlauf, nie ausarbeiten. art praesentation für Präsentationen und Foliensätze, bilder für Bildserien und viele Bilder, webseite für Webseiten, buch für Bücher, video für Videos, sonst dokument. Nennt er Demmis/Gemini, ist pruefer demmis, sonst dario. pruef_alle: nach wie vielen Kapiteln/Teilen geprüft wird; 0 = NUR AM ENDE, wenn alles fertig ist -- immer dann, wenn Veiko „danach“, „am Ende“, „wenn es fertig ist“ oder „wenn du fertig bist“ sagt. Vorhandene Ergebnisse und Unterlagen des Projekts nimmt das Cockpit selbst dazu. Die Prüfungen kosten Geld: nenne das Budget (Vorgabe 5 Dollar) und frag immer „Soll ich das so machen?“.
 - {"aktion":"pruefen","ergebnis_id":"r… aus LAGE/KONTEXT","titel":"Titel des Ergebnisses"} -- Daniel (Red Team) prüft ein VORHANDENES Ergebnis, z. B. ein Recherche-Dossier („ungeprüft“). „Lass Daniel das prüfen“ ist IMMER pruefen, NIE ausarbeiten -- eine Ausarbeitung macht etwas Neues, und sie macht nie Daniel.
 - {"aktion":"extern_pruefen","wer":"dario|demmis|elon","ergebnis_id":"r… aus LAGE/KONTEXT","titel":"Titel des Ergebnisses"} -- ein Externer (Dario = Claude, Demmis = Gemini, Elon = Grok) prüft ein VORHANDENES Werk abschließend, z. B. „lass Demmis das Buch prüfen“. Kostet Geld, deshalb immer erst nach Veikos Ja. NIE pruefen (das ist Daniel) und NIE langlauf (der schreibt etwas Neues). Ob ein Externer ein Werk schon geprüft hat, steht im Steckbrief GENAU dieses Ergebnisses.
@@ -402,6 +405,15 @@ def lage_text() -> str:
         teile.append("RECHERCHE-DOSSIERS (Unterlagen, öffnen mit art datei):\n" + "\n".join(
             f"- {x['id']}: {x['name'][:90]} ({_zeit(x['erstellt'])}" + (f", Projekt {x['pname']}" if x.get("pname") else ", ohne Projekt")
             + (f", Aufgabe {x['atitel']}" if x.get("atitel") else "") + ")" for x in dos))
+    # RSI-Serie (23.10.2026, rsi_serie.py): Stand der Umsetzung -- und ein fertiges Release, das Veiko
+    # noch nicht gehoert hat ("dann soll mir gesagt werden: abgeschlossen, das neue Release ist da").
+    try:
+        from . import rsi_serie
+        rs = rsi_serie.talk_text()
+    except Exception:  # noqa: BLE001 -- die Lage darf nie an RSI scheitern
+        rs = ""
+    if rs:
+        teile.append(rs)
     teile.append("PROJEKTE:\n" + stab.projektliste_text())
     teile.append("GEDÄCHTNIS:\n" + stab.gedaechtnis_text())
     return "\n\n".join(teile)
@@ -557,15 +569,33 @@ def _stack_kontext() -> str:
 def _rsi_kontext() -> str:
     """Seite RSI (23.10.2026): die offenen Verbesserungsvorschlaege, damit Talk darueber sprechen kann."""
     zeilen = []
-    for r in db.alle("SELECT titel, stand, daten FROM rsi WHERE stand IN ('neu','geprueft','plan','bei_neo') ORDER BY erstellt DESC LIMIT 10"):
+    # Nummeriert in derselben Reihenfolge wie die Karten der Seite (rsi.liste) -- "Punkt 2" meint die zweite Karte.
+    from . import rsi as _rsi_mod
+    offen = [r for r in _rsi_mod.liste()["vorschlaege"] if r["stand"] in ("neu", "geprueft", "plan", "bei_neo", "in_serie")][:15]
+    for nr, r in enumerate(offen, 1):
         d = r["daten"] if isinstance(r["daten"], dict) else {}
         da = d.get("dario") or {}
-        zeilen.append(f"- {r['titel']} ({r['stand']}): {str(d.get('problem') or '')[:200]}"
-                      + (f" Dario: {da.get('urteil')}, {str(da.get('begruendung') or '')[:200]} Weiter mit: {da.get('wer_weiter')}." if da.get("urteil") else ""))
+        sr = d.get("serie") or {}
+        zeilen.append(f"- Punkt {nr}, {r['id']}: {r['titel']} ({r['stand']}): {str(d.get('problem') or '')[:200]}"
+                      + (f" Dario: {da.get('urteil')}, {str(da.get('begruendung') or '')[:200]} Weiter mit: {da.get('wer_weiter')}." if da.get("urteil") else "")
+                      + (f" Letzter Umsetzungsversuch: {sr.get('ergebnis')}, {str(sr.get('grund') or '')[:160]}." if sr.get("ergebnis") else ""))
     return ("VEIKO SCHAUT AUF RSI (Recursive Self-Improvement): nachts liest Neo die Gespräche, findet, wo es hakte, und schlägt "
-            "Verbesserungen vor (ohne etwas zu ändern); Dario prüft und sagt, wer sie ausarbeiten soll. Beauftragen, Plan bei Dario "
-            "bestellen und Verwerfen geht dort per Knopf, nicht über Talk.\n"
-            + ("Offene Vorschläge:\n" + "\n".join(zeilen) if zeilen else "Keine offenen Vorschläge."))
+            "Verbesserungen vor (ohne etwas zu ändern); Dario prüft. Veiko wählt aus, was umgesetzt und was verworfen wird (aktion rsi "
+            "auswaehlen, mit den Kennungen), Dario prüft die Auswahl auf Widersprüche, dann startet Veiko die Umsetzung (aktion rsi "
+            "starten). Bei mehreren Punkten fass zusammen: „Umgesetzt werden: …, verworfen: … -- soll ich das so machen?“\n"
+            + ("Offene Vorschläge:\n" + "\n".join(zeilen) if zeilen else "Keine offenen Vorschläge.")
+            + _rsi_releases_text())
+
+
+def _rsi_releases_text() -> str:
+    from . import rsi_serie
+    rel = rsi_serie.releases()[:3]
+    if not rel:
+        return ""
+    return ("\nLetzte RSI-Releases (zurücknehmen mit aktion rsi zuruecknehmen):\n" + "\n".join(
+        f"- {r['id']} vom {rsi_serie.wann(r['zeit'])}"
+        + (" (zurückgenommen)" if r.get("zurueckgenommen") else "") + ": "
+        + "; ".join(f"{p['id']} {p['titel']}" + (" [zurückgenommen]" if p.get("zurueckgenommen") else "") for p in r["punkte"]) for r in rel))
 
 
 def _empfehlungen_kontext() -> str:
@@ -1092,6 +1122,42 @@ def _pruef_ergebnis(a: dict[str, Any]) -> dict[str, Any] | None:
     return db.holen("ergebnisse", neu[0]["id"]) if len(neu) == 1 else None
 
 
+def _rsi_beschriften(a: dict[str, Any]) -> str | None:
+    """Was Veiko vor seinem Ja liest -- bei mehreren Punkten die Zusammenfassung, die er sich gewuenscht hat
+    ("folgende Punkte werden jetzt bearbeitet, soll ich das alles starten")."""
+    from . import rsi_serie
+    was = a.get("was")
+    titel = lambda i: (db.holen("rsi", str(i)) or {}).get("titel")  # noqa: E731
+    if was == "auswaehlen":
+        um = [t for t in (titel(i) for i in a.get("umsetzen") or []) if t]
+        weg = [t for t in (titel(i) for i in a.get("verwerfen") or []) if t]
+        if not um and not weg:
+            return None
+        teile = []
+        if um:
+            teile.append(f"Umsetzen ({len(um)}): " + "; ".join(f"„{t[:60]}“" for t in um)
+                         + f" -- Dario prüft vorher auf Widersprüche (etwa {rsi_serie.schaetzung([str(i) for i in a['umsetzen']]):.2f} $)")
+        if weg:
+            teile.append(f"Verwerfen ({len(weg)}): " + "; ".join(f"„{t[:60]}“" for t in weg))
+        return " · ".join(teile)
+    s = rsi_serie.stand()
+    if was == "starten":
+        if s.get("stand") != "bereit":
+            return None
+        return (f"Umsetzung starten: {len(s.get('reihenfolge') or [])} Punkte nacheinander ("
+                + "; ".join(f"„{(titel(i) or '')[:50]}“" for i in s.get("reihenfolge") or []) + "), Dario prüft jede Änderung, danach neues Release")
+    if was == "abbrechen":
+        return {"bereit": "Geprüfte Auswahl verwerfen, nichts umsetzen", "laeuft": "Umsetzung nach dem aktuellen Punkt anhalten"}.get(s.get("stand"))
+    if was == "zuruecknehmen":
+        if a.get("rsi_id"):
+            t = titel(a["rsi_id"])
+            return f"Zurücknehmen: „{t}“" if t else None
+        rel = next((r for r in rsi_serie.releases() if (r["id"] == a.get("release_id")) or (not a.get("release_id") and not r.get("zurueckgenommen"))), None)
+        return (f"Release vom {rsi_serie.wann(rel['zeit'])} zurücknehmen: "
+                + "; ".join(f"„{p['titel'][:50]}“" for p in rel["punkte"] if not p.get("zurueckgenommen"))) if rel else None
+    return None
+
+
 def beschriften(a: dict[str, Any]) -> str | None:
     art = a["aktion"]
     # "Pruefe das Dossier …" als Ausarbeitung (gemessen am 19.10.: an Neal, Form Dokument)
@@ -1187,6 +1253,8 @@ def beschriften(a: dict[str, Any]) -> str | None:
     if art == "ausarbeiten":
         return (f"{stab.rollen_name(a.get('rolle') or 'stratege')} ausarbeiten lassen: {str(a.get('titel') or '').strip()[:90] or auftrag_titel(a['auftrag'])}"
                 + (", danach Aufgaben anlegen" if a.get("aufgaben_ableiten") else ""))
+    if art == "rsi":
+        return _rsi_beschriften(a)
     if art == "merken":
         return f"Merken: {a['begriff']} = {a['bedeutung'][:80]}"
     if art == "notiz":
@@ -1379,6 +1447,29 @@ async def ausfuehren(a: dict[str, Any]) -> dict[str, Any]:
             return {"ok": True, "daily_id": did}
         except ValueError as f:
             return {"ok": False, "grund": str(f)}
+    if art == "rsi":
+        from . import rsi_serie
+        was = a.get("was")
+        try:
+            if was == "auswaehlen":
+                r = rsi_serie.auswahl([str(x) for x in a.get("umsetzen") or []], [str(x) for x in a.get("verwerfen") or []])
+                return {**r, "rsi_text": (f"{r.get('verworfen', 0)} verworfen. " if r.get("verworfen") else "")
+                        + ("Dario prüft die Auswahl jetzt auf Widersprüche -- in ein, zwei Minuten liegt sie zum Start bereit."
+                           if r.get("umsetzen") else "")}
+            if was == "starten":
+                r = rsi_serie.starten()
+                return {**r, "rsi_text": f"Neo setzt jetzt {r['punkte']} Punkt{'e' if r['punkte'] != 1 else ''} nacheinander um; ich sage dir Bescheid, wenn das Release da ist."}
+            if was == "abbrechen":
+                return rsi_serie.abbrechen()
+            if was == "zuruecknehmen":
+                r = rsi_serie.zuruecknehmen(a.get("release_id") or None, a.get("rsi_id") or None)
+                if r.get("ok"):
+                    r["rsi_text"] = ("Zurückgenommen: " + ", ".join(r["punkte"]) + "."
+                                 + (" Das Cockpit startet kurz neu -- lad danach die Seite neu." if r.get("neustart") else " Lad die Seite einmal neu."))
+                return r
+        except ValueError as f:
+            return {"ok": False, "grund": str(f)}
+        return {"ok": False, "grund": "Unbekannte RSI-Aktion"}
     if art == "projekt_neu":
         pid = db.neue_id("p")
         db.anlegen("projekte", {"id": pid, "name": a["name"][:80], "farbe": "#6D4AE0", "status": "aktiv",
@@ -1552,6 +1643,10 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
     # Vorlese-Regeln kamen frueher VOR der Lage -- jede Minute und jeder Wechsel zwischen
     # Tippen und Sprechen liess so die ganze Anweisung neu rechnen.
     system = system_kern() + f"\n\n{kontext_text(kontext)}\n\nHEUTE: {time.strftime('%A, %d.%m.%Y %H:%M')}"
+    if "RSI-RELEASE (noch nicht gemeldet" in system:
+        # Diese Antwort sagt Veiko das Release an (Regel in der Aktionsbeschreibung) -- danach gilt es als gemeldet.
+        from . import rsi_serie
+        rsi_serie.gemeldet()
     st = stand_text(gid)
     if st:
         system += "\n\n" + st
@@ -2054,6 +2149,8 @@ async def senden(gid: str, text: str, kontext: dict | None, anhaenge: list[str],
                 zeilen.append(f"Gestartet: {was}. Sein Urteil steht in wenigen Minuten am Ergebnis -- frag mich dann „Was sagt Daniel?“.")
             elif r.get("vorgang_id"):
                 zeilen.append(f"Gestartet: {was}. Das Ergebnis erscheint in der Inbox.")
+            elif r.get("rsi_text"):
+                zeilen.append(r["rsi_text"])
             else:
                 zeilen.append(f"Erledigt: {was}.")
         hinweis = "\n".join(zeilen)

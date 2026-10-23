@@ -101,8 +101,10 @@ def bauen(seit: float | None = None) -> dict[str, str] | None:
                       "AND a.faellig<=? ORDER BY a.faellig LIMIT 15", (heute,))
     lage = ueberblick.lage()
     notizen_neu = db.wert("SELECT COUNT(*) FROM notizen WHERE erstellt>=?", (seit,)) or 0
+    from . import rsi_serie
+    rels = [r for r in rsi_serie.releases() if r["zeit"] >= seit]      # RSI-Releases seit dem letzten Bericht
 
-    if not (achtung or ents or neu or faellig):
+    if not (achtung or ents or neu or faellig or rels):
         return None
 
     t: list[str] = []
@@ -117,6 +119,13 @@ def bauen(seit: float | None = None) -> dict[str, str] | None:
         for a in achtung:
             t.append(a)
             h.append(f'<p style="background:#fdecea;padding:10px 12px;border-radius:8px">{_h(a)}</p>')
+    if rels:
+        abschnitt("Neues Release des Cockpits")
+        for r in rels:
+            satz = (f"{_wann(r['zeit'])}: " + ", ".join(p["titel"] for p in r["punkte"])
+                    + (" -- inzwischen zurückgenommen." if r.get("zurueckgenommen") else ". Zurücknehmen geht auf der Seite RSI oder in Talk."))
+            t.append(satz)
+            h.append(f"<p>{_h(satz)}</p>")
     if ents:
         abschnitt(f"Wartet auf dich ({len(ents)})")
         h.append("<ul>")
@@ -163,7 +172,7 @@ def bauen(seit: float | None = None) -> dict[str, str] | None:
         links.append(f'<a href="{_h(url)}">{_h(wo)}</a>')
     h.append('<p style="margin-top:24px;color:#6b7280">Im Cockpit: ' + " · ".join(links) + "</p>")
 
-    teile = [f"{len(ents)} wartet auf dich" if ents else "", f"{len(neu)} neu" if neu else "",
+    teile = ["neues Release" if rels else "", f"{len(ents)} wartet auf dich" if ents else "", f"{len(neu)} neu" if neu else "",
              f"{len(faellig)} fällig" if faellig else "", "Achtung" if achtung else ""]
     datum = datetime.datetime.now(BERLIN).strftime("%d.%m.")
     betreff = f"Stab-Bericht {datum}: " + ", ".join(x for x in teile if x)

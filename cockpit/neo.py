@@ -781,10 +781,14 @@ async def _kern(gid: str, modell: str, lauf: dict[str, Any]) -> None:
             ergebnis = await nf.einspielen(lauf, lauf.get("auftrag") or "", pruefung, lauf.get("jid") or "")
             neustart = bool(ergebnis.get("ok") and ergebnis.get("neustart"))
         lauf["pruefung"] = {**pruefung, "eingespielt": bool(ergebnis and ergebnis.get("ok"))}
+        lauf["einspiel_ergebnis"] = ergebnis      # Commit, Dateien, Neustart -- liest die RSI-Serie (rsi_serie.py)
         letzter_text = ((letzter_text + "\n\n---\n\n") if letzter_text else "") + nf.bericht(pruefung, ergebnis, lauf)
+    lauf["antwort"] = letzter_text
     _abschliessen(gid, lauf, letzter_text, modell)
     await schlange.put({"typ": "fertig", "text": letzter_text})
-    if neustart:
+    # In einer RSI-Serie startet das Cockpit erst nach dem LETZTEN Punkt neu (rsi_serie.py) --
+    # ein Neustart dazwischen braeche die Serie mitten im naechsten Punkt ab.
+    if neustart and not lauf.get("kein_neustart"):
         nf.neustart_spaeter()
 
 
@@ -808,7 +812,7 @@ def _abschliessen(gid: str, lauf: dict[str, Any], text: str, modell: str, abgebr
     db.ausfuehren("UPDATE gespraeche SET geaendert=? WHERE id=?", (time.time(), gid))
 
 
-async def senden(gid: str, text: str, anhaenge: list[str]) -> str:
+async def senden(gid: str, text: str, anhaenge: list[str], kein_neustart: bool = False) -> str:
     if laufender_job(gid):
         raise ValueError("Neo arbeitet in diesem Gespräch noch. Warte oder brich ab.")
     voll = text
@@ -837,7 +841,8 @@ async def senden(gid: str, text: str, anhaenge: list[str]) -> str:
     if not modell:
         raise ValueError("Für Neo ist kein lokales Modell installiert.")
     jid = db.neue_id("j")
-    lauf = {"schlange": asyncio.Queue(), "schritte": [], "dateien": [], "start": time.time(), "auftrag": text, "jid": jid}
+    lauf = {"schlange": asyncio.Queue(), "schritte": [], "dateien": [], "start": time.time(), "auftrag": text, "jid": jid,
+            "kein_neustart": kein_neustart}
     job = {"gespraech_id": gid, "ereignisse": [], "fertig": False, "start": time.time(), "modell": modell,
            "lauf": lauf, "neu": asyncio.Event()}
 
