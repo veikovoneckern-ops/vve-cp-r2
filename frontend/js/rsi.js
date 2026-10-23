@@ -111,7 +111,7 @@ export function Rsi() {
     <section class="karte rsi-kopf">
       <div class="karte-kopf"><h3>Das Cockpit verbessert sich selbst</h3>
         <span class="knopfreihe"><button class="btn klein primaer" disabled=${d.laeuft} onClick=${jetzt}><${Icon} n="play" g=${13} />${d.laeuft ? "Läuft …" : "Jetzt durchsehen"}</button></span></div>
-      <p class="klein">Jede Nacht zwischen 5 und 7 Uhr liest Neo deine Gespräche mit Talk und Neo seit dem letzten Lauf: wo du widersprochen hast, wo das Cockpit
+      <p class="klein">Jede Nacht zwischen 3 und 5 Uhr liest Neo deine Gespräche mit Talk und Neo seit dem letzten Lauf: wo du widersprochen hast, wo das Cockpit
         aufgegeben hat, wo du etwas wiederholen musstest. Er sieht im Code nach, woran es lag, und schlägt Verbesserungen vor. <b>Er ändert dabei nichts.</b>${" "}
         Dario prüft jeden Vorschlag und sagt, wer ihn ausarbeiten soll. Du entscheidest hier.</p>
       <p class="klein ${s.fehler ? "" : "leise"}">${d.laeuft ? html`<b>Gerade:</b> ${s.schritt || "läuft"}`

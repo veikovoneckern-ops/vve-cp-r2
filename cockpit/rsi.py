@@ -8,7 +8,7 @@ kann. Er soll aber nichts schon umsetzen oder einspielen. Das soll dann durch Da
 werden. Und dann brauche ich einen Vorschlag, was Dario ausarbeiten soll im naechsten Schritt
 oder ob Neo das ausarbeiten soll."
 
-Der Ablauf, einmal je Nacht (05--07 Uhr, nach der Modell-Revision, vor den Daily Tasks):
+Der Ablauf, einmal je Nacht (03--05 Uhr deutscher Zeit):
   1. SAMMELN (ohne Modell, schnell): Talk- und Neo-Gespraeche seit dem letzten Lauf. Ein Befund
      ist eine Stelle, an der es hakte -- Veiko widerspricht ("nein", "du sollst", "funktioniert
      nicht"), Talk gibt auf ("nichts gefunden", "verstehe dich nicht") oder Veiko wiederholt
@@ -46,7 +46,7 @@ from zoneinfo import ZoneInfo
 
 BERLIN = ZoneInfo("Europe/Berlin")
 
-VON, BIS = 5, 7                  # deutsche Zeit
+VON, BIS = 3, 5                  # deutsche Zeit (Veikos Vorgabe)
 ERSTER_RUECKBLICK = 7 * 86400    # beim allerersten Lauf: die letzte Woche
 MAX_BEFUNDE = 40
 MAX_VORSCHLAEGE = 5
@@ -442,15 +442,19 @@ def starten(von_hand: bool = True) -> bool:
 
 
 async def schleife() -> None:
-    """Einmal je Nacht, 05--07 Uhr deutscher Zeit: nach der Modell-Revision (02--05), vor den Daily Tasks."""
+    """Einmal je Nacht, 03--05 Uhr deutscher Zeit (Veikos Vorgabe, 23.10.2026). Die Modell-Revision
+    misst im selben Fenster (02--05) Antwortzeiten; laeuft sie noch, wartet RSI auf sie -- zwei
+    Modelle gleichzeitig verfaelschten ihre Messung. Aber hoechstens bis 04:15, sonst fiele RSI in
+    einer Nacht mit langer Revision ganz aus."""
     await asyncio.sleep(120)
     while True:
         try:
             jetzt = datetime.datetime.now(BERLIN)
             heute = jetzt.date().isoformat()
             from . import revision
+            spaet = jetzt.hour * 60 + jetzt.minute >= 4 * 60 + 15
             if an() and VON <= jetzt.hour < BIS and stand().get("nacht") != heute and not laeuft() \
-                    and not (revision.stand() or {}).get("laeuft"):
+                    and (spaet or not (revision.stand() or {}).get("laeuft")):
                 _setzen(nacht=heute)
                 starten(von_hand=False)
         except Exception:  # noqa: BLE001
