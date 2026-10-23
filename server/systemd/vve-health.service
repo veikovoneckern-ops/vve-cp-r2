@@ -1,0 +1,14 @@
+[Unit]
+Description=VVE Health-Watchdog — GPU-Temperatur und Kern-Dienste, greift im Notfall selbst ein
+After=multi-user.target docker.service
+
+[Service]
+ExecStart=/usr/local/bin/vve-health.py
+Restart=always
+RestartSec=10
+User=vveadmin
+Group=vveadmin
+EnvironmentFile=-/etc/vvec/vvec.env
+
+[Install]
+WantedBy=multi-user.target

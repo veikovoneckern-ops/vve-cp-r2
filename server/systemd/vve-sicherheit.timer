@@ -1,0 +1,15 @@
+[Unit]
+Description=VVE Sicherheits-Check alle fuenf Minuten
+
+[Timer]
+# Fuenf Minuten wie vvec-vorgang.timer und aus demselben Grund: die
+# Firewall aendert sich nicht im Sekundentakt, ein verpasster Lauf ist
+# bedeutungslos. Kein Sekundentakt wie vve-health.py -- dort geht es um
+# eine echte Hardware-Gefahr, hier um einen Zustand, der Minuten bis
+# Stunden stabil bleibt.
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

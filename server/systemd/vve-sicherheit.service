@@ -1,0 +1,8 @@
+[Unit]
+Description=VVE Sicherheits-Check — Firewall-Drift, fail2ban, fehlgeschlagene Anmeldungen
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/vve-sicherheit.py
+User=vveadmin
+Group=vveadmin

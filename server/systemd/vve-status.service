@@ -1,0 +1,12 @@
+[Unit]
+Description=VVE Server Status API
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/vve-status.py
+User=vveadmin
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

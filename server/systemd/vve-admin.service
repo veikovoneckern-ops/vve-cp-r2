@@ -1,0 +1,12 @@
+[Unit]
+Description=VVE Server Admin API
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/vve-admin.py
+User=vveadmin
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
