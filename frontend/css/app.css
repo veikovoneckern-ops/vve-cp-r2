@@ -2494,3 +2494,36 @@ button.logo-knopf:hover{background:var(--chrome-line)}
 .ub-mini .ub-form{font-size:10px}
 .ub-klappe .klappe-inhalt{min-width:0}
 @media (max-width:600px){.ub-mini{flex-basis:150px}}
+/* RSI einfacher (23.10.2026 abends): ein Kasten "Was jetzt zu tun ist" mit Schrittleiste, schlanke Kacheln, Verlauf unten */
+.rsi-titel h2{margin:0 0 4px}
+.rsi-titel p{margin:0}
+.rsi-jetzt{border:2px solid var(--steel);background:var(--steel-soft)}
+.rsi-jetzt h3{margin:10px 0 6px;font-size:18px}
+.rsi-du{font-size:15px}
+.rsi-schritte{display:flex;flex-wrap:wrap;gap:6px 18px;list-style:none;margin:0;padding:0;font-size:13px;color:var(--ink-3)}
+.rsi-schritte li{display:flex;align-items:center;gap:6px}
+.rsi-schritte li span{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;
+  border:1.5px solid var(--line);font-weight:700;font-size:12px;background:var(--surface)}
+.rsi-schritte li.war span{background:var(--steel);border-color:var(--steel);color:#fff}
+.rsi-schritte li.jetzt{color:var(--ink);font-weight:700}
+.rsi-schritte li.jetzt span{border-color:var(--steel);color:var(--steel);box-shadow:0 0 0 3px var(--steel-soft)}
+.rsi-leiste-knoepfe{margin-top:8px}
+.rsi-zahl{font-weight:600;margin-right:4px}
+.rsi-frage{margin-top:8px;padding:10px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+.rsi-frage ol{margin:4px 0 8px}
+.rsi-abschnitt{margin:6px 0 -4px;font-size:15px}
+.rsi-karte-kopf{display:flex;align-items:flex-start;gap:12px}
+.rsi-karte-kopf .rsi-haken{width:22px;height:22px;margin-top:2px;flex:none}
+.rsi-haken-platz{width:22px;flex:none}
+.rsi-karte-titel{flex:1;min-width:0;cursor:pointer;display:flex;flex-direction:column;gap:6px}
+.rsi-karte.gewaehlt{border-color:var(--steel);box-shadow:inset 4px 0 0 var(--steel)}
+.rsi-karte > p{margin:8px 0 0 34px}
+.rsi-karte > .fehlerbox,.rsi-karte > .hinweisbox{margin:8px 0 0 34px}
+.rsi-details{margin:8px 0 0 34px}
+.rsi-verlauf-zeile{display:flex;gap:12px;align-items:baseline;padding:4px 0}
+.rsi-verlauf-zeile > .leise{flex:none;width:150px}
+.rsi-alt{list-style:none;padding:0;margin:8px 0 0}
+.rsi-alt li{padding:4px 0;border-top:1px solid var(--line)}
+.rsi-einst summary{cursor:pointer}
+.rsi-einst .rsi-schalter{margin-top:10px}
+@media (max-width:600px){.rsi-karte > p,.rsi-karte > .fehlerbox,.rsi-karte > .hinweisbox,.rsi-details{margin-left:0}.rsi-verlauf-zeile{flex-direction:column;gap:0}}

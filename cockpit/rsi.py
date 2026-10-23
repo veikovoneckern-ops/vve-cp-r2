@@ -95,7 +95,12 @@ def budget() -> float:
 
 
 def laeuft() -> bool:
-    return bool(_lauf and not _lauf.done())
+    """Laeuft hier ein Durchsehen -- oder in einem eigenen Prozess (python -m cockpit.rsi, ueberlebt einen
+    Neustart des Cockpits)? Dessen Stand steht in der Datenbank; nach drei Stunden gilt er als verwaist."""
+    if _lauf and not _lauf.done():
+        return True
+    s = stand()
+    return bool(s.get("laeuft") and s.get("start") and time.time() - float(s["start"]) < 3 * 3600)
 
 
 # ---------------------------------------------------------------- 1. Sammeln
@@ -756,3 +761,9 @@ def liste() -> dict[str, Any]:
     return {"vorschlaege": zeilen, "stand": s, "laeuft": laeuft(), "an": an(), "budget": budget(),
             "dario_auto": bool(db.einstellung("rsi_dario_auto", True)), "bis": db.einstellung("rsi_bis", 0) or 0,
             "plan_schaetzung": round(schaetzung(DARIO_PLAN_SYSTEM, "x" * 6000, 4000), 2)}
+
+
+if __name__ == "__main__":
+    # Ein Durchsehen als eigener Prozess (systemd-run --user ... python -m cockpit.rsi): ueberlebt einen Neustart
+    # des Cockpits. Die Seite sieht ihn ueber den Stand in der Datenbank (laeuft()).
+    print(json.dumps(asyncio.run(lauf(von_hand=True)), ensure_ascii=False, indent=1))
