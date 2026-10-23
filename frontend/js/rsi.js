@@ -53,12 +53,11 @@ function Vorschlag({ v, neu, nr, wahl, setWahl, waehlbar }) {
   const offen = ["neu", "geprueft", "plan"].includes(v.stand);
   const empf = da.wer_weiter;
   const sr = d.serie || {};
-  // Auswahl fuer die Serie (rsi_serie.py): umsetzen oder verwerfen, ein zweiter Klick hebt sie auf.
-  const wahlKnopf = (art, text) => html`<button class=${"btn klein rsi-wahl " + art + (wahl === art ? " an" : "")}
-    aria-pressed=${wahl === art} onClick=${() => setWahl(v.id, wahl === art ? "" : art)}>${wahl === art ? "✓ " : ""}${text}</button>`;
-  return html`<section class=${"karte rsi-karte" + (offen ? "" : " ruhig") + (wahl ? " gewaehlt-" + wahl : "")}>
-    ${offen && waehlbar && html`<div class="rsi-wahlreihe"><span class="leise klein">${nr ? `Punkt ${nr}` : ""}</span>
-      ${wahlKnopf("umsetzen", "Umsetzen")}${wahlKnopf("verwerfen", "Verwerfen")}</div>`}
+  // Auswahl fuer die Serie (rsi_serie.py): EINE Ankreuzbox je Kachel (Veiko, 23.10.2026) -- was
+  // mit den Angekreuzten passiert (verwerfen oder pruefen und umsetzen), entscheidet die Leiste.
+  return html`<section class=${"karte rsi-karte" + (offen ? "" : " ruhig") + (wahl ? " gewaehlt-umsetzen" : "")}>
+    ${offen && waehlbar && html`<label class="rsi-wahlreihe"><input type="checkbox" class="rsi-haken" checked=${!!wahl}
+      onChange=${(e) => setWahl(v.id, e.target.checked ? "an" : "")} /><span class="klein">${nr ? `Punkt ${nr}` : ""} ${wahl ? "-- ausgewählt" : "-- auswählen"}</span></label>`}
     ${sr.ergebnis && html`<div class=${sr.ergebnis === "umgesetzt" ? "hinweisbox" : "fehlerbox"} style="margin-bottom:8px">
       <b>Letzter Umsetzungsversuch: ${ERGEBNIS[sr.ergebnis] || sr.ergebnis}</b>${sr.grund ? " -- " + sr.grund : ""}
       ${sr.gespraech_id && html` <a href=${"#/neo/" + sr.gespraech_id}>Neos Gespräch ansehen</a>`}</div>`}
@@ -110,35 +109,41 @@ function Vorschlag({ v, neu, nr, wahl, setWahl, waehlbar }) {
 // Veiko: "bei mehreren Punkten per Klickbox auswaehlen, welche bearbeitet und welche verworfen werden,
 // dann eine Art Start Bearbeitung ... vorher auf Widersprueche pruefen ... dann soll mir gesagt werden:
 // abgeschlossen, das neue Release ist da ... und zuruecknehmen koennen."
-function Auswahlleiste({ wahl, titel, leeren, fertig }) {
-  const um = Object.keys(wahl).filter((k) => wahl[k] === "umsetzen");
-  const weg = Object.keys(wahl).filter((k) => wahl[k] === "verwerfen");
-  const [frage, setFrage] = useState(null);       // {schaetzung} -- die Zusammenfassung vor dem Ja
+function Auswahlleiste({ wahl, titel, leeren, fertig, alle, alleWaehlen }) {
+  const ids = Object.keys(wahl);
+  const [frage, setFrage] = useState(null);       // {art: "umsetzen"|"verwerfen", schaetzung} -- die Zusammenfassung vor dem Ja
   const [laeuft, setLaeuft] = useState(false);
-  if (!um.length && !weg.length) return "";
-  async function weiter() {
-    try { setFrage(await api("/rsi/serie/auswahl", { methode: "POST", daten: { umsetzen: um, verwerfen: weg } })); } catch (e) { fehlerMelden(e); }
+  if (!ids.length) return "";
+  async function umsetzenFragen() {
+    try { const r = await api("/rsi/serie/auswahl", { methode: "POST", daten: { umsetzen: ids } }); setFrage({ art: "umsetzen", schaetzung: r.schaetzung }); }
+    catch (e) { fehlerMelden(e); }
   }
   async function ja() {
     setLaeuft(true);
     try {
-      const r = await api("/rsi/serie/auswahl", { methode: "POST", daten: { umsetzen: um, verwerfen: weg, bestaetigt: true } });
-      toast(r.umsetzen ? "Dario prüft die Auswahl auf Widersprüche." : `${r.verworfen} verworfen.`);
+      const daten = frage.art === "umsetzen" ? { umsetzen: ids, bestaetigt: true } : { verwerfen: ids, bestaetigt: true };
+      const r = await api("/rsi/serie/auswahl", { methode: "POST", daten });
+      toast(r.umsetzen ? "Dario prüft auf Widersprüche, danach setzt Neo um." : `${r.verworfen} verworfen.`);
       leeren(); setFrage(null); fertig();
     } catch (e) { fehlerMelden(e); }
     setLaeuft(false);
   }
   return html`<section class="karte rsi-leiste">
     ${!frage ? html`<div class="knopfreihe">
-        <b>${um.length} umsetzen${weg.length ? `, ${weg.length} verwerfen` : ""}</b>
-        <button class="btn klein primaer" onClick=${weiter}><${Icon} n="rechts" g=${13} />Weiter</button>
+        <b>${ids.length} ausgewählt</b>
+        <button class="btn klein primaer" onClick=${umsetzenFragen}><${Icon} n="play" g=${13} />Prüfen und umsetzen</button>
+        <button class="btn klein" onClick=${() => setFrage({ art: "verwerfen" })}>Verwerfen</button>
+        ${ids.length < alle && html`<button class="btn klein geist" onClick=${alleWaehlen}>Alle auswählen</button>`}
         <button class="btn klein geist" onClick=${leeren}>Auswahl aufheben</button></div>`
       : html`<div>
-        ${um.length > 0 && html`<p><b>Umgesetzt werden (${um.length}):</b></p><ol class="klein">${um.map((i) => html`<li>${titel[i]}</li>`)}</ol>`}
-        ${weg.length > 0 && html`<p><b>Verworfen werden (${weg.length}):</b> <span class="klein">${weg.map((i) => titel[i]).join(" · ")}</span></p>`}
-        ${um.length > 0 && html`<p class="klein">Bevor Neo anfängt, prüft Dario die Punkte zusammen auf Widersprüche und Überschneidungen -- auch gegen das,
-          was zuletzt umgesetzt wurde -- und legt die Reihenfolge fest. Das kostet etwa <b>${dollar(frage.schaetzung)}</b>. Danach siehst du sein Ergebnis und startest.</p>`}
-        <div class="knopfreihe"><button class="btn klein primaer" disabled=${laeuft} onClick=${ja}>${um.length ? "Ja, prüfen lassen" : "Ja, verwerfen"}</button>
+        <p><b>${frage.art === "umsetzen" ? `Umgesetzt werden (${ids.length}):` : `Verworfen werden (${ids.length}):`}</b></p>
+        <ol class="klein">${ids.map((i) => html`<li>${titel[i]}</li>`)}</ol>
+        ${frage.art === "umsetzen" && html`<p class="klein">Zuerst prüft Dario die Punkte zusammen auf Widersprüche und Überschneidungen -- auch gegen das, was zuletzt
+          umgesetzt wurde -- und legt die Reihenfolge fest (etwa <b>${dollar(frage.schaetzung)}</b>). <b>Danach setzt Neo von selbst um, was nicht widersprüchlich ist</b>,
+          einen Punkt nach dem anderen; Dario prüft jede Änderung vor dem Einspielen (je Punkt einige Cent). Was sich widerspricht, bleibt offen, mit Darios Frage an dich.
+          Am Ende bekommst du Bescheid, dass das neue Release da ist.</p>`}
+        <div class="knopfreihe"><button class=${"btn klein " + (frage.art === "umsetzen" ? "primaer" : "gefahr")} disabled=${laeuft} onClick=${ja}>
+            ${frage.art === "umsetzen" ? "Ja, prüfen und umsetzen" : "Ja, verwerfen"}</button>
           <button class="btn klein geist" onClick=${() => setFrage(null)}>Zurück</button></div></div>`}
   </section>`;
 }
@@ -155,7 +160,7 @@ function SerieKasten({ serie, titel, neu }) {
   }
   const t = (i) => titel[i] || i;
   const erg = s.ergebnisse || {};
-  if (s.stand === "pruefung") return html`<section class="karte rsi-serie"><div class="lade">Dario prüft die Auswahl auf Widersprüche (${(s.auswahl || []).length} Punkte) …</div></section>`;
+  if (s.stand === "pruefung") return html`<section class="karte rsi-serie"><div class="lade">Dario prüft die Auswahl auf Widersprüche (${(s.auswahl || []).length} Punkte) -- danach setzt Neo von selbst um, was nicht widersprüchlich ist …</div></section>`;
   if (s.stand === "fehler") return html`<section class="karte rsi-serie"><div class="fehlerbox">${s.fehler}</div>
     <div class="knopfreihe karte-fuss"><button class="btn klein" onClick=${() => tun("abbrechen")}>Schließen</button></div></section>`;
   if (s.stand === "bereit") return html`<section class="karte rsi-serie">
@@ -251,20 +256,15 @@ export function Rsi() {
   // Waehlen geht nur, solange keine Serie geprueft wird oder laeuft (rsi_serie.auswahl lehnt sonst ab).
   const waehlbar = !(serie && ["pruefung", "laeuft", "bereit"].includes(serie.stand));
   const waehlbare = offen.filter((v) => ["neu", "geprueft", "plan"].includes(v.stand));
-  function dariosEmpfehlung() {
-    const w = {};
-    waehlbare.forEach((v) => { const u = ((v.daten || {}).dario || {}).urteil; if (u === "sinnvoll") w[v.id] = "umsetzen"; else if (u === "verwerfen") w[v.id] = "verwerfen"; });
-    setWahlAlle(w);
-    if (!Object.keys(w).length) toast("Dario hat noch keinen Punkt beurteilt.");
-  }
+  const alleWaehlen = () => setWahlAlle(Object.fromEntries(waehlbare.map((v) => [v.id, "an"])));
   return html`<div class="seite rsi">
     <section class="karte rsi-kopf">
       <div class="karte-kopf"><h3>Das Cockpit verbessert sich selbst</h3>
         <span class="knopfreihe"><button class="btn klein primaer" disabled=${d.laeuft} onClick=${jetzt}><${Icon} n="play" g=${13} />${d.laeuft ? "Läuft …" : "Jetzt durchsehen"}</button></span></div>
       <p class="klein">Jede Nacht zwischen 3 und 5 Uhr liest Neo deine Gespräche mit Talk und Neo seit dem letzten Lauf: wo du widersprochen hast, wo das Cockpit
         aufgegeben hat, wo du etwas wiederholen musstest. Er sieht im Code nach, woran es lag, und schlägt Verbesserungen vor. Dario prüft jeden Vorschlag.${" "}
-        <b>Du wählst aus, was umgesetzt und was verworfen wird</b> -- hier oder in Talk („setz Punkt 1 und 3 um, verwirf 2“). Dario prüft die Auswahl auf Widersprüche,
-        dann setzt Neo sie nacheinander um, und du bekommst ein neues Release, das sich zurücknehmen lässt.</p>
+        <b>Du kreuzt an, was umgesetzt oder verworfen wird</b> -- hier oder in Talk („setz Punkt 1 und 3 um, verwirf 2“). Dario prüft die Auswahl auf Widersprüche,
+        danach setzt Neo von selbst um, was nicht widersprüchlich ist, und du bekommst ein neues Release, das sich zurücknehmen lässt.</p>
       <p class="klein ${s.fehler ? "" : "leise"}">${d.laeuft ? html`<b>Gerade:</b> ${s.schritt || "läuft"}`
         : s.fehler ? html`<span style="color:var(--signal)">Letzter Lauf gescheitert: ${s.fehler}</span>`
         : s.ende ? html`Letzter Lauf ${zeitText(s.ende)}: ${s.ergebnis || ""}${s.kosten ? ` Darios Prüfungen: ${dollar(s.kosten)}.` : ""}` : "Noch kein Lauf."}
@@ -277,10 +277,11 @@ export function Rsi() {
       </div>
     </section>
     <${SerieKasten} serie=${serie} titel=${titel} neu=${laden} />
-    ${waehlbar && waehlbare.length > 1 && !Object.keys(wahl).length && html`<div class="knopfreihe" style="margin:10px 0">
-      <span class="leise klein">Bei jedem Punkt „Umsetzen“ oder „Verwerfen“ wählen -- oder:</span>
-      <button class="btn klein" onClick=${dariosEmpfehlung}>Darios Urteil übernehmen</button></div>`}
-    ${waehlbar && html`<${Auswahlleiste} wahl=${wahl} titel=${titel} leeren=${() => setWahlAlle({})} fertig=${laden} />`}
+    ${waehlbar && waehlbare.length > 0 && !Object.keys(wahl).length && html`<div class="knopfreihe" style="margin:10px 0">
+      <span class="leise klein">Kreuz die Punkte an, die du umsetzen oder verwerfen willst -- dann erscheint die Leiste dafür.</span>
+      ${waehlbare.length > 1 && html`<button class="btn klein" onClick=${alleWaehlen}>Alle auswählen</button>`}</div>`}
+    ${waehlbar && html`<${Auswahlleiste} wahl=${wahl} titel=${titel} leeren=${() => setWahlAlle({})} fertig=${laden}
+      alle=${waehlbare.length} alleWaehlen=${alleWaehlen} />`}
     ${!offen.length && html`<${Leer} titel=${d.laeuft ? "Neo sieht gerade nach …" : "Keine offenen Vorschläge."} />`}
     ${offen.map((v, i) => html`<${Vorschlag} key=${v.id} v=${v} neu=${laden} nr=${i + 1} wahl=${wahl[v.id] || ""} setWahl=${setWahl} waehlbar=${waehlbar} />`)}
     <${Releases} releases=${d.releases} neu=${laden} />

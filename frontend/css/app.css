@@ -2462,7 +2462,8 @@ button.logo-knopf:hover{background:var(--chrome-line)}
 .rsi-kosten{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:8px}
 @media (max-width:820px){.rsi-zwei{grid-template-columns:minmax(0,1fr)}}
 /* RSI-Serie (23.10.2026): Auswahl je Karte, Leiste mit Zusammenfassung, Fortschritt, Releases */
-.rsi-wahlreihe{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.rsi-wahlreihe{display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer;user-select:none}
+.rsi-haken{width:18px;height:18px;accent-color:var(--steel);cursor:pointer}
 .rsi-wahlreihe .leise{margin-right:auto}
 .rsi-wahl.an.umsetzen{background:var(--steel);border-color:var(--steel);color:#fff}
 .rsi-wahl.an.verwerfen{background:var(--signal);border-color:var(--signal);color:#fff}

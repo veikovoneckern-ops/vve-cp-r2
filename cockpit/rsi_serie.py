@@ -152,10 +152,14 @@ def schaetzung(ids: list[str]) -> float:
     return round(rsi.schaetzung(PRUEF_SYSTEM, pruef_frage(ids), 1500 + 300 * len(ids)), 3)
 
 
-def auswahl(umsetzen: list[str], verwerfen: list[str]) -> dict[str, Any]:
+def auswahl(umsetzen: list[str], verwerfen: list[str], automatisch: bool = True) -> dict[str, Any]:
     """Verwirft sofort, was verworfen werden soll, und startet die Widerspruchspruefung fuer den Rest
-    (im Hintergrund). Rueckgabe: was passiert, mit geschaetzten Kosten."""
-    if laeuft():
+    (im Hintergrund). Rueckgabe: was passiert, mit geschaetzten Kosten.
+
+    automatisch (Vorgabe, Veiko 23.10.2026: "das, was ich auswaehle, soll dann auch, wenn nicht
+    widerspruechlich, umgesetzt werden"): nach der Pruefung setzt Neo sofort um, was nicht
+    zurueckgestellt ist -- ohne zweiten Klick. Zurueckgestelltes bleibt offen, mit Darios Frage."""
+    if laeuft() or stand().get("stand") == "bereit":
         raise ValueError("Es läuft schon eine Serie -- warte, bis sie fertig ist.")
     offen = {r["id"] for r in db.alle(f"SELECT id FROM rsi WHERE stand IN {OFFEN}")}
     umsetzen = [i for i in dict.fromkeys(umsetzen) if i in offen]
@@ -163,13 +167,12 @@ def auswahl(umsetzen: list[str], verwerfen: list[str]) -> dict[str, Any]:
     for i in verwerfen:
         db.ausfuehren("UPDATE rsi SET stand='verworfen', geaendert=? WHERE id=?", (time.time(), i))
     if not umsetzen:
-        db.einstellung_setzen(ZUSTAND, {})
         return {"ok": True, "verworfen": len(verwerfen), "umsetzen": 0}
     s = schaetzung(umsetzen)
     db.einstellung_setzen(ZUSTAND, {"id": db.neue_id("x"), "stand": "pruefung", "auswahl": umsetzen, "verworfen": verwerfen,
-                                    "start": time.time(), "schaetzung": s, "ergebnisse": {}})
+                                    "start": time.time(), "schaetzung": s, "ergebnisse": {}, "automatisch": automatisch})
     _starten(_pruefen())
-    return {"ok": True, "verworfen": len(verwerfen), "umsetzen": len(umsetzen), "schaetzung": s}
+    return {"ok": True, "verworfen": len(verwerfen), "umsetzen": len(umsetzen), "schaetzung": s, "automatisch": automatisch}
 
 
 async def _pruefen() -> None:
@@ -195,6 +198,20 @@ async def _pruefen() -> None:
             konflikte=[k for k in (j.get("konflikte") or []) if isinstance(k, dict)][:12],
             hinweise={i: str(hinweise.get(i) or "")[:1500] for i in reihe},
             zusammenfassung=str(j.get("zusammenfassung") or "")[:1500], pruef_kosten=round(kosten, 4), pruef_modell=modell)
+    if not s.get("automatisch"):
+        return
+    # Gleich weiter, ohne zweiten Klick -- Veikos Ja galt der Auswahl samt Umsetzung.
+    if not reihe:
+        for z in zurueck:
+            _stand_rsi(z["id"], "geprueft", zurueckgestellt=z.get("grund"), frage=z.get("frage_an_veiko"))
+        _setzen(stand="fertig", ende=time.time(), release_id=None, gemeldet=False,
+                meldung="Umgesetzt wurde nichts: Dario hat alle ausgewählten Punkte zurückgestellt, weil sie sich widersprechen. "
+                        "Seine Fragen an dich stehen an den Punkten.")
+        return
+    try:
+        starten()
+    except ValueError as e:
+        _setzen(stand="fehler", fehler=f"Geprüft, aber nicht gestartet: {e}")
 
 
 # ---------------------------------------------------------------- 3. Start: nacheinander umsetzen
