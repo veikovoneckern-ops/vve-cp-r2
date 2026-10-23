@@ -372,16 +372,21 @@ def abbrechen() -> bool:
 
 
 async def schleife() -> None:
-    """Nachts einmal: 02--05 Uhr deutscher Zeit, wenn das Team an ist."""
+    """Nachts einmal, 00:30--03:00 Uhr deutscher Zeit, wenn das Team an ist (Nachtplan vom 23.10.2026,
+    nachtplan.py: Veiko arbeitet 22--05 Uhr nicht mit dem Cockpit; die Revision kommt vor RSI um 3 Uhr,
+    damit sich die beiden nicht die Grafikkarten teilen und die Messung nicht verfaelscht wird)."""
     await asyncio.sleep(60)
     while True:
         try:
             jetzt = datetime.datetime.now(BERLIN)
             heute = jetzt.strftime("%Y-%m-%d")
+            minute = jetzt.hour * 60 + jetzt.minute
             # Laufen nachts noch Downloads (nachtladen.py), wartet die Revision auf sie --
-            # sonst maesse sie heute ohne die Modelle, fuer die sie geladen werden.
+            # sonst maesse sie heute ohne die Modelle, fuer die sie geladen werden. Aber nur bis
+            # 02:00: was dann noch laedt, misst die naechste Nacht.
             from . import nachtladen
-            if 2 <= jetzt.hour < 5 and stand().get("nacht") != heute and stab.stab_aktiv() and not nachtladen.laeuft():
+            if (30 <= minute < 180 and stand().get("nacht") != heute and stab.stab_aktiv()
+                    and (not nachtladen.laeuft() or minute >= 120)):
                 _stand_setzen(nacht=heute)
                 starten(von_hand=False)
         except Exception:  # noqa: BLE001

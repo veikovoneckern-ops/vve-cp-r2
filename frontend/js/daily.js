@@ -22,7 +22,7 @@ function BewertungPill({ b }) {
 
 function Formular({ d, rollen, vorlagen, zu, fertig }) {
   const [f, setF] = useState(() => d ? { titel: d.titel, auftrag: d.auftrag, rolle: d.rolle, uhrzeit: d.uhrzeit, tage: d.tage, netz: !!d.netz, projekt_id: d.projekt_id || "" }
-    : { titel: "", auftrag: "", rolle: "stratege", uhrzeit: "06:30", tage: [0, 1, 2, 3, 4], netz: true, projekt_id: "" });
+    : { titel: "", auftrag: "", rolle: "stratege", uhrzeit: "04:00", tage: [0, 1, 2, 3, 4], netz: true, projekt_id: "" });
   const [projekte, setProjekte] = useState([]);
   const [sendet, setSendet] = useState(false);
   useEffect(() => { api("/projekte").then((x) => setProjekte(x.projekte)).catch(() => {}); }, []);

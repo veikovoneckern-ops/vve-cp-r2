@@ -221,7 +221,7 @@ function NachtladenZeile({ d, setzen }) {
     : s.ende ? `zuletzt ${new Date(s.ende * 1000).toLocaleString("de-DE")}: ${s.ergebnis || ""}` : "";
   return html`<div class="zeile"><div class="haupt-text"><b>Nachts neue Modelle laden und testen</b>
       <div class="leise klein">${an
-        ? "an: zwischen 23 und 5 Uhr lädt das Cockpit bis zu zwei vielversprechende neue Modelle (höchstens 50 GB), "
+        ? "an: zwischen 22 und 5 Uhr lädt das Cockpit bis zu zwei vielversprechende neue Modelle (höchstens 50 GB), "
           + "misst sie danach gegen die heutige Besetzung und schlägt dir morgens vor, was besser wäre. Umgestellt und gelöscht wird nichts ohne dich."
         : "aus. Neue Modelle stehen nur als Vorschlag zum Laden in der Team-Übersicht."}</div>
       ${zuletzt && html`<div class="leise klein" style="margin-top:4px">${zuletzt}</div>`}

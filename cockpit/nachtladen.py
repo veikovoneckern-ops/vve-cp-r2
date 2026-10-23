@@ -11,9 +11,9 @@ jeder Download war ein Knopf. Ein neues Modell wurde also erst gemessen, nachdem
 Veiko es von Hand geladen hatte -- und dafuer musste er wissen, dass es lohnt.
 Jetzt schliesst sich der Kreis ohne ihn:
 
-  23:00  dieses Modul laedt bis zu zwei Ladevorschlaege (revision.laden_vorschlaege)
-  02:00  die Revision misst sie gegen das, was heute rechnet (sie nimmt in den
-         letzten 14 Tagen Geladenes zuerst) -- sie wartet, bis die Downloads fertig sind
+  22:00  dieses Modul laedt bis zu zwei Ladevorschlaege (revision.laden_vorschlaege)
+  00:30  die Revision misst sie gegen das, was heute rechnet (sie nimmt in den
+         letzten 14 Tagen Geladenes zuerst) -- sie wartet auf die Downloads, bis 02:00
   morgens  stehen gemessene Vorschlaege in der Team-Uebersicht und im Briefing
 
 Grenzen, die Absicht sind:
@@ -40,7 +40,7 @@ from . import db, llm, modellkatalog, revision, ruf
 
 SCHALTER = "modelle_nachts_laden"
 STAND = "nachtladen_stand"
-VON, BIS = 23, 5                 # deutsche Zeit; das Fenster geht ueber Mitternacht
+VON, BIS = 22, 5                 # deutsche Zeit; ueber Mitternacht (Nachtplan 23.10.2026: Veiko arbeitet 22--05 nicht)
 MAX_JE_NACHT = 2
 MAX_GB_JE_NACHT = 50
 PLATTE_FREI_GB = 100
@@ -177,7 +177,7 @@ def starten(von_hand: bool = True) -> bool:
 
 
 async def schleife() -> None:
-    """Einmal je Nacht, 23--05 Uhr deutscher Zeit, wenn der Schalter an ist."""
+    """Einmal je Nacht, 22--05 Uhr deutscher Zeit, wenn der Schalter an ist."""
     await asyncio.sleep(90)
     while True:
         try:

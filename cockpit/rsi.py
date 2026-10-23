@@ -442,17 +442,17 @@ def starten(von_hand: bool = True) -> bool:
 
 
 async def schleife() -> None:
-    """Einmal je Nacht, 03--05 Uhr deutscher Zeit (Veikos Vorgabe, 23.10.2026). Die Modell-Revision
-    misst im selben Fenster (02--05) Antwortzeiten; laeuft sie noch, wartet RSI auf sie -- zwei
-    Modelle gleichzeitig verfaelschten ihre Messung. Aber hoechstens bis 04:15, sonst fiele RSI in
-    einer Nacht mit langer Revision ganz aus."""
+    """Einmal je Nacht, 03--05 Uhr deutscher Zeit (Veikos Vorgabe, 23.10.2026; Nachtplan in nachtplan.py).
+    Die Modell-Revision startet spaetestens um 03:00 und misst Antwortzeiten; laeuft sie noch, wartet
+    RSI auf sie -- zwei Modelle gleichzeitig verfaelschten ihre Messung. Aber hoechstens bis 03:30,
+    sonst fiele RSI in einer Nacht mit langer Revision ganz aus."""
     await asyncio.sleep(120)
     while True:
         try:
             jetzt = datetime.datetime.now(BERLIN)
             heute = jetzt.date().isoformat()
             from . import revision
-            spaet = jetzt.hour * 60 + jetzt.minute >= 4 * 60 + 15
+            spaet = jetzt.hour * 60 + jetzt.minute >= 3 * 60 + 30
             if an() and VON <= jetzt.hour < BIS and stand().get("nacht") != heute and not laeuft() \
                     and (spaet or not (revision.stand() or {}).get("laeuft")):
                 _setzen(nacht=heute)

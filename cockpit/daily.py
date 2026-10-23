@@ -76,13 +76,13 @@ def tage_aus_text(t: Any) -> list[int]:
 def zeitplan_text(d: dict[str, Any]) -> str:
     t = _tage(d.get("tage"))
     wann = "täglich" if len(t) == 7 else "werktags" if t == [0, 1, 2, 3, 4] else ", ".join(TAGE[i] for i in t) or "nie"
-    return f"{wann} um {d.get('uhrzeit') or '06:30'} Uhr"
+    return f"{wann} um {d.get('uhrzeit') or '04:00'} Uhr"
 
 
 def _uhrzeit(u: Any) -> str:
     m = re.match(r"^\s*(\d{1,2})(?:[:.](\d{2}))?", str(u or ""))
     if not m or int(m.group(1)) > 23:
-        return "06:30"
+        return "04:00"
     return f"{int(m.group(1)):02d}:{int(m.group(2) or 0):02d}"
 
 

@@ -83,6 +83,8 @@ export function Einstellungen({ konto, thema, abschnitt }) {
     <${ExplorerOeffnen} />
     <div style="margin-top:14px"><${Klappe} id="memory" titel="Memory" unter="Was dein Team über dich weiß: Personen, Begriffe, Hörfehler, Aussprache" vorgabe=${true}>
       <${Gedaechtnis} /></${Klappe}></div>
+    <div style="margin-top:14px"><${Klappe} id="nachts" titel="Nachts" unter="Was zwischen 22 und 5 Uhr läuft, in welcher Reihenfolge, und wann zuletzt">
+      <${Nachtplan} /></${Klappe}></div>
     <div style="margin-top:14px"><${Klappe} id="versionen" titel="Versionsverlauf" unter="Was sich am Cockpit wann geändert hat -- jede Auslieferung, nach Tagen und Bereichen">
       <${Versionen} /></${Klappe}></div>
     ${d && html`<div class="raster-gleich drei" style="margin-top:14px">
@@ -113,6 +115,18 @@ export function Einstellungen({ konto, thema, abschnitt }) {
       </section>
     </div>`}
   </div>`;
+}
+
+// ------------------------------------------------------------ Nachtplan (23.10.2026, nachtplan.py)
+// Veiko arbeitet zwischen 22 und 5 Uhr nicht mit dem Cockpit -- was dann laeuft, steht hier in seiner
+// Reihenfolge, mit dem letzten Lauf. Nur Anzeige: geschaltet wird an der Stelle, die "wo" nennt.
+function Nachtplan() {
+  const [d] = useAbruf("/nachtplan", 0, []);
+  if (!d) return html`<div class="lade">Lade …</div>`;
+  return html`<div class="nachtplan">${d.plan.map((p) => html`<div class="nachtplan-zeile">
+    <b class="nachtplan-zeit">${p.zeit}</b>
+    <div><div><b>${p.titel}</b>${!p.an && html` <span class="pill">aus</span>`}${p.wo && html` <span class="leise klein">· ${p.wo}</span>`}</div>
+      <div class="klein">${p.warum}</div>${p.zuletzt && html`<div class="klein leise">${p.zuletzt}</div>`}</div></div>`)}</div>`;
 }
 
 // ------------------------------------------------------------ Versionsverlauf (19.10.2026)

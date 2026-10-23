@@ -1723,6 +1723,13 @@ async def talk_ausfuehren(request: Request):
 
 
 # ================================================================ Neo
+# ================================================================ Nachtplan (23.10.2026, nachtplan.py)
+@router.get("/nachtplan")
+async def nachtplan_liste():
+    from . import nachtplan
+    return {"plan": nachtplan.plan()}
+
+
 # ================================================================ RSI (23.10.2026, rsi.py)
 # Verbesserungen aus Veikos Gespraechen: Neo schlaegt vor (nur lesend), Dario prueft, Veiko entscheidet.
 @router.get("/rsi")

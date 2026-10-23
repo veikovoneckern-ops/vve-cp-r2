@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS langlaeufe (
 );
 -- Daily Tasks (22.10.2026, daily.py): was das Team jeden Tag untersucht und als Briefing liefert.
 CREATE TABLE IF NOT EXISTS daily (
-  id TEXT PRIMARY KEY, titel TEXT, auftrag TEXT, rolle TEXT, projekt_id TEXT, uhrzeit TEXT DEFAULT '06:30',
+  id TEXT PRIMARY KEY, titel TEXT, auftrag TEXT, rolle TEXT, projekt_id TEXT, uhrzeit TEXT DEFAULT '04:00',
   tage TEXT DEFAULT '[0,1,2,3,4]', netz INTEGER DEFAULT 1, aktiv INTEGER DEFAULT 1, letzter_tag TEXT,
   letzter_lauf REAL, sortierung INTEGER DEFAULT 0, erstellt REAL, geaendert REAL
 );
