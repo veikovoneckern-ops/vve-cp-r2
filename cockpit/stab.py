@@ -348,8 +348,16 @@ def plaud_titel_nachziehen() -> int:
     return n
 
 
+def _plaud_ordner():
+    """Die eigene Ablage, sobald der eigene Plaud-Abruf eingerichtet ist (plaud.py, 23.10.2026) --
+    vorher die des alten Cockpits. Gleiche Dateinamen in beiden, daher kommt beim Wechsel nichts doppelt."""
+    from . import plaud
+    return plaud.ordner()
+
+
 def plaud_scannen() -> int:
-    """Neue Plaud-Notizen aus der Ablage des alten Servers holen (nur lesen)."""
+    """Neue Plaud-Notizen aus der Ablage holen (nur lesen) -- seit 23.10.2026 der eigenen."""
+    PLAUD_DIR = _plaud_ordner()
     if not PLAUD_DIR.is_dir():
         return 0
     ab = float(db.einstellung("stab_ab", time.time()) or time.time())
@@ -1755,9 +1763,10 @@ def _letzte_plaud_ankunft() -> float | None:
     if time.time() - _ges_cache["zeit"] < 60:
         return _ges_cache["letzte"]
     letzte = None
+    PLAUD_DIR = _plaud_ordner()
     if PLAUD_DIR.is_dir():
         for f in PLAUD_DIR.glob("*.json"):
-            if f.name == "index.json":
+            if f.name in ("index.json", "stand.json"):
                 continue
             m = f.stat().st_mtime
             if letzte is None or m > letzte:
@@ -1772,7 +1781,7 @@ def gesundheit() -> dict[str, Any]:
     letzte_notiz = letzter_abruf
     sync = None
     try:
-        sync = json.loads((PLAUD_DIR / "index.json").read_text(encoding="utf-8")).get("synced")
+        sync = json.loads((_plaud_ordner() / "index.json").read_text(encoding="utf-8")).get("synced")
     except (OSError, ValueError):
         pass
     return {"letzte_notiz": letzte_notiz, "letzte_datei": letzter_abruf, "sync": sync,

@@ -1,0 +1,11 @@
+[Unit]
+Description=VvE Cockpit (neue Fassung): Plaud jede Minute abrufen
+
+[Timer]
+# Jede Minute, wie der Abruf des alten Cockpits (23.10.2026 uebernommen). Ein Lauf, der laenger
+# dauert, wird nicht doppelt gestartet -- systemd startet einen laufenden oneshot nicht erneut.
+OnCalendar=*-*-* *:*:00
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

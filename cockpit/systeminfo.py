@@ -248,8 +248,19 @@ def empfehlungen(s: dict[str, Any] | None, upd: dict[str, Any], ollama_neu: str 
         teile = [t.strip() for t in z.split(",")]
         if len(teile) > 1 and teile[1].isdigit() and int(teile[1]) >= 80:
             e.append({"stufe": "achtung", "titel": f"Grafikkarte {i + 1} heiß: {teile[1]} °C", "warum": "Ab 90 °C greift der WatchDog mit dem Notfallablauf. Lüftung und Docks prüfen."})
+    # Plaud (plaud.py, 23.10.2026): eigener Abruf, sobald eingerichtet -- bis dahin der des alten Cockpits.
+    from . import plaud
+    pl = plaud.stand()
+    if not pl.get("eingerichtet"):
+        e.append({"stufe": "achtung", "titel": "Hängt noch am alten Cockpit: Plaud-Notizen",
+                  "warum": "Die Sprachnotizen holt bisher das alte Cockpit. Einmal übernehmen (fragt dein Passwort) -- danach holt das "
+                           "neue sie selbst jede Minute, der Abruf des alten wird dabei abgeschaltet. Bisherige Notizen kommen nicht doppelt.",
+                  "befehl": plaud.einrichten_befehl()})
+    elif pl.get("ok") is False:
+        e.append({"stufe": "achtung", "titel": "Plaud-Abruf gescheitert", "warum": str(pl.get("fehler") or "")[:300]})
     if stab_ges.get("sync") and jetzt - stab_ges["sync"] > 1800:
-        e.append({"stufe": "achtung", "titel": "Plaud-Abruf hängt", "warum": "Seit über einer halben Stunde kein erfolgreicher Abruf. Häufigste Ursache: Anmeldung bei Plaud abgelaufen (Anleitung im alten Repo, ANLEITUNG.md)."})
+        e.append({"stufe": "achtung", "titel": "Plaud-Abruf hängt", "warum": "Seit über einer halben Stunde kein erfolgreicher Abruf. Häufigste Ursache: "
+                  "Anmeldung bei Plaud abgelaufen -- auf dem Laptop „plaud login“, dann ~/.plaud/tokens.json auf den Server nach ~/.plaud/ kopieren."})
     sicher = s.get("sicherheit") or {}
     if (sicher.get("ufw") or {}).get("offene_regeln"):
         e.append({"stufe": "achtung", "titel": "Firewall: Regel für alle offen", "warum": "Eine ufw-Regel erlaubt Zugriff aus dem ganzen Internet statt nur aus dem Tailnet: " + ", ".join(map(str, sicher["ufw"]["offene_regeln"]))})
