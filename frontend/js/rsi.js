@@ -12,7 +12,7 @@ import { api } from "./api.js";
 const STAND = {
   neu: ["gelb", "wartet auf Dario"], geprueft: ["blau", "von Dario geprüft"], plan: ["lila", "Darios Plan liegt vor"],
   bei_neo: ["lila", "Neo arbeitet daran"], erledigt: ["gruen", "erledigt"], verworfen: ["", "verworfen"],
-  in_serie: ["lila", "wird umgesetzt"], umgesetzt: ["gruen", "umgesetzt"], zurueckgenommen: ["", "zurückgenommen"],
+  in_serie: ["lila", "wird umgesetzt"], umgesetzt: ["gruen", "umgesetzt"], zurueckgenommen: ["", "zurückgenommen"], zusammengelegt: ["", "mit einem gleichen Punkt zusammengelegt"],
 };
 const ERGEBNIS = { umgesetzt: "umgesetzt", gescheitert: "nicht umgesetzt", abgebrochen: "abgebrochen" };
 const URTEIL = { sinnvoll: ["gruen", "sinnvoll"], ueberarbeiten: ["gelb", "überarbeiten"], verwerfen: ["rot", "verwerfen"], nicht_geprueft: ["", "nicht geprüft"] };
@@ -64,7 +64,7 @@ function Vorschlag({ v, neu, nr, wahl, setWahl, waehlbar }) {
     ${sr.zurueckgestellt && offen && html`<div class="hinweisbox" style="margin-bottom:8px"><b>Zurückgestellt:</b> ${sr.zurueckgestellt}${sr.frage ? html`<br /><b>Frage an dich:</b> ${sr.frage}` : ""}</div>`}
     <div class="karte-kopf"><h3>${v.titel}</h3>
       <span class="knopfreihe"><span class=${"pill " + st[0]}>${v.arbeitet ? "Dario arbeitet …" : st[1]}</span>
-        <span class="pill">${AUFWAND[d.aufwand] || d.aufwand}</span></span></div>
+        <span class="pill">${AUFWAND[d.aufwand] || d.aufwand}</span>${(d.vorkommen || 1) > 1 ? html`<span class="pill gelb" title="Derselbe Fehler, in mehreren Gesprächen gefunden -- als ein Punkt zusammengefasst">${d.vorkommen}× aufgetreten</span>` : ""}</span></div>
     <p>${d.problem}</p>
     ${(d.belege || []).length > 0 && html`<details class="rsi-belege"><summary class="klein">Aus deinen Gesprächen (${d.belege.length})</summary>
       ${d.belege.map((b) => html`<div class="rsi-beleg klein">
@@ -138,10 +138,11 @@ function Auswahlleiste({ wahl, titel, leeren, fertig, alle, alleWaehlen }) {
       : html`<div>
         <p><b>${frage.art === "umsetzen" ? `Umgesetzt werden (${ids.length}):` : `Verworfen werden (${ids.length}):`}</b></p>
         <ol class="klein">${ids.map((i) => html`<li>${titel[i]}</li>`)}</ol>
-        ${frage.art === "umsetzen" && html`<p class="klein">Zuerst prüft Dario die Punkte zusammen auf Widersprüche und Überschneidungen -- auch gegen das, was zuletzt
-          umgesetzt wurde -- und legt die Reihenfolge fest (etwa <b>${dollar(frage.schaetzung)}</b>). <b>Danach setzt Neo von selbst um, was nicht widersprüchlich ist</b>,
-          einen Punkt nach dem anderen; Dario prüft jede Änderung vor dem Einspielen (je Punkt einige Cent). Was sich widerspricht, bleibt offen, mit Darios Frage an dich.
-          Am Ende bekommst du Bescheid, dass das neue Release da ist.</p>`}
+        ${frage.art === "umsetzen" && html`<p class="klein">Zuerst prüft Dario die Punkte zusammen auf Widersprüche, Überschneidungen und Doppel -- auch gegen das, was
+          zuletzt umgesetzt wurde -- und legt die Reihenfolge fest. Für jeden Punkt schreibt er dann einen Umsetzungsplan gegen den echten Code.
+          Prüfung und Pläne zusammen etwa <b>${dollar(frage.schaetzung)}</b>. <b>Danach setzt Neo von selbst um, was nicht widersprüchlich ist</b>,
+          einen Punkt nach dem anderen; Dario prüft jede Änderung vor dem Einspielen (je Punkt einige Cent), lehnt er ab, bessert Neo einmal nach.
+          Was sich widerspricht, bleibt offen, mit Darios Frage an dich. Am Ende bekommst du Bescheid, dass das neue Release da ist.</p>`}
         <div class="knopfreihe"><button class=${"btn klein " + (frage.art === "umsetzen" ? "primaer" : "gefahr")} disabled=${laeuft} onClick=${ja}>
             ${frage.art === "umsetzen" ? "Ja, prüfen und umsetzen" : "Ja, verwerfen"}</button>
           <button class="btn klein geist" onClick=${() => setFrage(null)}>Zurück</button></div></div>`}
@@ -184,7 +185,7 @@ function SerieKasten({ serie, titel, neu }) {
   const zeile = (i) => {
     const e = erg[i];
     const zeichen = e ? (e.stand === "umgesetzt" ? "✓" : "✗") : s.aktuell === i ? "▶" : "·";
-    return html`<li class=${e ? (e.stand === "umgesetzt" ? "ok" : "nein") : s.aktuell === i ? "jetzt" : ""}><span class="rsi-zeichen">${zeichen}</span> ${t(i)}
+    return html`<li class=${e ? (e.stand === "umgesetzt" ? "ok" : "nein") : s.aktuell === i ? "jetzt" : ""}><span class="rsi-zeichen">${zeichen}</span> ${t(i)}${s.aktuell === i && s.aktuell_schritt ? html` <span class="leise klein">-- ${s.aktuell_schritt}</span>` : ""}
       ${e && e.stand !== "umgesetzt" && e.grund ? html`<div class="leise klein">${e.grund}</div>` : ""}
       ${s.aktuell === i && s.aktuell_gespraech ? html` <a class="klein" href=${"#/neo/" + s.aktuell_gespraech}>Neo zusehen</a>` : ""}
       ${e && e.gespraech_id ? html` <a class="klein leise" href=${"#/neo/" + e.gespraech_id}>Gespräch</a>` : ""}</li>`;

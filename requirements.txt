@@ -18,3 +18,5 @@ nvidia-cudnn-cu12==9.*
 # YouTube die Untertitel-Abfrage von yt-dlp am 17.10. mit 429 sperrte.
 yt-dlp
 youtube-transcript-api
+# Selbsttest von Neos Aenderungen (neo_stand.py, 23.10.2026): findet undefinierte Namen, ohne etwas auszufuehren.
+pyflakes

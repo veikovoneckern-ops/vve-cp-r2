@@ -113,6 +113,100 @@ def _kurz(t: str, n: int = 400) -> str:
     return t if len(t) <= n else t[:n].rsplit(" ", 1)[0] + " …"
 
 
+# ---------------------------------------------------------------- Doppelte erkennen (23.10.2026)
+# Veiko: "es werden einige Punkte doppelt bearbeitet ... schon beim Durchschauen meiner Gespraeche muss
+# gut identifiziert werden, ob es sich um den gleichen Fehler handelt, der mehrfach vorkommt." Gemessen:
+# zwei Laeufe am 23.10. ergaben dieselben vier Themen zweimal, eine Serie arbeitete jedes zweimal ab.
+OFFEN_STAENDE = ("neu", "geprueft", "plan", "bei_neo", "in_serie")
+GLEICH_AB = 0.5      # Anteil gemeinsamer Woerter in Titel + Problem, ab dem zwei Vorschlaege derselbe Fehler sind
+
+
+def _daten(r: dict[str, Any]) -> dict[str, Any]:
+    d = r.get("daten")
+    if isinstance(d, dict):
+        return d
+    try:
+        return json.loads(d or "{}")
+    except (TypeError, ValueError):
+        return {}
+
+
+def _aehnlich(a: str, b: str) -> float:
+    wa, wb = _woerter(a), _woerter(b)
+    return len(wa & wb) / max(1, len(wa | wb))
+
+
+def _stellen(d: dict[str, Any]) -> set[str]:
+    """Die Code-Stellen, die ein Vorschlag als Ursache nennt -- Namen in Backticks (`oeffnen_suchen`)."""
+    return {x for x in re.findall(r"`([A-Za-z_][A-Za-z0-9_]{3,})(?:\(\))?`", str(d.get("ursache") or "")) if not x.endswith(".py")}
+
+
+def _gleicher_offener(v: dict[str, Any], offen: list[dict[str, Any]]) -> str | None:
+    """Mechanische Gegenprobe, falls Neo ein Duplikat nicht als solches erkennt: gleicher Titel oder
+    ueberwiegend dieselben Woerter in Titel und Problem."""
+    text = f"{v.get('titel', '')} {v.get('problem', '')}"
+    stellen_v = _stellen(v)
+    beste, wert = None, 0.0
+    w_titel = _woerter(v.get("titel", ""))
+    for r in offen:
+        # Gleicher Titel -- aber erst ab zwei sinntragenden Woertern ("Probe X"/"Probe Y" sind sonst gleich).
+        if len(w_titel) >= 2 and w_titel == _woerter(r["titel"]):
+            return r["id"]
+        # Dieselbe Funktion als Ursache und ein aehnlicher Titel: derselbe Fehler, nur anders beschrieben
+        # ("Talk oeffnet nicht das, was Veiko meint" / "... das richtige Projekt bei KI-Singularitaet",
+        # beide in oeffnen_suchen).
+        if stellen_v & _stellen(_daten(r)) and _aehnlich(v.get("titel", ""), r["titel"]) >= 0.25:
+            return r["id"]
+        a = _aehnlich(text, f"{r['titel']} {_daten(r).get('problem', '')}")
+        if a > wert:
+            beste, wert = r["id"], a
+    return beste if wert >= GLEICH_AB else None
+
+
+def _anhaengen(rid: str, belege: list[dict[str, Any]], nacht: str, vorschlag: str | None = None) -> None:
+    """Ein weiteres Vorkommen desselben Fehlers: Belege dazu, Zaehler hoch -- kein neuer Vorschlag."""
+    r = db.holen("rsi", rid)
+    if not r:
+        return
+    d = _daten(r)
+    schon = {(b.get("gespraech_id"), b.get("zeit")) for b in d.get("belege") or []}
+    neu = [b for b in belege if (b.get("gespraech_id"), b.get("zeit")) not in schon]
+    d["belege"] = (d.get("belege") or []) + neu[: max(0, 10 - len(d.get("belege") or []))]
+    d["vorkommen"] = int(d.get("vorkommen") or 1) + max(1, len(neu))
+    d.setdefault("auch_gesehen", []).append({"nacht": nacht, "belege": len(neu), "vorschlag": _kurz(vorschlag, 600) if vorschlag else None})
+    db.ausfuehren("UPDATE rsi SET daten=?, geaendert=? WHERE id=?", (json.dumps(d, ensure_ascii=False), time.time(), rid))
+
+
+def doppelte_zusammenlegen() -> list[tuple[str, str]]:
+    """Fuehrt offene Vorschlaege zusammen, die derselbe Fehler sind (gleiche Probe wie beim Anlegen).
+    Behalten wird der mit Darios Plan, sonst der mit mehr Belegen, sonst der aeltere; der andere
+    bekommt den Stand "zusammengelegt" und verweist auf den behaltenen. Laufende (bei_neo, in_serie)
+    werden nicht angefasst -- an ihnen arbeitet gerade jemand."""
+    zeilen = db.alle("SELECT id, titel, stand, daten, erstellt FROM rsi WHERE stand IN ('neu','geprueft','plan') ORDER BY erstellt")
+    paare: list[tuple[str, str]] = []
+    weg: set[str] = set()
+    for i, a in enumerate(zeilen):
+        if a["id"] in weg:
+            continue
+        for b in zeilen[i + 1:]:
+            if b["id"] in weg or _gleicher_offener({**_daten(b), "titel": b["titel"]}, [a]) != a["id"]:
+                continue
+            da, dbb = _daten(a), _daten(b)
+            rang = lambda d: (bool(d.get("plan")), len(d.get("belege") or []))  # noqa: E731
+            behalten, ab = (a, b) if rang(da) >= rang(dbb) else (b, a)
+            _anhaengen(behalten["id"], _daten(ab).get("belege") or [], str(ab.get("erstellt") and
+                       datetime.datetime.fromtimestamp(ab["erstellt"], BERLIN).date().isoformat()), _daten(ab).get("vorschlag"))
+            d = _daten(ab)
+            d["zusammengelegt_in"] = behalten["id"]
+            db.ausfuehren("UPDATE rsi SET stand='zusammengelegt', daten=?, geaendert=? WHERE id=?",
+                          (json.dumps(d, ensure_ascii=False), time.time(), ab["id"]))
+            weg.add(ab["id"])
+            paare.append((behalten["id"], ab["id"]))
+            if ab is a:
+                break
+    return paare
+
+
 def befunde_sammeln(seit: float, bis: float | None = None) -> list[dict[str, Any]]:
     """Stellen, an denen es hakte -- nur aus den gespeicherten Gespraechen, ohne Modell."""
     bis = bis or time.time()
@@ -226,7 +320,13 @@ NEO_RSI_SYSTEM = (
     "zwei Sätze\", \"belege\": [Nummern der Befunde], \"ursache\": \"wo im Code es hakt (Datei, Funktion) und warum\", "
     "\"vorschlag\": \"was genau geändert werden soll, konkret genug zum Umsetzen\", \"dateien\": [\"cockpit/…\"], "
     "\"aufwand\": \"klein|mittel|gross\", \"risiko\": \"was dabei kaputtgehen könnte\"}]}\n```\n"
-    "Gibt es nichts Sinnvolles zu verbessern: {\"vorschlaege\": []}. Deutsch, ohne Fachjargon in titel und problem.")
+    "Gibt es nichts Sinnvolles zu verbessern: {\"vorschlaege\": []}. Deutsch, ohne Fachjargon in titel und problem.\n\n"
+    "DERSELBE FEHLER, MEHRFACH: Taucht ein Fehler in mehreren Gesprächen auf, ist das EIN Vorschlag mit allen Belegen -- "
+    "nicht einer je Gespräch. Gehört ein Befund zu einem der SCHON OFFENEN VORSCHLÄGE (gleiches Fehlerbild, gleiche Stelle "
+    "im Code, auch wenn Veiko andere Worte benutzt hat), schlag ihn NICHT neu vor, sondern hänge ihn an: ein Eintrag "
+    "{\"gleich_wie\": \"s…\", \"belege\": [Nummern]} in derselben Liste \"vorschlaege\". Unterschiedlich ist ein Fehler nur, "
+    "wenn er eine andere Ursache hat -- „Talk öffnet das falsche Projekt“ und „Talk öffnet das falsche Ergebnis“ sind "
+    "derselbe Fehler, wenn beide an derselben Suche liegen.")
 
 LESE_WERKZEUGE = ("datei_lesen", "suche", "projektwissen")
 
@@ -237,7 +337,8 @@ async def neo_analysieren(befunde: list[dict[str, Any]], offene: list[str]) -> t
     lauf: dict[str, Any] = {"gelesen": set(), "dateien": [], "schritte": []}
     verlauf: list[dict[str, Any]] = [{"role": "user", "content":
         "BEFUNDE AUS VEIKOS GESPRÄCHEN (neueste zuerst):\n\n" + befunde_text(befunde)
-        + ("\n\nSCHON OFFENE VORSCHLÄGE (nicht noch einmal vorschlagen):\n- " + "\n- ".join(offene) if offene else "")
+        + ("\n\nSCHON OFFENE VORSCHLÄGE (nicht noch einmal vorschlagen -- gehört ein Befund dazu, hänge ihn mit "
+           "gleich_wie an):\n- " + "\n- ".join(offene) if offene else "")
         + "\n\nSieh im Code nach und liefere dann den JSON-Block."}]
     text = ""
     # Der aktuelle Stand (Landkarte, letzte Commits): viele Pannen der letzten Tage sind schon behoben --
@@ -283,7 +384,12 @@ async def neo_analysieren(befunde: list[dict[str, Any]], offene: list[str]) -> t
         raise llm.ModellFehler("Neo hat keine lesbaren Vorschläge geliefert.")
     gelesen = sorted(lauf["gelesen"])
     aus = []
-    for v in d["vorschlaege"][:MAX_VORSCHLAEGE]:
+    for v in d["vorschlaege"]:
+        if isinstance(v, dict) and v.get("gleich_wie"):
+            # Ein Befund zu einem schon offenen Vorschlag: anhaengen statt neu (lauf() fuehrt zusammen).
+            nummern = [int(x) for x in (v.get("belege") or []) if str(x).isdigit() and 1 <= int(x) <= len(befunde)]
+            aus.append({"gleich_wie": str(v["gleich_wie"]), "belege": [befunde[n - 1] for n in nummern][:6]})
+    for v in [x for x in d["vorschlaege"] if isinstance(x, dict) and not x.get("gleich_wie")][:MAX_VORSCHLAEGE]:
         if not isinstance(v, dict) or not str(v.get("titel") or "").strip() or not str(v.get("vorschlag") or "").strip():
             continue
         nummern = [int(x) for x in (v.get("belege") or []) if str(x).isdigit() and 1 <= int(x) <= len(befunde)]
@@ -295,8 +401,11 @@ async def neo_analysieren(befunde: list[dict[str, Any]], offene: list[str]) -> t
     # in bedienung_erkennen) -- gleiche Woerter in Titel und Ursache, die Belege wandern mit.
     zusammen: list[dict[str, Any]] = []
     for v in aus:
+        if v.get("gleich_wie"):
+            zusammen.append(v)
+            continue
         w = _woerter(v["titel"] + " " + v["ursache"])
-        gleich = next((z for z in zusammen if len(w & _woerter(z["titel"] + " " + z["ursache"])) / max(1, len(w | _woerter(z["titel"] + " " + z["ursache"]))) >= 0.45), None)
+        gleich = next((z for z in zusammen if not z.get("gleich_wie") and len(w & _woerter(z["titel"] + " " + z["ursache"])) / max(1, len(w | _woerter(z["titel"] + " " + z["ursache"]))) >= 0.45), None)
         if gleich:
             schon = {(b.get("gespraech_id"), b.get("zeit")) for b in gleich["belege"]}
             gleich["belege"] += [b for b in v["belege"] if (b.get("gespraech_id"), b.get("zeit")) not in schon][:6 - len(gleich["belege"])]
@@ -404,11 +513,23 @@ async def lauf(von_hand: bool = False) -> dict[str, Any]:
                     ergebnis=(f"{behoben} Stellen gefunden, an denen es hakte -- alle sind inzwischen behoben." if behoben
                               else "Keine Stelle gefunden, an der es hakte -- nichts vorzuschlagen."))
             return stand()
-        offene = [r["titel"] for r in db.alle("SELECT titel FROM rsi WHERE stand IN ('neu','geprueft','plan','bei_neo')")]
+        # Mit Kennung und Problem, nicht nur dem Titel (23.10.2026: zwei Laeufe ergaben dieselben vier
+        # Vorschlaege doppelt -- Neo kannte von den offenen nur die Titel).
+        offen_zeilen = db.alle(f"SELECT id, titel, daten FROM rsi WHERE stand IN {OFFEN_STAENDE}")
+        offene = [f"{r['id']}: {r['titel']} -- {_kurz(_daten(r).get('problem'), 220)}" for r in offen_zeilen]
         with llm.taetig("RSI: Neo sucht Verbesserungen"):
             vorschlaege, gelesen = await neo_analysieren(befunde, offene)
         nacht = datetime.datetime.now(BERLIN).date().isoformat()
+        angehaengt = 0
         for v in vorschlaege:
+            # Derselbe Fehler wie ein offener Vorschlag: Neo sagt es (gleich_wie), sonst die Wortprobe.
+            ziel = v.get("gleich_wie") if v.get("gleich_wie") in {r["id"] for r in offen_zeilen} else None
+            ziel = ziel or (None if v.get("gleich_wie") else _gleicher_offener(v, offen_zeilen))
+            if ziel or v.get("gleich_wie"):
+                if ziel:
+                    _anhaengen(ziel, v.get("belege") or [], nacht, v.get("vorschlag"))
+                    angehaengt += 1
+                continue
             rid = db.neue_id("s")
             db.einfuegen("rsi", {"id": rid, "nacht": nacht, "stand": "neu", "titel": v["titel"],
                                  "daten": {**v, "neo_gelesen": gelesen, "befunde_gesamt": len(befunde)},
@@ -416,6 +537,10 @@ async def lauf(von_hand: bool = False) -> dict[str, Any]:
             neu.append(rid)
         # Erst jetzt weiterruecken: scheitert Neo, kommen dieselben Gespraeche naechste Nacht wieder dran.
         db.einstellung_setzen("rsi_bis", start)
+        # Zweiter Riegel: was trotzdem doppelt angelegt wurde, gleich zusammenlegen -- Dario prueft dann nur einen.
+        weg = {ab for _, ab in doppelte_zusammenlegen()}
+        neu = [r for r in neu if r not in weg]
+        angehaengt += len(weg)
         for i, rid in enumerate(neu, 1):
             if not db.einstellung("rsi_dario_auto", True):
                 break
@@ -424,8 +549,9 @@ async def lauf(von_hand: bool = False) -> dict[str, Any]:
             kosten += r.get("kosten") or 0
             _setzen(kosten=round(kosten, 4))
         _setzen(laeuft=False, ende=time.time(), schritt=None, neu=len(neu),
-                ergebnis=(f"{len(befunde)} Stellen gefunden, an denen es hakte; daraus {len(neu)} Vorschläge."
-                          if neu else f"{len(befunde)} Stellen gefunden, aber Neo sah nichts, das sich lohnt zu ändern.")
+                ergebnis=(f"{len(befunde)} Stellen gefunden, an denen es hakte; daraus {len(neu)} neue Vorschläge."
+                          if neu else f"{len(befunde)} Stellen gefunden, aber kein neuer Vorschlag.")
+                + (f" {angehaengt}× war es ein Fehler, der schon als Vorschlag offen ist -- dort als weiteres Vorkommen angehängt." if angehaengt else "")
                 + (f" {behoben} weitere sind inzwischen behoben." if behoben else ""))
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
@@ -473,7 +599,10 @@ def neo_auftrag_text(r: dict[str, Any]) -> str:
             + (f"\nDARIOS RISIKEN: {'; '.join(dario.get('risiken') or [])}" if dario.get("risiken") else "")
             + (f"\n\nDARIOS AUFTRAG AN DICH:\n{dario.get('naechster_auftrag')}" if dario.get("naechster_auftrag") and not plan else "")
             + (f"\n\nDARIOS UMSETZUNGSPLAN -- setz genau diesen um:\n{plan.get('text')}" if plan.get("text") else "")
-            + "\n\nArbeite wie immer: erst lesen, dann klein ändern, vormerken. Dario prüft vor dem Einspielen.")
+            + "\n\nArbeite wie immer: erst lesen, dann klein ändern, vormerken. Dario prüft vor dem Einspielen."
+            + ("\nAm Ende MUSS eine vorgemerkte Code-Änderung stehen (datei_aendern) -- ein Bericht oder eine Untersuchung "
+               "allein erfüllt diesen Auftrag nicht. Nutze nur Namen, die es im Code gibt oder die du selbst definierst."
+               if plan.get("fuer_umsetzung") else ""))
 
 
 async def neo_beauftragen(rid: str, hinweis: str = "", kein_neustart: bool = False) -> dict[str, Any]:
@@ -504,18 +633,88 @@ DARIO_PLAN_SYSTEM = (
     "Markdown, Deutsch. Höchstens etwa 1.200 Wörter.")
 
 
-async def dario_plan(rid: str) -> dict[str, Any]:
+def code_auszug(d: dict[str, Any], grenze: int = 16000) -> str:
+    """Die Funktionen, um die es geht, im Wortlaut -- damit Dario einen Plan gegen den ECHTEN Code schreibt
+    und nicht gegen Neos Beschreibung davon (23.10.2026: Plaene ohne Code fuehrten zu Aenderungen, die Dario
+    danach selbst ablehnte). Gesucht wird in den genannten Dateien nach Namen, die in Ursache und Vorschlag stehen."""
+    import ast
+    from .konfig import WURZEL
+    text = " ".join(str(d.get(k) or "") for k in ("ursache", "vorschlag", "problem")) + " " + \
+        str((d.get("dario") or {}).get("naechster_auftrag") or "")
+    namen = set(re.findall(r"\b([A-Za-z_][A-Za-z0-9_]{3,})\b", text))
+    teile, laenge = [], 0
+    for rel in (d.get("dateien") or [])[:6]:
+        pfad = (WURZEL / str(rel).lstrip("/")).resolve()
+        if not str(pfad).startswith(str(WURZEL)) or not pfad.is_file():
+            continue
+        quelle = pfad.read_text(encoding="utf-8", errors="replace")
+        zeilen = quelle.splitlines()
+        stuecke = []
+        if pfad.suffix == ".py":
+            try:
+                baum = ast.parse(quelle)
+            except SyntaxError:
+                continue
+            funktionen = [k for k in ast.walk(baum) if isinstance(k, (ast.FunctionDef, ast.AsyncFunctionDef))]
+            for k in funktionen:
+                if k.name in namen:
+                    stuecke.append((k.lineno, "\n".join(zeilen[k.lineno - 1:k.end_lineno])))
+            for k in ast.walk(baum):
+                if isinstance(k, ast.Assign) and any(isinstance(t, ast.Name) and t.id in namen for t in k.targets) and k.col_offset == 0:
+                    stuecke.append((k.lineno, "\n".join(zeilen[k.lineno - 1:k.end_lineno])))
+            if not stuecke:
+                # Keine Funktion genannt ("Talk erkennt den Befehl nicht"): die Funktionen, in denen Veikos
+                # zitierte Woerter vorkommen -- dort steht die Erkennung, die fehlt oder falsch greift.
+                zitiert = {z.lower() for z in re.findall(r"[„\"“]([^“\"”]{3,40})[“\"”]", text)}
+                zitiert |= {str(b.get("veiko") or "").lower()[:40] for b in d.get("belege") or [] if b.get("veiko")}
+                stich = {w for z in zitiert for w in re.findall(r"[a-zäöüß]{5,}", z)}
+                bewertet = []
+                for k in funktionen:
+                    rumpf = "\n".join(zeilen[k.lineno - 1:k.end_lineno]).lower()
+                    treffer = sum(1 for w in stich if w in rumpf)
+                    if treffer and k.end_lineno - k.lineno < 250:
+                        bewertet.append((treffer, k))
+                for _, k in sorted(bewertet, key=lambda x: -x[0])[:3]:
+                    stuecke.append((k.lineno, "\n".join(zeilen[k.lineno - 1:k.end_lineno])))
+        else:
+            for i, z in enumerate(zeilen):
+                m = re.match(r"\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z0-9_]+)", z)
+                if m and m.group(1) in namen:
+                    stuecke.append((i + 1, "\n".join(zeilen[i:i + 60])))
+        for zeile, s in sorted(stuecke):
+            s = s[:6000]
+            if laenge + len(s) > grenze:
+                break
+            teile.append(f"--- {rel}, ab Zeile {zeile} ---\n{s}")
+            laenge += len(s)
+    return "\n\n".join(teile)
+
+
+async def dario_plan(rid: str, zum_umsetzen: bool = False) -> dict[str, Any]:
+    """zum_umsetzen (RSI-Serie): Veiko hat entschieden, dass es JETZT umgesetzt wird -- der Plan muss in einer
+    Code-Aenderung enden, auch wenn Darios frueherer Auftrag "erst untersuchen" lautete (23.10.2026: genau das
+    liess Neo scheitern -- er sollte Code liefern, sein Auftrag verlangte einen Bericht)."""
     r = db.holen("rsi", rid)
     if not r:
         return {"ok": False, "grund": "Vorschlag nicht gefunden"}
     d = r["daten"] if isinstance(r["daten"], dict) else {}
+    code = code_auszug(d)
     frage = _vorschlag_text(d) + (f"\n\nDEINE PRÜFUNG VON VORHIN: {d['dario'].get('begruendung')}\nDEIN AUFTRAG DAZU: "
                                   f"{d['dario'].get('naechster_auftrag')}" if d.get("dario") else "")
+    if code:
+        frage += "\n\nDER BETROFFENE CODE IM WORTLAUT (aktueller Stand):\n" + code
+    if zum_umsetzen:
+        frage += ("\n\nWICHTIG: Veiko hat entschieden, dass das JETZT umgesetzt wird. Neo setzt deinen Plan direkt um, und du prüfst "
+                  "danach seine Änderung. Der Plan muss deshalb in einer CODE-ÄNDERUNG enden -- kein Bericht, keine Untersuchung als "
+                  "Ergebnis. Muss Neo vorher etwas nachsehen, schreib es als ersten Schritt (welche Datei, wonach suchen). Nenne die "
+                  "genauen Stellen mit dem Code davor und danach, so knapp wie möglich. Ist eine Änderung nicht sinnvoll begründbar, "
+                  "beginne deine Antwort mit „KEINE ÄNDERUNG:“ und dem Grund in einem Satz.")
     try:
         antwort, kosten, modell = await _dario(DARIO_PLAN_SYSTEM, frage, 4000)
     except llm.ModellFehler as f:
         return {"ok": False, "grund": f"Hat nicht geklappt: {f}"}
-    d["plan"] = {"text": antwort.strip()[:20000], "kosten": round(kosten, 4), "modell": modell, "zeit": time.time()}
+    d["plan"] = {"text": antwort.strip()[:20000], "kosten": round(kosten, 4), "modell": modell, "zeit": time.time(),
+                 "fuer_umsetzung": zum_umsetzen, "mit_code": bool(code)}
     _speichern(rid, d, "plan")
     return {"ok": True, "kosten": kosten}
 

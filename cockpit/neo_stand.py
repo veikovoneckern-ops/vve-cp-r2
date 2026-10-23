@@ -19,6 +19,7 @@ Was Claude Code hat und Neo bisher nicht hatte:
 from __future__ import annotations
 
 import ast
+import importlib.util
 import os
 import re
 import shutil
@@ -189,6 +190,15 @@ def selbsttest(entwurf: dict[str, Any]) -> str | None:
                     compile(z.read_text(encoding="utf-8"), str(p), "exec")
                 except SyntaxError as f:
                     fehler.append(f"{p.relative_to(WURZEL)}, Zeile {f.lineno}: {f.msg}")
+                    continue
+                # Undefinierte Namen (23.10.2026): Neo benutzte "_ABLEHNUNG", ohne es zu definieren -- Syntax und
+                # Import gehen durch, der Fehler kommt erst beim Aufruf. pyflakes findet das, ohne etwas auszufuehren.
+                # Nur "undefined name": unbenutzte Importe u. Ae. sind kein Grund, eine Aenderung zurueckzuschicken.
+                if importlib.util.find_spec("pyflakes"):
+                    r = subprocess.run([sys.executable, "-m", "pyflakes", str(z)], capture_output=True, text=True, timeout=60)
+                    for zeile in (r.stdout or "").splitlines():
+                        if "undefined name" in zeile:
+                            fehler.append(f"{p.relative_to(WURZEL)}{zeile.split(str(z), 1)[-1]}")
             elif z.suffix in (".js", ".mjs") and shutil.which("node"):
                 kopie = z.with_suffix(".pruef.mjs")
                 shutil.copyfile(z, kopie)

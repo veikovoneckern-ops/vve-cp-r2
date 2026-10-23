@@ -118,9 +118,13 @@ PRUEF_SYSTEM = (
     "2. ÜBERSCHNEIDUNGEN: ändern zwei Punkte dieselbe Funktion oder Stelle? Dann gehören sie in eine sinnvolle Reihenfolge, "
     "und der spätere muss wissen, was der frühere geändert hat.\n"
     "3. ABHÄNGIGKEITEN: braucht ein Punkt einen anderen zuerst?\n"
+    "4. DOPPELT: meinen zwei Punkte DENSELBEN Fehler (gleiches Fehlerbild, gleiche Stelle), wird nur EINER umgesetzt -- der "
+    "konkretere; der andere kommt unter \"doppelt\" und NICHT in die Reihenfolge. Zwei Punkte zum selben Fehler nacheinander "
+    "umzusetzen heißt, dieselbe Stelle zweimal anzufassen -- genau die gegenläufige Arbeit, die Veiko nicht will.\n"
     "Ein echter Widerspruch, den nur Veiko auflösen kann, heißt: einen der beiden ZURÜCKSTELLEN, mit einer Frage an Veiko. "
     "Bloße Überschneidungen löst du über Reihenfolge und Hinweise, nicht durch Zurückstellen.\n"
-    "Antworte NUR mit JSON: {\"reihenfolge\": [\"id\", …] (alle nicht zurückgestellten), "
+    "Antworte NUR mit JSON: {\"reihenfolge\": [\"id\", …] (alle nicht zurückgestellten und nicht doppelten), "
+    "\"doppelt\": [{\"id\": \"id\", \"wie\": \"id des Punkts, der umgesetzt wird\"}], "
     "\"konflikte\": [{\"ids\": [\"id\", \"id\"], \"art\": \"widerspruch|ueberschneidung|abhaengigkeit\", \"beschreibung\": \"ein Satz für Veiko\", "
     "\"loesung\": \"ein Satz\"}], \"zurueckstellen\": [{\"id\": \"id\", \"grund\": \"ein Satz\", \"frage_an_veiko\": \"eine Frage\"}], "
     "\"hinweise\": {\"id\": \"was Neo bei diesem Punkt wegen der anderen beachten muss, oder leer\"}, "
@@ -148,8 +152,15 @@ def pruef_frage(ids: list[str]) -> str:
 
 
 def schaetzung(ids: list[str]) -> float:
+    """Widerspruchspruefung plus je Punkt ohne fertigen Plan Darios Umsetzungsplan (mit Code-Auszug).
+    Darios Pruefung jeder Aenderung vor dem Einspielen kommt dazu und steht im Text daneben (je Punkt einige Cent)."""
     from . import rsi
-    return round(rsi.schaetzung(PRUEF_SYSTEM, pruef_frage(ids), 1500 + 300 * len(ids)), 3)
+    s = rsi.schaetzung(PRUEF_SYSTEM, pruef_frage(ids), 1500 + 300 * len(ids))
+    for i in ids:
+        r = _rsi(i)
+        if r and not (r["daten"].get("plan") or {}).get("fuer_umsetzung"):
+            s += rsi.schaetzung(rsi.DARIO_PLAN_SYSTEM, rsi._vorschlag_text(r["daten"]) + rsi.code_auszug(r["daten"]), 4000)
+    return round(s, 3)
 
 
 def auswahl(umsetzen: list[str], verwerfen: list[str], automatisch: bool = True) -> dict[str, Any]:
@@ -161,6 +172,12 @@ def auswahl(umsetzen: list[str], verwerfen: list[str], automatisch: bool = True)
     zurueckgestellt ist -- ohne zweiten Klick. Zurueckgestelltes bleibt offen, mit Darios Frage."""
     if laeuft() or stand().get("stand") == "bereit":
         raise ValueError("Es läuft schon eine Serie -- warte, bis sie fertig ist.")
+    # Doppelte vorher zusammenlegen; ein ausgewaehlter, der dabei aufgeht, zaehlt als sein Ziel.
+    from . import rsi
+    rsi.doppelte_zusammenlegen()
+    ziel = {r["id"]: rsi._daten(r).get("zusammengelegt_in") for r in db.alle("SELECT id, daten FROM rsi WHERE stand='zusammengelegt'")}
+    umsetzen = [ziel.get(i) or i for i in umsetzen]
+    verwerfen = [i for i in verwerfen if i not in ziel]
     offen = {r["id"] for r in db.alle(f"SELECT id FROM rsi WHERE stand IN {OFFEN}")}
     umsetzen = [i for i in dict.fromkeys(umsetzen) if i in offen]
     verwerfen = [i for i in dict.fromkeys(verwerfen) if i in offen and i not in umsetzen]
@@ -191,10 +208,25 @@ async def _pruefen() -> None:
         return
     zurueck = [z for z in (j.get("zurueckstellen") or []) if isinstance(z, dict) and z.get("id") in ids]
     zurueck_ids = {z["id"] for z in zurueck}
+    # Doppelte: nur einer wird umgesetzt, der andere geht in ihm auf (Belege wandern mit).
+    doppelt = [x for x in (j.get("doppelt") or []) if isinstance(x, dict) and x.get("id") in ids and x.get("wie") in ids
+               and x["id"] != x["wie"] and x["wie"] not in zurueck_ids]
+    doppelt_ids = set()
+    for x in doppelt:
+        if x["wie"] in doppelt_ids:
+            continue
+        r = _rsi(x["id"])
+        if r:
+            rsi._anhaengen(x["wie"], r["daten"].get("belege") or [], "Serie", r["daten"].get("vorschlag"))
+            d = r["daten"]
+            d["zusammengelegt_in"] = x["wie"]
+            db.ausfuehren("UPDATE rsi SET stand='zusammengelegt', daten=?, geaendert=? WHERE id=?", (json.dumps(d, ensure_ascii=False), time.time(), x["id"]))
+            doppelt_ids.add(x["id"])
+    zurueck_ids |= doppelt_ids
     reihe = [i for i in (j.get("reihenfolge") or []) if i in ids and i not in zurueck_ids]
     reihe += [i for i in ids if i not in reihe and i not in zurueck_ids]     # nichts geht stillschweigend verloren
     hinweise = j.get("hinweise") if isinstance(j.get("hinweise"), dict) else {}
-    _setzen(stand="bereit", reihenfolge=reihe, zurueckgestellt=zurueck,
+    _setzen(stand="bereit", reihenfolge=reihe, zurueckgestellt=zurueck, doppelt=doppelt,
             konflikte=[k for k in (j.get("konflikte") or []) if isinstance(k, dict)][:12],
             hinweise={i: str(hinweise.get(i) or "")[:1500] for i in reihe},
             zusammenfassung=str(j.get("zusammenfassung") or "")[:1500], pruef_kosten=round(kosten, 4), pruef_modell=modell)
@@ -261,25 +293,49 @@ async def _abarbeiten() -> None:
             if not rest:
                 break
             rid = rest[0]
-            _setzen(aktuell=rid, aktuell_seit=time.time())
+            _setzen(aktuell=rid, aktuell_seit=time.time(), aktuell_schritt="Dario schreibt den Umsetzungsplan")
+            # 1. PLAN (23.10.2026): ohne ihn bekam Neo Darios "naechsten Auftrag" -- meist "erst untersuchen,
+            # noch keinen Code" -- und Dario lehnte danach ab, weil kein Code kam bzw. der falsche. Der Plan
+            # entsteht gegen den echten Code und endet zwingend in einer Aenderung.
+            punkt = _rsi(rid) or {}
+            if not (punkt.get("daten") or {}).get("plan", {}).get("fuer_umsetzung"):
+                p = await rsi.dario_plan(rid, zum_umsetzen=True)
+                if not p.get("ok"):
+                    _ergebnis(rid, "gescheitert", grund=f"Darios Plan kam nicht zustande: {p.get('grund')}")
+                    continue
+                plan_text = str(((_rsi(rid) or {}).get("daten") or {}).get("plan", {}).get("text") or "")
+                if plan_text.lstrip().upper().startswith("KEINE ÄNDERUNG"):
+                    _ergebnis(rid, "gescheitert", grund="Dario: " + plan_text.strip()[:500])
+                    continue
+            # 2. NEO setzt den Plan um; 3. lehnt Dario ab, bessert Neo EINMAL nach (gleiches Gespraech, mit den Maengeln).
+            _setzen(aktuell_schritt="Neo setzt um")
             r = await rsi.neo_beauftragen(rid, _hinweis(s, rid), kein_neustart=True)
             if not r.get("ok"):
                 _ergebnis(rid, "gescheitert", grund=r.get("grund") or "Neo ließ sich nicht beauftragen.")
                 continue
             _setzen(aktuell_gespraech=r["gespraech_id"])
-            jid, ende = r["job"], time.time() + MAX_JE_PUNKT
-            while time.time() < ende:
-                job = neo.JOBS.get(jid)
-                if not job or job["fertig"]:
-                    break
-                await asyncio.sleep(5)
-            job = neo.JOBS.get(jid)
-            if job and not job["fertig"]:
-                neo.abbrechen(jid)
+            job = await _warten(r["job"])
+            if job is None:
                 _ergebnis(rid, "gescheitert", grund=f"Nach {MAX_JE_PUNKT // 60} Minuten abgebrochen.", gespraech_id=r["gespraech_id"])
                 continue
-            lauf = (job or {}).get("lauf") or {}
+            lauf = job.get("lauf") or {}
             pr = lauf.get("pruefung") or {}
+            if not pr.get("eingespielt") and pr.get("urteil") != "nicht_geprueft":
+                _setzen(aktuell_schritt="Neo bessert nach")
+                maengel = (f"{pr.get('von', 'Dario')} hat deine Änderung abgelehnt:\n{pr.get('begruendung') or ''}"
+                           + ("\nMängel:\n" + "\n".join(f"- {m}" for m in pr.get("maengel") or []) if pr.get("maengel") else "")
+                           if pr else "Du hast nichts am Cockpit geändert -- es ist nichts vorgemerkt.")
+                try:
+                    jid2 = await neo.senden(r["gespraech_id"], "NACHBESSERN (einmal, automatisch in der RSI-Serie). " + maengel
+                                            + "\n\nSetz Darios Umsetzungsplan jetzt vollständig um: erst die betroffenen Stellen mit "
+                                              "datei_lesen ansehen, dann mit datei_aendern ändern. Behebe genau diese Mängel, nichts sonst.",
+                                            [], kein_neustart=True)
+                    job2 = await _warten(jid2)
+                    if job2 is not None:
+                        lauf = job2.get("lauf") or {}
+                        pr = lauf.get("pruefung") or pr
+                except ValueError:
+                    pass
             eg = lauf.get("einspiel_ergebnis") or {}
             if pr.get("eingespielt"):
                 _ergebnis(rid, "umgesetzt", commit=eg.get("commit"), dateien=[str(x).split("/vve-cp-r2/")[-1] for x in eg.get("dateien") or []],
@@ -297,6 +353,19 @@ async def _abarbeiten() -> None:
     except Exception as e:  # noqa: BLE001 -- nie eine Serie auf "laeuft" haengen lassen
         traceback.print_exc()
         _setzen(stand="fehler", fehler=f"{e.__class__.__name__}: {str(e)[:300]}", ende=time.time())
+
+
+async def _warten(jid: str) -> dict[str, Any] | None:
+    """Bis Neos Auftrag fertig ist; None nach MAX_JE_PUNKT (dann wird er abgebrochen)."""
+    from . import neo
+    ende = time.time() + MAX_JE_PUNKT
+    while time.time() < ende:
+        job = neo.JOBS.get(jid)
+        if not job or job["fertig"]:
+            return job or {}
+        await asyncio.sleep(5)
+    neo.abbrechen(jid)
+    return None
 
 
 def _ergebnis(rid: str, stand_: str, **w: Any) -> None:
