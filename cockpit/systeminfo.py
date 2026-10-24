@@ -798,6 +798,9 @@ async def kopf() -> dict[str, Any]:
     # (Veiko, 24.10.2026: "Cockpit zeigt, dass Neo arbeitet, aber die GPU arbeitet nicht").
     from . import neo
     ki["neo"] = any(not j.get("fertig") for j in neo.JOBS.values())
+    # Welche Externen gerade rechnen (cloud.LAEUFT) -- oben links erscheint dann ihr Zeichen, animiert.
+    from . import cloud
+    ki["extern"] = cloud.laufende()
     out: dict[str, Any] = {"zeit": jetzt, "status_da": bool(s), "ki": ki}
     out["taetigkeit"] = await taetigkeit(gpu_last, [str(x).split("|")[0] for x in ((s or {}).get("ollama_running") or [])])
     sich = sicherungen() or {}

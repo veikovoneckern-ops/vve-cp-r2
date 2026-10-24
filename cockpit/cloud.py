@@ -39,6 +39,17 @@ class CloudFehler(Exception):
     pass
 
 
+# Wer von den Externen gerade rechnet (24.10.2026, Veiko: "wenn Externe arbeiten, sollen sich ihre Logos oben
+# animiert anzeigen"). Jeder Aufruf an Claude, Gemini und Grok geht durch chat() unten -- hier zu zaehlen erfasst
+# Dario in RSI, Neos Freigabe, Board, Team-Chat und LongRuns gleichermassen. Ein Zaehler je Anbieter, weil
+# mehrere Aufrufe gleichzeitig laufen koennen.
+LAEUFT: dict[str, int] = {"claude": 0, "gemini": 0, "grok": 0}
+
+
+def laufende() -> list[str]:
+    return [p for p in ("claude", "gemini", "grok") if LAEUFT.get(p, 0) > 0]
+
+
 def schluessel(p: str) -> str:
     return env_wert(ANBIETER[p]["key"]) if p in ANBIETER else ""
 
@@ -132,11 +143,14 @@ async def chat(p: str, modell: str, system: str, nachrichten: list[dict[str, Any
         ziel, body = f"{cfg['base']}/chat/completions", _nach_openai(modell, system, nachrichten, max_tokens)
     else:
         ziel, body = f"{cfg['base']}/messages", {"model": modell, "max_tokens": max_tokens, "system": system, "messages": nachrichten}
+    LAEUFT[p] = LAEUFT.get(p, 0) + 1
     try:
         async with httpx.AsyncClient(timeout=timeout) as c:
             r = await c.post(ziel, json=body, headers=kopf)
     except httpx.HTTPError as e:
         raise CloudFehler(f"{p} nicht erreichbar: {e.__class__.__name__}") from e
+    finally:
+        LAEUFT[p] = max(0, LAEUFT.get(p, 1) - 1)
     if r.status_code != 200:
         try:
             f = r.json()

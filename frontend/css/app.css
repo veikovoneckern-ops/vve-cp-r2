@@ -2559,3 +2559,23 @@ button.logo-knopf:hover{background:var(--chrome-line)}
 .briefing-nacht-liste li{padding:4px 0;border-top:1px solid var(--line)}
 .briefing-nacht-liste li.problem b{color:var(--signal)}
 .briefing-nacht-liste a{color:inherit;text-decoration:none}
+/* Externe arbeiten (24.10.2026, extern-logos.js): ihre Zeichen oben links, animiert wie in ihren eigenen Chats. */
+.logo-extern{display:flex;align-items:center;justify-content:center;gap:4px;height:28px}
+.logo-knopf.gross .logo-extern{height:40px}
+.ext-logos{display:flex;align-items:center;gap:4px}
+.ext-logo-platz{display:flex}
+.ext-logo{width:24px;height:24px;overflow:visible}
+.ext-logo *{transform-box:view-box}
+.logo-knopf.gross .ext-logo{width:32px;height:32px}
+.kopf-logo .ext-logo{width:20px;height:20px}
+.ext-claude-kranz{transform-origin:12px 12px;animation:ext-dreh 6s linear infinite}
+.ext-claude-strahl{stroke:#D97757;stroke-width:2.2;stroke-linecap:round;
+  animation:ext-claude-atmen 1.3s ease-in-out infinite}
+@keyframes ext-claude-atmen{0%,100%{stroke-opacity:1}50%{stroke-opacity:.35}}
+.ext-gemini-stern{transform-origin:12px 12px;animation:ext-gemini 2.4s ease-in-out infinite}
+@keyframes ext-gemini{0%{transform:rotate(0) scale(.82)}50%{transform:rotate(180deg) scale(1.05)}100%{transform:rotate(360deg) scale(.82)}}
+.ext-grok-kreis{fill:none;stroke:currentColor;stroke-width:2.2;stroke-dasharray:40 14;transform-origin:12px 12px;animation:ext-dreh 1.6s linear infinite}
+.ext-grok-strich{stroke:currentColor;stroke-width:2.4;stroke-linecap:round;animation:ext-grok-puls 1.6s ease-in-out infinite}
+@keyframes ext-grok-puls{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes ext-dreh{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.ext-claude-kranz,.ext-gemini-stern,.ext-grok-kreis{animation-duration:12s}.ext-claude-strahl,.ext-grok-strich{animation:none}}

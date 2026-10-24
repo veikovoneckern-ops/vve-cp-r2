@@ -14,6 +14,7 @@
 import { html, useEffect, useState, Icon, bus, zeitText, toast } from "./ui.js";
 import { api } from "./api.js";
 import { MatrixZeichen } from "./matrix.js";
+import { ExternLogos, EXTERN_NAME } from "./extern-logos.js";
 
 let letzterKopf = null;
 
@@ -55,7 +56,8 @@ export function kopfAbruf() {
         logoSetzen(letzterKopf);
       } catch (e) { /* Kopfzeile bleibt beim letzten Stand */ }
     }
-    timer = setTimeout(holen, letzterKopf && letzterKopf.ki && letzterKopf.ki.arbeitet ? 3000 : 6000);
+    const kk = letzterKopf && letzterKopf.ki;
+    timer = setTimeout(holen, kk && (kk.arbeitet || kk.neo || (kk.extern || []).length) ? 3000 : 6000);
   };
   holen();
   const sofort = bus.an("ki-start", () => {
@@ -72,13 +74,19 @@ export function kopfAbruf() {
 export function Logo({ gross = false, beiKlick = null, zweck = "" }) {
   const k = useKopf();
   const ki = k && k.ki;
-  const rechnet = ki && ki.neo ? "Neo arbeitet" + (ki.gpu_last ? ` · Grafikkarten ${ki.gpu_last} %` : "")
+  const extern = (ki && ki.extern) || [];
+  const rechnet = extern.length ? extern.map((p) => EXTERN_NAME[p] || p).join(", ") + (extern.length === 1 ? " arbeitet" : " arbeiten")
+      + (ki.neo ? " · Neo arbeitet" : "")
+    : ki && ki.neo ? "Neo arbeitet" + (ki.gpu_last ? ` · Grafikkarten ${ki.gpu_last} %` : "")
     : ki && ki.arbeitet
     ? `Lokale KI rechnet · Grafikkarten ${ki.gpu_last} %` + (ki.aufrufe ? ` · ${ki.aufrufe} ${ki.aufrufe === 1 ? "Anfrage" : "Anfragen"}` : "")
     : "";
   // Arbeitet Neo, steht statt des Logos das wechselnde Matrix-Zeichen (24.10.2026) -- dasselbe wie in
-  // Neos Laufzeile. Sonst das Logo, das sich dreht, solange eine lokale KI rechnet.
-  const bild = ki && ki.neo ? html`<span class="logo-matrix"><${MatrixZeichen} /></span>` : html`<span class="logo" aria-hidden="true"></span>`;
+  // Neos Laufzeile. Rechnen Externe (Claude, Gemini, Grok), stehen dort ihre Zeichen, animiert -- neben Neos,
+  // wenn beide arbeiten. Sonst das Logo, das sich dreht, solange eine lokale KI rechnet.
+  const neoBild = html`<span class="logo-matrix"><${MatrixZeichen} /></span>`;
+  const bild = extern.length ? html`<span class="logo-extern">${ki.neo ? neoBild : ""}<${ExternLogos} wer=${extern} /></span>`
+    : ki && ki.neo ? neoBild : html`<span class="logo" aria-hidden="true"></span>`;
   if (beiKlick) {
     const titel = (rechnet ? rechnet + " · " : "") + zweck;
     return html`<button class=${"logo-knopf" + (gross ? " gross" : "")} onClick=${beiKlick} title=${titel} aria-label=${zweck}>${bild}</button>`;
