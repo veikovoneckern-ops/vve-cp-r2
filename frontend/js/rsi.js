@@ -22,7 +22,7 @@ const IN_ARBEIT = ["bei_neo", "in_serie"];
 
 // ------------------------------------------------------------ Schrittleiste
 function Schritte({ aktiv }) {
-  const S = [["finden", "Neo findet Probleme"], ["waehlen", "Du wählst aus"], ["umsetzen", "Neo setzt um, Dario prüft"], ["fertig", "Neues Release"]];
+  const S = [["finden", "Dario findet Probleme"], ["waehlen", "Du wählst aus"], ["umsetzen", "Neo setzt um, Dario prüft"], ["fertig", "Neues Release"]];
   const i = S.findIndex(([k]) => k === aktiv);
   return html`<ol class="rsi-schritte">${S.map(([k, t], n) => html`<li class=${n < i ? "war" : n === i ? "jetzt" : ""}><span>${n + 1}</span>${t}</li>`)}</ol>`;
 }
@@ -51,7 +51,7 @@ function JetztKasten({ d, waehlbare, wahl, setWahlAlle, titel, laden }) {
 
   let schritt, kopf, inhalt;
   if (d.laeuft) {
-    schritt = "finden"; kopf = "Neo sieht gerade deine Gespräche durch";
+    schritt = "finden"; kopf = "Dario sieht gerade deine Gespräche durch";
     inhalt = html`<p>${st.schritt || "läuft"} …</p>${nichtsTun}`;
   } else if (s.stand === "pruefung") {
     schritt = "umsetzen"; kopf = "Dario prüft deine Auswahl";
@@ -210,6 +210,20 @@ function Verlauf({ d, alt, laden }) {
   </section>`;
 }
 
+// Was Dario Neo beigebracht hat (neo_lektionen.py, 24.10.2026): lehnt Dario eine Aenderung ab, formuliert er
+// eine allgemeine Regel -- sie steht ab dann in jedem Auftrag an Neo. Veiko sieht und loescht sie hier.
+function Lektionen({ liste, laden }) {
+  if (!liste || !liste.length) return html`<details class="karte rsi-einst"><summary><b>Was Neo gelernt hat</b> <span class="leise klein">-- noch nichts</span></summary>
+    <p class="klein leise">Lehnt Dario eine Änderung von Neo ab, formuliert er daraus eine allgemeine Regel („Benutze nur Namen, die im Code definiert sind“).
+      Sie steht ab dann in jedem Auftrag an Neo -- auch außerhalb von RSI.</p></details>`;
+  async function weg(id) { try { await api("/neo/lektionen/" + id, { methode: "DELETE" }); toast("Regel gelöscht."); laden(); } catch (e) { fehlerMelden(e); } }
+  return html`<details class="karte rsi-einst" open><summary><b>Was Neo gelernt hat</b> <span class="leise klein">-- ${liste.length} ${liste.length === 1 ? "Regel" : "Regeln"} von Dario, gelten in jedem Auftrag</span></summary>
+    <ul class="rsi-alt">${liste.map((l) => html`<li><b>${l.regel}</b>
+      <div class="leise klein">${zeitText(l.zeit)}${l.wie_oft > 1 ? ` · ${l.wie_oft}× nötig gewesen` : ""}${l.anlass ? " · Anlass: " + l.anlass : ""}
+        <button class="btn klein geist" onClick=${() => weg(l.id)}>löschen</button></div></li>`)}</ul>
+  </details>`;
+}
+
 function Einstellungen({ d, laden }) {
   async function setzen(x) { try { await api("/rsi/einstellungen", { methode: "POST", daten: x }); laden(); } catch (e) { fehlerMelden(e); } }
   async function jetzt() { try { await api("/rsi/lauf", { methode: "POST" }); toast("Neo sieht deine Gespräche durch."); setTimeout(laden, 800); } catch (e) { fehlerMelden(e); } }
@@ -221,7 +235,7 @@ function Einstellungen({ d, laden }) {
         onChange=${(e) => setzen({ budget: e.target.value })} /> $</label>
       <button class="btn klein" disabled=${d.laeuft} onClick=${jetzt}><${Icon} n="play" g=${13} />Jetzt durchsehen</button>
     </div>
-    <p class="klein leise">Neo liest deine Gespräche mit Talk und Neo seit dem letzten Durchsehen${d.bis ? ` (zuletzt bis ${zeitText(d.bis)})` : ""}: wo du widersprochen hast,
+    <p class="klein leise">Dario liest deine Gespräche mit Talk und Neo seit dem letzten Durchsehen${d.bis ? ` (zuletzt bis ${zeitText(d.bis)})` : ""}: wo du widersprochen hast,
       wo das Cockpit aufgegeben hat, wo du etwas wiederholen musstest. Derselbe Fehler in mehreren Gesprächen wird ein Vorschlag. Er ändert dabei nichts.</p>
   </details>`;
 }
@@ -244,12 +258,13 @@ export function Rsi() {
   const waehlbare = waehlbarJetzt ? offen.filter((v) => WAEHLBAR.includes(v.stand)) : [];
   return html`<div class="seite rsi">
     <div class="rsi-titel"><h2>RSI -- das Cockpit verbessert sich selbst</h2>
-      <p class="leise">Neo findet in deinen Gesprächen, wo es gehakt hat. Du wählst aus, was besser werden soll. Neo setzt es um, Dario prüft jede Änderung.</p></div>
+      <p class="leise">Dario findet in deinen Gesprächen, wo es gehakt hat, und schreibt Neo einen konkreten Auftrag. Du wählst aus, was umgesetzt wird. Neo baut, Dario prüft jede Änderung -- und bringt Neo bei, was er falsch gemacht hat.</p></div>
     <${JetztKasten} d=${d} waehlbare=${waehlbare} wahl=${wahl} setWahlAlle=${setWahlAlle} titel=${titel} laden=${laden} />
     ${offen.length > 0 && html`<h3 class="rsi-abschnitt">Vorschläge</h3>`}
     ${offen.map((v, i) => html`<${Vorschlag} key=${v.id} v=${v} nr=${i + 1} wahl=${wahl[v.id] || ""} setWahl=${setWahl}
       waehlbar=${waehlbarJetzt && WAEHLBAR.includes(v.stand)} />`)}
     <${Verlauf} d=${d} alt=${alt} laden=${laden} />
+    <${Lektionen} liste=${d.lektionen} laden=${laden} />
     <${Einstellungen} d=${d} laden=${laden} />
   </div>`;
 }

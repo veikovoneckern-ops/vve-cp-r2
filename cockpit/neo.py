@@ -175,6 +175,31 @@ def _verweise_reparieren(seite: Path, anhaenge: list[dict[str, Any]]) -> list[st
     return getan
 
 
+def klartext(name: str, kurz: str) -> str:
+    """Ein Arbeitsschritt in einem Satz (24.10.2026, Veiko: "bei Neo moechte ich deutlich mehr sehen, was gerade
+    passiert" -- "datei_lesen(pfad=/home/…)" sagte ihm nichts). Dieselbe Uebersetzung steht in neo.js."""
+    w = dict(re.findall(r"(\w+)=([^,]*)", kurz or ""))
+    pfad = re.sub(r"^.*/vve-cp-r2/|^~/vve-cp-r2/", "", (w.get("pfad") or w.get("nach") or "").replace(str(WURZEL) + "/", "").strip())
+    return {"datei_lesen": f"liest {pfad}" + (f" ab Zeile {w['ab_zeile'].strip()}" if w.get("ab_zeile") else ""),
+            "suche": f"sucht nach „{(w.get('muster') or w.get('text') or '').strip()}“",
+            "projektwissen": f"schlägt in der Doku nach: {(w.get('thema') or '').strip()}",
+            "datei_aendern": f"ändert {pfad}", "datei_schreiben": f"schreibt {pfad}",
+            "datei_kopieren": f"kopiert nach {pfad}", "befehl_ausfuehren": f"führt aus: {(w.get('befehl') or '').strip()[:80]}",
+            "vorschau_zeigen": "zeigt das Ergebnis in der Vorschau", "dokument_erstellen": "erstellt ein Dokument"}.get(name, f"{name} {kurz}"[:120])
+
+
+def job_stand(job: dict[str, Any]) -> str:
+    """Was Neo in diesem Auftrag GERADE tut, in einem Satz -- fuer Current Actions und die Kopfzeile."""
+    for e in reversed(job.get("ereignisse") or []):
+        if e.get("typ") == "schritt_start":
+            return klartext(e.get("name", ""), e.get("kurz", ""))
+        if e.get("typ") == "zwischen":
+            return re.sub(r"^\(|\)$", "", str(e.get("text") or "")).strip()[:160]
+        if e.get("typ") == "schritt":
+            return "denkt über das Ergebnis nach (zuletzt: " + klartext(e.get("name", ""), e.get("kurz", "")) + ")"
+    return "liest den Auftrag"
+
+
 def _kurz(eingabe: dict[str, Any]) -> str:
     teile = []
     for k, v in eingabe.items():
@@ -402,8 +427,11 @@ def system_text(anhaenge: list[dict[str, Any]] | None = None) -> str:
                                             f"dann <img src=\"{a['sauber']}\">)" if a["bild"] else "") for a in anhaenge) +
                "\nSpricht Veiko von „der angehängten Datei“, „meinem Logo“ oder „dem Bild“, ist eine dieser Dateien gemeint -- "
                "die letzte in der Liste, wenn nichts anderes gesagt ist. Nie durch etwas Selbstgezeichnetes ersetzen.")
+    from . import neo_lektionen
+    lektionen = neo_lektionen.text()     # was Dario ihm beigebracht hat (24.10.2026)
     return (_kontext_text() + anh +
             f"\n\n## Was über Veiko bekannt ist\n{gedaechtnis_text()}\n\n"
+            + (f"## {lektionen}\n\n" if lektionen else "") +
             "## Wie du arbeitest\n"
             "Sieh nach, bevor du etwas behauptest -- nicht raten.\n"
             "## So arbeitest du am Code (wie Claude Code)\n"

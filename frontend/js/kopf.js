@@ -13,6 +13,7 @@
 // dieselbe Rechnung wie vve-rgb.py und ledFarbe() im alten Layer.
 import { html, useEffect, useState, Icon, bus, zeitText, toast } from "./ui.js";
 import { api } from "./api.js";
+import { MatrixZeichen } from "./matrix.js";
 
 let letzterKopf = null;
 
@@ -71,17 +72,19 @@ export function kopfAbruf() {
 export function Logo({ gross = false, beiKlick = null, zweck = "" }) {
   const k = useKopf();
   const ki = k && k.ki;
-  const rechnet = ki && ki.arbeitet
+  const rechnet = ki && ki.neo ? "Neo arbeitet" + (ki.gpu_last ? ` · Grafikkarten ${ki.gpu_last} %` : "")
+    : ki && ki.arbeitet
     ? `Lokale KI rechnet · Grafikkarten ${ki.gpu_last} %` + (ki.aufrufe ? ` · ${ki.aufrufe} ${ki.aufrufe === 1 ? "Anfrage" : "Anfragen"}` : "")
     : "";
+  // Arbeitet Neo, steht statt des Logos das wechselnde Matrix-Zeichen (24.10.2026) -- dasselbe wie in
+  // Neos Laufzeile. Sonst das Logo, das sich dreht, solange eine lokale KI rechnet.
+  const bild = ki && ki.neo ? html`<span class="logo-matrix"><${MatrixZeichen} /></span>` : html`<span class="logo" aria-hidden="true"></span>`;
   if (beiKlick) {
     const titel = (rechnet ? rechnet + " · " : "") + zweck;
-    return html`<button class=${"logo-knopf" + (gross ? " gross" : "")} onClick=${beiKlick} title=${titel} aria-label=${zweck}>
-      <span class="logo" aria-hidden="true"></span></button>`;
+    return html`<button class=${"logo-knopf" + (gross ? " gross" : "")} onClick=${beiKlick} title=${titel} aria-label=${zweck}>${bild}</button>`;
   }
   const titel = rechnet || "Zum Briefing";
-  return html`<a class=${"logo-knopf" + (gross ? " gross" : "")} href="#/briefing" title=${titel} aria-label=${titel}>
-    <span class="logo" aria-hidden="true"></span></a>`;
+  return html`<a class=${"logo-knopf" + (gross ? " gross" : "")} href="#/briefing" title=${titel} aria-label=${titel}>${bild}</a>`;
 }
 
 // Vollbild (23.10.2026, Veiko: "dass gar nicht mehr der Rahmen vom Browser und die einzelnen Tabs zu sehen

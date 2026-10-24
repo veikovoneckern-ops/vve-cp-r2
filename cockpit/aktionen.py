@@ -30,7 +30,7 @@ from . import db, llm, modellkatalog, stab
 ART_NAME = {"download": "Download", "pipeline": "Team-Pipeline", "langlauf": "LongRun", "video": "Video",
             "folienbilder": "Bilder für ein Ergebnis", "medien": "Bild aus dem Gespräch", "neo": "Neo",
             "gespraech": "Antwort im Gespräch", "revision": "Modell-Revision", "ruf": "Ruf im Netz", "verfahren": "Verfahren",
-            "system": "Server-Auftrag", "dossier": "Recherche-Dossier"}
+            "system": "Server-Auftrag", "dossier": "Recherche-Dossier", "rsi": "RSI"}
 
 
 def _titel_ergebnis(eid: str) -> str:
@@ -115,9 +115,29 @@ def sammeln(gespraeche: dict[str, dict[str, Any]], wer_name) -> dict[str, Any]:
     for jid, j in list(neo.JOBS.items()):
         if not j.get("fertig"):
             g = db.holen("gespraeche", j["gespraech_id"]) or {}
+            n_schritte = sum(1 for e in j.get("ereignisse") or [] if e.get("typ") == "schritt")
+            # Was Neo GERADE tut, in Klartext (24.10.2026) -- vorher stand hier nur "arbeitet mit <Modell>".
             laufend.append({"id": "neo:" + jid, "art": "neo", "titel": g.get("titel") or "Auftrag an Neo", "wer": "Neo",
-                            "schritt": f"arbeitet mit {j.get('modell') or '?'}", "start": j.get("start"), "stand": "laeuft",
+                            "schritt": neo.job_stand(j), "teile": f"{n_schritte} Schritte · {j.get('modell') or ''}".strip(" ·"),
+                            "start": j.get("start"), "stand": "laeuft",
                             "link": "#/neo/" + j["gespraech_id"], "steuerung": ["abbrechen"]})
+    # RSI (24.10.2026): das Durchsehen und eine laufende Serie stehen hier mit, je mit dem Schritt, der gerade laeuft.
+    from . import rsi, rsi_serie
+    if rsi.laeuft():
+        rs = rsi.stand()
+        laufend.append({"id": "rsi", "art": "rsi", "titel": "RSI: Gespräche durchsehen", "wer": "Neo · Dario", "stand": "laeuft",
+                        "schritt": rs.get("schritt") or "läuft", "start": rs.get("start"), "link": "#/rsi", "steuerung": []})
+    se = rsi_serie.stand()
+    if se.get("stand") in ("pruefung", "laeuft"):
+        reihe = se.get("reihenfolge") or []
+        fertig_n = len(se.get("ergebnisse") or {})
+        akt = (db.holen("rsi", se.get("aktuell") or "") or {}).get("titel")
+        laufend.append({"id": "rsi-serie", "art": "rsi", "titel": "RSI: Verbesserungen umsetzen", "wer": "Neo · Dario", "stand": "laeuft",
+                        "schritt": ("Dario prüft die Auswahl auf Widersprüche" if se["stand"] == "pruefung"
+                                    else f"{akt or 'nächster Punkt'} -- {se.get('aktuell_schritt') or 'läuft'}"),
+                        "teile": f"Punkt {min(fertig_n + 1, len(reihe))} von {len(reihe)}" if reihe else None,
+                        "prozent": round(fertig_n / len(reihe) * 100) if reihe else None,
+                        "start": se.get("gestartet") or se.get("start"), "link": "#/rsi", "steuerung": []})
     for gid, s in list(gespraeche.items()):
         g = db.holen("gespraeche", gid) or {}
         wer = (wer_name(s["wer"]) if s.get("wer") else ("Talk" if s.get("art") == "talk" else "Advisory Board"))

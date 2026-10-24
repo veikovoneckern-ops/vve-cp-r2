@@ -13,17 +13,17 @@ Der Ablauf, einmal je Nacht (03--05 Uhr deutscher Zeit):
      ist eine Stelle, an der es hakte -- Veiko widerspricht ("nein", "du sollst", "funktioniert
      nicht"), Talk gibt auf ("nichts gefunden", "verstehe dich nicht") oder Veiko wiederholt
      seine Bitte. Mit dem Gespraech davor und danach, damit man den Fehler nachvollziehen kann.
-  2. NEO ANALYSIERT -- NUR LESEND. Er bekommt die Befunde, sieht im Code nach (datei_lesen,
-     suche, projektwissen -- dieselben Werkzeuge wie im Neo-Chat, aber KEINE schreibenden) und
-     liefert hoechstens fuenf Vorschlaege: Problem, Ursache im Code, Loesung, Dateien, Aufwand.
-     Er kann hier gar nichts aendern -- die Werkzeuge dafuer bekommt er nicht.
-  3. DARIO PRUEFT jeden Vorschlag: traegt er, was sind die Risiken, und WER soll ihn
-     ausarbeiten -- Neo (klein, klar umrissen, lokal und kostenlos) oder Dario selbst (gross,
-     heikel, braucht einen sauberen Plan). Kostet Geld: geschaetzt wird VOR jedem Aufruf, und
-     ueber das Nachtbudget (Vorgabe 1 Dollar, auf der Seite einstellbar) geht nichts hinaus.
-  4. VEIKO ENTSCHEIDET auf der Seite RSI: Neo ausarbeiten lassen (normaler Neo-Auftrag -- was er
-     am Cockpit aendern will, prueft Dario wie immer vor dem Einspielen, neo_freigabe.py),
-     Dario einen Umsetzungsplan schreiben lassen (kostet, deshalb mit Rueckfrage), oder verwerfen.
+  2. DARIO FINDET DIE PROBLEME (seit 24.10.2026, dario_analysieren; vorher Neo): er liest die
+     Befunde samt Landkarte des Codes und der letzten Aenderungen, trennt echte Fehler von
+     Hoerfehlern und laengst Behobenem, fasst denselben Fehler zu EINEM Vorschlag zusammen und
+     schreibt je Vorschlag einen konkreten Auftrag an Neo. Kostet Geld: geschaetzt wird VOR dem
+     Aufruf, ueber das Nachtbudget (Vorgabe 1 Dollar) geht nichts hinaus. Reicht es nicht oder ist
+     Dario nicht erreichbar, sieht Neo nur lesend nach (neo_analysieren) und Dario prueft danach
+     jeden seiner Vorschlaege (Schritt 3, sonst entfaellt er).
+  3. DARIO PRUEFT Neos Vorschlaege (nur im Rueckfall).
+  4. VEIKO ENTSCHEIDET auf der Seite RSI: ankreuzen, umsetzen oder verwerfen (rsi_serie.py):
+     Dario schreibt den Plan gegen den echten Code, NEO baut, Dario prueft jede Aenderung vor dem
+     Einspielen und bringt Neo bei einer Ablehnung eine allgemeine Regel bei (neo_lektionen.py).
 
 Bewusst NICHT automatisch: das Umsetzen. Ein Cockpit, das sich nachts selbst umbaut, waere nicht
 mehr Veikos -- "eigenstaendig arbeiten heisst moeglichst wenig warten, nicht alles selbst
@@ -436,6 +436,66 @@ async def neo_analysieren(befunde: list[dict[str, Any]], offene: list[str]) -> t
     return zusammen, ", ".join(p.split("/vve-cp-r2/")[-1] for p in gelesen)
 
 
+# ---------------------------------------------------------------- 2a. Dario findet die Probleme (24.10.2026)
+DARIO_FINDEN_SYSTEM = (
+    "Du bist Dario, der unabhängige Prüfer und Architekt des VvE Cockpits -- Veikos selbst gehosteter KI-Arbeitsumgebung "
+    "(FastAPI-Backend unter cockpit/, Preact-Frontend unter frontend/js/, Talk = Sprachdialog, Neo = lokaler Coding-Agent). "
+    "Unten stehen Stellen aus Veikos Gesprächen, an denen es gehakt hat: er widersprach, das Cockpit gab auf, er musste "
+    "wiederholen. Deine Aufgabe:\n"
+    "1. ECHTE PROBLEME ERKENNEN. Prüfe jede Stelle: Hat das Cockpit wirklich falsch gehandelt -- oder war es richtig, ein "
+    "Hörfehler der Spracherkennung, ein Missverständnis, das sich im Gespräch geklärt hat? Nur echte, wiederkehrende oder "
+    "störende Fehler werden ein Vorschlag. Lieber zwei handfeste als fünf vage.\n"
+    "2. DERSELBE FEHLER MEHRFACH = EIN Vorschlag mit allen Belegen. Gehört eine Stelle zu einem SCHON OFFENEN Vorschlag, "
+    "lege keinen neuen an, sondern {\"gleich_wie\": \"s…\", \"belege\": [Nummern]}.\n"
+    "3. SCHON BEHOBEN? Die letzten Änderungen am Cockpit stehen unten im STAND. Was dort schon behoben ist, schlägst du nicht vor.\n"
+    "4. KONKRETER AUFTRAG AN NEO: Neo setzt um (er ist ein lokales, weniger starkes Modell, liest aber den Code selbst). "
+    "Schreib ihm, WAS genau sich ändern soll, WO er suchen soll (Datei, Funktion, Muster aus der Landkarte), woran man den "
+    "Erfolg erkennt und was er NICHT anfassen soll. Keine Untersuchungsaufträge -- der Auftrag endet in einer Code-Änderung.\n"
+    "Antworte NUR mit JSON: {\"vorschlaege\": [{\"titel\": \"kurz, was besser werden soll\", \"problem\": \"was Veiko erlebt hat, "
+    "zwei Sätze ohne Fachjargon\", \"belege\": [Nummern], \"ursache\": \"wo es vermutlich hakt (Datei, `Funktion`) und warum\", "
+    "\"auftrag_an_neo\": \"der konkrete Änderungsauftrag\", \"dateien\": [\"cockpit/…\"], \"aufwand\": \"klein|mittel|gross\", "
+    "\"risiko\": \"was dabei kaputtgehen könnte\"} oder {\"gleich_wie\": \"s…\", \"belege\": [Nummern]}]}. "
+    "Gibt es nichts Echtes: {\"vorschlaege\": []}.")
+
+
+async def dario_analysieren(befunde: list[dict[str, Any]], offene: list[str], rest_budget: float) -> tuple[list[dict[str, Any]], float]:
+    """Dario statt Neo liest die Befunde und schreibt Vorschlaege samt Auftrag an Neo. Rueckgabe wie neo_analysieren
+    (Liste, gleich_wie-Eintraege inklusive) plus Kosten. ValueError, wenn das Budget nicht reicht."""
+    from . import neo_stand
+    frage = ("STELLEN AUS VEIKOS GESPRÄCHEN (neueste zuerst):\n\n" + befunde_text(befunde)[:40000]
+             + ("\n\nSCHON OFFENE VORSCHLÄGE:\n- " + "\n- ".join(offene) if offene else "")
+             + "\n\n" + neo_stand.stand_text()[:24000])
+    s = schaetzung(DARIO_FINDEN_SYSTEM, frage, 5000)
+    if s > rest_budget:
+        raise ValueError(f"Budget reicht nicht (geschätzt $ {s:.2f})")
+    antwort, kosten, modell = await _dario(DARIO_FINDEN_SYSTEM, frage, 5000)
+    d = llm.json_aus(antwort)
+    if not isinstance(d, dict) or not isinstance(d.get("vorschlaege"), list):
+        raise ValueError("Darios Antwort war nicht lesbar")
+    aus: list[dict[str, Any]] = []
+    for v in d["vorschlaege"]:
+        if not isinstance(v, dict):
+            continue
+        nummern = [int(x) for x in (v.get("belege") or []) if str(x).isdigit() and 1 <= int(x) <= len(befunde)]
+        if v.get("gleich_wie"):
+            aus.append({"gleich_wie": str(v["gleich_wie"]), "belege": [befunde[n - 1] for n in nummern][:6]})
+            continue
+        if not str(v.get("titel") or "").strip() or not str(v.get("auftrag_an_neo") or "").strip():
+            continue
+        auftrag = str(v["auftrag_an_neo"])[:4000]
+        aus.append({"titel": _kurz(v["titel"], 120), "problem": _kurz(v.get("problem"), 800), "ursache": _kurz(v.get("ursache"), 1500),
+                    "vorschlag": auftrag, "dateien": [str(x)[:120] for x in (v.get("dateien") or [])][:10],
+                    "aufwand": v.get("aufwand") if v.get("aufwand") in ("klein", "mittel", "gross") else "mittel",
+                    "risiko": _kurz(v.get("risiko"), 800), "belege": [befunde[n - 1] for n in nummern][:6],
+                    "gefunden_von": "dario",
+                    # Dario hat den Vorschlag selbst geschrieben -- sein Urteil und sein Auftrag stehen gleich dabei,
+                    # eine zweite Pruefung desselben Vorschlags durch ihn waere doppelt bezahlt.
+                    "dario": {"urteil": "sinnvoll", "begruendung": _kurz(v.get("problem"), 600), "risiken": [_kurz(v.get("risiko"), 300)] if v.get("risiko") else [],
+                              "wer_weiter": "neo", "warum_wer": "Neo setzt um, Dario prüft danach.", "naechster_auftrag": auftrag,
+                              "modell": modell, "kosten": 0, "zeit": time.time()}})
+    return aus[:MAX_VORSCHLAEGE + 6], kosten
+
+
 # ---------------------------------------------------------------- 3. Dario prueft
 DARIO_RSI_SYSTEM = (
     "Du bist Dario, unabhängiger Prüfer für das VvE Cockpit (Veikos selbst gehostetes KI-Cockpit: FastAPI-Backend unter "
@@ -538,8 +598,20 @@ async def lauf(von_hand: bool = False) -> dict[str, Any]:
         # Vorschlaege doppelt -- Neo kannte von den offenen nur die Titel).
         offen_zeilen = db.alle(f"SELECT id, titel, daten FROM rsi WHERE stand IN {OFFEN_STAENDE}")
         offene = [f"{r['id']}: {r['titel']} -- {_kurz(_daten(r).get('problem'), 220)}" for r in offen_zeilen]
-        with llm.taetig("RSI: Neo sucht Verbesserungen"):
-            vorschlaege, gelesen = await neo_analysieren(befunde, offene)
+        # DARIO findet die Probleme (24.10.2026, Veiko: "das koennte Dario uebernehmen, sich den Chatverlauf anzuschauen
+        # und die Probleme zu identifizieren, dann einen sehr konkreten Auftrag an Neo uebergeben -- Neo soll immer die
+        # Hauptarbeit machen"). Ist Dario nicht erreichbar oder reicht das Budget nicht, sieht Neo nach wie bisher.
+        von_dario = False
+        try:
+            _setzen(schritt="Dario liest die Stellen, an denen es hakte, und schreibt die Aufträge an Neo")
+            vorschlaege, k = await dario_analysieren(befunde, offene, budget())
+            kosten += k
+            _setzen(kosten=round(kosten, 4))
+            gelesen, von_dario = "", True
+        except (llm.ModellFehler, ValueError) as f:
+            _setzen(schritt=f"Dario nicht verfügbar ({str(f)[:80]}) -- Neo sieht nach")
+            with llm.taetig("RSI: Neo sucht Verbesserungen"):
+                vorschlaege, gelesen = await neo_analysieren(befunde, offene)
         nacht = datetime.datetime.now(BERLIN).date().isoformat()
         angehaengt = 0
         for v in vorschlaege:
@@ -552,7 +624,7 @@ async def lauf(von_hand: bool = False) -> dict[str, Any]:
                     angehaengt += 1
                 continue
             rid = db.neue_id("s")
-            db.einfuegen("rsi", {"id": rid, "nacht": nacht, "stand": "neu", "titel": v["titel"],
+            db.einfuegen("rsi", {"id": rid, "nacht": nacht, "stand": "geprueft" if v.get("dario") else "neu", "titel": v["titel"],
                                  "daten": {**v, "neo_gelesen": gelesen, "befunde_gesamt": len(befunde)},
                                  "erstellt": time.time(), "geaendert": time.time()})
             neu.append(rid)
@@ -563,8 +635,8 @@ async def lauf(von_hand: bool = False) -> dict[str, Any]:
         neu = [r for r in neu if r not in weg]
         angehaengt += len(weg)
         for i, rid in enumerate(neu, 1):
-            if not db.einstellung("rsi_dario_auto", True):
-                break
+            if von_dario or not db.einstellung("rsi_dario_auto", True):
+                break     # Darios eigene Vorschlaege muss er nicht noch einmal pruefen
             _setzen(schritt=f"Dario prüft Vorschlag {i} von {len(neu)}")
             r = await dario_pruefen(rid, budget() - kosten)
             kosten += r.get("kosten") or 0

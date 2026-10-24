@@ -1825,9 +1825,18 @@ async def rsi_liste():
     for v in d["vorschlaege"]:
         n = (v.get("daten") or {}).get("neo") or {}
         v["neo_laeuft"] = bool(n.get("gespraech_id") and neo.laufender_job(n["gespraech_id"]))
-    from . import rsi_serie
+    from . import neo_lektionen, rsi_serie
     d.update(rsi_serie.uebersicht())
+    d["lektionen"] = neo_lektionen.liste()      # was Dario Neo beigebracht hat (24.10.2026)
     return d
+
+
+@router.delete("/neo/lektionen/{lid}")
+async def neo_lektion_loeschen(lid: str):
+    from . import neo_lektionen
+    if not neo_lektionen.loeschen(lid):
+        raise HTTPException(404, "Diese Regel gibt es nicht.")
+    return {"ok": True}
 
 
 @router.post("/rsi/lauf")

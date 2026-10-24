@@ -41,7 +41,14 @@ export function Neo({ id }) {
   const folgt = useRef(null);
   const amBoden = useRef(true);
 
-  const listeLaden = () => api("/neo/gespraeche").then((d) => { setListe(d.gespraeche); return d.gespraeche; }).catch(fehlerMelden);
+  // Laden mit Wiederholung (24.10.2026): ein einziger gescheiterter Abruf liess die Seite fuer immer bei
+  // "Lade …" stehen -- Veiko sah beim Klick aus Current Actions nichts von dem, was Neo gerade tat.
+  // Jetzt steht der Grund da, und es wird alle vier Sekunden neu versucht, solange die Seite offen ist.
+  const [ladeFehler, setLadeFehler] = useState("");
+  const offenRef = useRef(true);
+  useEffect(() => () => { offenRef.current = false; }, []);
+  const listeLaden = () => api("/neo/gespraeche").then((d) => { setListe(d.gespraeche); setLadeFehler(""); return d.gespraeche; })
+    .catch((e) => { setLadeFehler(e.message || "Server nicht erreichbar"); if (offenRef.current) setTimeout(listeLaden, 4000); });
   useEffect(() => { listeLaden(); api("/team").then(setTeam).catch(() => {}); }, []);
   useEffect(() => { bus.sende("talk-kontext", null); }, []);
   useEffect(() => { if (innerWidth > 820) merk("vvec_neo_vorschau", vorschauAn); }, [vorschauAn]);
@@ -68,12 +75,22 @@ export function Neo({ id }) {
   useEffect(() => {
     if (!id) return;
     folgt.current = null; setJob(null); setG(null); setUrl(null); setListeOffen(false);
-    api("/neo/gespraeche/" + id).then((d) => {
-      setG(d);
+    let aktuell = true;
+    const laden = () => api("/neo/gespraeche/" + id).then((d) => {
+      if (!aktuell) return;
+      setG(d); setLadeFehler("");
       const letzteVorschau = [...d.nachrichten].reverse().find((m) => m.daten && m.daten.vorschau);
       if (letzteVorschau && !lies("vvec_neo_matrix", false)) setUrl(letzteVorschau.daten.vorschau);
       if (d.job) folgen(d.job);
-    }).catch((e) => { fehlerMelden(e); navigiere("/neo"); });
+    }).catch((e) => {
+      if (!aktuell) return;
+      // Gibt es das Gespraech nicht (404), zurueck zur Liste; sonst (Netz, Dienst startet neu) erneut versuchen.
+      if (e.status === 404) { fehlerMelden(e); navigiere("/neo"); return; }
+      setLadeFehler(e.message || "Server nicht erreichbar");
+      setTimeout(laden, 4000);
+    });
+    laden();
+    return () => { aktuell = false; };
   }, [id]);
 
   useEffect(() => {
@@ -98,9 +115,9 @@ export function Neo({ id }) {
         if (!j) return j;
         const n = { ...j, start: d.start || j.start, modell: d.modell || j.modell, schritte: [...j.schritte] };
         for (const e of d.ereignisse || []) {
-          if (e.typ === "schritt_start") n.aktuell = e;
+          if (e.typ === "schritt_start") { n.aktuell = e; n.zwischenNeu = false; }
           else if (e.typ === "schritt") { n.schritte.push(e); n.aktuell = null; }
-          else if (e.typ === "zwischen") n.zwischen = e.text;
+          else if (e.typ === "zwischen") { n.zwischen = e.text; n.zwischenNeu = true; }
           else if (e.typ === "datei") n.dateien = [...(n.dateien || []), e];
           else if (e.typ === "vorschau") { setUrl(e.url); setVorschauAn(true); setNeuLaden((x) => x + 1); }
         }
@@ -167,7 +184,7 @@ export function Neo({ id }) {
       <${Ziehgriff} name="neo-liste" seite="rechts" />
       <div class="kopf"><button class="btn primaer" style="width:100%" onClick=${neuesGespraech}><${Icon} n="neu" g=${15} />Neues Gespräch</button></div>
       <div class="liste">
-        ${!liste ? html`<div class="lade">Lade …</div>` : liste.map((x) => html`<div key=${x.id} style="display:flex;align-items:center">
+        ${!liste ? html`<div class="lade">${ladeFehler ? `Nicht erreichbar (${ladeFehler}) -- ich versuche es weiter …` : "Lade …"}</div>` : liste.map((x) => html`<div key=${x.id} style="display:flex;align-items:center">
           <button class=${"neo-g" + (x.id === id ? " an" : "")} onClick=${() => navigiere("/neo/" + x.id)} title=${x.titel}>
             <span>${x.titel || "Gespräch"}</span>
             <small class="leise">${zeitText(x.geaendert).replace("vor ", "")}</small></button>
@@ -193,7 +210,7 @@ export function Neo({ id }) {
         <button class="btn klein" onClick=${() => setVoll(!voll)} aria-pressed=${voll} title=${voll ? "Vollbild verlassen (Esc)" : "Vollbild"}><${Icon} n=${voll ? "klein" : "voll"} g=${14} /><span class="txt">${voll ? "Verlassen" : "Vollbild"}</span></button>
       </div>
       <div class="neo-verlauf" ref=${verlaufRef} onScroll=${(e) => { const v = e.target; amBoden.current = v.scrollHeight - v.scrollTop - v.clientHeight < 60; }}>
-        ${!g ? html`<div class="lade">Lade Gespräch …</div>` : !nachrichten.length && !job ? html`<div class="karte" style="max-width:640px">
+        ${!g ? html`<div class="lade">${ladeFehler ? `Gespräch nicht erreichbar (${ladeFehler}) -- ich versuche es alle vier Sekunden neu …` : "Lade Gespräch …"}</div>` : !nachrichten.length && !job ? html`<div class="karte" style="max-width:640px">
             <h3 style="margin-bottom:6px">Mit Neo arbeiten</h3>
             <p class="leise">Neo ist dein Cockpit Engineer. Er liest und schreibt Dateien und führt Befehle auf dem Server aus, mit denselben Rechten wie du über SSH (ohne sudo). Jeder Schritt steht hier aufklappbar. Er arbeitet weiter, auch wenn du die Seite wechselst.</p>
             <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px">${BEISPIELE.map((b) => html`<button class="btn" style="justify-content:flex-start;white-space:normal;text-align:left" onClick=${() => senden(b, [], [])}>${b}</button>`)}</div>
@@ -236,19 +253,39 @@ function Beitrag({ m, zeigen }) {
   </div>`;
 }
 
+// Ein Arbeitsschritt in einem Satz -- dieselbe Uebersetzung wie neo.klartext im Backend (24.10.2026, Veiko:
+// "bei Neo moechte ich deutlich mehr sehen, was gerade passiert"; "datei_lesen(pfad=…)" sagte ihm nichts).
+function klartext(name, kurz) {
+  const w = {};
+  for (const m of String(kurz || "").matchAll(/(\w+)=([^,]*)/g)) w[m[1]] = m[2].trim();
+  const pfad = (w.pfad || w.nach || "").replace(/^.*\/vve-cp-r2\//, "").replace(/^~\/vve-cp-r2\//, "");
+  return ({ datei_lesen: `liest ${pfad}${w.ab_zeile ? " ab Zeile " + w.ab_zeile : ""}`, suche: `sucht nach „${w.text || ""}“`,
+    projektwissen: `schlägt in der Doku nach: ${w.thema || ""}`, datei_aendern: `ändert ${pfad}`, datei_schreiben: `schreibt ${pfad}`,
+    datei_kopieren: `kopiert nach ${pfad}`, befehl_ausfuehren: `führt aus: ${(w.befehl || "").slice(0, 80)}`,
+    vorschau_zeigen: "zeigt das Ergebnis in der Vorschau", dokument_erstellen: "erstellt ein Dokument" })[name] || `${name} ${kurz || ""}`;
+}
+
 function Laeuft({ job, jetzt, abbrechen }) {
   const sek = jetzt / 1000 - job.start;
-  const akt = job.aktuell ? `${job.aktuell.name}(${job.aktuell.kurz})` : job.schritte.length ? "denkt über das Ergebnis nach" : "liest den Auftrag";
+  // Was gerade passiert, als ganzer Satz: ein Werkzeug, eine Meldung des Cockpits (z. B. "Dario prüft …")
+  // oder das Nachdenken zwischen zwei Schritten.
+  const akt = job.aktuell ? klartext(job.aktuell.name, job.aktuell.kurz)
+    : job.zwischen && job.zwischenNeu ? job.zwischen.replace(/^\(|\)$/g, "")
+    : job.schritte.length ? "denkt über das Ergebnis nach" : "liest den Auftrag";
+  const aendert = job.schritte.filter((s) => s.name === "datei_aendern" || s.name === "datei_schreiben").length;
   return html`<div>
     <div class="laeuft-zeile" role="status">
       <${MatrixZeichen} />
-      <div class="text"><b>Neo arbeitet …</b><small>${dauer(sek)} · ${job.schritte.length} Schritte · ${akt}${job.modell ? " · " + job.modell : ""}</small></div>
+      <div class="text"><b>${!job.aktuell && job.zwischen && job.zwischenNeu ? akt : "Neo " + akt}</b><small>seit ${dauer(sek)} · ${job.schritte.length} Schritte${aendert ? ` · ${aendert} Änderungen vorgemerkt` : ""}${job.modell ? " · " + job.modell : ""}</small></div>
       <button class="btn klein gefahr" onClick=${abbrechen}><${Icon} n="stopp" g=${12} />Abbrechen</button>
     </div>
     ${job.zwischen && html`<div class="neo-beitrag" style="margin-top:8px;opacity:.85"><${Md} text=${job.zwischen} /></div>`}
     ${(job.dateien || []).length > 0 && html`<div>${job.dateien.map((f) => html`<a class="datei-chip" href=${f.url} download><${Icon} n="download" g=${14} />${f.name}</a>`)}</div>`}
-    ${job.schritte.length > 0 && html`<details class="schritte" open style="margin-top:6px"><summary>Schritte bisher</summary>
-      ${job.schritte.slice(-12).map((s, i) => html`<details class="schritt" key=${i}><summary><span class="name">${s.name}</span> ${s.kurz}</summary><pre>${s.ergebnis}</pre></details>`)}</details>`}
+    ${job.schritte.length > 0 && html`<div class="neo-protokoll" aria-label="Was Neo bisher getan hat">
+      ${job.schritte.slice(-15).map((s, i) => html`<details class="neo-protokoll-zeile" key=${i}>
+        <summary><span class="neo-haken">✓</span>${klartext(s.name, s.kurz)}</summary><pre>${s.ergebnis}</pre></details>`)}
+      ${job.aktuell && html`<div class="neo-protokoll-zeile jetzt"><span class="neo-haken">▶</span>${klartext(job.aktuell.name, job.aktuell.kurz)} …</div>`}
+    </div>`}
   </div>`;
 }
 

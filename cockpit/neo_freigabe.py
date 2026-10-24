@@ -239,8 +239,12 @@ DARIO_SYSTEM = (
     "anderswo gebraucht werden, abgeschaltete Verbindungen, gelöschte Daten, Sicherheit, Geheimnisse im Code)? Ist sie "
     "vollständig, oder fehlen Teile? Ein Befehl, der Daten löscht, Dienste umbaut oder Pakete installiert, braucht einen klaren "
     "Grund im Auftrag. Im Zweifel: abgelehnt -- mit genauem Grund, damit Neo nachbessern kann. "
+    "Lehnst du ab, bring Neo etwas bei (24.10.2026, Veiko: Neo soll aus seinen Fehlern lernen): steckt hinter den Mängeln "
+    "eine ART von Fehler, die Neo bei anderen Aufträgen wieder machen könnte, formuliere sie als allgemeine Regel in einem "
+    "Satz, in der Du-Form, ohne Bezug auf diesen Auftrag -- z. B. „Benutze nur Namen, die im Code definiert sind; lies die "
+    "Stelle vorher mit datei_lesen nach.“ Ist es ein Einzelfall, lass \"lektion\" leer. "
     "Antworte NUR mit JSON: {\"urteil\": \"freigegeben\" oder \"abgelehnt\", \"begruendung\": \"zwei, drei Sätze auf Deutsch\", "
-    "\"maengel\": [\"konkreter Mangel\", …]}")
+    "\"maengel\": [\"konkreter Mangel\", …], \"lektion\": \"allgemeine Regel oder leer\"}")
 
 
 async def pruefen(lauf: dict[str, Any], auftrag: str, neo_text: str) -> dict[str, Any]:
@@ -263,8 +267,13 @@ async def pruefen(lauf: dict[str, Any], auftrag: str, neo_text: str) -> dict[str
     if not d:
         urteil = "abgelehnt"
         d = {"begruendung": "Darios Antwort war nicht lesbar -- sicherheitshalber nicht eingespielt.", "maengel": []}
+    lektion = None
+    if urteil == "abgelehnt" and str(d.get("lektion") or "").strip():
+        # Neos Gedaechtnis (neo_lektionen.py): die Regel steht ab jetzt in jedem Auftrag an Neo.
+        from . import neo_lektionen
+        lektion = neo_lektionen.hinzufuegen(str(d["lektion"]), anlass=auftrag.strip().splitlines()[0][:200] if auftrag.strip() else "")
     return {"urteil": urteil, "von": "Dario", "modell": modell, "begruendung": str(d.get("begruendung") or "")[:1500],
-            "maengel": [str(m)[:400] for m in (d.get("maengel") or [])][:10]}
+            "maengel": [str(m)[:400] for m in (d.get("maengel") or [])][:10], "lektion": (lektion or {}).get("regel")}
 
 
 # ---------------------------------------------------------------- einspielen
