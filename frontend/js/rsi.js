@@ -8,7 +8,7 @@
 //   2. Darunter die Vorschlaege: Ankreuzbox, was passiert ist, Darios Einschaetzung in einem Satz.
 //      Alles Technische (Belege, Neos Vorschlag, Plan) hinter "Details". Die frueheren Einzelknoepfe je
 //      Karte (Neo ausarbeiten, Plan bestellen, pruefen lassen) sind weg -- sie waren drei Wege zum selben Ziel.
-//   3. Unten "Was gelaufen ist": letzter Durchlauf, Releases (zuruecknehmen), Erledigtes. Einstellungen zu.
+//   3. Unten "Was gelaufen ist": letzter Durchlauf, Releases (zuruecknehmen), Erledigtes. Die Einstellungen stehen seit dem 24.10.2026 unter Settings -> RSI.
 import { html, useState, useEffect, Icon, Md, bus, toast, fehlerMelden, zeitText, useAbruf } from "./ui.js";
 import { api } from "./api.js";
 
@@ -19,6 +19,16 @@ const ALT_STAND = { umgesetzt: ["gruen", "umgesetzt"], verworfen: ["", "verworfe
 const dollar = (x) => "$ " + Number(x || 0).toFixed(2).replace(".", ",");
 const WAEHLBAR = ["neu", "geprueft", "plan"];
 const IN_ARBEIT = ["bei_neo", "in_serie"];
+const schonVersucht = (v) => { const e = ((v.daten || {}).serie || {}).ergebnis; return !!e && e !== "umgesetzt"; };
+// Der Grund eines gescheiterten Versuchs ist Darios oder pyflakes' Wortlaut -- fuer Veiko zuerst ein Satz in Klartext,
+// der volle Wortlaut steht darunter aufklappbar.
+function versuchKlartext(grund) {
+  const g = grund || "";
+  if (/^Dario/.test(g)) return "Neo hat eine Änderung gebaut, Dario hat sie aber nicht angenommen -- sie hätte das Problem nicht gelöst.";
+  if (/Selbsttest/.test(g)) return "Neos Änderung hatte Programmierfehler, das Cockpit wäre damit nicht gestartet. Deshalb wurde nichts eingespielt.";
+  if (/Unterbrochen|neu gestartet/.test(g)) return "Der Versuch wurde unterbrochen, weil das Cockpit neu gestartet ist.";
+  return "Der Versuch hat nicht geklappt.";
+}
 
 // ------------------------------------------------------------ Schrittleiste
 function Schritte({ aktiv }) {
@@ -77,13 +87,24 @@ function JetztKasten({ d, waehlbare, wahl, setWahlAlle, titel, laden }) {
       <div class="knopfreihe">${s.release_id && html`<button class="btn primaer" onClick=${() => location.reload()}><${Icon} n="neu_laden" g=${14} />Seite neu laden</button>`}
         <button class="btn klein geist" onClick=${() => tun("/rsi/serie/gemeldet")}>Gesehen, ausblenden</button></div>`;
   } else if (waehlbare.length) {
+    // Veiko, 24.10.2026: "letzter Durchlauf hat nichts gefunden und dennoch stehen da Dinge, die nicht umgesetzt
+    // sind" -- beides stimmte, es stand nur nirgends, wie es zusammenhaengt. Deshalb sagt der Kasten jetzt ausdruecklich,
+    // was der LETZTE Durchlauf gebracht hat und dass die offenen Punkte aelter sind und schon einmal gescheitert waren.
+    const versucht = waehlbare.filter(schonVersucht).length;
+    const neuLetzter = st.ende ? waehlbare.filter((v) => !schonVersucht(v) && v.erstellt >= (st.start || st.ende) - 60).length : 0;
+    const aelter = waehlbare.length - neuLetzter;
     schritt = "waehlen"; kopf = `${waehlbare.length} ${waehlbare.length === 1 ? "Vorschlag wartet" : "Vorschläge warten"} auf dich`;
-    inhalt = html`<p class="rsi-du"><b>So geht's:</b> Kreuz unten an, was umgesetzt werden soll, und klick „Umsetzen“. Was du nicht willst: ankreuzen und „Verwerfen“.</p>
+    inhalt = html`${st.ende && html`<p>Letzter Durchlauf (${zeitText(st.ende)}): ${neuLetzter ? `${neuLetzter} neu gefunden` : "nichts Neues gefunden"}.
+        ${aelter > 0 && html` ${aelter === 1 ? "Der offene Punkt stammt" : `${neuLetzter ? "Die übrigen " : "Die "}${aelter} offenen stammen`} aus einem früheren Durchlauf${versucht
+          ? html`${versucht < aelter ? `, ${versucht} davon wurde${versucht === 1 ? "" : "n"}` : ` und wurde${aelter === 1 ? "" : "n"}`} schon einmal versucht -- <b>ohne Erfolg</b> (Grund je Punkt unten)` : ""}.`}</p>`}
+      ${versucht > 0 && html`<p class="klein">Bei diesen entscheidest du: <b>noch einmal versuchen</b> (ankreuzen, „Umsetzen“) -- Dario plant dann neu und berücksichtigt, woran es letztes Mal gescheitert ist --
+        oder <b>verwerfen</b>, wenn es dir nicht so wichtig ist.</p>`}
+      <p class="rsi-du"><b>So geht's:</b> Kreuz unten an, was umgesetzt werden soll, und klick „Umsetzen“. Was du nicht willst: ankreuzen und „Verwerfen“.</p>
       <${Auswahlleiste} wahl=${wahl} titel=${titel} leeren=${() => setWahlAlle({})} fertig=${laden}
         alle=${waehlbare.length} alleWaehlen=${() => setWahlAlle(Object.fromEntries(waehlbare.map((v) => [v.id, "an"])))} />`;
   } else {
     schritt = "finden"; kopf = "Nichts zu tun";
-    inhalt = html`<p class="rsi-du">Es liegt kein Vorschlag vor. Neo sieht jede Nacht um 3 Uhr deine Gespräche durch${d.an ? "" : " -- das ist gerade ausgeschaltet (Einstellungen unten)"}.</p>
+    inhalt = html`<p class="rsi-du">Es liegt kein Vorschlag vor. Dario sieht jede Nacht um 3 Uhr deine Gespräche durch${d.an ? "" : " -- das ist gerade ausgeschaltet (Settings → RSI)"}.</p>
       <div class="knopfreihe"><button class="btn klein" onClick=${() => tun("/rsi/lauf", "Neo sieht deine Gespräche durch.")}><${Icon} n="play" g=${13} />Jetzt durchsehen</button></div>`;
   }
   return html`<section class="karte rsi-jetzt">
@@ -150,9 +171,11 @@ function Vorschlag({ v, nr, wahl, setWahl, waehlbar }) {
         </div>
       </div>
     </div>
+    <p class="leise klein">Gefunden ${zeitText(v.erstellt)}${schonVersucht(v) ? " · schon einmal versucht" : ""}</p>
     <p>${d.problem}</p>
     ${da.begruendung && html`<p class="klein leise"><b>Dario:</b> ${da.begruendung}</p>`}
-    ${sr.ergebnis && sr.ergebnis !== "umgesetzt" && html`<div class="fehlerbox klein">Letzter Versuch hat nicht geklappt: ${sr.grund || sr.ergebnis}</div>`}
+    ${schonVersucht(v) && html`<div class="fehlerbox klein"><b>Schon einmal versucht, nicht umgesetzt:</b> ${versuchKlartext(sr.grund)}
+      ${sr.grund && html`<details><summary>Genauer Grund</summary><div class="rsi-grund">${sr.grund}</div></details>`}</div>`}
     ${sr.zurueckgestellt && html`<div class="hinweisbox klein"><b>Zurückgestellt:</b> ${sr.zurueckgestellt}${sr.frage ? html` <b>Frage an dich:</b> ${sr.frage}` : ""}</div>`}
     <details class="rsi-details"><summary class="klein">Details</summary>
       ${(d.belege || []).length > 0 && html`<p class="klein"><b>Aus deinen Gesprächen:</b></p>${d.belege.map((b) => html`<div class="rsi-beleg klein">
@@ -224,22 +247,6 @@ function Lektionen({ liste, laden }) {
   </details>`;
 }
 
-function Einstellungen({ d, laden }) {
-  async function setzen(x) { try { await api("/rsi/einstellungen", { methode: "POST", daten: x }); laden(); } catch (e) { fehlerMelden(e); } }
-  async function jetzt() { try { await api("/rsi/lauf", { methode: "POST" }); toast("Neo sieht deine Gespräche durch."); setTimeout(laden, 800); } catch (e) { fehlerMelden(e); } }
-  return html`<details class="karte rsi-einst"><summary><b>Einstellungen</b> <span class="leise klein">-- nachts durchsehen, Budget</span></summary>
-    <div class="knopfreihe rsi-schalter">
-      <label class="klein"><input type="checkbox" checked=${d.an} onChange=${(e) => setzen({ an: e.target.checked })} /> jede Nacht um 3 Uhr durchsehen</label>
-      <label class="klein"><input type="checkbox" checked=${d.dario_auto} onChange=${(e) => setzen({ dario_auto: e.target.checked })} /> Dario prüft die Vorschläge nachts gleich</label>
-      <label class="klein">Budget dafür je Nacht <input class="eingabe rsi-budget" type="number" min="0" max="20" step="0.5" value=${d.budget}
-        onChange=${(e) => setzen({ budget: e.target.value })} /> $</label>
-      <button class="btn klein" disabled=${d.laeuft} onClick=${jetzt}><${Icon} n="play" g=${13} />Jetzt durchsehen</button>
-    </div>
-    <p class="klein leise">Dario liest deine Gespräche mit Talk und Neo seit dem letzten Durchsehen${d.bis ? ` (zuletzt bis ${zeitText(d.bis)})` : ""}: wo du widersprochen hast,
-      wo das Cockpit aufgegeben hat, wo du etwas wiederholen musstest. Derselbe Fehler in mehreren Gesprächen wird ein Vorschlag. Er ändert dabei nichts.</p>
-  </details>`;
-}
-
 export function Rsi() {
   useEffect(() => { bus.sende("talk-kontext", { art: "rsi", id: "rsi", titel: "RSI" }); return () => bus.sende("talk-kontext", null); }, []);
   const [d, laden] = useAbruf("/rsi", 0, []);
@@ -252,6 +259,8 @@ export function Rsi() {
   if (!d) return html`<div class="lade">Lade …</div>`;
   const offen = d.vorschlaege.filter((v) => WAEHLBAR.includes(v.stand) || IN_ARBEIT.includes(v.stand));
   const alt = d.vorschlaege.filter((v) => !WAEHLBAR.includes(v.stand) && !IN_ARBEIT.includes(v.stand));
+  const versucht = offen.filter((v) => schonVersucht(v) && !IN_ARBEIT.includes(v.stand));
+  const neu = offen.filter((v) => !versucht.includes(v));
   const titel = Object.fromEntries(d.vorschlaege.map((v) => [v.id, v.titel]));
   // Ankreuzen geht nur, solange nichts umgesetzt wird (rsi_serie.auswahl lehnt sonst ab).
   const waehlbarJetzt = !(serie && ["pruefung", "laeuft", "bereit"].includes(serie.stand)) && !d.laeuft;
@@ -260,11 +269,15 @@ export function Rsi() {
     <div class="rsi-titel"><h2>RSI -- das Cockpit verbessert sich selbst</h2>
       <p class="leise">Dario findet in deinen Gesprächen, wo es gehakt hat, und schreibt Neo einen konkreten Auftrag. Du wählst aus, was umgesetzt wird. Neo baut, Dario prüft jede Änderung -- und bringt Neo bei, was er falsch gemacht hat.</p></div>
     <${JetztKasten} d=${d} waehlbare=${waehlbare} wahl=${wahl} setWahlAlle=${setWahlAlle} titel=${titel} laden=${laden} />
-    ${offen.length > 0 && html`<h3 class="rsi-abschnitt">Vorschläge</h3>`}
-    ${offen.map((v, i) => html`<${Vorschlag} key=${v.id} v=${v} nr=${i + 1} wahl=${wahl[v.id] || ""} setWahl=${setWahl}
+    ${neu.length > 0 && html`<h3 class="rsi-abschnitt">Neu, noch nicht versucht</h3>`}
+    ${neu.map((v, i) => html`<${Vorschlag} key=${v.id} v=${v} nr=${i + 1} wahl=${wahl[v.id] || ""} setWahl=${setWahl}
+      waehlbar=${waehlbarJetzt && WAEHLBAR.includes(v.stand)} />`)}
+    ${versucht.length > 0 && html`<h3 class="rsi-abschnitt">Schon einmal versucht, nicht geklappt</h3>
+      <p class="klein leise">Aus früheren Durchläufen. Sie bleiben stehen, bis du sie noch einmal umsetzen lässt oder verwirfst.</p>`}
+    ${versucht.map((v, i) => html`<${Vorschlag} key=${v.id} v=${v} nr=${neu.length + i + 1} wahl=${wahl[v.id] || ""} setWahl=${setWahl}
       waehlbar=${waehlbarJetzt && WAEHLBAR.includes(v.stand)} />`)}
     <${Verlauf} d=${d} alt=${alt} laden=${laden} />
     <${Lektionen} liste=${d.lektionen} laden=${laden} />
-    <${Einstellungen} d=${d} laden=${laden} />
+    <p class="klein leise rsi-einst-link">Wann durchgesehen wird und das Budget dafür: <a href="#/einstellungen/rsi">Settings → RSI</a></p>
   </div>`;
 }

@@ -158,7 +158,9 @@ def schaetzung(ids: list[str]) -> float:
     s = rsi.schaetzung(PRUEF_SYSTEM, pruef_frage(ids), 1500 + 300 * len(ids))
     for i in ids:
         r = _rsi(i)
-        if r and not ((r["daten"].get("plan") or {}).get("fuer_umsetzung") and (r["daten"].get("plan") or {}).get("bloecke")):
+        sr = (r["daten"].get("serie") or {}) if r else {}
+        gescheitert_vorher = bool(sr.get("ergebnis")) and sr.get("ergebnis") != "umgesetzt"     # wird neu geplant
+        if r and (gescheitert_vorher or not ((r["daten"].get("plan") or {}).get("fuer_umsetzung") and (r["daten"].get("plan") or {}).get("bloecke"))):
             s += rsi.schaetzung(rsi.DARIO_PLAN_SYSTEM, rsi._vorschlag_text(r["daten"]) + rsi.code_auszug(r["daten"]), 9000)
     return round(s, 3)
 
@@ -299,8 +301,11 @@ async def _abarbeiten() -> None:
             # entsteht gegen den echten Code und endet zwingend in einer Aenderung.
             punkt = _rsi(rid) or {}
             alt_plan = (punkt.get("daten") or {}).get("plan", {})
-            # Neu, wenn es keinen Umsetzungsplan gibt oder einen ohne genaue Bloecke (vor dem 24.10.2026 geschrieben).
-            if not alt_plan.get("fuer_umsetzung") or not alt_plan.get("bloecke"):
+            # Neu, wenn es keinen Umsetzungsplan gibt, einen ohne genaue Bloecke (vor dem 24.10.2026 geschrieben)
+            # oder einen, mit dem schon ein Versuch gescheitert ist -- dann war der Plan selbst nicht gut genug.
+            frueher = (punkt.get("daten") or {}).get("serie") or {}
+            gescheitert_vorher = bool(frueher.get("ergebnis")) and frueher.get("ergebnis") != "umgesetzt"
+            if not alt_plan.get("fuer_umsetzung") or not alt_plan.get("bloecke") or gescheitert_vorher:
                 p = await rsi.dario_plan(rid, zum_umsetzen=True)
                 if not p.get("ok"):
                     _ergebnis(rid, "gescheitert", grund=f"Darios Plan kam nicht zustande: {p.get('grund')}")

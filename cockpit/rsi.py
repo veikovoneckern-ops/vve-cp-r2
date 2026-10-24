@@ -807,6 +807,12 @@ async def dario_plan(rid: str, zum_umsetzen: bool = False) -> dict[str, Any]:
                                   f"{d['dario'].get('naechster_auftrag')}" if d.get("dario") else "")
     if code:
         frage += "\n\nDER BETROFFENE CODE IM WORTLAUT (aktueller Stand):\n" + code
+    # Zweiter Anlauf (24.10.2026): ist ein frueherer Umsetzungsversuch gescheitert, plant Dario mit dem Grund im
+    # Blick -- sonst schreibt er denselben Plan noch einmal, und Neo scheitert an derselben Stelle.
+    sr = d.get("serie") or {}
+    if zum_umsetzen and sr.get("ergebnis") and sr["ergebnis"] != "umgesetzt" and sr.get("grund"):
+        frage += ("\n\nEIN FRÜHERER UMSETZUNGSVERSUCH IST GESCHEITERT. Grund:\n" + str(sr["grund"])[:1500]
+                  + "\nPlane so, dass genau das diesmal nicht passiert.")
     if zum_umsetzen:
         frage += UMSETZEN_VORGABE
     try:

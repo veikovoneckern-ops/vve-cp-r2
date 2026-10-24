@@ -126,6 +126,8 @@ export function Einstellungen({ konto, thema, abschnitt }) {
     <${Morgenbericht} />
     <div style="margin-top:14px"><${Klappe} id="memory" titel="Memory" unter="Was dein Team über dich weiß: Personen, Begriffe, Hörfehler, Aussprache" vorgabe=${true}>
       <${Gedaechtnis} /></${Klappe}></div>
+    <div style="margin-top:14px"><${Klappe} id="rsi" titel="RSI" unter="Das Cockpit verbessert sich aus deinen Gesprächen: wann durchgesehen wird, Budget">
+      <${RsiEinstellungen} /></${Klappe}></div>
     <div style="margin-top:14px"><${Klappe} id="nachts" titel="Nachts" unter="Was zwischen 22 und 5 Uhr läuft, in welcher Reihenfolge, und wann zuletzt">
       <${Nachtplan} /></${Klappe}></div>
     <div style="margin-top:14px"><${Klappe} id="versionen" titel="Versionsverlauf" unter="Was sich am Cockpit wann geändert hat -- jede Auslieferung, nach Tagen und Bereichen">
@@ -157,6 +159,28 @@ export function Einstellungen({ konto, thema, abschnitt }) {
         </div>
       </section>
     </div>`}
+  </div>`;
+}
+
+// ------------------------------------------------------------ RSI (24.10.2026, vorher unten auf der RSI-Seite)
+// Veiko: "die Einstellungen fuer RSI sollten auch bei Settings sein". Die RSI-Seite ist zum Entscheiden da,
+// hier wird geschaltet -- wie bei allem anderen, was nachts von selbst laeuft.
+function RsiEinstellungen() {
+  const [d, laden] = useAbruf("/rsi", 0, []);
+  async function setzen(x) { try { await api("/rsi/einstellungen", { methode: "POST", daten: x }); laden(); } catch (e) { fehlerMelden(e); } }
+  async function jetzt() { try { await api("/rsi/lauf", { methode: "POST" }); toast("Dario sieht deine Gespräche durch -- das Ergebnis steht auf der RSI-Seite."); setTimeout(laden, 800); } catch (e) { fehlerMelden(e); } }
+  if (!d) return html`<div class="lade">Lade …</div>`;
+  return html`<div>
+    <div class="knopfreihe rsi-schalter">
+      <label class="klein"><input type="checkbox" checked=${d.an} onChange=${(e) => setzen({ an: e.target.checked })} /> jede Nacht um 3 Uhr durchsehen</label>
+      <label class="klein"><input type="checkbox" checked=${d.dario_auto} onChange=${(e) => setzen({ dario_auto: e.target.checked })} /> Dario prüft die Vorschläge nachts gleich</label>
+      <label class="klein">Budget dafür je Nacht <input class="eingabe rsi-budget" type="number" min="0" max="20" step="0.5" value=${d.budget}
+        onChange=${(e) => setzen({ budget: e.target.value })} /> $</label>
+      <button class="btn klein" disabled=${d.laeuft} onClick=${jetzt}><${Icon} n="play" g=${13} />${d.laeuft ? "Läuft gerade …" : "Jetzt durchsehen"}</button>
+    </div>
+    <p class="klein leise">Dario liest deine Gespräche mit Talk und Neo seit dem letzten Durchsehen${d.bis ? ` (zuletzt bis ${zeitText(d.bis)})` : ""}: wo du widersprochen hast,
+      wo das Cockpit aufgegeben hat, wo du etwas wiederholen musstest. Derselbe Fehler in mehreren Gesprächen wird ein Vorschlag. Dabei ändert er nichts --
+      umgesetzt wird nur, was du auf der <a href="#/rsi">RSI-Seite</a> ankreuzt.</p>
   </div>`;
 }
 

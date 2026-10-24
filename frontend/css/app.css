@@ -2458,6 +2458,8 @@ button.logo-knopf:hover{background:var(--chrome-line)}
 .rsi-zwei > div{min-width:0}
 .rsi-belege{margin:6px 0}
 .rsi-beleg{border-left:3px solid var(--line);padding:4px 8px;margin:6px 0}
+.rsi-grund{white-space:pre-wrap;margin-top:4px;font-family:var(--mono,monospace);font-size:12px}
+.rsi-einst-link{margin-top:14px}
 .rsi-empf{display:flex;align-items:flex-start;gap:6px;color:var(--steel)}
 .rsi-kosten{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:8px}
 @media (max-width:820px){.rsi-zwei{grid-template-columns:minmax(0,1fr)}}

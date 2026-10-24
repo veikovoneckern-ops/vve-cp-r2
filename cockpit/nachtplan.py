@@ -109,7 +109,7 @@ def plan() -> list[dict[str, Any]]:
         {"zeit": "00:30", "titel": "Modell-Revision", "an": stab.stab_aktiv(), "wo": "Team → Optimierung (läuft nur, wenn die Team-Pipeline an ist)",
          "warum": "Misst, ob ein anderes Modell eine Rolle besser macht. Wartet bis 02:00 auf laufende Downloads; startet spätestens 03:00.",
          "zuletzt": zuletzt(rv)},
-        {"zeit": "03:00", "titel": "RSI -- Verbesserungen aus deinen Gesprächen", "an": rsi.an(), "wo": "RSI",
+        {"zeit": "03:00", "titel": "RSI -- Verbesserungen aus deinen Gesprächen", "an": rsi.an(), "wo": "Settings → RSI",
          "warum": "Neo schlägt vor, Dario prüft. Wartet bis 03:30 auf die Revision, damit sich die beiden nicht die Karten teilen.",
          "zuletzt": zuletzt(rs)},
         {"zeit": "03:30", "titel": "Sicherung des Cockpits", "an": True, "wo": "Stack → Sicherungen",
