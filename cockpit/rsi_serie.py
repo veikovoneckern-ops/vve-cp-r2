@@ -158,7 +158,7 @@ def schaetzung(ids: list[str]) -> float:
     s = rsi.schaetzung(PRUEF_SYSTEM, pruef_frage(ids), 1500 + 300 * len(ids))
     for i in ids:
         r = _rsi(i)
-        if r and not (r["daten"].get("plan") or {}).get("fuer_umsetzung"):
+        if r and not ((r["daten"].get("plan") or {}).get("fuer_umsetzung") and (r["daten"].get("plan") or {}).get("bloecke")):
             s += rsi.schaetzung(rsi.DARIO_PLAN_SYSTEM, rsi._vorschlag_text(r["daten"]) + rsi.code_auszug(r["daten"]), 9000)
     return round(s, 3)
 
@@ -298,7 +298,9 @@ async def _abarbeiten() -> None:
             # noch keinen Code" -- und Dario lehnte danach ab, weil kein Code kam bzw. der falsche. Der Plan
             # entsteht gegen den echten Code und endet zwingend in einer Aenderung.
             punkt = _rsi(rid) or {}
-            if not (punkt.get("daten") or {}).get("plan", {}).get("fuer_umsetzung"):
+            alt_plan = (punkt.get("daten") or {}).get("plan", {})
+            # Neu, wenn es keinen Umsetzungsplan gibt oder einen ohne genaue Bloecke (vor dem 24.10.2026 geschrieben).
+            if not alt_plan.get("fuer_umsetzung") or not alt_plan.get("bloecke"):
                 p = await rsi.dario_plan(rid, zum_umsetzen=True)
                 if not p.get("ok"):
                     _ergebnis(rid, "gescheitert", grund=f"Darios Plan kam nicht zustande: {p.get('grund')}")
