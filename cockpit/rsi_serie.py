@@ -320,7 +320,7 @@ async def _abarbeiten() -> None:
                     _setzen(aktuell_schritt="Dario korrigiert seine Code-Blöcke (Cloud)")
                     await rsi.dario_plan_korrigieren(rid)
             # 2. NEO setzt den Plan um; 3. lehnt Dario ab, bessert Neo EINMAL nach (gleiches Gespraech, mit den Maengeln).
-            _setzen(aktuell_schritt="Neo setzt um (lokal, auf der Grafikkarte; Dario prüft danach)")
+            _setzen(aktuell_schritt="Neo prüft und ergänzt (lokal, auf der Grafikkarte; Darios Blöcke setzt das Cockpit ein, Dario prüft danach)")
             r = await rsi.neo_beauftragen(rid, _hinweis(s, rid), kein_neustart=True)
             if not r.get("ok"):
                 _ergebnis(rid, "gescheitert", grund=r.get("grund") or "Neo ließ sich nicht beauftragen.")
@@ -337,11 +337,19 @@ async def _abarbeiten() -> None:
                 maengel = (f"{pr.get('von', 'Dario')} hat deine Änderung abgelehnt:\n{pr.get('begruendung') or ''}"
                            + ("\nMängel:\n" + "\n".join(f"- {m}" for m in pr.get("maengel") or []) if pr.get("maengel") else "")
                            if pr else "Du hast nichts am Cockpit geändert -- es ist nichts vorgemerkt.")
+                # Mit eingesetzten Bloecken (r["vorab"]): der neue Auftrag beginnt mit einem frischen Entwurf -- das
+                # Cockpit setzt Darios Bloecke wieder ein, Neos eigene Ergaenzungen vom ersten Versuch sind verworfen.
+                if r.get("vorab"):
+                    auftrag2 = ("\n\nDarios Blöcke sind wieder eingesetzt (vorgemerkt). Was DU beim ersten Versuch ergänzt hattest, "
+                                "ist verworfen. Lies die Stellen mit datei_lesen, behebe genau diese Mängel mit datei_aendern -- "
+                                "fehlt eine Definition, ergänze sie --, ändere nichts sonst, und erkläre am Ende kurz, was du "
+                                "behoben hast und warum.")
+                else:
+                    auftrag2 = ("\n\nSetz Darios Umsetzungsplan jetzt vollständig um: erst die betroffenen Stellen mit "
+                                "datei_lesen ansehen, dann mit datei_aendern ändern. Behebe genau diese Mängel, nichts sonst.")
                 try:
-                    jid2 = await neo.senden(r["gespraech_id"], "NACHBESSERN (einmal, automatisch in der RSI-Serie). " + maengel
-                                            + "\n\nSetz Darios Umsetzungsplan jetzt vollständig um: erst die betroffenen Stellen mit "
-                                              "datei_lesen ansehen, dann mit datei_aendern ändern. Behebe genau diese Mängel, nichts sonst.",
-                                            [], kein_neustart=True)
+                    jid2 = await neo.senden(r["gespraech_id"], "NACHBESSERN (einmal, automatisch in der RSI-Serie). " + maengel + auftrag2,
+                                            [], kein_neustart=True, vorab=r.get("vorab") or None)
                     job2 = await _warten(jid2)
                     if job2 is not None:
                         lauf = job2.get("lauf") or {}

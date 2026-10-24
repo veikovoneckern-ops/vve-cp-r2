@@ -840,7 +840,11 @@ def _abschliessen(gid: str, lauf: dict[str, Any], text: str, modell: str, abgebr
     db.ausfuehren("UPDATE gespraeche SET geaendert=? WHERE id=?", (time.time(), gid))
 
 
-async def senden(gid: str, text: str, anhaenge: list[str], kein_neustart: bool = False) -> str:
+async def senden(gid: str, text: str, anhaenge: list[str], kein_neustart: bool = False,
+                 vorab: list[dict[str, str]] | None = None) -> str:
+    """vorab (24.10.2026, RSI): Fassungen je Datei, die das Cockpit VOR Neos erstem Schritt in den Entwurf legt
+    (rsi.bloecke_einsetzen -- Darios gepruefte Bloecke). Neo sieht sie mit datei_lesen, prueft und ergaenzt; Selbsttest
+    und Darios Freigabe laufen am Ende wie bei jeder anderen vorgemerkten Aenderung. Eingespielt wird nichts vorher."""
     if laufender_job(gid):
         raise ValueError("Neo arbeitet in diesem Gespräch noch. Warte oder brich ab.")
     voll = text
@@ -871,6 +875,15 @@ async def senden(gid: str, text: str, anhaenge: list[str], kein_neustart: bool =
     jid = db.neue_id("j")
     lauf = {"schlange": asyncio.Queue(), "schritte": [], "dateien": [], "start": time.time(), "auftrag": text, "jid": jid,
             "kein_neustart": kein_neustart}
+    if vorab:
+        for v in vorab:
+            nf.vormerken_text(lauf, Path(v["pfad"]), v["neu"], v.get("begruendung") or "vom Cockpit eingesetzt")
+        lauf["vorab"] = [v["pfad"] for v in vorab]
+        kurz = ", ".join(str(v["pfad"]).split("/vve-cp-r2/")[-1] for v in vorab)
+        schritt = {"name": "datei_aendern", "kurz": f"{kurz} (Darios Blöcke, vom Cockpit eingesetzt)",
+                   "ergebnis": "Vorgemerkt -- Selbsttest und Darios Freigabe folgen am Ende.", "zeit": time.time()}
+        lauf["schritte"].append(schritt)
+        await lauf["schlange"].put({"typ": "schritt", **schritt})
     job = {"gespraech_id": gid, "ereignisse": [], "fertig": False, "start": time.time(), "modell": modell,
            "lauf": lauf, "neu": asyncio.Event()}
 

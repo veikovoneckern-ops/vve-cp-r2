@@ -682,10 +682,30 @@ async def schleife() -> None:
 
 
 # ---------------------------------------------------------------- 4. Veiko entscheidet
-def neo_auftrag_text(r: dict[str, Any]) -> str:
+VORAB_ANLEITUNG = (
+    "\n\nDARIOS BLÖCKE SIND SCHON EINGESETZT. Das Cockpit hat jeden Block aus dem Plan oben Zeichen für Zeichen in die "
+    "Dateien übernommen -- als VORGEMERKTE Fassung (datei_lesen zeigt sie dir; eingespielt wird erst nach Darios Prüfung). "
+    "Schreib sie NICHT noch einmal ab und schreib sie nicht um. Deine Aufgabe:\n"
+    "1. PRÜFEN: Lies jede geänderte Stelle mit datei_lesen. Stimmt alles zusammen -- ist jeder benutzte Name im Code "
+    "definiert, passen Einrückung und Aufrufe, fehlt ein import? Suche mit befehl_ausfuehren (grep) nach Stellen, die die "
+    "geänderten Funktionen aufrufen.\n"
+    "2. ERGÄNZEN, nur wenn nötig: Steht im Plan etwas, das NICHT als Block vorliegt (z. B. eine Hilfsfunktion, die ein "
+    "Block benutzt, aber nirgends definiert), baust du genau das mit datei_aendern ein. Findest du einen echten Fehler "
+    "in einem Block, behebst du nur diesen. Sonst änderst du nichts.\n"
+    "3. ERKLÄREN: Schreib am Ende in zwei, drei Sätzen IN DEINEN WORTEN, was die Änderung bewirkt, warum Darios Lösung "
+    "richtig ist und was du daraus für ähnliche Aufgaben mitnimmst. Das ist dein Lernschritt -- Dario liest es mit.\n"
+    "Der Selbsttest des Cockpits prüft die vorgemerkte Fassung danach automatisch.")
+
+
+def neo_auftrag_text(r: dict[str, Any], vorab: bool = False) -> str:
+    """vorab: Darios Bloecke sind schon eingesetzt (bloecke_einsetzen) -- Neo prueft, ergaenzt und erklaert."""
     d = r["daten"] if isinstance(r["daten"], dict) else {}
     dario = d.get("dario") or {}
     plan = d.get("plan") or {}
+    if vorab:
+        return ("RSI-AUFTRAG (Verbesserung aus Veikos Gesprächen, von Veiko freigegeben)\n\n" + _vorschlag_text(d)
+                + f"\n\nDARIOS UMSETZUNGSPLAN:\n{plan.get('text')}" + VORAB_ANLEITUNG
+                + (f"\nDARIOS LEHRE dazu: {plan.get('lehre')}" if plan.get("lehre") else ""))
     return ("RSI-AUFTRAG (Verbesserung aus Veikos Gesprächen, von Veiko freigegeben)\n\n"
             + _vorschlag_text(d)
             + (f"\n\nDARIOS URTEIL: {dario.get('urteil')} -- {dario.get('begruendung')}" if dario.get("urteil") else "")
@@ -720,12 +740,17 @@ async def neo_beauftragen(rid: str, hinweis: str = "", kein_neustart: bool = Fal
         return {"ok": False, "grund": "Vorschlag nicht gefunden"}
     gid = db.neue_id("g")
     db.einfuegen("gespraeche", {"id": gid, "art": "neo", "titel": f"RSI: {r['titel']}"[:80], "erstellt": time.time(), "geaendert": time.time()})
-    text = neo_auftrag_text(r) + (f"\n\n{hinweis}" if hinweis else "")
-    jid = await neo.senden(gid, text, [], kein_neustart=kein_neustart)
+    # Liegt ein Umsetzungsplan mit passenden Bloecken vor, setzt das Cockpit sie selbst ein (bloecke_einsetzen);
+    # passt einer nicht, bleibt es beim alten Weg -- Neo baut sie mit datei_aendern ein.
+    d0 = r["daten"] if isinstance(r["daten"], dict) else {}
+    vorab, warum_nicht = bloecke_einsetzen(rid) if (d0.get("plan") or {}).get("fuer_umsetzung") else ([], "kein Umsetzungsplan")
+    text = neo_auftrag_text(r, vorab=bool(vorab)) + (f"\n\n{hinweis}" if hinweis else "")
+    jid = await neo.senden(gid, text, [], kein_neustart=kein_neustart, vorab=vorab or None)
     d = r["daten"] if isinstance(r["daten"], dict) else {}
-    d["neo"] = {"gespraech_id": gid, "job": jid, "zeit": time.time()}
+    d["neo"] = {"gespraech_id": gid, "job": jid, "zeit": time.time(), "vorab": bool(vorab),
+                **({} if vorab else {"vorab_nicht": warum_nicht})}
     _speichern(rid, d, "bei_neo")
-    return {"ok": True, "gespraech_id": gid, "job": jid}
+    return {"ok": True, "gespraech_id": gid, "job": jid, "vorab": vorab}
 
 
 DARIO_PLAN_SYSTEM = (
@@ -830,9 +855,12 @@ async def dario_plan(rid: str, zum_umsetzen: bool = False) -> dict[str, Any]:
 # datei_aendern ein, prueft und erklaert das Prinzip in eigenen Worten. Dazu schreibt Dario eine LEHRE -- das
 # allgemeine "so macht man das richtig" --, die nach dem Gelingen in Neos Gedaechtnis wandert (neo_lektionen).
 UMSETZEN_VORGABE = (
-    "\n\nWICHTIG: Veiko hat entschieden, dass das JETZT umgesetzt wird. Neo, ein lokales und weniger starkes Modell, baut "
-    "deine Änderung ein; danach prüfst du sie. Neo hat bisher an genau solchen Stellen Namen erfunden oder Änderungen "
-    "behauptet, die nicht im Code standen -- gib ihm deshalb die GENAUEN Änderungen vor, jede in diesem Format:\n"
+    "\n\nWICHTIG: Veiko hat entschieden, dass das JETZT umgesetzt wird. Das COCKPIT setzt deine Blöcke Zeichen für Zeichen "
+    "selbst ein; Neo, ein lokales und weniger starkes Modell, prüft sie danach, ergänzt nur, was nicht als Block vorliegt, "
+    "und erklärt das Prinzip; zuletzt prüfst du das Ganze. Neo hat bisher an genau solchen Stellen Namen erfunden oder "
+    "lange Blöcke frei umgeschrieben statt sie zu übernehmen -- gib die Änderungen deshalb VOLLSTÄNDIG als Blöcke vor. Jeder "
+    "Name, den ein Block benutzt, muss im Code schon existieren oder in einem deiner Blöcke definiert werden -- sonst "
+    "startet das Cockpit nicht. Jede Änderung in diesem Format:\n"
     "```aenderung\ndatei: cockpit/…\n--- alt\n<der bisherige Code, Zeichen für Zeichen aus dem CODE IM WORTLAUT oben kopiert, "
     "mit Einrückung; so viele Zeilen, dass er in der Datei GENAU EINMAL vorkommt>\n--- neu\n<der neue Code>\n```\n"
     "Regeln: „alt“ wörtlich kopieren, nie aus dem Gedächtnis; nur Namen benutzen, die im gezeigten Code vorkommen oder die "
@@ -873,6 +901,40 @@ def bloecke_pruefen(bloecke: list[dict[str, str]]) -> list[str]:
                           + (" -- vermutlich nicht wörtlich kopiert (Einrückung, Anführungszeichen?)." if n == 0 else
                              " -- mehr Zeilen davor oder danach mitnehmen, damit die Stelle eindeutig ist."))
     return fehler
+
+
+def bloecke_einsetzen(rid: str) -> tuple[list[dict[str, str]], str]:
+    """Darios Bloecke, vom COCKPIT eingesetzt (24.10.2026, Veiko: "Darios gepruefte Bloecke setzt das Cockpit selbst
+    ein, Neo testet und erklaert"). Anlass: Neo uebernahm einen 5.000 Zeichen langen, genau passenden Block nicht,
+    sondern schrieb die Stelle frei um -- und Dario lehnte ab. Ein lokales Modell schreibt lange Bloecke nicht
+    Zeichen fuer Zeichen ab. Hier wird nichts geschrieben: das Ergebnis sind die neuen Fassungen je Datei, die
+    neo.senden(vorab=...) als VORGEMERKT in Neos Entwurf legt -- Selbsttest und Darios Freigabe laufen wie immer.
+    Rueckgabe: (Fassungen, "") oder ([], Grund), wenn ein Block nicht genau einmal passt -- dann gilt der alte Weg."""
+    from .konfig import WURZEL
+    from . import neo_freigabe as nf
+    r = db.holen("rsi", rid)
+    d = (r or {}).get("daten") or {}
+    if not isinstance(d, dict):
+        d = {}
+    p = d.get("plan") or {}
+    bloecke = bloecke_aus(p.get("text") or "")
+    if not bloecke:
+        return [], "keine Blöcke im Plan"
+    fassungen: dict[str, str] = {}
+    for i, b in enumerate(bloecke, 1):
+        pfad = (WURZEL / b["datei"].lstrip("/").replace("~/vve-cp-r2/", "")).resolve()
+        if not str(pfad).startswith(str(WURZEL) + "/") or not pfad.is_file():
+            return [], f"Block {i}: die Datei {b['datei']} gibt es nicht."
+        if nf.frei(pfad):
+            return [], f"Block {i}: {b['datei']} liegt in einer Arbeitsablage, nicht im Cockpit-Code."
+        text = fassungen.get(str(pfad))
+        if text is None:
+            text = pfad.read_text(encoding="utf-8")
+        # Gegen die bereits geaenderte Fassung zaehlen: zwei Bloecke in derselben Datei bauen aufeinander auf.
+        if text.count(b["alt"]) != 1:
+            return [], f"Block {i} ({b['datei']}): der alte Code steht {text.count(b['alt'])}× in der Datei, nicht genau einmal."
+        fassungen[str(pfad)] = text.replace(b["alt"], b["neu"], 1)
+    return [{"pfad": k, "neu": v, "begruendung": "Darios Block, vom Cockpit eingesetzt"} for k, v in fassungen.items()], ""
 
 
 def _plan_speichern(rid: str, d: dict[str, Any], antwort: str, kosten: float, modell: str, zum_umsetzen: bool, mit_code: bool,
