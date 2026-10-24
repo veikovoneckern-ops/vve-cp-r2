@@ -49,14 +49,18 @@ function JetztKasten({ d, waehlbare, wahl, setWahlAlle, titel, laden, anfrage })
   }
   const t = (i) => titel[i] || i;
   const erg = s.ergebnisse || {};
-  const reihe = s.reihenfolge || [];
+  // Nach dem Ende einer Serie zaehlt, was aus den Punkten SEITHER geworden ist: ein inzwischen verworfener Punkt
+  // verschwindet aus der Rueckschau (Veiko, 24.10.2026: "wenn ich Punkte verwerfe, sollen sie auch aus der Box
+  // verschwinden"). Ist danach nichts mehr zu berichten, gilt die Serie als gesehen.
+  const standVon = Object.fromEntries((d.vorschlaege || []).map((v) => [v.id, v.stand]));
+  const reihe = (s.reihenfolge || []).filter((i) => s.stand !== "fertig" || !["verworfen", "zusammengelegt"].includes(standVon[i]));
   const nichtsTun = html`<p class="rsi-du">Du musst nichts tun. Du kannst die Seite verlassen.</p>`;
   const fortschritt = html`<ul class="rsi-fortschritt">${reihe.map((i) => {
     const e = erg[i];
     const zeichen = e ? (e.stand === "umgesetzt" ? "✓" : "✗") : s.aktuell === i ? "▶" : "·";
     return html`<li class=${e ? (e.stand === "umgesetzt" ? "ok" : "nein") : s.aktuell === i ? "jetzt" : ""}><span class="rsi-zeichen">${zeichen}</span> ${t(i)}
       ${s.aktuell === i && s.aktuell_schritt ? html` <span class="leise klein">-- ${s.aktuell_schritt}</span>` : ""}
-      ${e && e.stand !== "umgesetzt" && e.grund ? html`<div class="leise klein">Nicht geklappt: ${e.grund}</div>` : ""}</li>`;
+      ${e && e.stand !== "umgesetzt" && e.grund ? html`<div class="leise klein">Nicht geklappt: ${versuchKlartext(e.grund)} <span class="leise">(genauer Grund an der Karte unten)</span></div>` : ""}</li>`;
   })}</ul>`;
 
   let schritt, kopf, inhalt;
@@ -90,7 +94,7 @@ function JetztKasten({ d, waehlbare, wahl, setWahlAlle, titel, laden, anfrage })
     schritt = "umsetzen"; kopf = "Das Umsetzen hat nicht geklappt";
     inhalt = html`<div class="fehlerbox">${s.fehler}</div>
       <div class="knopfreihe" style="margin-top:8px"><button class="btn klein" onClick=${() => tun("/rsi/serie/abbrechen")}>Verstanden, ausblenden</button></div>${offenTeil}`;
-  } else if (s.stand === "fertig" && !s.gemeldet) {
+  } else if (s.stand === "fertig" && !s.gemeldet && (reihe.length || s.release_id)) {
     schritt = "fertig"; kopf = s.release_id ? "Fertig -- das neue Release ist da" : "Fertig -- umgesetzt wurde nichts";
     inhalt = html`${fortschritt}
       <p class="rsi-du">${s.release_id ? "Lad die Seite neu und probier es aus. Klappt etwas nicht, kannst du es unten unter „Was gelaufen ist“ zurücknehmen."
@@ -114,12 +118,13 @@ function JetztKasten({ d, waehlbare, wahl, setWahlAlle, titel, laden, anfrage })
       ${leiste}`;
   } else {
     schritt = "finden"; kopf = "Nichts zu tun";
-    inhalt = html`<p class="rsi-du">Es liegt kein Vorschlag vor. Dario sieht jede Nacht um 3 Uhr deine Gespräche durch${d.an ? "" : " -- das ist gerade ausgeschaltet (Settings → RSI)"}.</p>
-      <div class="knopfreihe"><button class="btn klein" onClick=${() => tun("/rsi/lauf", "Neo sieht deine Gespräche durch.")}><${Icon} n="play" g=${13} />Jetzt durchsehen</button></div>`;
+    inhalt = html`<p class="rsi-du">Es liegt kein Vorschlag vor. Dario sieht jede Nacht um 3 Uhr deine Gespräche durch${d.an ? "" : " -- das ist gerade ausgeschaltet (Settings → RSI)"}. Oben rechts kannst du jederzeit einen Lauf von Hand starten.</p>`;
   }
   return html`<section class="karte rsi-jetzt">
     <${Schritte} aktiv=${schritt} />
-    <h3>${kopf}</h3>
+    <div class="rsi-jetzt-kopf"><h3>${kopf}</h3>
+      ${!d.laeuft && !["pruefung", "laeuft"].includes(s.stand) && html`<button class="btn klein" disabled=${laeuft} title="Außerhalb der geplanten Zeit (jede Nacht 3 Uhr) -- kostet im Rahmen des RSI-Budgets"
+        onClick=${() => tun("/rsi/lauf", "Dario sieht deine Gespräche jetzt durch.")}><${Icon} n="play" g=${13} />RSI-Lauf jetzt starten</button>`}</div>
     ${inhalt}
   </section>`;
 }

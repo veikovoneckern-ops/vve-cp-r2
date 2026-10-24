@@ -131,8 +131,44 @@ function Detail({ id, rollen, vorlagen, nachher }) {
   </div>`;
 }
 
+// ------------------------------------------------------------ Nachtaufgaben des Cockpits (24.10.2026)
+// Veiko: "die hinterlegten Aufgaben fuer die Nacht sollen auch in den Daily Tasks enthalten sein, mit Optionen
+// fuer Einstellungen". Quelle ist der Nachtplan (nachtplan.py) -- dieselbe Liste wie unter Settings -> Nachts,
+// geschaltet ueber dieselben Schalter (POST /nachtplan/{key}). Ausfuehrliche Einstellungen bleiben, wo sie sind;
+// hier steht der Weg dorthin.
+const NACHT_LINK = { modelle: ["/team/neu", "Modelle"], board: ["/board", "Advisory Board"], revision: ["/team/optimierung", "Optimierung"],
+  rsi: ["/einstellungen/rsi", "Settings → RSI"], bericht: ["/einstellungen", "Settings → Morgenbericht"] };
+
+function NachtDetail({ p, nachher }) {
+  const [laeuft, setLaeuft] = useState(false);
+  async function tun(daten, text) {
+    setLaeuft(true);
+    try { const r = await api("/nachtplan/" + p.key, { methode: "POST", daten }); toast(r.text || text); nachher(); } catch (e) { fehlerMelden(e); }
+    setLaeuft(false);
+  }
+  const link = NACHT_LINK[p.key];
+  return html`<section class="karte">
+    <div class="karte-kopf"><h3>${p.titel}</h3><span class="pill">${p.zeit} Uhr</span>${!p.an && html`<span class="pill">aus</span>`}</div>
+    <p class="leise klein">Läuft jede Nacht von selbst -- eine Aufgabe des Cockpits, kein Briefing des Teams.</p>
+    <p>${p.warum}</p>
+    <p class="klein"><b>Zuletzt:</b> ${p.zuletzt || "--"}</p>
+    <div class="knopfreihe" style="margin-top:10px">
+      ${p.schalter ? html`<div class="segment"><button class=${p.an ? "an" : ""} disabled=${laeuft} onClick=${() => tun({ an: true }, "Eingeschaltet.")}>an</button>
+          <button class=${!p.an ? "an" : ""} disabled=${laeuft} onClick=${() => tun({ an: false }, "Ausgeschaltet.")}>aus</button></div>`
+        : html`<span class="leise klein">${p.key === "revision" ? "Läuft, solange die Team-Pipeline an ist." : "Läuft immer, ohne Schalter."}</span>`}
+      ${p.jetzt && html`<button class="btn primaer" disabled=${laeuft} onClick=${() => tun({ jetzt: true }, "Gestartet.")}>
+        <${Icon} n="play" g=${14} />${p.key === "bericht" ? "Jetzt einen Bericht schicken" : "Jetzt ausführen"}</button>`}
+      ${link && html`<button class="btn geist" onClick=${() => navigiere(link[0])}>Weitere Einstellungen: ${link[1]}</button>`}
+      ${p.key === "rsi" && html`<button class="btn geist" onClick=${() => navigiere("/rsi")}>Zur RSI-Seite</button>`}
+    </div>
+    ${p.wo && !link && html`<p class="leise klein" style="margin-top:8px">Zu finden unter: ${p.wo}</p>`}
+  </section>`;
+}
+
 export function Daily({ id }) {
   const [d, laden] = useAbruf("/daily", 20000, []);
+  const [np, npLaden] = useAbruf("/nachtplan", 30000, []);
+  const nacht = np ? np.plan.filter((p) => p.key && p.key !== "daily") : [];
   const [neu, setNeu] = useState(id === "neu");
   useEffect(() => { setNeu(id === "neu"); }, [id]);
   useEffect(() => { if (!id || id === "neu") bus.sende("talk-kontext", { art: "daily", id: "alle", titel: "Daily Tasks" }); }, [id]);
@@ -150,10 +186,18 @@ export function Daily({ id }) {
         <div class="leise klein">${t.zeitplan} · ${t.rolle_name}${t.aktiv ? "" : " · pausiert"}</div>
         <div class="leise klein">${t.laeuft ? "arbeitet gerade …" : t.letztes ? "letztes Briefing " + zeitText(t.letztes.erstellt) : "noch kein Briefing"}</div>
       </button>`)}
+      ${nacht.length > 0 && html`<div class="dt-gruppe">Jede Nacht vom Cockpit</div>`}
+      ${nacht.map((p) => html`<button key=${"n" + p.key} class=${"dt-eintrag" + ("nacht-" + p.key === aktuell ? " an" : "") + (p.an ? "" : " pausiert")} onClick=${() => navigiere("/daily/nacht-" + p.key)}>
+        <div class="dt-eintrag-kopf"><b>${p.titel}</b>${p.zuletzt && /gescheitert|Fehler/.test(p.zuletzt) && html`<span class="pill rot">Problem</span>`}</div>
+        <div class="leise klein">${p.zeit} Uhr${p.an ? "" : " · aus"}</div>
+        <div class="leise klein">${p.zuletzt || ""}</div>
+      </button>`)}
     </aside>
     <div class="dt-haupt">
       ${neu ? html`<${Formular} rollen=${d.rollen} vorlagen=${d.vorlagen} zu=${() => { setNeu(false); navigiere("/daily"); }}
           fertig=${(r) => { setNeu(false); laden(); navigiere("/daily/" + r.id); }} />`
+        : aktuell && aktuell.startsWith("nacht-") ? (nacht.find((p) => "nacht-" + p.key === aktuell)
+            ? html`<${NachtDetail} p=${nacht.find((p) => "nacht-" + p.key === aktuell)} nachher=${npLaden} />` : html`<div class="lade">Lade …</div>`)
         : aktuell ? html`<${Detail} id=${aktuell} rollen=${d.rollen} vorlagen=${d.vorlagen} nachher=${laden} />`
         : d.daily.length ? html`<div class="lade">…</div>` : ""}
     </div>

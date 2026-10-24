@@ -99,35 +99,97 @@ def plan() -> list[dict[str, Any]]:
         return f"zuletzt {_wann(s.get('ende'))}: {str(s.get('ergebnis') or '')[:140]}" if s.get("ende") else "noch nicht gelaufen"
 
     return [
-        {"zeit": "22:00", "titel": "Neue Modelle laden", "an": nachtladen.an(), "wo": "Team → Modelle",
+        {"key": "modelle", "schalter": True, "jetzt": True, "zeit": "22:00", "titel": "Neue Modelle laden", "an": nachtladen.an(), "wo": "Team → Modelle",
          "warum": "Nur Leitung, keine Grafikkarte -- läuft parallel zu allem. Um 05:00 wird pausiert.", "zuletzt": zuletzt(nl)},
-        {"zeit": "23:00", "titel": "Advisory Board auffrischen", "an": True, "wo": "Advisory Board",
+        {"key": "board", "schalter": False, "jetzt": True, "zeit": "23:00", "titel": "Advisory Board auffrischen", "an": True, "wo": "Advisory Board",
          "warum": "Sechs Advisors je Nacht aus öffentlichen Quellen (eigene Websuche + lokales Modell), älteste zuerst. "
                   "Um 23 Uhr rechnet sonst nichts auf den Karten.",
          "zuletzt": (f"zuletzt {_wann(bd.get('letzterLauf'))}" + (f" -- {bd['letzterFehler'][:100]}" if bd.get("letzterFehler") else ""))
                     if bd.get("letzterLauf") else "noch nicht gelaufen"},
-        {"zeit": "00:30", "titel": "Modell-Revision", "an": stab.stab_aktiv(), "wo": "Team → Optimierung (läuft nur, wenn die Team-Pipeline an ist)",
+        {"key": "revision", "schalter": False, "jetzt": True, "zeit": "00:30", "titel": "Modell-Revision", "an": stab.stab_aktiv(), "wo": "Team → Optimierung (läuft nur, wenn die Team-Pipeline an ist)",
          "warum": "Misst, ob ein anderes Modell eine Rolle besser macht. Wartet bis 02:00 auf laufende Downloads; startet spätestens 03:00.",
          "zuletzt": zuletzt(rv)},
-        {"zeit": "03:00", "titel": "RSI -- Verbesserungen aus deinen Gesprächen", "an": rsi.an(), "wo": "Settings → RSI",
-         "warum": "Neo schlägt vor, Dario prüft. Wartet bis 03:30 auf die Revision, damit sich die beiden nicht die Karten teilen.",
+        {"key": "rsi", "schalter": True, "jetzt": True, "zeit": "03:00", "titel": "RSI -- Verbesserungen aus deinen Gesprächen", "an": rsi.an(), "wo": "Settings → RSI",
+         "warum": "Dario sucht in deinen Gesprächen, wo es gehakt hat, und schlägt Verbesserungen vor; umgesetzt wird nur, was du auswählst. Wartet bis 03:30 auf die Revision, damit sich die beiden nicht die Karten teilen.",
          "zuletzt": zuletzt(rs)},
-        {"zeit": "03:30", "titel": "Sicherung des Cockpits", "an": True, "wo": "Stack → Sicherungen",
+        {"key": "sicherung", "schalter": False, "jetzt": True, "zeit": "03:30", "titel": "Sicherung des Cockpits", "an": True, "wo": "Stack → Sicherungen",
          "warum": "Datenbank lokal; dazu Datenbank, Unterlagen, Medien, Zugangsdaten und der Serverstand verschlüsselt nach OneDrive "
                   + ("(eingerichtet)." if sich.get("eingerichtet") else "-- OneDrive ist noch NICHT eingerichtet, dann nur die Datenbank lokal."),
          "zuletzt": ("läuft gerade" if sich.get("laeuft") else f"zuletzt {_wann(sich.get('zeit'))}: {sich.get('zustand')}"
                      + (f", {sich.get('groesse_mb')} MB" if sich.get("zustand") == "ok" else "") if sich.get("zeit") else "noch nicht gelaufen")},
-        {"zeit": "04:00", "titel": "Daily Tasks", "an": bool([d for d in dailys if d["aktiv"]]), "wo": "Daily Tasks",
+        {"key": "daily", "schalter": False, "jetzt": False, "zeit": "04:00", "titel": "Daily Tasks", "an": bool([d for d in dailys if d["aktiv"]]), "wo": "Daily Tasks",
          "warum": "Neue Daily Tasks starten um 04:00, damit die Briefings um 5 bereitliegen. "
                   + (("Eingerichtet: " + ", ".join(f"{d['titel']} ({d['uhrzeit']})" for d in dailys)) if dailys else "Noch keiner eingerichtet."),
          "zuletzt": ""},
-        {"zeit": "04:50", "titel": "Morgens bereit", "an": True, "wo": "",
+        {"key": "morgens", "schalter": False, "jetzt": True, "zeit": "04:50", "titel": "Morgens bereit", "an": True, "wo": "",
          "warum": f"Talk-Modell laden und {HALTEN.replace('h', ' Stunden')} halten, Spracherkennung einmal anwerfen -- der erste Satz um 5 wartet nicht aufs Laden.",
          "zuletzt": ("läuft gerade" if mb.get("laeuft") else
                      f"zuletzt {_wann(mb.get('zeit'))}, {mb.get('sekunden')} s" + (" -- mit Fehler" if mb.get("fehler_modell") or mb.get("fehler_whisper") else "")
                      if mb.get("zeit") else "noch nicht gelaufen")},
-        {"zeit": "05:00", "titel": "Morgenbericht per Mail", "an": tagesbericht.an(), "wo": "Settings → Morgenbericht",
+        {"key": "bericht", "schalter": True, "jetzt": True, "zeit": "05:00", "titel": "Morgenbericht per Mail", "an": tagesbericht.an(), "wo": "Settings → Morgenbericht",
          "warum": f"Was der Stab seit dem letzten Bericht getan hat, an {tagesbericht.empfaenger()}. Nichts zu berichten -- keine Mail.",
          "zuletzt": (f"zuletzt gesendet {_wann(tb.get('zeit'))}: {tb.get('betreff') or ''}" if tb.get("zeit") else "noch nicht gesendet")
                     + (f" -- zuletzt gescheitert: {tb['fehler']}" if tb.get("fehler") else "")},
     ]
+
+
+# ---------------------------------------------------------------- Schalten und von Hand starten (24.10.2026)
+# Veiko: "die hinterlegten Aufgaben fuer die Nacht sollen auch in den Daily Tasks enthalten sein, mit Optionen
+# fuer Einstellungen". Die Daily-Tasks-Seite schaltet hierueber -- dieselben Schalter wie an den Stellen, die "wo"
+# nennt, keine zweiten. Einen Schalter gibt es nur, wo es einen gibt: Board, Sicherung und "Morgens bereit" laufen
+# immer, die Revision haengt an der Team-Pipeline (die schaltet man nicht nebenbei von hier aus ab).
+SCHALTER = {"modelle": "modelle_nachts_laden", "rsi": "rsi_aktiv", "bericht": "bericht_aktiv"}
+
+
+def setzen(key: str, an: bool) -> None:
+    if key not in SCHALTER:
+        raise ValueError("Diese Nachtaufgabe läuft immer -- sie hat keinen Schalter.")
+    db.einstellung_setzen(SCHALTER[key], bool(an))
+
+
+async def jetzt(key: str) -> str:
+    """Startet eine Nachtaufgabe ausserhalb ihrer Zeit. Rueckgabe: ein Satz fuer die Meldung."""
+    from . import board, nachtladen, revision, rsi, tagesbericht
+    if key == "modelle":
+        if not nachtladen.starten(True):
+            raise ValueError("Das Laden läuft schon.")
+        return "Neue Modelle werden geladen."
+    if key == "board":
+        if board.LAUF["aktiv"]:
+            raise ValueError("Das Board wird gerade aufgefrischt.")
+        asyncio.create_task(board.auffrischen(alle=False, nur_id=""))
+        return "Das Advisory Board wird aufgefrischt."
+    if key == "revision":
+        if not revision.starten(True):
+            raise ValueError("Die Revision läuft schon.")
+        return "Die Modell-Revision misst jetzt."
+    if key == "rsi":
+        if not rsi.starten(von_hand=True):
+            raise ValueError("RSI läuft schon.")
+        return "Dario sieht deine Gespräche durch."
+    if key == "sicherung":
+        p = await asyncio.create_subprocess_exec("systemctl", "--user", "start", "--no-block", "vve-cp-r2-sicherung.service",
+                                                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        _, fehler = await p.communicate()
+        if p.returncode:
+            raise ValueError(f"Konnte die Sicherung nicht starten: {fehler.decode(errors='replace')[:300]}")
+        return "Die Sicherung läuft."
+    if key == "morgens":
+        asyncio.create_task(morgens_bereit())
+        return "Talk-Modell und Spracherkennung werden geladen."
+    if key == "bericht":
+        r = await tagesbericht.schicken(erzwingen=True)
+        return "Morgenbericht verschickt." if r.get("gesendet", True) else str(r.get("grund") or "Nichts zu berichten.")
+    raise ValueError("Unbekannte Nachtaufgabe.")
+
+
+def briefing() -> list[dict[str, Any]]:
+    """Fuers Briefing: was heute Nacht gelaufen ist, je Aufgabe eine Zeile. Was gescheitert ist, steht oben."""
+    zeilen = []
+    for p in plan():
+        if p["key"] == "daily" or not p["an"]:
+            continue
+        z = p.get("zuletzt") or ""
+        zeilen.append({"key": p["key"], "zeit": p["zeit"], "titel": p["titel"], "text": z,
+                       "problem": "gescheitert" in z or "Fehler" in z or "NICHT eingerichtet" in p.get("warum", "")})
+    return sorted(zeilen, key=lambda x: not x["problem"])

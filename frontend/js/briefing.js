@@ -51,6 +51,30 @@ function RsiZeile({ r }) {
   return html`<a class="gesundheit rsi-briefing" href="#/rsi" title="Zur Seite RSI">${teile}</a>`;
 }
 
+// Heute Nacht und Daily Tasks (24.10.2026, Veiko: "die Ergebnisse der Daily Tasks sollen auch im Briefing
+// enthalten sein"). Oben die Briefings der Daily Tasks aus den letzten 24 Stunden -- das sind Inhalte; darunter
+// je Nachtaufgabe des Cockpits eine Zeile. Gescheitertes steht vorn und klappt den Kasten von selbst auf.
+const BEW = { beachtenswert: ["gelb", "beachtenswert"], wichtig: ["rot", "wichtig"], ruhig: ["", "ruhig"] };
+function NachtKasten({ n }) {
+  if (!n) return null;
+  const daily = n.daily || [];
+  const nacht = n.nacht || [];
+  if (!daily.length && !nacht.length) return null;
+  const probleme = nacht.filter((x) => x.problem).length;
+  return html`<details class="karte briefing-voll briefing-nacht" open=${daily.length > 0 || probleme > 0}>
+    <summary><b>Heute Nacht und Daily Tasks</b>
+      <span class="leise klein"> ${daily.length ? `${daily.length} ${daily.length === 1 ? "neues Briefing" : "neue Briefings"}` : "keine neuen Briefings"}
+        · ${probleme ? `${probleme} ${probleme === 1 ? "Nachtaufgabe" : "Nachtaufgaben"} mit Problem` : "nachts alles gelaufen"}</span></summary>
+    ${daily.map((b) => html`<div class="zeile" key=${b.id}>
+      <div class="haupt-text"><a class="aufgabe-titel" href=${"#/daily/" + b.id}>${b.titel}</a>
+        <div class="leise klein">Briefing ${zeitText(b.zeit)}</div></div>
+      ${BEW[b.bewertung] && html`<span class=${"pill " + BEW[b.bewertung][0]}>${BEW[b.bewertung][1]}</span>`}
+      <a class="btn klein" href=${"#/daily/" + b.id}>Lesen</a></div>`)}
+    <ul class="briefing-nacht-liste">${nacht.map((x) => html`<li key=${x.key} class=${x.problem ? "problem" : ""}>
+      <a href=${"#/daily/nacht-" + x.key}><span class="leise">${x.zeit}</span> <b>${x.titel}</b></a> <span class="klein leise">${x.text}</span></li>`)}</ul>
+  </details>`;
+}
+
 // Aufbau in Zeilen statt in zwei unabhaengigen Spalten (19.10.2026, Veiko: "die Rahmen
 // sind nicht buendig"): Kaesten nebeneinander stehen in derselben Rasterzeile, sind also
 // gleich hoch und enden buendig; was allein steht, geht ueber die volle Breite (.breit).
@@ -94,6 +118,7 @@ export function Briefing({ lage }) {
     </div>
     <${Gesundheit} g=${lage.gesundheit} neo=${lage.neo_laeuft} optimierung=${lage.optimierung} />
     <${RsiZeile} r=${lage.rsi} />
+    <${NachtKasten} n=${lage.nacht} />
         ${ents.length > 0 && html`<section class="karte briefing-voll">
           <div class="karte-kopf"><h3>Wartet auf dich</h3><span class="pill gelb">${ents.length}</span>
             <button class="btn klein rechts" onClick=${() => bus.sende("talk-oeffnen", { durchgehen: true })} title="Das Cockpit liest jede Entscheidung vor, du antwortest mit ja, nein, später oder frei">

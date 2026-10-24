@@ -265,7 +265,7 @@ async def lage():
         # sagt es, damit Veiko nicht erst die Seite Stab & Modelle oeffnen muss.
         "optimierung": await _optimierung_zahl(),
         # RSI (23.10.2026): ob das Cockpit sich zuletzt veraendert hat, was gerade umgesetzt wird, was wartet.
-        "rsi": _rsi_briefing(),
+        "rsi": _rsi_briefing(), "nacht": _nacht_briefing(),
         # Antworten, die gerade auf dem Server entstehen -- auch wenn das Fenster zu ist.
         "gespraeche_laufen": [{"gespraech_id": g, "art": s["art"], "wer": s["wer"],
                                "wer_name": teamchat.wer_name(s["wer"]) if s["wer"] else ("Talk" if s["art"] == "talk" else "Advisory Board"),
@@ -1795,6 +1795,34 @@ async def sicherung_schluessel(request: Request):
 async def nachtplan_liste():
     from . import nachtplan
     return {"plan": nachtplan.plan()}
+
+
+@router.post("/nachtplan/{key}")
+async def nachtplan_aktion(key: str, request: Request):
+    """Von der Daily-Tasks-Seite: {"an": bool} schaltet, {"jetzt": true} startet ausserhalb der Zeit."""
+    from . import nachtplan
+    d = await _koerper(request)
+    try:
+        if "an" in d:
+            nachtplan.setzen(key, bool(d["an"]))
+            return {"ok": True}
+        if d.get("jetzt"):
+            return {"ok": True, "text": await nachtplan.jetzt(key)}
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    raise HTTPException(400, "an oder jetzt fehlt")
+
+
+def _nacht_briefing() -> dict[str, Any] | None:
+    """Fuers Briefing (24.10.2026): was heute Nacht lief, und das neueste Briefing je Daily Task der letzten 24 h."""
+    from . import daily, nachtplan
+    try:
+        grenze = time.time() - 24 * 3600
+        dailys = [{"id": t["id"], "titel": t["titel"], "ergebnis_id": t["letztes"]["id"], "bewertung": t["letztes"].get("bewertung"),
+                   "zeit": t["letztes"]["erstellt"]} for t in daily.liste() if t.get("letztes") and t["letztes"]["erstellt"] > grenze]
+        return {"nacht": nachtplan.briefing(), "daily": dailys}
+    except Exception:  # noqa: BLE001 -- das Briefing darf nie daran scheitern
+        return None
 
 
 # ================================================================ Morgenbericht (23.10.2026, tagesbericht.py)
