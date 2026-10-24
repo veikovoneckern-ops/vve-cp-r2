@@ -125,14 +125,17 @@ def sammeln(gespraeche: dict[str, dict[str, Any]], wer_name) -> dict[str, Any]:
     from . import rsi, rsi_serie
     if rsi.laeuft():
         rs = rsi.stand()
-        laufend.append({"id": "rsi", "art": "rsi", "titel": "RSI: Gespräche durchsehen", "wer": "Neo · Dario", "stand": "laeuft",
+        # Wer gerade rechnet, steht im "wer": Dario (Cloud) oder Neo (lokal, auf den Karten) -- sonst sucht man
+        # bei Dario-Schritten vergeblich nach Last auf der GPU.
+        laufend.append({"id": "rsi", "art": "rsi", "titel": "RSI: Gespräche durchsehen", "wer": "Dario (Cloud)", "stand": "laeuft",
                         "schritt": rs.get("schritt") or "läuft", "start": rs.get("start"), "link": "#/rsi", "steuerung": []})
     se = rsi_serie.stand()
     if se.get("stand") in ("pruefung", "laeuft"):
         reihe = se.get("reihenfolge") or []
         fertig_n = len(se.get("ergebnisse") or {})
         akt = (db.holen("rsi", se.get("aktuell") or "") or {}).get("titel")
-        laufend.append({"id": "rsi-serie", "art": "rsi", "titel": "RSI: Verbesserungen umsetzen", "wer": "Neo · Dario", "stand": "laeuft",
+        laufend.append({"id": "rsi-serie", "art": "rsi", "titel": "RSI: Verbesserungen umsetzen", "stand": "laeuft",
+                        "wer": "Neo (lokal, GPU)" if str(se.get("aktuell_schritt") or "").startswith("Neo") else "Dario (Cloud)",
                         "schritt": ("Dario prüft die Auswahl auf Widersprüche" if se["stand"] == "pruefung"
                                     else f"{akt or 'nächster Punkt'} -- {se.get('aktuell_schritt') or 'läuft'}"),
                         "teile": f"Punkt {min(fertig_n + 1, len(reihe))} von {len(reihe)}" if reihe else None,

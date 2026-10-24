@@ -295,7 +295,7 @@ async def _abarbeiten() -> None:
             if not rest:
                 break
             rid = rest[0]
-            _setzen(aktuell=rid, aktuell_seit=time.time(), aktuell_schritt="Dario schreibt den Umsetzungsplan")
+            _setzen(aktuell=rid, aktuell_seit=time.time(), aktuell_schritt="Dario schreibt den Umsetzungsplan (Cloud, die Grafikkarten haben Pause)")
             # 1. PLAN (23.10.2026): ohne ihn bekam Neo Darios "naechsten Auftrag" -- meist "erst untersuchen,
             # noch keinen Code" -- und Dario lehnte danach ab, weil kein Code kam bzw. der falsche. Der Plan
             # entsteht gegen den echten Code und endet zwingend in einer Aenderung.
@@ -317,10 +317,10 @@ async def _abarbeiten() -> None:
                 # Passen Darios genaue Bloecke nicht zum Code (alt nicht genau einmal in der Datei), korrigiert er
                 # sie EINMAL, bevor Neo anfaengt -- sonst scheitert Neos datei_aendern, und er beginnt zu raten.
                 if ((_rsi(rid) or {}).get("daten") or {}).get("plan", {}).get("bloecke_fehler"):
-                    _setzen(aktuell_schritt="Dario korrigiert seine Code-Blöcke")
+                    _setzen(aktuell_schritt="Dario korrigiert seine Code-Blöcke (Cloud)")
                     await rsi.dario_plan_korrigieren(rid)
             # 2. NEO setzt den Plan um; 3. lehnt Dario ab, bessert Neo EINMAL nach (gleiches Gespraech, mit den Maengeln).
-            _setzen(aktuell_schritt="Neo setzt um")
+            _setzen(aktuell_schritt="Neo setzt um (lokal, auf der Grafikkarte; Dario prüft danach)")
             r = await rsi.neo_beauftragen(rid, _hinweis(s, rid), kein_neustart=True)
             if not r.get("ok"):
                 _ergebnis(rid, "gescheitert", grund=r.get("grund") or "Neo ließ sich nicht beauftragen.")

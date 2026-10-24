@@ -792,11 +792,12 @@ async def kopf() -> dict[str, Any]:
           # deshalb zaehlt die Kartenlast mit, nicht nur die eigenen Aufrufe.
           "arbeitet": llm.AKTIV["n"] > 0 or gpu_last >= 20}
     # Arbeitet gerade NEO (24.10.2026, Veiko: "wenn Neo arbeitet, soll oben links statt des drehenden Logos
-    # eines dieser gruenen Matrix-Symbole erscheinen")? Ein Auftrag in einem Gespraech, eine RSI-Serie
-    # oder das naechtliche Durchsehen (Neo liest dabei den Code).
-    from . import neo, rsi, rsi_serie
-    ki["neo"] = (any(not j.get("fertig") for j in neo.JOBS.values()) or rsi.laeuft()
-                 or rsi_serie.stand().get("stand") in ("pruefung", "laeuft"))
+    # eines dieser gruenen Matrix-Symbole erscheinen")? NUR wenn Neo wirklich rechnet: ein laufender Neo-Auftrag
+    # (auch der einer RSI-Serie). Nicht mehr fuer die ganze Serie und nicht fuers Durchsehen -- dort arbeitet
+    # Dario in der Cloud, die Karten stehen still, und das Symbol behauptete Arbeit, die es nicht gab
+    # (Veiko, 24.10.2026: "Cockpit zeigt, dass Neo arbeitet, aber die GPU arbeitet nicht").
+    from . import neo
+    ki["neo"] = any(not j.get("fertig") for j in neo.JOBS.values())
     out: dict[str, Any] = {"zeit": jetzt, "status_da": bool(s), "ki": ki}
     out["taetigkeit"] = await taetigkeit(gpu_last, [str(x).split("|")[0] for x in ((s or {}).get("ollama_running") or [])])
     sich = sicherungen() or {}
