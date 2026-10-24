@@ -159,7 +159,7 @@ def schaetzung(ids: list[str]) -> float:
     for i in ids:
         r = _rsi(i)
         if r and not (r["daten"].get("plan") or {}).get("fuer_umsetzung"):
-            s += rsi.schaetzung(rsi.DARIO_PLAN_SYSTEM, rsi._vorschlag_text(r["daten"]) + rsi.code_auszug(r["daten"]), 4000)
+            s += rsi.schaetzung(rsi.DARIO_PLAN_SYSTEM, rsi._vorschlag_text(r["daten"]) + rsi.code_auszug(r["daten"]), 9000)
     return round(s, 3)
 
 
@@ -307,6 +307,11 @@ async def _abarbeiten() -> None:
                 if plan_text.lstrip().upper().startswith("KEINE ÄNDERUNG"):
                     _ergebnis(rid, "gescheitert", grund="Dario: " + plan_text.strip()[:500])
                     continue
+                # Passen Darios genaue Bloecke nicht zum Code (alt nicht genau einmal in der Datei), korrigiert er
+                # sie EINMAL, bevor Neo anfaengt -- sonst scheitert Neos datei_aendern, und er beginnt zu raten.
+                if ((_rsi(rid) or {}).get("daten") or {}).get("plan", {}).get("bloecke_fehler"):
+                    _setzen(aktuell_schritt="Dario korrigiert seine Code-Blöcke")
+                    await rsi.dario_plan_korrigieren(rid)
             # 2. NEO setzt den Plan um; 3. lehnt Dario ab, bessert Neo EINMAL nach (gleiches Gespraech, mit den Maengeln).
             _setzen(aktuell_schritt="Neo setzt um")
             r = await rsi.neo_beauftragen(rid, _hinweis(s, rid), kein_neustart=True)
@@ -341,6 +346,12 @@ async def _abarbeiten() -> None:
                 _ergebnis(rid, "umgesetzt", commit=eg.get("commit"), dateien=[str(x).split("/vve-cp-r2/")[-1] for x in eg.get("dateien") or []],
                           neustart=bool(eg.get("neustart") or eg.get("server_teile")), gespraech_id=r["gespraech_id"],
                           bericht=str(pr.get("begruendung") or "")[:800])
+                # Gelungen: Darios LEHRE ("so macht man das richtig") wandert in Neos Gedaechtnis und steht ab jetzt
+                # in jedem seiner Auftraege (Veiko, 24.10.2026: "Neo soll dabei lernen, wie man es richtig macht").
+                lehre = (((_rsi(rid) or {}).get("daten") or {}).get("plan") or {}).get("lehre")
+                if lehre:
+                    from . import neo_lektionen
+                    neo_lektionen.hinzufuegen(lehre, anlass="gelungen: " + str((_rsi(rid) or {}).get("titel") or "")[:150])
             elif pr:
                 _ergebnis(rid, "gescheitert", grund=f"{pr.get('von', 'Dario')}: {str(pr.get('begruendung') or '')[:600]}",
                           gespraech_id=r["gespraech_id"])

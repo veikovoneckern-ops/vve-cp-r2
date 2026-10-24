@@ -695,7 +695,18 @@ def neo_auftrag_text(r: dict[str, Any]) -> str:
             + "\n\nArbeite wie immer: erst lesen, dann klein ändern, vormerken. Dario prüft vor dem Einspielen."
             + ("\nAm Ende MUSS eine vorgemerkte Code-Änderung stehen (datei_aendern) -- ein Bericht oder eine Untersuchung "
                "allein erfüllt diesen Auftrag nicht. Nutze nur Namen, die es im Code gibt oder die du selbst definierst."
-               if plan.get("fuer_umsetzung") else ""))
+               if plan.get("fuer_umsetzung") else "")
+            # Mit Darios genauen Bloecken (24.10.2026): Neo baut sie ein -- und lernt dabei, statt nur abzuschreiben.
+            + ("\n\nSO GEHST DU MIT DARIOS BLÖCKEN VOR (```aenderung … --- alt … --- neu```):\n"
+               "1. Lies jede Stelle mit datei_lesen nach, bevor du sie änderst -- verstehe, was der Code dort tut.\n"
+               "2. Bau jeden Block mit datei_aendern ein: \"alt\" GENAU so, wie Dario es geschrieben hat, \"neu\" ebenso. "
+               "Passt ein Block nicht (die Stelle sieht anders aus), lies nach, was dort wirklich steht, und passe nur so "
+               "viel an, wie nötig ist -- erfinde nichts dazu.\n"
+               "3. Ändere nichts, was nicht in den Blöcken steht.\n"
+               "4. Erkläre am Ende in zwei, drei Sätzen IN DEINEN WORTEN, warum Darios Lösung richtig ist und was du daraus "
+               "für ähnliche Aufgaben mitnimmst. Das ist dein Lernschritt -- Dario liest es mit."
+               + (f"\nDARIOS LEHRE dazu: {plan.get('lehre')}" if plan.get("lehre") else "")
+               if plan.get("bloecke") else ""))
 
 
 async def neo_beauftragen(rid: str, hinweis: str = "", kein_neustart: bool = False) -> dict[str, Any]:
@@ -723,7 +734,7 @@ DARIO_PLAN_SYSTEM = (
     "Verbesserungsvorschlag. Neo, ein lokales Coding-Modell, setzt ihn danach um -- schreib ihn also so, dass ein "
     "weniger starkes Modell ihn Schritt für Schritt ausführen kann: welche Datei, welche Funktion, was genau ändern "
     "(mit kurzen Code-Ausschnitten, wo es hilft), was NICHT anfassen, woran man prüft, dass es geklappt hat. "
-    "Markdown, Deutsch. Höchstens etwa 1.200 Wörter.")
+    "Markdown, Deutsch. Höchstens etwa 1.200 Wörter Erklärung -- Code-Blöcke zählen nicht mit.")
 
 
 def code_auszug(d: dict[str, Any], grenze: int = 16000) -> str:
@@ -797,18 +808,94 @@ async def dario_plan(rid: str, zum_umsetzen: bool = False) -> dict[str, Any]:
     if code:
         frage += "\n\nDER BETROFFENE CODE IM WORTLAUT (aktueller Stand):\n" + code
     if zum_umsetzen:
-        frage += ("\n\nWICHTIG: Veiko hat entschieden, dass das JETZT umgesetzt wird. Neo setzt deinen Plan direkt um, und du prüfst "
-                  "danach seine Änderung. Der Plan muss deshalb in einer CODE-ÄNDERUNG enden -- kein Bericht, keine Untersuchung als "
-                  "Ergebnis. Muss Neo vorher etwas nachsehen, schreib es als ersten Schritt (welche Datei, wonach suchen). Nenne die "
-                  "genauen Stellen mit dem Code davor und danach, so knapp wie möglich. Ist eine Änderung nicht sinnvoll begründbar, "
-                  "beginne deine Antwort mit „KEINE ÄNDERUNG:“ und dem Grund in einem Satz.")
+        frage += UMSETZEN_VORGABE
     try:
-        antwort, kosten, modell = await _dario(DARIO_PLAN_SYSTEM, frage, 4000)
+        antwort, kosten, modell = await _dario(DARIO_PLAN_SYSTEM, frage, 9000 if zum_umsetzen else 4000)
     except llm.ModellFehler as f:
         return {"ok": False, "grund": f"Hat nicht geklappt: {f}"}
-    d["plan"] = {"text": antwort.strip()[:20000], "kosten": round(kosten, 4), "modell": modell, "zeit": time.time(),
-                 "fuer_umsetzung": zum_umsetzen, "mit_code": bool(code)}
+    _plan_speichern(rid, d, antwort, kosten, modell, zum_umsetzen, bool(code))
+    return {"ok": True, "kosten": kosten}
+
+
+# ---------------------------------------------------------------- Genaue Aenderungen von Dario (24.10.2026)
+# Veiko: "ja, so umbauen, aber Neo soll dabei lernen, wie man es richtig macht." Anlass: zwei Serienpunkte
+# scheiterten, weil Neo (lokales Modell) in gespraech.py Namen erfand bzw. Aenderungen behauptete, die nicht im
+# Diff standen. Jetzt gibt Dario die genauen Stellen vor (alt -> neu); Neo liest sie nach, baut sie mit
+# datei_aendern ein, prueft und erklaert das Prinzip in eigenen Worten. Dazu schreibt Dario eine LEHRE -- das
+# allgemeine "so macht man das richtig" --, die nach dem Gelingen in Neos Gedaechtnis wandert (neo_lektionen).
+UMSETZEN_VORGABE = (
+    "\n\nWICHTIG: Veiko hat entschieden, dass das JETZT umgesetzt wird. Neo, ein lokales und weniger starkes Modell, baut "
+    "deine Änderung ein; danach prüfst du sie. Neo hat bisher an genau solchen Stellen Namen erfunden oder Änderungen "
+    "behauptet, die nicht im Code standen -- gib ihm deshalb die GENAUEN Änderungen vor, jede in diesem Format:\n"
+    "```aenderung\ndatei: cockpit/…\n--- alt\n<der bisherige Code, Zeichen für Zeichen aus dem CODE IM WORTLAUT oben kopiert, "
+    "mit Einrückung; so viele Zeilen, dass er in der Datei GENAU EINMAL vorkommt>\n--- neu\n<der neue Code>\n```\n"
+    "Regeln: „alt“ wörtlich kopieren, nie aus dem Gedächtnis; nur Namen benutzen, die im gezeigten Code vorkommen oder die "
+    "du im selben Block definierst; kleine Blöcke statt einer ganzen Funktion; neue Kommentare erklären das WARUM, auf "
+    "Deutsch. Kennst du eine Stelle nicht wörtlich (sie steht nicht im CODE oben), schreib keinen Block dafür, sondern "
+    "sag Neo genau, wonach er suchen soll, und beschreibe die Änderung.\n"
+    "Vor den Blöcken: zwei, drei Sätze, was sich ändert und warum. Nach den Blöcken: woran man prüft, dass es geklappt hat.\n"
+    "Zum Schluss EINE Zeile „LEHRE FÜR NEO: …“ -- das allgemeine Prinzip hinter dieser Änderung, das Neo bei künftigen, "
+    "ähnlichen Aufgaben selbst anwenden soll (Du-Form, ohne Bezug auf diesen Fall, z. B. „Wenn du eine Suche genauer "
+    "machst, prüfe auch die Fälle, die vorher schon richtig liefen, und ändere nur die Gewichtung, nicht die Treffermenge.“).\n"
+    "Ist eine Änderung nicht sinnvoll begründbar, beginne deine Antwort mit „KEINE ÄNDERUNG:“ und dem Grund in einem Satz.")
+
+_BLOCK_RE = re.compile(r"```aenderung\s*\n\s*datei:\s*(\S+)\s*\n--- alt\s*\n(.*?)\n--- neu\s*\n(.*?)\n```", re.S)
+
+
+def bloecke_aus(text: str) -> list[dict[str, str]]:
+    return [{"datei": m.group(1).strip(), "alt": m.group(2), "neu": m.group(3)} for m in _BLOCK_RE.finditer(text or "")]
+
+
+def lehre_aus(text: str) -> str:
+    m = re.search(r"LEHRE F(?:Ü|UE)R NEO:\s*(.+)", text or "")
+    return m.group(1).strip()[:500] if m else ""
+
+
+def bloecke_pruefen(bloecke: list[dict[str, str]]) -> list[str]:
+    """Passt jeder Block? Die Datei muss es geben und "alt" genau einmal darin stehen -- sonst scheitert
+    Neos datei_aendern, und er raet. Lieber vorher Dario korrigieren lassen."""
+    from .konfig import WURZEL
+    fehler = []
+    for i, b in enumerate(bloecke, 1):
+        pfad = (WURZEL / b["datei"].lstrip("/").replace("~/vve-cp-r2/", "")).resolve()
+        if not str(pfad).startswith(str(WURZEL)) or not pfad.is_file():
+            fehler.append(f"Block {i}: die Datei {b['datei']} gibt es nicht.")
+            continue
+        n = pfad.read_text(encoding="utf-8", errors="replace").count(b["alt"])
+        if n != 1:
+            fehler.append(f"Block {i} ({b['datei']}): der alte Code steht {n}× in der Datei, nicht genau einmal"
+                          + (" -- vermutlich nicht wörtlich kopiert (Einrückung, Anführungszeichen?)." if n == 0 else
+                             " -- mehr Zeilen davor oder danach mitnehmen, damit die Stelle eindeutig ist."))
+    return fehler
+
+
+def _plan_speichern(rid: str, d: dict[str, Any], antwort: str, kosten: float, modell: str, zum_umsetzen: bool, mit_code: bool,
+                    vorher_kosten: float = 0.0) -> None:
+    text = antwort.strip()[:40000]
+    bloecke = bloecke_aus(text)
+    d["plan"] = {"text": text, "kosten": round(kosten + vorher_kosten, 4), "modell": modell, "zeit": time.time(),
+                 "fuer_umsetzung": zum_umsetzen, "mit_code": mit_code, "bloecke": len(bloecke),
+                 "bloecke_fehler": bloecke_pruefen(bloecke) if bloecke else [], "lehre": lehre_aus(text)}
     _speichern(rid, d, "plan")
+
+
+async def dario_plan_korrigieren(rid: str) -> dict[str, Any]:
+    """Einmal: passen Darios Bloecke nicht zum Code, bekommt er die Fundstellen und schreibt sie neu."""
+    r = db.holen("rsi", rid)
+    d = r["daten"] if r and isinstance(r["daten"], dict) else {}
+    p = d.get("plan") or {}
+    if not p.get("bloecke_fehler"):
+        return {"ok": True, "kosten": 0}
+    code = code_auszug(d)
+    frage = (_vorschlag_text(d) + ("\n\nDER BETROFFENE CODE IM WORTLAUT (aktueller Stand):\n" + code if code else "")
+             + "\n\nDEIN PLAN VON EBEN:\n" + p.get("text", "")
+             + "\n\nDAS COCKPIT HAT DEINE BLÖCKE GEGEN DIE DATEIEN GEPRÜFT -- so passen sie nicht:\n- " + "\n- ".join(p["bloecke_fehler"])
+             + "\n\nSchreib den Plan vollständig neu, mit korrigierten Blöcken (alt wörtlich aus dem CODE oben kopiert)." + UMSETZEN_VORGABE)
+    try:
+        antwort, kosten, modell = await _dario(DARIO_PLAN_SYSTEM, frage, 9000)
+    except llm.ModellFehler as f:
+        return {"ok": False, "grund": str(f)}
+    _plan_speichern(rid, d, antwort, kosten, modell, True, bool(code), vorher_kosten=p.get("kosten") or 0)
     return {"ok": True, "kosten": kosten}
 
 
