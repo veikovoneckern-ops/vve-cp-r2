@@ -2550,3 +2550,5 @@ button.logo-knopf:hover{background:var(--chrome-line)}
 .neo-protokoll-zeile pre{margin:4px 0 6px 18px;max-height:220px;overflow:auto;font-size:12px}
 .neo-protokoll-zeile.jetzt{display:flex;gap:6px;font-weight:600;color:var(--matrix-kopf)}
 .neo-haken{color:var(--matrix);width:12px;flex:none}
+.rsi-karte-knoepfe{margin-top:8px}
+.rsi-offen-teil{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
